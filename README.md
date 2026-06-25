@@ -1,4 +1,4 @@
-# 🎵 My Music
+# 🎵 S'notify
 
 A personal, self-hosted music player in the spirit of [samply.app](https://samply.app) —
 dark UI, real waveform scrubbing, **stacked song versions you can A/B seamlessly**, and
@@ -49,7 +49,7 @@ node generate-manifest.mjs
 Prefer to do it by hand? Edit `tracks.json` directly:
 ```json
 {
-  "title": "My Music",
+  "title": "S'notify",
   "songs": [
     {
       "title": "Midnight Drive", "artist": "Me", "cover": "covers/midnight.jpg",

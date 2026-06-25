@@ -20,7 +20,7 @@ import { basename, extname, join } from 'node:path';
 
 const AUDIO = new Set(['.mp3', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.wav', '.flac', '.webm']);
 const IMAGE = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-const COLLECTION_TITLE = 'My Music';
+const COLLECTION_TITLE = "S'notify";
 
 const isAudio = (f) => AUDIO.has(extname(f).toLowerCase());
 const isImage = (f) => IMAGE.includes(extname(f).toLowerCase());

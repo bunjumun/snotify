@@ -15,7 +15,7 @@
 // Reorder or rename freely by editing tracks.json afterward.
 // Cover art: drop covers/<Song Name>.jpg, or cover.jpg inside the song folder.
 
-import { readdirSync, writeFileSync, existsSync, statSync } from 'node:fs';
+import { readdirSync, writeFileSync, existsSync, statSync, readFileSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 
 const AUDIO = new Set(['.mp3', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.wav', '.flac', '.webm']);
@@ -26,6 +26,26 @@ const isAudio = (f) => AUDIO.has(extname(f).toLowerCase());
 const isImage = (f) => IMAGE.includes(extname(f).toLowerCase());
 const tidy = (s) => s.replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
 const dateOf = (p) => statSync(p).mtime.toISOString().slice(0, 10);
+
+// Changelog sidecars: for an audio file <base>.<ext>, a sibling
+// <base>.changelog.md becomes the version's editable change note, and an
+// optional <base>.changes.json (array of strings) becomes structured bullets.
+// These are written by the DAW-assistant bridge on "Save version" — or by hand.
+const attachChangelog = (version, dir, base) => {
+  const md = join(dir, base + '.changelog.md');
+  if (existsSync(md)) {
+    const text = readFileSync(md, 'utf8').trim();
+    if (text) version.changelog = text;
+  }
+  const cj = join(dir, base + '.changes.json');
+  if (existsSync(cj)) {
+    try {
+      const arr = JSON.parse(readFileSync(cj, 'utf8'));
+      if (Array.isArray(arr) && arr.length) version.changes = arr.map(String);
+    } catch { /* malformed json — skip, changelog.md still applies */ }
+  }
+  return version;
+};
 
 const covers = existsSync('covers') ? readdirSync('covers') : [];
 const findCover = (base, folderFiles, folderPath) => {
@@ -59,11 +79,14 @@ for (const ent of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       .sort((a, b) => b.m - a.m)               // newest first = top of stack
       .map(x => x.f);
     if (!audio.length) continue;
-    const versions = audio.map(f => ({
-      name: tidy(basename(f, extname(f))),
-      src: `tracks/${ent.name}/${f}`,
-      date: dateOf(join(dir, f)),
-    }));
+    const versions = audio.map(f => {
+      const base = basename(f, extname(f));
+      return attachChangelog({
+        name: tidy(base),
+        src: `tracks/${ent.name}/${f}`,
+        date: dateOf(join(dir, f)),
+      }, dir, base);
+    });
     const song = { title: tidy(ent.name), versions };
     const cover = findCover(ent.name, files, `tracks/${ent.name}`);
     if (cover) song.cover = cover;
@@ -75,7 +98,10 @@ for (const ent of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     let title = tidy(base), artist;
     const m = base.match(/^(.+?)\s*[-–]\s*(.+)$/);
     if (m) { artist = tidy(m[1]); title = tidy(m[2]); }
-    const song = { title, versions: [{ name: 'Original', src: `tracks/${ent.name}`, date: dateOf(join('tracks', ent.name)) }] };
+    const song = { title, versions: [attachChangelog(
+      { name: 'Original', src: `tracks/${ent.name}`, date: dateOf(join('tracks', ent.name)) },
+      'tracks', base,
+    )] };
     if (artist) song.artist = artist;
     const cover = findCover(base);
     if (cover) song.cover = cover;

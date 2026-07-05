@@ -124,6 +124,31 @@
   .cmt:hover .del { opacity: 1; } .cmt .del:hover { color: #ff6b6b; }
   .cempty { color: var(--text-mute); font-size: 13px; padding: 6px 10px; }
 
+  /* Changelog drawer (git-style version history) */
+  .vlog-list { display: flex; flex-direction: column; max-height: 32vh; overflow-y: auto; padding: 2px 0 2px 4px; }
+  .vlog-entry { position: relative; padding: 8px 12px 10px 26px; border-left: 2px solid var(--line); margin-left: 8px; }
+  .vlog-entry:last-child { border-left-color: transparent; }
+  .vlog-entry::before {
+    content: ""; position: absolute; left: -7px; top: 13px; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--bg-hover); border: 2px solid var(--text-mute);
+  }
+  .vlog-entry.current::before { background: var(--accent); border-color: var(--accent); }
+  .vlog-head { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+  .vlog-head:hover .vlog-name { color: var(--accent); }
+  .vlog-name { font-weight: 600; font-size: 14px; transition: color .12s; }
+  .vlog-date { color: var(--text-mute); font-size: 11px; }
+  .vlog-latest { font-size: 10px; font-weight: 700; color: var(--accent-2); }
+  .vlog-bullets { margin: 5px 0 0; padding-left: 16px; color: var(--text-dim); font-size: 13px; }
+  .vlog-bullets li { margin: 2px 0; }
+  .vlog-none { margin: 5px 0 0; color: var(--text-mute); font-size: 12px; font-style: italic; }
+
+  /* Inline changelog line in now-playing */
+  .nowlog {
+    display: none; color: var(--text-mute); font-size: 12px; margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  }
+  .nowlog:hover { color: var(--text-dim); }
+
   /* Transport */
   .transport { background: rgba(18,20,27,.94); backdrop-filter: blur(14px); border-top: 1px solid var(--line); box-shadow: var(--shadow); }
   .transport .pad { max-width: 1000px; margin: 0 auto; padding: 10px 20px 14px; }
@@ -203,8 +228,15 @@
     <div id="list" class="loading">Loading…</div>
   </div>
 
-  <!-- Dock: comments drawer + transport -->
+  <!-- Dock: changelog drawer + comments drawer + transport -->
   <div class="dock">
+    <div class="drawer" id="vlogDrawer">
+      <div class="pad">
+        <h3>Version history <span id="vlogHint" style="text-transform:none;font-weight:400"></span></h3>
+        <div class="vlog-list" id="vlogList"></div>
+      </div>
+    </div>
+
     <div class="drawer" id="drawer">
       <div class="pad">
         <h3>Comments <span id="cdrawerHint" style="text-transform:none;font-weight:400"></span></h3>
@@ -227,8 +259,13 @@
             <span class="nowtitle" id="nowTitle">Nothing playing</span>
             <span class="sep">·</span>
             <span class="nowartist" id="nowArtist"></span>
+            <div class="nowlog" id="nowLog" title="Open version history (v)"></div>
           </div>
-          <button class="cbtn" id="cToggle" title="Comments (c)">
+          <button class="cbtn" id="vlogToggle" title="Version history / changelog (v)" style="margin-left:auto">
+            <svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 00-9 9H1l3.9 3.9L8.8 12H6a7 7 0 117 7 7 7 0 01-4.9-2L6.7 18.4A9 9 0 1013 3zm-1 5v5l4.25 2.52.75-1.23-3.5-2.08V8H12z"/></svg>
+            <span>Log</span>
+          </button>
+          <button class="cbtn" id="cToggle" title="Comments (c)" style="margin-left:0">
             <svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 012 2v9a2 2 0 01-2 2H8l-4 4V6a2 2 0 012-2z"/></svg>
             <span id="cCount">0</span>
           </button>
@@ -307,9 +344,13 @@ function normalize(data){
   return arr.map((s, i) => {
     let versions;
     if (Array.isArray(s.versions) && s.versions.length)
-      versions = s.versions.map(v => ({ name: v.name || 'Version', src: v.src, date: v.date || '' }));
+      versions = s.versions.map(v => ({
+        name: v.name || 'Version', src: v.src, date: v.date || '',
+        changelog: v.changelog || '', changes: Array.isArray(v.changes) ? v.changes : null,
+      }));
     else if (s.src)
-      versions = [{ name: s.name || 'Original', src: s.src, date: s.date || '' }];
+      versions = [{ name: s.name || 'Original', src: s.src, date: s.date || '',
+                    changelog: s.changelog || '', changes: Array.isArray(s.changes) ? s.changes : null }];
     else return null;
     versions = versions.filter(v => v.src);
     if (!versions.length) return null;
@@ -414,6 +455,7 @@ function openSong(songIndex, autoplay){
   renderVersions();
   updateNow();
   renderComments();
+  renderVlog();
   highlight(songIndex);
   setMediaSession();
 
@@ -458,7 +500,7 @@ function switchVersion(vi){
     if (wasPlaying) to.play();
     $('durTime').textContent = fmt(to.getDuration());
     $('curTime').textContent = fmt(to.getCurrentTime());
-    updateNow(); renderVersions(); renderMarkers();
+    updateNow(); renderVersions(); renderMarkers(); renderVlog();
   };
   if (readyByVer[vi]) go();
   else { renderVersions(); to.once('ready', go); } // chip shows loading until buffered
@@ -478,6 +520,16 @@ function renderVersions(){
   $('versions').querySelectorAll('.vchip').forEach(el => el.addEventListener('click', () => switchVersion(Number(el.dataset.vi))));
 }
 
+// A version's change notes as a bullet list: explicit `changes` array wins,
+// else each non-empty line of the changelog markdown (with -/* /# prefixes stripped).
+function verBullets(ver){
+  if (ver.changes && ver.changes.length) return ver.changes;
+  if (!ver.changelog) return [];
+  return ver.changelog.split('\n')
+    .map(l => l.trim().replace(/^[-*]\s+/, '').replace(/^#+\s+/, ''))
+    .filter(Boolean);
+}
+
 function updateNow(){
   if (!activeSong) return;
   const ver = activeSong.versions[activeVer];
@@ -485,6 +537,10 @@ function updateNow(){
   $('nowArtist').textContent = [activeSong.artist, ver.name].filter(Boolean).join(' · ');
   const cover = $('nowCover');
   if (activeSong.cover){ cover.src = activeSong.cover; cover.style.display='block'; } else cover.style.display='none';
+  const bullets = verBullets(ver);
+  const log = $('nowLog');
+  if (bullets.length){ log.textContent = '📝 ' + bullets.join(' · '); log.style.display = 'block'; }
+  else log.style.display = 'none';
 }
 
 function highlight(i){
@@ -604,8 +660,43 @@ function timeago(ts){
   return new Date(ts).toLocaleDateString();
 }
 
-function openDrawer(open){ $('drawer').classList.toggle('open', open); $('cToggle').classList.toggle('active', open); if (open) renderComments(); }
+function openDrawer(open){
+  if (open){ $('vlogDrawer').classList.remove('open'); $('vlogToggle').classList.remove('active'); }
+  $('drawer').classList.toggle('open', open); $('cToggle').classList.toggle('active', open);
+  if (open) renderComments();
+}
 $('cToggle').onclick = () => openDrawer(!$('drawer').classList.contains('open'));
+
+// ---------- Changelog drawer (git-style version history) ----------
+function renderVlog(){
+  $('vlogHint').textContent = activeSong ? `of “${activeSong.title}”` : '';
+  if (!activeSong){ $('vlogList').innerHTML = `<div class="cempty">Play a song to see its version history.</div>`; return; }
+  $('vlogList').innerHTML = activeSong.versions.map((ver, vi) => {
+    const bullets = verBullets(ver);
+    return `
+    <div class="vlog-entry ${vi===activeVer?'current':''}" data-vi="${vi}">
+      <div class="vlog-head" title="Switch to ${esc(ver.name)} — keeps the same playback position">
+        <span class="vlog-name">${esc(ver.name)}</span>
+        ${vi===0 ? '<span class="vlog-latest">LATEST</span>' : ''}
+        ${ver.date ? `<span class="vlog-date">${esc(ver.date)}</span>` : ''}
+      </div>
+      ${bullets.length
+        ? `<ul class="vlog-bullets">${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>`
+        : `<div class="vlog-none">No changelog for this version.</div>`}
+    </div>`;
+  }).join('');
+  $('vlogList').querySelectorAll('.vlog-entry').forEach(el => {
+    el.querySelector('.vlog-head').addEventListener('click', () => switchVersion(Number(el.dataset.vi)));
+  });
+}
+
+function openVlog(open){
+  if (open){ $('drawer').classList.remove('open'); $('cToggle').classList.remove('active'); }
+  $('vlogDrawer').classList.toggle('open', open); $('vlogToggle').classList.toggle('active', open);
+  if (open) renderVlog();
+}
+$('vlogToggle').onclick = () => openVlog(!$('vlogDrawer').classList.contains('open'));
+$('nowLog').onclick = () => openVlog(true);
 $('caddBtn').onclick = addComment;
 $('cinput').addEventListener('keydown', (e) => { if (e.key==='Enter'){ e.preventDefault(); addComment(); } });
 $('atTime').onclick = () => { const w=curWS(); if (w) seekTo(w.getCurrentTime()); $('cinput').focus(); };
@@ -622,6 +713,7 @@ document.addEventListener('keydown', (e) => {
     case 's': $('shuffleBtn').click(); break;
     case 'r': $('repeatBtn').click(); break;
     case 'c': openDrawer(!$('drawer').classList.contains('open')); break;
+    case 'v': openVlog(!$('vlogDrawer').classList.contains('open')); break;
     default:
       // number keys 1-9 switch versions
       if (/^[1-9]$/.test(e.key) && activeSong){ const vi=parseInt(e.key,10)-1; if (vi<activeSong.versions.length) switchVersion(vi); }

@@ -26,6 +26,25 @@ for A/B-ing a master against a rough, or comparing two mix decisions at the same
 shows as a 💬 marker on the waveform, and records which version you left it on. Click a
 comment (or marker) to jump there. Great for review notes to yourself.
 
+**Version changelogs ("git for mixes").** Every version can carry change notes — press `v`
+(or the **Log** button) for a git-style version history of the active song, and the current
+version's notes show inline under the now-playing title. Notes live in sidecar files next to
+the audio, so they're committed to the repo and ship with the site:
+
+```
+tracks/Midnight Drive/
+  Mix v2.mp3
+  Mix v2.changelog.md      ← markdown notes for that version (editable, wins in the UI)
+  Mix v2.changes.json      ← optional: a JSON array of bullets (overrides the .md)
+  Mix v2.snapshot.json     ← optional: raw session state (written by the DAW bridge)
+```
+
+Write `*.changelog.md` by hand — or let the **DAW-assistant bridge** write it for you: it
+monitors your Ableton/Logic session (tempo, fader moves, added/removed devices, mutes,
+renames…), auto-generates bullets like `Vocal +2.1 dB · Added EQ Eight to Drums`, lets you
+edit them, and drops the sidecars into the song folder when you hit **Save Version**. Then
+`node generate-manifest.mjs` publishes them into `tracks.json`.
+
 ## Add songs
 
 **A folder per song = a stack of versions.** Make a folder inside `tracks/` named after the

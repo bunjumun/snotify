@@ -125,7 +125,14 @@ for (const ent of entries.sort((a, b) => a.name.localeCompare(b.name))) {
   const dir = join('tracks', ent.name);
   const files = readdirSync(dir);
   const audio = pickVersionFiles(dir, files);   // newest first = top of stack
-  if (!audio.length) continue;
+  if (!audio.length) {
+    // Common with the DAW-bridge flow: changelog captured, audio not
+    // exported yet. Say so instead of silently dropping the song.
+    if (files.some(f => f.endsWith('.changelog.md') || f.endsWith('.snapshot.json')))
+      console.warn(`  ! "${ent.name}" has version notes but NO AUDIO yet — ` +
+                   `export your mix into tracks/${ent.name}/ (matching the version name) to publish it.`);
+    continue;
+  }
   const versions = audio.map(f => {
     const base = basename(f, extname(f));
     return attachChangelog({

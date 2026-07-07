@@ -166,6 +166,8 @@
   .vchip.active .dot { background: var(--accent); }
   .vchip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-mute); flex: none; }
   .vchip.loading .dot { background: var(--warn); animation: pulse 1s infinite; }
+  .vchip.failed { border-color: rgba(255,107,107,.4); }
+  .vchip.failed .dot { background: #ff6b6b; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
   .vchip .vdate { color: var(--text-mute); font-size: 11px; }
   .vchip .latest { font-size: 10px; font-weight: 700; color: var(--accent-2); }
@@ -296,7 +298,21 @@
   </div>
 
 <script type="module">
-import WaveSurfer from 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js';
+// Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
+let WaveSurfer = null;
+try {
+  ({ default: WaveSurfer } = await import('https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js'));
+} catch {
+  try {
+    ({ default: WaveSurfer } = await import('https://cdn.jsdelivr.net/npm/wavesurfer.js@7/dist/wavesurfer.esm.js'));
+  } catch {
+    document.getElementById('list').className = '';
+    document.getElementById('list').innerHTML =
+      '<div class="empty"><h2>Audio engine failed to load</h2>' +
+      '<p>Could not reach unpkg.com or jsdelivr.net for wavesurfer.js. ' +
+      'Check your connection and reload.</p></div>';
+  }
+}
 
 const $ = (id) => document.getElementById(id);
 const fmt = (s) => { if (!isFinite(s) || s < 0) s = 0; const m = Math.floor(s/60), x = Math.floor(s%60); return `${m}:${String(x).padStart(2,'0')}`; };
@@ -328,6 +344,7 @@ $('vol').value = curVolume;
 
 // ---------- Load manifest ----------
 async function init() {
+  if (!WaveSurfer) return; // engine failed to load; message already shown
   try {
     const res = await fetch('tracks.json', { cache: 'no-cache' });
     if (!res.ok) throw 0;
@@ -355,7 +372,10 @@ function normalize(data){
     versions = versions.filter(v => v.src);
     if (!versions.length) return null;
     return {
-      id: s.id || (slug(s.title || filename(versions[0].src)) || 'song') + '-' + i,
+      // Stable id: slug of the title only. Including the list index (as
+      // before) shifted every song's id — and its saved comments — whenever
+      // a song was added or removed above it.
+      id: s.id || slug(s.title || filename(versions[0].src)) || 'song-' + i,
       title: s.title || filename(versions[0].src),
       artist: s.artist || '',
       cover: s.cover || null,
@@ -482,30 +502,50 @@ function wireVersion(w, vi){
   w.on('play',  () => { if (vi === activeVer) setPlayingUI(true);  });
   w.on('pause', () => { if (vi === activeVer) setPlayingUI(false); });
   w.on('finish',() => { if (vi === activeVer) next(true); });
+  w.on('error', () => {
+    readyByVer[vi] = 'failed';
+    if (vi === activeVer && activeSong){
+      $('durTime').textContent = '—';
+      const ver = activeSong.versions[vi];
+      $('nowArtist').textContent =
+        [activeSong.artist, ver?.name].filter(Boolean).join(' · ') + ' — failed to load';
+    }
+    renderVersions();
+  });
 }
 
 // ---------- Seamless version switching ----------
 function switchVersion(vi){
   if (vi === activeVer || !wsByVer[vi]) return;
-  const from = wsByVer[activeVer], to = wsByVer[vi];
-  const t = from.getCurrentTime();
-  const wasPlaying = from.isPlaying();
-  from.pause();
-  layerByVer[activeVer].classList.remove('show');
-  layerByVer[vi].classList.add('show');
-  const prev = activeVer; activeVer = vi;
+  if (readyByVer[vi] === 'failed'){
+    // Clicking a failed chip retries the load.
+    readyByVer[vi] = false;
+    try { wsByVer[vi].load(activeSong.versions[vi].src).catch(() => {}); } catch {}
+    renderVersions();
+  }
+  const to = wsByVer[vi];
 
-  const go = () => {
-    const dur = to.getDuration() || t;
+  // The swap happens only once the target is READY — the current version
+  // keeps playing until then, so a slow (or broken) version never gaps or
+  // kills playback. Preloaded versions are ready, so the swap is instant.
+  const doSwap = () => {
+    if (!activeSong || wsByVer[vi] !== to || vi === activeVer) return; // song changed / already there
+    const from = wsByVer[activeVer];
+    const t = from.getCurrentTime();
+    const wasPlaying = from.isPlaying();
+    from.pause();
+    layerByVer[activeVer].classList.remove('show');
+    layerByVer[vi].classList.add('show');
+    activeVer = vi;
     to.setVolume(curVolume);
-    to.setTime(Math.min(t, dur));
+    to.setTime(Math.min(t, to.getDuration() || t));
     if (wasPlaying) to.play();
     $('durTime').textContent = fmt(to.getDuration());
     $('curTime').textContent = fmt(to.getCurrentTime());
     updateNow(); renderVersions(); renderMarkers(); renderVlog();
   };
-  if (readyByVer[vi]) go();
-  else { renderVersions(); to.once('ready', go); } // chip shows loading until buffered
+  if (readyByVer[vi] === true) doSwap();
+  else { renderVersions(); to.once('ready', doSwap); } // chip pulses until buffered
 }
 
 function renderVersions(){
@@ -514,7 +554,7 @@ function renderVersions(){
   $('versions').innerHTML =
     `<span class="vlabel">Versions</span>` +
     v.map((ver, vi) => `
-      <span class="vchip ${vi===activeVer?'active':''} ${(!readyByVer[vi])?'loading':''}" data-vi="${vi}" title="Switch to ${esc(ver.name)} — keeps the same playback position">
+      <span class="vchip ${vi===activeVer?'active':''} ${readyByVer[vi]===false?'loading':''} ${readyByVer[vi]==='failed'?'failed':''}" data-vi="${vi}" title="${readyByVer[vi]==='failed' ? `${esc(ver.name)} failed to load — click to retry` : `Switch to ${esc(ver.name)} — keeps the same playback position`}">
         <span class="dot"></span>
         <span>${esc(ver.name)}</span>
         ${vi===0 ? '<span class="latest">LATEST</span>' : (ver.date ? `<span class="vdate">${esc(ver.date)}</span>` : '')}

@@ -1,1 +1,7 @@
 .DS_Store
+
+# Lossless masters stay local — the generator publishes compressed .m4a twins
+tracks/**/*.wav
+tracks/**/*.aif
+tracks/**/*.aiff
+tracks/**/*.flac

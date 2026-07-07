@@ -371,7 +371,9 @@ function showEmpty() {
     <div class="empty">
       <h2>No songs yet 🎧</h2>
       <p>Make a folder per song inside <code>tracks/</code> and drop each mix inside it — every file
-      becomes a stacked <em>version</em>. Then run <code>node generate-manifest.mjs</code>.</p>
+      becomes a stacked <em>version</em>. Then run <code>node generate-manifest.mjs</code>.
+      WAV exports are fine: the generator auto-compresses them to hosted-friendly AAC
+      (<code>.m4a</code>) and keeps your lossless master local.</p>
       <pre>tracks/
   Midnight Drive/
     Rough Demo.mp3

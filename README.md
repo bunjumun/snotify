@@ -51,6 +51,15 @@ edit them, and drops the sidecars into the song folder when you hit **Save Versi
 song, and drop each mix inside it. The most recently modified file becomes the **latest**
 version on top of the stack.
 
+**Drop your DAW's WAV export directly — one export is the whole workflow.** When you run
+the generator, any lossless file (`.wav`, `.aiff`, `.flac`) is auto-compressed with macOS's
+built-in encoder to an `.m4a` twin (AAC ~256 kbps VBR — equal or better quality than
+MP3 320 at ~20% smaller). The player uses the `.m4a`; the WAV master **stays on your Mac
+and is gitignored**, so it never bloats the repo. Conversion is incremental — re-export a
+WAV and only that file is re-encoded. Already-compressed files (`.mp3`, `.m4a`, `.ogg`)
+pass through untouched. At ~1.5 MB/min, the free GitHub Pages budget (1 GB) holds roughly
+**100+ songs at 3 stacked versions each**.
+
 ```
 tracks/
   Midnight Drive/

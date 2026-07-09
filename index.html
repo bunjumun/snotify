@@ -570,9 +570,14 @@ function buildOrder(start){
 function playSong(i){ buildOrder(i); openSong(order[pos], true); }
 
 // ---------- Open a song: build a wavesurfer per version ----------
+let objectUrls = [];
+let openGen = 0; // guards async version loads against song switches
+
 function destroyPlayers(){
   wsByVer.forEach(w => { try { w.destroy(); } catch(e){} });
   wsByVer = []; layerByVer = []; readyByVer = [];
+  objectUrls.forEach(u => URL.revokeObjectURL(u));
+  objectUrls = [];
   $('wavewrap').querySelectorAll('.wave-layer').forEach(n => n.remove());
 }
 
@@ -580,6 +585,7 @@ function openSong(songIndex, autoplay){
   const s = songs[songIndex];
   if (!s) return;
   destroyPlayers();
+  const gen = ++openGen;
   activeSong = s; activeSongIndex = songIndex; activeVer = 0;
 
   s.versions.forEach((v, vi) => {
@@ -587,11 +593,31 @@ function openSong(songIndex, autoplay){
     layer.className = 'wave-layer' + (vi===0 ? ' show' : '');
     $('wavewrap').appendChild(layer);
     layerByVer[vi] = layer;
-    const w = WaveSurfer.create({ container: layer, url: v.src, ...waveOpts });
-    w.setVolume(curVolume);
-    wireVersion(w, vi);
-    wsByVer[vi] = w;
     readyByVer[vi] = false;
+
+    (async () => {
+      // Fetch each version ONCE as a blob: the same download feeds the
+      // waveform decode and playback, and blob URLs are always seekable.
+      // Plain URLs are unseekable on servers without HTTP Range support
+      // (python http.server, some static hosts) — seeks silently land at
+      // 0:00, which broke mid-play version switching on full-length songs.
+      let url = v.src;
+      try {
+        const resp = await fetch(v.src);
+        if (resp.ok){
+          const u = URL.createObjectURL(await resp.blob());
+          if (gen !== openGen){ URL.revokeObjectURL(u); return; }
+          objectUrls.push(u); url = u;
+        }
+      } catch {}
+      if (gen !== openGen) return;
+      const w = WaveSurfer.create({ container: layer, url, ...waveOpts });
+      w.setVolume(curVolume);
+      wireVersion(w, vi);
+      wsByVer[vi] = w;
+      if (vi === 0 && autoplay) w.once('ready', () => { if (gen === openGen) w.play(); });
+      renderVersions();
+    })();
   });
 
   renderVersions();
@@ -600,11 +626,6 @@ function openSong(songIndex, autoplay){
   renderVlog();
   highlight(songIndex);
   setMediaSession();
-
-  if (autoplay) {
-    const w = wsByVer[0];
-    if (readyByVer[0]) w.play(); else w.once('ready', () => w.play());
-  }
 }
 
 function wireVersion(w, vi){
@@ -658,8 +679,27 @@ function switchVersion(vi){
     layerByVer[vi].classList.add('show');
     activeVer = vi;
     to.setVolume(curVolume);
-    to.setTime(Math.min(t, to.getDuration() || t));
+    const target = Math.min(t, to.getDuration() || t);
+    to.setTime(target);
     if (wasPlaying) to.play();
+    // Long files: if the playback element still hasn't loaded (despite the
+    // preload hint), the seek above is silently dropped and audio starts at
+    // 0:00. Re-assert the position when the media actually becomes ready —
+    // guarded so an intentional user seek isn't fought.
+    if (target > 5){
+      const reassert = () => {
+        if (activeVer === vi && wsByVer[vi] === to && to.getCurrentTime() < 3)
+          to.setTime(target);
+      };
+      try {
+        const m = to.getMediaElement();
+        if (m && m.readyState < 1){
+          m.addEventListener('loadedmetadata', reassert, { once: true });
+          m.addEventListener('playing', reassert, { once: true });
+        }
+      } catch {}
+      [400, 1200, 3000].forEach(ms => setTimeout(reassert, ms));
+    }
     $('durTime').textContent = fmt(to.getDuration());
     $('curTime').textContent = fmt(to.getCurrentTime());
     updateNow(); renderVersions(); renderMarkers(); renderVlog();

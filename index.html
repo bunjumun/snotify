@@ -208,12 +208,64 @@
   .vol input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--text); cursor: pointer; }
   .vol input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border: none; border-radius: 50%; background: var(--text); cursor: pointer; }
 
+  /* ---------- Add-music modal ---------- */
+  .addbtn {
+    display: inline-flex; align-items: center; gap: 6px; flex: none;
+    background: var(--bg-row); border: 1px solid var(--line); color: var(--text-dim);
+    padding: 7px 14px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 600;
+    transition: all .12s;
+  }
+  .addbtn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--accent); }
+  .modal-back {
+    display: none; position: fixed; inset: 0; z-index: 50;
+    background: rgba(6,7,10,.72); backdrop-filter: blur(4px);
+    align-items: flex-start; justify-content: center; padding: 8vh 16px 16px;
+    overflow-y: auto;
+  }
+  .modal-back.open { display: flex; }
+  .modal {
+    width: 100%; max-width: 480px; background: var(--bg-soft);
+    border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+    padding: 20px;
+  }
+  .modal h2 { margin: 0 0 4px; font-size: 17px; }
+  .modal .mode { font-size: 12px; margin-bottom: 14px; }
+  .modal .mode.local { color: var(--accent-2); }
+  .modal .mode.github { color: var(--accent); }
+  .modal .mode.none { color: var(--warn); }
+  .modal label { display: block; font-size: 12px; color: var(--text-dim); margin: 10px 0 4px; }
+  .modal input[type=text], .modal input[type=password], .modal select, .modal textarea {
+    width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--text);
+    border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; outline: none;
+  }
+  .modal input:focus, .modal select:focus, .modal textarea:focus { border-color: var(--accent); }
+  .modal textarea { resize: vertical; min-height: 60px; }
+  .modal input[type=file] { width: 100%; color: var(--text-dim); font-size: 13px; padding: 8px 0; }
+  .modal .row { display: flex; gap: 10px; }
+  .modal .row > div { flex: 1; }
+  .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .modal .btn {
+    border: none; border-radius: 8px; padding: 9px 18px; font: inherit; font-weight: 600;
+    cursor: pointer; font-size: 14px;
+  }
+  .modal .btn.primary { background: var(--accent); color: #fff; }
+  .modal .btn.primary:hover { filter: brightness(1.1); }
+  .modal .btn.primary:disabled { opacity: .5; cursor: default; }
+  .modal .btn.ghost { background: var(--bg-row); color: var(--text-dim); border: 1px solid var(--line); }
+  .modal .btn.ghost:hover { color: var(--text); }
+  .modal .status { font-size: 12.5px; color: var(--text-dim); min-height: 18px; margin-top: 10px; white-space: pre-wrap; }
+  .modal .status.err { color: #ff6b6b; }
+  .modal .status.ok { color: var(--accent-2); }
+  .modal .hint { font-size: 11.5px; color: var(--text-mute); margin-top: 4px; line-height: 1.45; }
+  .modal .linky { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 12px; }
+
   @media (max-width: 660px) {
     .now .nowartist, .now .sep { display: none; }
     .vol { display: none; }
     .timeline .time.dur { display: none; }
     .controls { gap: 10px; }
     .wrap { padding-bottom: 260px; }
+    header.app .count { display: none; }
   }
 </style>
 </head>
@@ -226,8 +278,76 @@
         <p>Versioned player · stack mixes, comment, compare</p>
       </div>
       <div class="count" id="trackCount"></div>
+      <button class="addbtn" id="addBtn" title="Add a song or a new version">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11 5h2v14h-2z"/><path d="M5 11h14v2H5z"/></svg>
+        Add
+      </button>
     </header>
     <div id="list" class="loading">Loading…</div>
+  </div>
+
+  <!-- Add-music modal -->
+  <div class="modal-back" id="addModal">
+    <div class="modal">
+      <h2>Add music</h2>
+      <div class="mode" id="addMode">Checking for the local bridge…</div>
+
+      <div id="addForm">
+        <label>Audio file(s)</label>
+        <input type="file" id="addFile" accept="audio/*,.wav,.aif,.aiff,.flac,.mp3,.m4a,.aac,.ogg,.opus" multiple />
+        <div class="hint" id="addFileHint"></div>
+
+        <label>Song</label>
+        <select id="addSongSel"></select>
+        <input type="text" id="addSongNew" placeholder="New song title…" style="display:none;margin-top:6px" maxlength="120" />
+
+        <div class="row" id="addVerRow">
+          <div>
+            <label>Version name</label>
+            <input type="text" id="addVerName" placeholder="e.g. Mix v3" maxlength="120" />
+          </div>
+        </div>
+
+        <label>Change notes (optional — becomes this version's changelog)</label>
+        <textarea id="addNote" placeholder="- Vocal +2 dB&#10;- New outro"></textarea>
+
+        <div id="ghAuthRow" style="display:none">
+          <label>System password (unlocks your GitHub token)</label>
+          <input type="password" id="ghPass" autocomplete="current-password" />
+          <div class="hint"><span class="linky" id="ghReconf">Reconfigure GitHub connection…</span></div>
+        </div>
+      </div>
+
+      <div id="ghSetup" style="display:none">
+        <div class="hint" style="margin-bottom:6px">
+          One-time setup: uploads from the published page commit straight to your repo via the
+          GitHub API. The token is stored <b>only in this browser</b>, encrypted with a system
+          password you choose — never in the repo. Create a fine-grained token with
+          <b>Contents: Read &amp; write</b> for this one repository.
+        </div>
+        <div class="row">
+          <div><label>Owner</label><input type="text" id="ghOwner" placeholder="your-username" /></div>
+          <div><label>Repo</label><input type="text" id="ghRepo" placeholder="my-music" /></div>
+        </div>
+        <div class="row">
+          <div><label>Branch</label><input type="text" id="ghBranch" value="main" /></div>
+        </div>
+        <label>Personal access token</label>
+        <input type="password" id="ghPat" autocomplete="off" placeholder="github_pat_…" />
+        <label>Choose a system password</label>
+        <input type="password" id="ghNewPass" autocomplete="new-password" />
+        <div class="actions">
+          <button class="btn ghost" id="ghCancel">Back</button>
+          <button class="btn primary" id="ghSave">Encrypt &amp; save</button>
+        </div>
+      </div>
+
+      <div class="status" id="addStatus"></div>
+      <div class="actions" id="addActions">
+        <button class="btn ghost" id="addClose">Close</button>
+        <button class="btn primary" id="addGo">Upload</button>
+      </div>
+    </div>
   </div>
 
   <!-- Dock: changelog drawer + comments drawer + transport -->
@@ -743,9 +863,266 @@ $('caddBtn').onclick = addComment;
 $('cinput').addEventListener('keydown', (e) => { if (e.key==='Enter'){ e.preventDefault(); addComment(); } });
 $('atTime').onclick = () => { const w=curWS(); if (w) seekTo(w.getCurrentTime()); $('cinput').focus(); };
 
+// ---------- Add music (upload) ----------
+// Two transports behind one dialog:
+//  · LOCAL — the DAW-assistant bridge on 127.0.0.1:8765 saves into tracks/,
+//    auto-compresses lossless files, and rebuilds tracks.json. Instant.
+//  · GITHUB — from the published page, files are committed via the GitHub
+//    Contents API using a personal access token stored ONLY in this browser,
+//    encrypted (AES-GCM, key derived from a system password via PBKDF2).
+//    Live once Pages rebuilds (~1 min).
+const BRIDGE = 'http://127.0.0.1:8765';
+const GHKEY = 'snotify_gh_v1';
+const GH_MAX_BYTES = 45 * 1024 * 1024; // stay under the Contents API ceiling
+const LOSSLESS_RE = /\.(wav|aif|aiff|flac)$/i;
+
+let bridgeUp = false;
+async function probeBridge(){
+  try {
+    const c = new AbortController(); const t = setTimeout(() => c.abort(), 900);
+    const r = await fetch(BRIDGE + '/api/status', { signal: c.signal });
+    clearTimeout(t); bridgeUp = r.ok;
+  } catch { bridgeUp = false; }
+  return bridgeUp;
+}
+
+// --- Encrypted PAT vault (CLAUDE.md §6: password-protected, localStorage only) ---
+const b64buf = {
+  enc(buf){ const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); },
+  dec(s){ return Uint8Array.from(atob(s), ch => ch.charCodeAt(0)); },
+};
+async function vaultKey(pass, salt){
+  const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name:'PBKDF2', salt, iterations: 250000, hash:'SHA-256' },
+    km, { name:'AES-GCM', length: 256 }, false, ['encrypt','decrypt']);
+}
+function ghConfig(){ try { return JSON.parse(localStorage.getItem(GHKEY) || 'null'); } catch { return null; } }
+async function ghStore(owner, repo, branch, pat, pass){
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await vaultKey(pass, salt);
+  const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, new TextEncoder().encode(pat));
+  localStorage.setItem(GHKEY, JSON.stringify({
+    owner: owner.trim(), repo: repo.trim(), branch: (branch || 'main').trim(),
+    salt: b64buf.enc(salt), iv: b64buf.enc(iv), ct: b64buf.enc(ct),
+  }));
+}
+async function ghUnlock(pass){
+  const c = ghConfig(); if (!c) throw new Error('GitHub not configured');
+  const key = await vaultKey(pass, b64buf.dec(c.salt));
+  const pt = await crypto.subtle.decrypt({ name:'AES-GCM', iv: b64buf.dec(c.iv) }, key, b64buf.dec(c.ct));
+  return new TextDecoder().decode(pt);
+}
+
+// --- GitHub Contents API ---
+const ghPath = (p) => p.split('/').map(encodeURIComponent).join('/');
+const utf8b64 = (s) => b64buf.enc(new TextEncoder().encode(s));
+const b64utf8 = (s) => new TextDecoder().decode(b64buf.dec(s.replace(/\s/g, '')));
+async function ghApi(cfg, pat, method, path, body){
+  const r = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${pat}`, Accept: 'application/vnd.github+json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (r.status === 404) return null;
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`GitHub ${r.status}: ${j.message || 'request failed'}`);
+  return j;
+}
+async function ghShaOf(cfg, pat, path){
+  const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  const listing = await ghApi(cfg, pat, 'GET', `contents/${ghPath(dir)}?ref=${cfg.branch}`);
+  return Array.isArray(listing) ? (listing.find(e => e.name === name)?.sha ?? null) : null;
+}
+async function ghPut(cfg, pat, path, contentB64, message){
+  const sha = await ghShaOf(cfg, pat, path);
+  const body = { message, content: contentB64, branch: cfg.branch };
+  if (sha) body.sha = sha;
+  return ghApi(cfg, pat, 'PUT', `contents/${ghPath(path)}`, body);
+}
+const fileB64 = (file) => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(String(r.result).split(',')[1]);
+  r.onerror = () => rej(new Error('could not read file'));
+  r.readAsDataURL(file);
+});
+
+// --- Modal ---
+let addMode = 'none'; // 'local' | 'github' | 'setup' | 'none'
+function setAddStatus(msg, cls){ const el = $('addStatus'); el.textContent = msg || ''; el.className = 'status' + (cls ? ' ' + cls : ''); }
+
+function fillSongSelect(){
+  const sel = $('addSongSel');
+  sel.innerHTML = songs.map(s => `<option value="${esc(s.title)}">${esc(s.title)}</option>`).join('')
+    + `<option value="__new__">➕ New song…</option>`;
+  if (!songs.length) sel.value = '__new__';
+  syncSongNew();
+}
+function syncSongNew(){ $('addSongNew').style.display = $('addSongSel').value === '__new__' ? 'block' : 'none'; }
+$('addSongSel').addEventListener('change', syncSongNew);
+
+function syncFileUI(){
+  const files = $('addFile').files;
+  const multi = files && files.length > 1;
+  $('addVerRow').style.display = multi ? 'none' : 'flex';
+  $('addNote').disabled = !!multi;
+  if (files && files.length === 1 && !$('addVerName').value)
+    $('addVerName').value = files[0].name.replace(/\.[^.]+$/, '');
+  let hint = '';
+  if (multi) hint = `${files.length} files — each becomes a version named after its filename.`;
+  if (files && files.length && addMode === 'github'){
+    const lossless = [...files].some(f => LOSSLESS_RE.test(f.name));
+    const tooBig = [...files].find(f => f.size > GH_MAX_BYTES);
+    if (lossless) hint += ' Note: WAV/AIFF publish as-is from the page (no transcoding in the browser) — for auto-AAC use the local bridge.';
+    if (tooBig) hint += ` ⚠ ${tooBig.name} is ${(tooBig.size/1048576).toFixed(0)} MB — over the ${(GH_MAX_BYTES/1048576)|0} MB GitHub API limit.`;
+  }
+  $('addFileHint').textContent = hint;
+}
+$('addFile').addEventListener('change', syncFileUI);
+
+function showAddMode(){
+  const modeEl = $('addMode');
+  $('ghSetup').style.display = 'none';
+  $('addForm').style.display = 'block';
+  $('addActions').style.display = 'flex';
+  $('ghAuthRow').style.display = 'none';
+  if (addMode === 'local'){
+    modeEl.className = 'mode local';
+    modeEl.textContent = '● Local bridge connected — files land in tracks/, WAVs auto-compress to AAC.';
+  } else if (addMode === 'github'){
+    const c = ghConfig();
+    modeEl.className = 'mode github';
+    modeEl.textContent = `● Publishing via GitHub → ${c.owner}/${c.repo} (${c.branch}). Live when Pages rebuilds.`;
+    $('ghAuthRow').style.display = 'block';
+  } else if (addMode === 'setup'){
+    modeEl.className = 'mode none';
+    modeEl.textContent = 'No local bridge found — set up GitHub publishing to upload from this page.';
+    $('addForm').style.display = 'none';
+    $('ghSetup').style.display = 'block';
+    $('addActions').style.display = 'none';
+  }
+  syncFileUI();
+}
+
+async function openAdd(){
+  $('addModal').classList.add('open');
+  setAddStatus('');
+  fillSongSelect();
+  $('addMode').className = 'mode';
+  $('addMode').textContent = 'Checking for the local bridge…';
+  await probeBridge();
+  addMode = bridgeUp ? 'local' : (ghConfig() ? 'github' : 'setup');
+  showAddMode();
+}
+function closeAdd(){ $('addModal').classList.remove('open'); }
+$('addBtn').onclick = openAdd;
+$('addClose').onclick = closeAdd;
+$('addModal').addEventListener('click', (e) => { if (e.target === $('addModal')) closeAdd(); });
+$('ghReconf').onclick = () => { addMode = 'setup'; showAddMode(); };
+$('ghCancel').onclick = () => { addMode = bridgeUp ? 'local' : (ghConfig() ? 'github' : 'setup'); if (addMode === 'setup' && !ghConfig()) { closeAdd(); } else showAddMode(); };
+$('ghSave').onclick = async () => {
+  const owner = $('ghOwner').value.trim(), repo = $('ghRepo').value.trim();
+  const branch = $('ghBranch').value.trim() || 'main';
+  const pat = $('ghPat').value.trim(), pass = $('ghNewPass').value;
+  if (!owner || !repo || !pat){ setAddStatus('Owner, repo, and token are all required.', 'err'); return; }
+  if (!pass || pass.length < 4){ setAddStatus('Pick a system password (4+ characters).', 'err'); return; }
+  await ghStore(owner, repo, branch, pat, pass);
+  $('ghPat').value = ''; $('ghNewPass').value = '';
+  addMode = bridgeUp ? 'local' : 'github';
+  setAddStatus('GitHub connection saved (token encrypted in this browser only).', 'ok');
+  showAddMode();
+};
+
+function chosenSongTitle(){
+  const sel = $('addSongSel').value;
+  return sel === '__new__' ? $('addSongNew').value.trim() : sel;
+}
+
+async function doUpload(){
+  const files = [...($('addFile').files || [])];
+  const song = chosenSongTitle();
+  if (!files.length){ setAddStatus('Choose at least one audio file.', 'err'); return; }
+  if (!song){ setAddStatus('Give the song a title.', 'err'); return; }
+  const multi = files.length > 1;
+  const note = multi ? '' : $('addNote').value.trim();
+  const btn = $('addGo');
+  btn.disabled = true;
+  try {
+    if (addMode === 'local'){
+      for (const [i, f] of files.entries()){
+        setAddStatus(`Uploading ${i+1}/${files.length}: ${f.name}…`);
+        const fd = new FormData();
+        fd.append('file', f);
+        fd.append('song', song);
+        fd.append('version', multi ? '' : $('addVerName').value.trim());
+        if (note) fd.append('note', note);
+        const r = await (await fetch(BRIDGE + '/api/song/upload', { method: 'POST', body: fd })).json();
+        if (r.error) throw new Error(r.error);
+      }
+      setAddStatus(`Done ✓ — added to "${song}". Refreshing…`, 'ok');
+      await init();               // re-fetch tracks.json (bridge already rebuilt it)
+      fillSongSelect();
+    } else if (addMode === 'github'){
+      const cfg = ghConfig();
+      const pass = $('ghPass').value;
+      if (!pass){ setAddStatus('Enter your system password to unlock the GitHub token.', 'err'); btn.disabled = false; return; }
+      let pat;
+      try { pat = await ghUnlock(pass); }
+      catch { setAddStatus('Wrong password (or corrupted vault).', 'err'); btn.disabled = false; return; }
+      const oversize = files.find(f => f.size > GH_MAX_BYTES);
+      if (oversize) throw new Error(`${oversize.name} exceeds the GitHub API size limit — compress it (or upload via the local bridge).`);
+
+      // 1) audio files
+      const added = [];
+      for (const [i, f] of files.entries()){
+        setAddStatus(`Committing ${i+1}/${files.length}: ${f.name}…`);
+        const ext = (f.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+        const verName = (multi || !$('addVerName').value.trim())
+          ? f.name.replace(/\.[^.]+$/, '') : $('addVerName').value.trim();
+        const path = `tracks/${song}/${verName}${ext}`;
+        await ghPut(cfg, pat, path, await fileB64(f), `Add ${song} — ${verName}`);
+        added.push({ name: verName, src: path });
+      }
+      // 2) changelog sidecar
+      if (note){
+        setAddStatus('Committing changelog…');
+        await ghPut(cfg, pat, `tracks/${song}/${added[0].name}.changelog.md`, utf8b64(note + '\n'), `Changelog for ${song} — ${added[0].name}`);
+      }
+      // 3) manifest
+      setAddStatus('Updating tracks.json…');
+      const cur = await ghApi(cfg, pat, 'GET', `contents/tracks.json?ref=${cfg.branch}`);
+      const data = cur ? JSON.parse(b64utf8(cur.content)) : { title: $('collectionTitle').textContent, songs: [] };
+      if (!Array.isArray(data.songs)) data.songs = [];
+      let s = data.songs.find(x => x.title === song);
+      if (!s){ s = { title: song, versions: [] }; data.songs.push(s); }
+      const today = new Date().toISOString().slice(0, 10);
+      for (const a of added.reverse()){ // keep picker order on top
+        s.versions = (s.versions || []).filter(v => v.name !== a.name);
+        const entry = { name: a.name, src: a.src, date: today };
+        if (note && !multi) entry.changelog = note;
+        s.versions.unshift(entry);
+      }
+      await ghPut(cfg, pat, 'tracks.json', utf8b64(JSON.stringify(data, null, 2) + '\n'), `Update manifest: ${song}`);
+      setAddStatus(`Committed ✓ — "${song}" goes live when GitHub Pages rebuilds (~1–2 min).`, 'ok');
+      $('ghPass').value = '';
+    } else {
+      setAddStatus('No upload transport available.', 'err');
+    }
+    $('addFile').value = ''; $('addVerName').value = ''; $('addNote').value = '';
+    syncFileUI();
+  } catch (err) {
+    setAddStatus(String(err.message || err), 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+$('addGo').onclick = doUpload;
+
 // ---------- Keyboard ----------
 document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'Escape'){ closeAdd(); return; }
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
   switch (e.key) {
     case ' ': e.preventDefault(); togglePlay(); break;
     case 'ArrowRight': next(false); break;

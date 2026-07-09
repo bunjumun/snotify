@@ -45,7 +45,23 @@ renames…), auto-generates bullets like `Vocal +2.1 dB · Added EQ Eight to Dru
 edit them, and drops the sidecars into the song folder when you hit **Save Version**. Then
 `node generate-manifest.mjs` publishes them into `tracks.json`.
 
-## Add songs
+## Add songs from the page itself
+
+Hit the **Add** button in the header. Two transports, picked automatically:
+
+- **Local bridge running** (the DAW-assistant on `127.0.0.1:8765`): files are saved into
+  `tracks/`, WAVs auto-compress to AAC, and the manifest rebuilds instantly.
+- **Published page (GitHub Pages)**: files are committed straight to the repo via the
+  GitHub API. One-time setup asks for a fine-grained personal access token
+  (**Contents: Read & write**, this repo only), which is stored **only in your browser**,
+  encrypted with a system password (AES-GCM, PBKDF2) — never in the repo. Uploads go
+  live when Pages rebuilds (~1–2 min). Browser uploads publish as-is, so use MP3/M4A
+  there (max ~45 MB/file via the API); the bridge route is the one that transcodes.
+
+You can also upload from the DAW-assistant's **Mix Versions** panel — save a version's
+changelog, then attach the bounce right there.
+
+## Add songs by hand
 
 **A folder per song = a stack of versions.** Make a folder inside `tracks/` named after the
 song, and drop each mix inside it. The most recently modified file becomes the **latest**

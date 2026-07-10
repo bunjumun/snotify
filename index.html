@@ -281,6 +281,30 @@
   /* Shared (project-link) view: read-only surface for bandmates */
   body.shared .addbtn { display: none; }
 
+  /* Trash — only when the local bridge is up (owner authoring) */
+  #trashBtn { display: none; }
+  body.local #trashBtn { display: inline-flex; }
+  body.shared #trashBtn { display: none; }
+  .song .sdel {
+    display: none; color: var(--text-mute); font-size: 14px;
+    padding: 2px 7px; border-radius: 6px; cursor: pointer;
+  }
+  body.local:not(.shared) .song { grid-template-columns: 30px 1fr auto auto; }
+  body.local:not(.shared) .song .sdel { display: block; opacity: 0; transition: opacity .12s; }
+  body.local:not(.shared) .song:hover .sdel { opacity: 1; }
+  .song .sdel:hover { color: #ff6b6b; background: var(--bg-soft); }
+  .trash-item {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 9px 10px; border-radius: 8px;
+  }
+  .trash-item:hover { background: var(--bg-hover); }
+  .trash-item .tname { flex: 1 1 auto; min-width: 130px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .trash-item .tmeta { flex: none; color: var(--text-mute); font-size: 12px; }
+  .trash-item .btn { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
+  .trash-item .btn.danger { background: transparent; color: #ff6b6b; border: 1px solid rgba(255,107,107,.4); }
+  .trash-item .btn.danger:hover { background: rgba(255,107,107,.12); }
+  .trash-item .btn.danger.armed { background: #ff6b6b; color: #fff; border-color: #ff6b6b; }
+
   .veritem .cpy, .vlog-copy {
     flex: none; color: var(--text-mute); font-size: 13px; cursor: pointer;
     padding: 2px 6px; border-radius: 6px; text-decoration: none;
@@ -309,6 +333,9 @@
       <button class="addbtn" id="addBtn" title="Add a song or a new version">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11 5h2v14h-2z"/><path d="M5 11h14v2H5z"/></svg>
         Add
+      </button>
+      <button class="addbtn" id="trashBtn" title="Trash — deleted songs are archived here until you confirm permanent deletion">
+        🗑<span id="trashCount"></span>
       </button>
     </header>
     <div id="list" class="loading">Loading…</div>
@@ -375,6 +402,21 @@
         <button class="btn ghost" id="addClose">Close</button>
         <button class="btn primary" id="addGo">Upload</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Trash modal -->
+  <div class="modal-back" id="trashModal">
+    <div class="modal">
+      <h2>🗑 Trash</h2>
+      <div class="hint" style="margin-bottom:10px">
+        Deleted songs are archived on this Mac (never published) until you confirm.
+        <b>Restore</b> puts a song back in the library; <b>Delete forever</b> asks twice,
+        then the files are gone for good.
+      </div>
+      <div id="trashList"></div>
+      <div class="status" id="trashStatus"></div>
+      <div class="actions"><button class="btn ghost" id="trashClose">Close</button></div>
     </div>
   </div>
 
@@ -651,9 +693,20 @@ function renderList() {
         </div>
       </div>
       <div class="right" data-dur="${i}"></div>
+      ${s.folder ? `<div class="sdel" title="Move “${esc(s.title)}” to the trash">🗑</div>` : ''}
     </div>`;
   }).join('');
-  $('list').querySelectorAll('.song').forEach(el => el.addEventListener('click', () => playSong(Number(el.dataset.i))));
+  $('list').querySelectorAll('.song').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.sdel')) return;
+      playSong(Number(el.dataset.i));
+    });
+    const del = el.querySelector('.sdel');
+    if (del) del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      trashSong(songs[Number(el.dataset.i)]);
+    });
+  });
 }
 
 // ---------- Play order ----------
@@ -1315,9 +1368,106 @@ async function doUpload(){
 }
 $('addGo').onclick = doUpload;
 
+// ---------- Trash (archive deleted songs; confirm to remove forever) ----------
+// Authoring surface: only lights up when the local bridge is running.
+async function bridgePost(path, body){
+  const r = await fetch(BRIDGE + path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json();
+  if (j.error) throw new Error(j.error);
+  return j;
+}
+function setTrashStatus(msg, cls){ const el = $('trashStatus'); el.textContent = msg || ''; el.className = 'status' + (cls ? ' ' + cls : ''); }
+function trashBadge(items){ $('trashCount').textContent = items.length ? ` ${items.length}` : ''; }
+
+async function refreshTrash(){
+  try {
+    const j = await (await fetch(BRIDGE + '/api/trash')).json();
+    trashBadge(j.items || []);
+    return j.items || [];
+  } catch { return []; }
+}
+
+async function trashSong(song){
+  if (!song || !song.folder) return;
+  try {
+    const j = await bridgePost('/api/song/trash', { song: song.folder });
+    if (activeSongIndex !== -1 && songs[activeSongIndex] === song){
+      destroyPlayers(); activeSong = null; activeSongIndex = -1;
+      $('nowTitle').textContent = 'Nothing playing'; $('nowArtist').textContent = '';
+      renderVersions(); setPlayingUI(false);
+    }
+    trashBadge(j.items || []);
+    await init();
+    fillSongSelect();
+  } catch (err) { alert('Could not move to trash: ' + (err.message || err)); }
+}
+
+function renderTrash(items){
+  trashBadge(items);
+  if (!items.length){
+    $('trashList').innerHTML = '<div class="cempty">Trash is empty.</div>';
+    return;
+  }
+  $('trashList').innerHTML = items.map(t => `
+    <div class="trash-item" data-song="${esc(t.song)}">
+      <span class="tname">${esc(t.song)}</span>
+      <span class="tmeta">${t.versions} version${t.versions===1?'':'s'}</span>
+      <button class="btn ghost restore">Restore</button>
+      <button class="btn danger">Delete forever</button>
+    </div>`).join('');
+  $('trashList').querySelectorAll('.trash-item').forEach(el => {
+    const song = el.dataset.song;
+    el.querySelector('.restore').addEventListener('click', async () => {
+      try {
+        setTrashStatus(`Restoring “${song}”…`);
+        const j = await bridgePost('/api/trash/restore', { song });
+        renderTrash(j.items || []);
+        setTrashStatus(`Restored “${song}” ✓`, 'ok');
+        await init(); fillSongSelect();
+      } catch (err) { setTrashStatus(String(err.message || err), 'err'); }
+    });
+    const del = el.querySelector('.danger');
+    del.addEventListener('click', async () => {
+      if (!del.classList.contains('armed')){
+        // First click arms; the second within 4 s confirms.
+        del.classList.add('armed'); del.textContent = 'Click again to confirm';
+        setTimeout(() => { del.classList.remove('armed'); del.textContent = 'Delete forever'; }, 4000);
+        return;
+      }
+      try {
+        setTrashStatus(`Deleting “${song}” forever…`);
+        const j = await bridgePost('/api/trash/delete', { song });
+        renderTrash(j.items || []);
+        setTrashStatus(`“${song}” permanently deleted.`, 'ok');
+      } catch (err) { setTrashStatus(String(err.message || err), 'err'); }
+    });
+  });
+}
+
+async function openTrash(){
+  $('trashModal').classList.add('open');
+  setTrashStatus('');
+  $('trashList').innerHTML = '<div class="cempty">Loading…</div>';
+  renderTrash(await refreshTrash());
+}
+function closeTrash(){ $('trashModal').classList.remove('open'); }
+$('trashBtn').onclick = openTrash;
+$('trashClose').onclick = closeTrash;
+$('trashModal').addEventListener('click', (e) => { if (e.target === $('trashModal')) closeTrash(); });
+
+// Light up the authoring affordances (per-song 🗑 + trash can) when local.
+probeBridge().then(up => {
+  if (!up) return;
+  document.body.classList.add('local');
+  refreshTrash();
+});
+
 // ---------- Keyboard ----------
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape'){ closeAdd(); return; }
+  if (e.key === 'Escape'){ closeAdd(); closeTrash(); return; }
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
   switch (e.key) {
     case ' ': e.preventDefault(); togglePlay(); break;

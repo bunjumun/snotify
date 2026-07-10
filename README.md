@@ -119,19 +119,61 @@ python3 -m http.server 8080
 # open http://localhost:8080
 ```
 
-## Publish on GitHub Pages
+## Share links: projects & direct audio URLs
 
-```bash
-cd music-player
-git init && git add . && git commit -m "Music player"
-# create the repo on github.com (or with the gh CLI), then:
-git remote add origin https://github.com/<your-username>/<repo>.git
-git branch -M main
-git push -u origin main
+Sharing works through **private (unguessable) links** — no accounts, no login.
+
+**Projects** group songs for sharing. They live in `projects.json`:
+```json
+{
+  "projects": [
+    { "name": "Active Mixes", "slug": "M5ow3fGXsQ",
+      "songs": ["Mango Tree World", "you know"], "created": "2026-07-10" }
+  ]
+}
 ```
-Then on GitHub: **Settings → Pages → Build and deployment → Source: Deploy from a branch →
-`main` / root → Save.** Your player goes live at
-`https://<your-username>.github.io/<repo>/` within a minute or two.
+Each project's link is `https://<site>/#/p/<slug>` — it shows **only** that project's
+songs (no Add button, project name as the title). A wrong slug shows an error, never the
+full library. `songs` entries are the folder names under `tracks/`; a song may appear in
+several projects. Edit the file by hand, or use the bridge:
+`GET /api/projects` lists them (with their URLs once the site is live);
+`POST /api/projects {"name": "...", "songs": ["..."]}` creates one (fresh random slug) or
+updates an existing one's song list (the slug — and everyone's links — never change).
+
+**Deep links.** Every version has a 🔗 button (in the version menu and the Log drawer)
+that copies a link straight to that song + version inside its project view, and a 🎵
+button that copies the **direct URL of the audio file itself** (streams/downloads in any
+browser, no player needed).
+
+## Publish on GitHub Pages (one-time setup)
+
+The repo already has history — you only need to connect it:
+
+1. **You, on github.com:** create a new **public** repo (e.g. `snotify`) — empty, no
+   README. Then create a fine-grained personal access token (Settings → Developer
+   settings) scoped to that repo with **Contents: Read & write**.
+2. **Terminal:**
+   ```bash
+   cd music-player
+   git remote add origin https://github.com/<your-username>/snotify.git
+   git push -u origin main
+   ```
+   At the password prompt, paste the **token** (username = your GitHub username). macOS
+   stores it in the keychain, so every future push — including the bridge's auto-publish —
+   is prompt-free.
+3. **On GitHub:** **Settings → Pages → Source: Deploy from a branch → `main` / root →
+   Save.** The player goes live at `https://<your-username>.github.io/snotify/` within a
+   minute or two.
+4. **Restart the bridge** (`bridge/start.sh` in the daw-assistant repo). It derives the
+   site URL from the git remote automatically — `GET /api/status` should now report
+   `publish.state: "idle"`. From here on, **every Save Version / audio upload
+   auto-commits and pushes**; the Mix Versions panel shows the publish state and hands
+   you the share links.
+
+> GitHub caps individual files at 100 MB and recommends repos stay under ~1 GB — plenty for
+> MP3s. For very large lossless libraries, host the audio in a second repo and point `src`
+> at jsDelivr (`https://cdn.jsdelivr.net/gh/<user>/<repo>@main/song.mp3`), which serves with
+> CORS enabled.
 
 > GitHub caps individual files at 100 MB and recommends repos stay under ~1 GB — plenty for
 > MP3s. For very large lossless libraries, host the audio in a second repo and point `src`

@@ -278,6 +278,15 @@
   .modal .hint { font-size: 11.5px; color: var(--text-mute); margin-top: 4px; line-height: 1.45; }
   .modal .linky { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 12px; }
 
+  /* Shared (project-link) view: read-only surface for bandmates */
+  body.shared .addbtn { display: none; }
+
+  .veritem .cpy, .vlog-copy {
+    flex: none; color: var(--text-mute); font-size: 13px; cursor: pointer;
+    padding: 2px 6px; border-radius: 6px; text-decoration: none;
+  }
+  .veritem .cpy:hover, .vlog-copy:hover { color: var(--text); background: var(--bg-row); }
+
   @media (max-width: 660px) {
     .now .nowartist, .now .sep { display: none; }
     .vol { display: none; }
@@ -467,6 +476,8 @@ const filename = (p) => decodeURIComponent(p.split('/').pop().replace(/\.[^.]+$/
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 
 let songs = [];
+let projects = [];                 // from projects.json — share-link groupings
+let curProject = null;             // project scoping the current view (via #/p/<slug>)
 let order = [], pos = -1;          // play order over songs
 let shuffle = false, repeat = 'off';
 let curVolume = parseFloat(localStorage.getItem('mp_vol') ?? '0.9');
@@ -488,6 +499,24 @@ function cssVar(n){ return getComputedStyle(document.documentElement).getPropert
 
 $('vol').value = curVolume;
 
+// ---------- Hash routing ----------
+// #/p/<slug>                    project view (only that project's songs)
+// #/p/<slug>/s/<folder>/v/<name>  deep link to a song/version within it
+// #/s/<folder>/v/<name>         owner-view deep link
+// Segments are encodeURIComponent'd both ways (names contain spaces).
+function parseRoute(){
+  const seg = location.hash.replace(/^#\/?/, '').split('/').map(x => { try { return decodeURIComponent(x); } catch { return x; } });
+  const r = { project: null, song: null, version: null };
+  for (let i = 0; i + 1 < seg.length; i += 2){
+    if (seg[i] === 'p') r.project = seg[i+1];
+    else if (seg[i] === 's') r.song = seg[i+1];
+    else if (seg[i] === 'v') r.version = seg[i+1];
+  }
+  return r;
+}
+let route = parseRoute();
+window.addEventListener('hashchange', () => { route = parseRoute(); init(); });
+
 // ---------- Load manifest ----------
 async function init() {
   if (!WaveSurfer) return; // engine failed to load; message already shown
@@ -495,11 +524,52 @@ async function init() {
     const res = await fetch('tracks.json', { cache: 'no-cache' });
     if (!res.ok) throw 0;
     const data = await res.json();
+    try {
+      const pr = await fetch('projects.json', { cache: 'no-cache' });
+      projects = pr.ok ? ((await pr.json()).projects || []) : [];
+    } catch { projects = []; }
     if (data.title) { $('collectionTitle').textContent = data.title; document.title = data.title; }
     songs = normalize(data);
+    curProject = null;
+    document.body.classList.remove('shared');
+    if (route.project){
+      // A bad slug must never fall back to the full library.
+      document.body.classList.add('shared');
+      curProject = projects.find(p => p.slug === route.project) || null;
+      if (!curProject) return showBadLink();
+      const byFolder = new Map(songs.map(s => [s.folder || s.title, s]));
+      songs = curProject.songs.map(f => byFolder.get(f)).filter(Boolean);
+      $('collectionTitle').textContent = curProject.name;
+      document.title = curProject.name;
+      if (!songs.length) return showBadLink('Nothing here yet', 'No mixes have been published to this project so far — check back soon.');
+    }
     if (!songs.length) return showEmpty();
     renderList();
-  } catch (e) { showEmpty(); }
+    applyDeepLink();
+  } catch (e) { route.project ? showBadLink() : showEmpty(); }
+}
+
+function showBadLink(head, body){
+  $('trackCount').textContent = '';
+  $('list').className = '';
+  $('list').innerHTML = `
+    <div class="empty">
+      <h2>${esc(head || "This link isn't valid")}</h2>
+      <p>${esc(body || 'Double-check the link you were sent, or ask for a fresh one.')}</p>
+    </div>`;
+}
+
+function applyDeepLink(){
+  if (!route.song) return;
+  const i = songs.findIndex(s => (s.folder || s.title) === route.song || s.title === route.song);
+  if (i === -1) return;
+  let vi = 0;
+  if (route.version){
+    const found = songs[i].versions.findIndex(v => v.name === route.version);
+    if (found !== -1) vi = found;
+  }
+  buildOrder(i);
+  openSong(i, false, vi); // opened paused — browsers block autoplay on load anyway
 }
 
 function normalize(data){
@@ -518,6 +588,7 @@ function normalize(data){
     versions = versions.filter(v => v.src);
     if (!versions.length) return null;
     return {
+      folder: s.folder || null,   // stable key for project membership + deep links
       // Stable id: slug of the title only. Including the list index (as
       // before) shifted every song's id — and its saved comments — whenever
       // a song was added or removed above it.
@@ -607,16 +678,17 @@ function destroyPlayers(){
   $('wavewrap').querySelectorAll('.wave-layer').forEach(n => n.remove());
 }
 
-function openSong(songIndex, autoplay){
+function openSong(songIndex, autoplay, startVer = 0){
   const s = songs[songIndex];
   if (!s) return;
   destroyPlayers();
   const gen = ++openGen;
-  activeSong = s; activeSongIndex = songIndex; activeVer = 0;
+  activeSong = s; activeSongIndex = songIndex;
+  activeVer = Math.min(Math.max(0, startVer), s.versions.length - 1);
 
   s.versions.forEach((v, vi) => {
     const layer = document.createElement('div');
-    layer.className = 'wave-layer' + (vi===0 ? ' show' : '');
+    layer.className = 'wave-layer' + (vi===activeVer ? ' show' : '');
     $('wavewrap').appendChild(layer);
     layerByVer[vi] = layer;
     readyByVer[vi] = false;
@@ -641,7 +713,7 @@ function openSong(songIndex, autoplay){
       w.setVolume(curVolume);
       wireVersion(w, vi);
       wsByVer[vi] = w;
-      if (vi === 0 && autoplay) w.once('ready', () => { if (gen === openGen) w.play(); });
+      if (vi === activeVer && autoplay) w.once('ready', () => { if (gen === openGen) w.play(); });
       renderVersions();
     })();
   });
@@ -737,6 +809,30 @@ function switchVersion(vi){
 const extOf = (p) => { const m = String(p).match(/\.[^.]+$/); return m ? m[0] : ''; };
 const dotCls = (vi) => readyByVer[vi] === false ? 'dot loading' : readyByVer[vi] === 'failed' ? 'dot failed' : 'dot';
 
+// ---------- Share links ----------
+const encPath = (p) => String(p).split('/').map(encodeURIComponent).join('/');
+const pageBase = () => location.href.split('#')[0];
+function projectFor(song){
+  if (curProject) return curProject;
+  const key = song.folder || song.title;
+  return projects.find(p => (p.songs || []).includes(key)) || null;
+}
+// Player deep link — scoped to a project when the song belongs to one.
+function shareUrl(song, ver){
+  const p = projectFor(song);
+  return pageBase() + '#'
+    + (p ? '/p/' + encodeURIComponent(p.slug) : '')
+    + '/s/' + encodeURIComponent(song.folder || song.title)
+    + (ver ? '/v/' + encodeURIComponent(ver.name) : '');
+}
+// Absolute URL of the raw audio file (paths contain spaces — encode per segment).
+function audioUrl(ver){ return new URL(encPath(ver.src), pageBase()).href; }
+async function copyText(text, el){
+  try { await navigator.clipboard.writeText(text); }
+  catch { prompt('Copy this link:', text); return; }
+  if (el){ const old = el.textContent; el.textContent = '✓'; setTimeout(() => { el.textContent = old; }, 900); }
+}
+
 function renderVersions(){
   const dd = $('verdrop');
   if (!activeSong){ dd.style.display = 'none'; dd.classList.remove('open'); return; }
@@ -752,11 +848,18 @@ function renderVersions(){
       <span class="${dotCls(vi)}"></span>
       <span class="vname">${esc(v.name)}</span>
       ${vi===0 ? '<span class="latest">LATEST</span>' : (v.date ? `<span class="vdate">${esc(v.date)}</span>` : '')}
+      <span class="cpy" data-act="share" title="Copy share link to ${esc(v.name)} (opens the player)">🔗</span>
+      <span class="cpy" data-act="audio" title="Copy direct link to the audio file">🎵</span>
       <a class="dl" href="${esc(v.src)}" download="${esc(activeSong.title)} — ${esc(v.name)}${esc(extOf(v.src))}" title="Download ${esc(v.name)}">⬇</a>
     </div>`).join('');
   $('verMenu').querySelectorAll('.veritem').forEach(el => {
+    el.querySelectorAll('.cpy').forEach(b => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const v = activeSong.versions[Number(el.dataset.vi)];
+      copyText(b.dataset.act === 'audio' ? audioUrl(v) : shareUrl(activeSong, v), b);
+    }));
     el.addEventListener('click', (e) => {
-      if (e.target.closest('a.dl')) return;   // download clicks download
+      if (e.target.closest('a.dl, .cpy')) return;   // download/copy clicks don't switch
       switchVersion(Number(el.dataset.vi));
       toggleVerMenu(false);
     });
@@ -929,6 +1032,7 @@ function renderVlog(){
         ${vi===0 ? '<span class="vlog-latest">LATEST</span>' : ''}
         ${ver.date ? `<span class="vlog-date">${esc(ver.date)}</span>` : ''}
       </div>
+      <span class="vlog-copy" data-vi="${vi}" title="Copy share link to ${esc(ver.name)}">🔗</span>
       ${bullets.length
         ? `<ul class="vlog-bullets">${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>`
         : `<div class="vlog-none">No changelog for this version.</div>`}
@@ -936,6 +1040,11 @@ function renderVlog(){
   }).join('');
   $('vlogList').querySelectorAll('.vlog-entry').forEach(el => {
     el.querySelector('.vlog-head').addEventListener('click', () => switchVersion(Number(el.dataset.vi)));
+    el.querySelector('.vlog-copy').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const ver = activeSong.versions[Number(el.dataset.vi)];
+      copyText(shareUrl(activeSong, ver), e.target);
+    });
   });
 }
 

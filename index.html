@@ -153,24 +153,43 @@
   .transport { background: rgba(18,20,27,.94); backdrop-filter: blur(14px); border-top: 1px solid var(--line); box-shadow: var(--shadow); }
   .transport .pad { max-width: 1000px; margin: 0 auto; padding: 10px 20px 14px; }
 
-  /* Version stack chips */
-  .versions { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
-  .versions .vlabel { flex: none; color: var(--text-mute); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
-  .vchip {
-    flex: none; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
-    background: var(--bg-row); border: 1px solid var(--line); color: var(--text-dim);
-    padding: 5px 11px; border-radius: 20px; font-size: 13px; transition: all .12s; white-space: nowrap;
+  /* Version dropdown */
+  .verdrop { position: relative; flex: none; margin-left: auto; min-width: 0; }
+  .verbtn {
+    display: inline-flex; align-items: center; gap: 8px; max-width: 250px;
+    background: var(--bg-row); border: 1px solid var(--line); color: var(--text);
+    padding: 6px 12px; border-radius: 20px; cursor: pointer; font: inherit;
+    font-size: 13px; font-weight: 600; transition: all .12s;
   }
-  .vchip:hover { background: var(--bg-hover); color: var(--text); }
-  .vchip.active { background: rgba(108,92,231,.16); border-color: var(--accent); color: var(--text); }
-  .vchip.active .dot { background: var(--accent); }
-  .vchip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-mute); flex: none; }
-  .vchip.loading .dot { background: var(--warn); animation: pulse 1s infinite; }
-  .vchip.failed { border-color: rgba(255,107,107,.4); }
-  .vchip.failed .dot { background: #ff6b6b; }
+  .verbtn:hover { background: var(--bg-hover); border-color: var(--accent); }
+  .verbtn .vname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .verbtn .caret { flex: none; width: 10px; height: 6px; fill: var(--text-dim); transition: transform .15s; }
+  .verdrop.open .verbtn .caret { transform: rotate(180deg); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+  .dot.loading { background: var(--warn); animation: pulse 1s infinite; }
+  .dot.failed { background: #ff6b6b; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-  .vchip .vdate { color: var(--text-mute); font-size: 11px; }
-  .vchip .latest { font-size: 10px; font-weight: 700; color: var(--accent-2); }
+  .latest { font-size: 10px; font-weight: 700; color: var(--accent-2); flex: none; }
+  .vdate { color: var(--text-mute); font-size: 11px; flex: none; }
+  .vermenu {
+    display: none; position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 45;
+    min-width: 280px; max-width: 340px; max-height: 40vh; overflow-y: auto;
+    background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 6px;
+  }
+  .verdrop.open .vermenu { display: block; }
+  .veritem {
+    display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 8px;
+    cursor: pointer; font-size: 13.5px;
+  }
+  .veritem:hover { background: var(--bg-hover); }
+  .veritem.active { background: rgba(108,92,231,.14); }
+  .veritem .vname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  .veritem .dl {
+    flex: none; color: var(--text-mute); text-decoration: none; font-size: 14px;
+    padding: 2px 6px; border-radius: 6px;
+  }
+  .veritem .dl:hover { color: var(--text); background: var(--bg-row); }
 
   .now { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; min-height: 22px; }
   .now .cover { width: 40px; height: 40px; border-radius: 8px; flex: none; object-fit: cover; background: linear-gradient(135deg, var(--accent), var(--accent-2)); display: none; }
@@ -373,8 +392,6 @@
 
     <div class="transport">
       <div class="pad">
-        <div class="versions" id="versions"></div>
-
         <div class="now">
           <img class="cover" id="nowCover" alt="" />
           <div style="min-width:0">
@@ -383,7 +400,16 @@
             <span class="nowartist" id="nowArtist"></span>
             <div class="nowlog" id="nowLog" title="Open version history (v)"></div>
           </div>
-          <button class="cbtn" id="vlogToggle" title="Version history / changelog (v)" style="margin-left:auto">
+          <div class="verdrop" id="verdrop" style="display:none">
+            <button class="verbtn" id="verBtn" title="Switch version — keeps the playback position (1–9)">
+              <span class="dot" id="verDot"></span>
+              <span class="vname" id="verName">—</span>
+              <span class="latest" id="verTag"></span>
+              <svg class="caret" viewBox="0 0 10 6"><path d="M0 0l5 6 5-6z"/></svg>
+            </button>
+            <div class="vermenu" id="verMenu"></div>
+          </div>
+          <button class="cbtn" id="vlogToggle" title="Version history / changelog (v)" style="margin-left:0">
             <svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 00-9 9H1l3.9 3.9L8.8 12H6a7 7 0 117 7 7 7 0 01-4.9-2L6.7 18.4A9 9 0 1013 3zm-1 5v5l4.25 2.52.75-1.23-3.5-2.08V8H12z"/></svg>
             <span>Log</span>
           </button>
@@ -708,19 +734,40 @@ function switchVersion(vi){
   else { renderVersions(); to.once('ready', doSwap); } // chip pulses until buffered
 }
 
+const extOf = (p) => { const m = String(p).match(/\.[^.]+$/); return m ? m[0] : ''; };
+const dotCls = (vi) => readyByVer[vi] === false ? 'dot loading' : readyByVer[vi] === 'failed' ? 'dot failed' : 'dot';
+
 function renderVersions(){
-  if (!activeSong){ $('versions').innerHTML=''; return; }
-  const v = activeSong.versions;
-  $('versions').innerHTML =
-    `<span class="vlabel">Versions</span>` +
-    v.map((ver, vi) => `
-      <span class="vchip ${vi===activeVer?'active':''} ${readyByVer[vi]===false?'loading':''} ${readyByVer[vi]==='failed'?'failed':''}" data-vi="${vi}" title="${readyByVer[vi]==='failed' ? `${esc(ver.name)} failed to load — click to retry` : `Switch to ${esc(ver.name)} — keeps the same playback position`}">
-        <span class="dot"></span>
-        <span>${esc(ver.name)}</span>
-        ${vi===0 ? '<span class="latest">LATEST</span>' : (ver.date ? `<span class="vdate">${esc(ver.date)}</span>` : '')}
-      </span>`).join('');
-  $('versions').querySelectorAll('.vchip').forEach(el => el.addEventListener('click', () => switchVersion(Number(el.dataset.vi))));
+  const dd = $('verdrop');
+  if (!activeSong){ dd.style.display = 'none'; dd.classList.remove('open'); return; }
+  dd.style.display = '';
+  const ver = activeSong.versions[activeVer];
+  $('verDot').className = dotCls(activeVer);
+  $('verName').textContent = ver.name;
+  $('verTag').textContent = activeVer === 0 ? 'LATEST' : (ver.date || '');
+  $('verTag').className = activeVer === 0 ? 'latest' : 'vdate';
+  $('verMenu').innerHTML = activeSong.versions.map((v, vi) => `
+    <div class="veritem ${vi===activeVer?'active':''}" data-vi="${vi}"
+         title="${readyByVer[vi]==='failed' ? esc(v.name)+' failed to load — click to retry' : 'Switch to '+esc(v.name)+' — keeps the playback position'}">
+      <span class="${dotCls(vi)}"></span>
+      <span class="vname">${esc(v.name)}</span>
+      ${vi===0 ? '<span class="latest">LATEST</span>' : (v.date ? `<span class="vdate">${esc(v.date)}</span>` : '')}
+      <a class="dl" href="${esc(v.src)}" download="${esc(activeSong.title)} — ${esc(v.name)}${esc(extOf(v.src))}" title="Download ${esc(v.name)}">⬇</a>
+    </div>`).join('');
+  $('verMenu').querySelectorAll('.veritem').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('a.dl')) return;   // download clicks download
+      switchVersion(Number(el.dataset.vi));
+      toggleVerMenu(false);
+    });
+  });
 }
+function toggleVerMenu(open){
+  const dd = $('verdrop');
+  dd.classList.toggle('open', open ?? !dd.classList.contains('open'));
+}
+$('verBtn').onclick = (e) => { e.stopPropagation(); toggleVerMenu(); };
+document.addEventListener('click', (e) => { if (!e.target.closest('#verdrop')) toggleVerMenu(false); });
 
 // A version's change notes as a bullet list: explicit `changes` array wins,
 // else each non-empty line of the changelog markdown (with -/* /# prefixes stripped).

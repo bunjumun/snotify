@@ -141,7 +141,7 @@ for (const ent of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       date: dateOf(join(dir, f)),
     }, dir, base);
   });
-  const song = { title: tidy(ent.name), versions };
+  const song = { folder: ent.name, title: tidy(ent.name), versions };
   const cover = findCover(ent.name, files, `tracks/${ent.name}`);
   if (cover) song.cover = cover;
   songs.push(song);
@@ -156,7 +156,7 @@ for (const file of pickVersionFiles('tracks', rootFiles).sort((a, b) => a.locale
   let title = tidy(base), artist;
   const m = base.match(/^(.+?)\s*[-–]\s*(.+)$/);
   if (m) { artist = tidy(m[1]); title = tidy(m[2]); }
-  const song = { title, versions: [attachChangelog(
+  const song = { folder: file, title, versions: [attachChangelog(
     { name: 'Original', src: `tracks/${file}`, date: dateOf(join('tracks', file)) },
     'tracks', base,
   )] };
@@ -166,8 +166,49 @@ for (const file of pickVersionFiles('tracks', rootFiles).sort((a, b) => a.locale
   songs.push(song);
 }
 
-writeFileSync('tracks.json', JSON.stringify({ title: COLLECTION_TITLE, songs }, null, 2) + '\n');
-const vCount = songs.reduce((n, s) => n + s.versions.length, 0);
+// ---------------------------------------------------------------------------
+// Merge with the existing manifest so UI edits survive rebuilds.
+// The player's Manage mode (and hand edits) own: song ORDER, `title`, `artist`,
+// `cover`, and per-version `name`. This scan owns everything derived from disk:
+// which songs/versions exist, `src`, `date`, changelog sidecars.
+// Songs are keyed by `folder`; versions by `src`.
+// ---------------------------------------------------------------------------
+let prev = null;
+try { prev = JSON.parse(readFileSync('tracks.json', 'utf8')); } catch { /* first run */ }
+
+let title = COLLECTION_TITLE;
+let merged = songs;
+if (prev && Array.isArray(prev.songs)) {
+  if (typeof prev.title === 'string' && prev.title.trim()) title = prev.title;
+  const freshByFolder = new Map(songs.map(s => [s.folder, s]));
+  const seen = new Set();
+
+  const applyOverrides = (fresh, old) => {
+    if (typeof old.title === 'string' && old.title.trim()) fresh.title = old.title;
+    if (old.artist) fresh.artist = old.artist;
+    if (old.cover && (existsSync(old.cover) || /^https?:/i.test(old.cover))) fresh.cover = old.cover;
+    const oldBySrc = new Map((old.versions || []).map(v => [v.src, v]));
+    for (const v of fresh.versions) {
+      const ov = oldBySrc.get(v.src);
+      if (ov && typeof ov.name === 'string' && ov.name.trim()) v.name = ov.name;
+    }
+    return fresh;
+  };
+
+  // Existing songs keep their saved order…
+  const kept = [];
+  for (const old of prev.songs) {
+    const key = old.folder || old.title;
+    const fresh = freshByFolder.get(key);
+    if (fresh && !seen.has(key)) { seen.add(key); kept.push(applyOverrides(fresh, old)); }
+  }
+  // …new folders go on top.
+  const added = songs.filter(s => !seen.has(s.folder));
+  merged = [...added, ...kept];
+}
+
+writeFileSync('tracks.json', JSON.stringify({ title, songs: merged }, null, 2) + '\n');
+const vCount = merged.reduce((n, s) => n + s.versions.length, 0);
 const enc = transcodedCount ? `, ${transcodedCount} file${transcodedCount===1?'':'s'} compressed to AAC` : '';
-console.log(`Wrote tracks.json: ${songs.length} song${songs.length===1?'':'s'}, ${vCount} version${vCount===1?'':'s'}${enc}.`);
-if (!songs.length) console.log('(No audio found in tracks/ — add some files and run again.)');
+console.log(`Wrote tracks.json: ${merged.length} song${merged.length===1?'':'s'}, ${vCount} version${vCount===1?'':'s'}${enc}.`);
+if (!merged.length) console.log('(No audio found in tracks/ — add some files and run again.)');

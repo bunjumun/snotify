@@ -2,17 +2,6 @@
   "title": "S'notify",
   "songs": [
     {
-      "folder": "you know",
-      "title": "you know",
-      "versions": [
-        {
-          "name": "05 You know",
-          "src": "tracks/you know/05 You know.m4a",
-          "date": "2026-07-09"
-        }
-      ]
-    },
-    {
       "folder": "Mango Tree World",
       "title": "Mango Tree World",
       "versions": [
@@ -24,6 +13,17 @@
         {
           "name": "Mix 6-29-26",
           "src": "tracks/Mango Tree World/Mix 6-29-26.m4a",
+          "date": "2026-07-09"
+        }
+      ]
+    },
+    {
+      "folder": "you know",
+      "title": "you know",
+      "versions": [
+        {
+          "name": "05 You know",
+          "src": "tracks/you know/05 You know.m4a",
           "date": "2026-07-09"
         }
       ]

@@ -1250,8 +1250,8 @@ $('repeatBtn').onclick = () => { repeat = repeat==='off'?'all':repeat==='all'?'o
 // same pool, written straight from this page (Row Level Security limits what
 // the public key can do: read/add/delete comments, drop files in the inbox).
 // Without it (or offline), comments fall back to this browser's localStorage.
-const SUPA_URL = '';   // e.g. https://abcd1234.supabase.co
-const SUPA_KEY = '';   // the "anon / publishable" key — safe to publish
+const SUPA_URL = 'https://twgukeyoayfqldnojrkg.supabase.co';
+const SUPA_KEY = 'sb_publishable_zIiAxxA5Zk1yRNzignANXA_rEp3vKdG';   // publishable — safe to ship
 const supaOn = () => !!(SUPA_URL && SUPA_KEY);
 async function supaFetch(path, opts = {}){
   const r = await fetch(SUPA_URL + path, { ...opts,

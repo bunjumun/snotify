@@ -1,6 +1,0 @@
-- Renamed '2-MIDI' -> 'Track 2'
-- 1-ARP Hatter volume +4%
-- Added Convolution Reverb to 1-ARP Hatter
-- Removed Corpus from 1-ARP Hatter
-- 3-Audio volume -31%
-- Muted 3-Audio

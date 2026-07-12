@@ -2,6 +2,17 @@
   "title": "S'notify",
   "songs": [
     {
+      "folder": "you know",
+      "title": "you know",
+      "versions": [
+        {
+          "name": "05 You know",
+          "src": "tracks/you know/05 You know.m4a",
+          "date": "2026-07-09"
+        }
+      ]
+    },
+    {
       "folder": "Mango Tree World",
       "title": "Mango Tree World",
       "versions": [
@@ -14,18 +25,6 @@
           "name": "Mix 6-29-26",
           "src": "tracks/Mango Tree World/Mix 6-29-26.m4a",
           "date": "2026-07-09"
-        }
-      ]
-    },
-    {
-      "folder": "ARP Hatter Session",
-      "title": "ARP Hatter Session",
-      "versions": [
-        {
-          "name": "Mix v2",
-          "src": "tracks/ARP Hatter Session/Mix v2.m4a",
-          "date": "2026-07-05",
-          "changelog": "- Renamed '2-MIDI' -> 'Track 2'\n- 1-ARP Hatter volume +4%\n- Added Convolution Reverb to 1-ARP Hatter\n- Removed Corpus from 1-ARP Hatter\n- 3-Audio volume -31%\n- Muted 3-Audio"
         }
       ]
     }

@@ -51,7 +51,7 @@
   .songlist { display: flex; flex-direction: column; gap: 6px; }
   .song {
     position: relative;
-    display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 14px;
+    display: grid; grid-template-columns: 30px 1fr auto auto; align-items: center; gap: 14px;
     padding: 12px 14px; border-radius: 10px; background: var(--bg-row);
     border: 1px solid transparent; cursor: pointer;
     transition: background .12s, border-color .12s; user-select: none;
@@ -289,7 +289,15 @@
     display: none; color: var(--text-mute); font-size: 14px;
     padding: 2px 7px; border-radius: 6px; cursor: pointer;
   }
-  body.local:not(.shared) .song { grid-template-columns: 30px 1fr auto auto; }
+  body.local:not(.shared) .song { grid-template-columns: 30px 1fr auto auto auto; }
+  /* Per-song share link (the whole stack) — hover on desktop, dimmed-visible on touch */
+  .song .scpy {
+    opacity: 0; color: var(--text-mute); font-size: 13px;
+    padding: 2px 6px; border-radius: 6px; cursor: pointer; transition: opacity .12s;
+  }
+  .song:hover .scpy { opacity: 1; }
+  .song .scpy:hover { color: var(--text); background: var(--bg-soft); }
+  @media (hover: none) { .song .scpy { opacity: .55; } }
   body.local:not(.shared) .song .sdel { display: block; opacity: 0; transition: opacity .12s; }
   body.local:not(.shared) .song:hover .sdel { opacity: 1; }
   .song .sdel:hover { color: #ff6b6b; background: var(--bg-soft); }
@@ -369,6 +377,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11 5h2v14h-2z"/><path d="M5 11h14v2H5z"/></svg>
         Add
       </button>
+      <button class="addbtn" id="shareBtn" title="Copy a share link to everything in this view — the project, or the whole library">🔗</button>
       <button class="addbtn" id="editBtn" title="Edit — reorder, rename, stack, unstack, trash">✏️</button>
       <button class="addbtn" id="trashBtn" title="Trash — deleted songs are archived here until you confirm permanent deletion">
         🗑<span id="trashCount"></span>
@@ -481,6 +490,7 @@
         <h3>Comments <span id="cdrawerHint" style="text-transform:none;font-weight:400"></span></h3>
         <div class="composer">
           <span class="at" id="atTime" title="Comment is pinned to this timestamp — seek the waveform to move it">0:00</span>
+          <input id="cname" type="text" placeholder="Name" maxlength="40" style="flex:none;width:90px" title="Shown with your comments (remembered on this device)" />
           <input id="cinput" type="text" placeholder="Leave a comment at this timestamp…" maxlength="280" />
           <button id="caddBtn">Add</button>
         </div>
@@ -736,6 +746,7 @@ function renderList() {
         <span class="ec danger" data-act="trash" title="Move “${esc(s.title)}” to the trash">🗑</span>
       </div>`
     : `<div class="right" data-dur="${i}"></div>
+      <div class="scpy" title="Copy share link to “${esc(s.title)}” — the whole stack">🔗</div>
       ${s.folder ? `<div class="sdel" title="Move “${esc(s.title)}” to the trash">🗑</div>` : ''}`;
     return `
     <div class="song ${n>1?'stacked':''}" data-i="${i}">
@@ -763,6 +774,8 @@ function renderList() {
         return;                         // edit mode: rows don't start playback
       }
       if (e.target.closest('.sdel')) return;
+      const cp = e.target.closest('.scpy');
+      if (cp){ copyText(shareUrl(songs[i]), cp); return; }
       playSong(i);
     });
     const del = el.querySelector('.sdel');
@@ -1089,6 +1102,11 @@ async function copyText(text, el){
   if (el){ const old = el.textContent; el.textContent = '✓'; setTimeout(() => { el.textContent = old; }, 900); }
 }
 
+// Header 🔗: the whole view — this project (album) or the entire library.
+$('shareBtn').onclick = () => copyText(
+  curProject ? pageBase() + '#/p/' + encodeURIComponent(curProject.slug) : pageBase(),
+  $('shareBtn'));
+
 function renderVersions(){
   const dd = $('verdrop');
   if (!activeSong){ dd.style.display = 'none'; dd.classList.remove('open'); return; }
@@ -1100,10 +1118,13 @@ function renderVersions(){
   $('verTag').className = activeVer === 0 ? 'latest' : 'vdate';
   const owner = document.body.classList.contains('local') && !document.body.classList.contains('shared');
   const last = activeSong.versions.length - 1;
-  $('verMenu').innerHTML = (owner ? `
+  $('verMenu').innerHTML = `
     <div class="vmhead"><span>Stack</span>
-      <span class="ec" id="verEditBtn" title="Edit the stack — reorder, rename, unstack, trash">✏️</span>
-    </div>` : '')
+      <span style="display:inline-flex;gap:2px">
+        <span class="ec" id="verShare" title="Copy share link to the whole stack — every version of “${esc(activeSong.title)}”">🔗</span>
+        ${owner ? `<span class="ec" id="verEditBtn" title="Edit the stack — reorder, rename, unstack, trash">✏️</span>` : ''}
+      </span>
+    </div>`
   + activeSong.versions.map((v, vi) => `
     <div class="veritem ${vi===activeVer?'active':''}" data-vi="${vi}"
          title="${editing ? '' : readyByVer[vi]==='failed' ? esc(v.name)+' failed to load — click to retry' : 'Switch to '+esc(v.name)+' — keeps the playback position'}">
@@ -1122,6 +1143,8 @@ function renderVersions(){
     </div>`).join('');
   const veb = $('verMenu').querySelector('#verEditBtn');
   if (veb) veb.addEventListener('click', (e) => { e.stopPropagation(); setEditing(!editing); });
+  const vsh = $('verMenu').querySelector('#verShare');
+  if (vsh) vsh.addEventListener('click', (e) => { e.stopPropagation(); copyText(shareUrl(activeSong), vsh); });
   $('verMenu').querySelectorAll('.veritem').forEach(el => {
     el.querySelectorAll('.cpy').forEach(b => b.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1228,7 +1251,8 @@ function addComment(){
   const all = allComments();
   (all[activeSong.id] ||= []).push({
     id: Date.now()+''+Math.floor(Math.random()*999),
-    time, text, version: activeSong.versions[activeVer].name, at: Date.now()
+    time, text, name: $('cname').value.trim(),
+    version: activeSong.versions[activeVer].name, at: Date.now()
   });
   saveComments(all);
   $('cinput').value = '';
@@ -1252,11 +1276,16 @@ function renderComments(){
   $('clist').innerHTML = list.map(c => `
     <div class="cmt" data-id="${c.id}" data-t="${c.time}">
       <span class="t">${fmt(c.time)}</span>
-      <div class="body"><div class="txt">${esc(c.text)}</div><div class="who">on <span class="vtag">${esc(c.version)}</span> · ${timeago(c.at)}</div></div>
+      <div class="body"><div class="txt">${esc(c.text)}</div><div class="who">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}on <span class="vtag">${esc(c.version)}</span> · ${timeago(c.at)}</div></div>
       <span class="del" title="Delete">×</span>
     </div>`).join('');
   $('clist').querySelectorAll('.cmt').forEach(el => {
-    el.addEventListener('click', (e) => { if (e.target.classList.contains('del')){ deleteComment(el.dataset.id); } else { seekTo(parseFloat(el.dataset.t)); } });
+    el.addEventListener('click', (e) => {
+      if (e.target.classList.contains('del')){ deleteComment(el.dataset.id); return; }
+      // Jump to the commented moment and play from there.
+      seekTo(parseFloat(el.dataset.t));
+      const w = curWS(); if (w && !w.isPlaying()) w.play();
+    });
   });
 }
 
@@ -1270,7 +1299,10 @@ function renderMarkers(){
     el.className = 'mk';
     el.style.left = Math.min(100, Math.max(0, (c.time/dur)*100)) + '%';
     el.innerHTML = `<div class="tip">${fmt(c.time)} — ${esc(c.text)}</div>`;
-    el.addEventListener('click', (e) => { e.stopPropagation(); seekTo(c.time); openDrawer(true); });
+    el.addEventListener('click', (e) => {
+      e.stopPropagation(); seekTo(c.time); openDrawer(true);
+      const w = curWS(); if (w && !w.isPlaying()) w.play();
+    });
     mk.appendChild(el);
   });
 }
@@ -1339,6 +1371,9 @@ $('vlogToggle').onclick = () => openVlog(!$('vlogDrawer').classList.contains('op
 $('nowLog').onclick = () => openVlog(true);
 $('caddBtn').onclick = addComment;
 $('cinput').addEventListener('keydown', (e) => { if (e.key==='Enter'){ e.preventDefault(); addComment(); } });
+// Commenter name — remembered on this device.
+$('cname').value = localStorage.getItem('mp_name') || '';
+$('cname').addEventListener('input', () => localStorage.setItem('mp_name', $('cname').value.trim()));
 $('atTime').onclick = () => { const w=curWS(); if (w) seekTo(w.getCurrentTime()); $('cinput').focus(); };
 
 // ---------- Add music (upload) ----------

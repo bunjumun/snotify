@@ -168,10 +168,10 @@ for (const file of pickVersionFiles('tracks', rootFiles).sort((a, b) => a.locale
 
 // ---------------------------------------------------------------------------
 // Merge with the existing manifest so UI edits survive rebuilds.
-// The player's Manage mode (and hand edits) own: song ORDER, `title`, `artist`,
-// `cover`, and per-version `name`. This scan owns everything derived from disk:
-// which songs/versions exist, `src`, `date`, changelog sidecars.
-// Songs are keyed by `folder`; versions by `src`.
+// The player's edit mode (and hand edits) own: song ORDER, `title`, `artist`,
+// `cover`, per-version `name`, and VERSION ORDER within a song. This scan owns
+// everything derived from disk: which songs/versions exist, `src`, `date`,
+// changelog sidecars. Songs are keyed by `folder`; versions by `src`.
 // ---------------------------------------------------------------------------
 let prev = null;
 try { prev = JSON.parse(readFileSync('tracks.json', 'utf8')); } catch { /* first run */ }
@@ -192,6 +192,14 @@ if (prev && Array.isArray(prev.songs)) {
       const ov = oldBySrc.get(v.src);
       if (ov && typeof ov.name === 'string' && ov.name.trim()) v.name = ov.name;
     }
+    // Keep the saved stack order; files the old manifest didn't know are the
+    // newest additions and go on top.
+    const rank = new Map((old.versions || []).map((v, i) => [v.src, i]));
+    fresh.versions = [
+      ...fresh.versions.filter(v => !rank.has(v.src)),
+      ...fresh.versions.filter(v => rank.has(v.src))
+                       .sort((a, b) => rank.get(a.src) - rank.get(b.src)),
+    ];
     return fresh;
   };
 

@@ -2,17 +2,6 @@
   "title": "S'notify",
   "songs": [
     {
-      "folder": "ZZ Inbox Test",
-      "title": "ZZ Inbox Test",
-      "versions": [
-        {
-          "name": "Inbox Take",
-          "src": "tracks/ZZ Inbox Test/Inbox Take.m4a",
-          "date": "2026-07-12"
-        }
-      ]
-    },
-    {
       "folder": "Mango Tree World",
       "title": "Mango Tree World",
       "versions": [

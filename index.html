@@ -305,6 +305,38 @@
   .trash-item .btn.danger:hover { background: rgba(255,107,107,.12); }
   .trash-item .btn.danger.armed { background: #ff6b6b; color: #fff; border-color: #ff6b6b; }
 
+  /* Edit mode (pencil) — reorder / rename / stack / unstack / trash */
+  #editBtn { display: none; }
+  body.local:not(.shared) #editBtn { display: inline-flex; }
+  #editBtn.active { color: var(--accent); border-color: var(--accent); }
+  .editctl { display: flex; gap: 2px; align-items: center; flex: none; }
+  .ec {
+    color: var(--text-dim); cursor: pointer; padding: 4px 7px; border-radius: 6px;
+    font-size: 13px; line-height: 1.2; user-select: none;
+  }
+  .ec:hover { background: var(--bg-soft); color: var(--text); }
+  .ec.danger:hover { color: #ff6b6b; }
+  .ec.disabled { opacity: .25; pointer-events: none; }
+  body.editing .song { cursor: default; }
+  body.editing .song .title, body.editing .veritem .vname {
+    cursor: text; text-decoration: underline dotted var(--text-mute);
+    text-underline-offset: 3px;
+  }
+  body.editing .song .sdel { display: none !important; }
+  .inline-edit {
+    background: var(--bg); border: 1px solid var(--accent); color: var(--text);
+    border-radius: 6px; padding: 2px 8px; font: inherit; font-size: 14px;
+    width: 100%; min-width: 110px; outline: none;
+  }
+  .vmhead {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 4px 10px 7px; margin-bottom: 4px; border-bottom: 1px solid var(--line);
+    color: var(--text-mute); font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .edithint { display: none; margin: 12px 4px 0; color: var(--text-mute); font-size: 12px; }
+  body.editing .edithint { display: block; }
+
   .veritem .cpy, .vlog-copy {
     flex: none; color: var(--text-mute); font-size: 13px; cursor: pointer;
     padding: 2px 6px; border-radius: 6px; text-decoration: none;
@@ -334,11 +366,13 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11 5h2v14h-2z"/><path d="M5 11h14v2H5z"/></svg>
         Add
       </button>
+      <button class="addbtn" id="editBtn" title="Edit — reorder, rename, stack, unstack, trash">✏️</button>
       <button class="addbtn" id="trashBtn" title="Trash — deleted songs are archived here until you confirm permanent deletion">
         🗑<span id="trashCount"></span>
       </button>
     </header>
     <div id="list" class="loading">Loading…</div>
+    <div class="edithint">Edit mode — tap a title to rename · ▲▼ reorder · ⧉ stack into another song · 🗑 trash. Open a song's version menu to edit its stack.</div>
   </div>
 
   <!-- Add-music modal -->
@@ -417,6 +451,16 @@
       <div id="trashList"></div>
       <div class="status" id="trashStatus"></div>
       <div class="actions"><button class="btn ghost" id="trashClose">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Song picker (stack target) -->
+  <div class="modal-back" id="pickModal">
+    <div class="modal">
+      <h2 id="pickTitle">Choose a song</h2>
+      <div class="hint" id="pickHint" style="margin-bottom:10px"></div>
+      <div id="pickList"></div>
+      <div class="actions"><button class="btn ghost" id="pickCancel">Cancel</button></div>
     </div>
   </div>
 
@@ -681,6 +725,15 @@ function renderList() {
   $('list').innerHTML = songs.map((s, i) => {
     const n = s.versions.length;
     const cc = countComments(s.id);
+    const tail = editing ? `
+      <div class="editctl">
+        <span class="ec ${i===0?'disabled':''}" data-act="up" title="Move up">▲</span>
+        <span class="ec ${i===songs.length-1?'disabled':''}" data-act="down" title="Move down">▼</span>
+        <span class="ec" data-act="stack" title="Stack “${esc(s.title)}” into another song as versions">⧉</span>
+        <span class="ec danger" data-act="trash" title="Move “${esc(s.title)}” to the trash">🗑</span>
+      </div>`
+    : `<div class="right" data-dur="${i}"></div>
+      ${s.folder ? `<div class="sdel" title="Move “${esc(s.title)}” to the trash">🗑</div>` : ''}`;
     return `
     <div class="song ${n>1?'stacked':''}" data-i="${i}">
       <div class="idx"><span class="num">${i+1}</span><span class="bars"><span></span><span></span><span></span></span></div>
@@ -692,20 +745,167 @@ function renderList() {
           ${cc ? `<span class="badge dim">💬 ${cc}</span>` : ''}
         </div>
       </div>
-      <div class="right" data-dur="${i}"></div>
-      ${s.folder ? `<div class="sdel" title="Move “${esc(s.title)}” to the trash">🗑</div>` : ''}
+      ${tail}
     </div>`;
   }).join('');
   $('list').querySelectorAll('.song').forEach(el => {
     el.addEventListener('click', (e) => {
+      const i = Number(el.dataset.i);
+      if (editing){
+        const ec = e.target.closest('.ec');
+        if (ec && !ec.classList.contains('disabled')) return songAct(ec.dataset.act, i);
+        const ttl = e.target.closest('.title');
+        if (ttl) inlineRename(ttl, songs[i].title, (v) =>
+          bridgePost('/api/song/rename', { song: songs[i].folder || songs[i].title, title: v }));
+        return;                         // edit mode: rows don't start playback
+      }
       if (e.target.closest('.sdel')) return;
-      playSong(Number(el.dataset.i));
+      playSong(i);
     });
     const del = el.querySelector('.sdel');
     if (del) del.addEventListener('click', (e) => {
       e.stopPropagation();
       trashSong(songs[Number(el.dataset.i)]);
     });
+  });
+}
+
+// ---------- Edit mode (pencil): reorder / rename / stack / unstack / trash ----------
+let editing = false;
+
+function setEditing(on){
+  editing = !!on;
+  document.body.classList.toggle('editing', editing);
+  $('editBtn').classList.toggle('active', editing);
+  renderList();
+  if (activeSongIndex !== -1) highlight(activeSongIndex);
+  renderVersions();
+  // renderList wiped the duration cells — restore the active one
+  const w = curWS();
+  if (!editing && w && readyByVer[activeVer] === true){
+    const cell = document.querySelector(`.right[data-dur="${activeSongIndex}"]`);
+    if (cell) cell.textContent = fmt(w.getDuration());
+  }
+}
+$('editBtn').onclick = () => setEditing(!editing);
+
+// Re-fetch the manifest after a bridge edit and rebind the active song
+// (players are rebuilt only when its version files actually changed).
+async function refreshLibrary(){
+  const prev = activeSong;
+  const prevFolder = prev ? (prev.folder || prev.title) : null;
+  const prevSrcs = prev ? prev.versions.map(v => v.src).join('\n') : '';
+  const prevSrc = prev ? prev.versions[activeVer]?.src : null;
+  await init();
+  fillSongSelect();
+  if (document.body.classList.contains('local')) refreshTrash();
+  if (!prev) return;
+  const i = songs.findIndex(s => (s.folder || s.title) === prevFolder);
+  if (i === -1){                        // active song was stacked away or trashed
+    destroyPlayers(); activeSong = null; activeSongIndex = -1;
+    $('nowTitle').textContent = 'Nothing playing'; $('nowArtist').textContent = '';
+    renderVersions(); renderVlog(); setPlayingUI(false);
+    return;
+  }
+  if (songs[i].versions.map(v => v.src).join('\n') === prevSrcs){
+    // Same audio files — just rebind (titles / names / song order changed).
+    activeSong = songs[i]; activeSongIndex = i;
+    updateNow(); renderVersions(); renderVlog(); highlight(i);
+  } else {
+    // The stack itself changed (reorder / unstack / trash): rebuild players.
+    const vi = songs[i].versions.findIndex(v => v.src === prevSrc);
+    openSong(i, false, Math.max(0, vi));
+  }
+}
+
+async function songAct(act, i){
+  const s = songs[i];
+  const key = s.folder || s.title;
+  try {
+    if (act === 'up' || act === 'down'){
+      const j = act === 'up' ? i - 1 : i + 1;
+      if (j < 0 || j >= songs.length) return;
+      const order = songs.map(x => x.folder || x.title);
+      [order[i], order[j]] = [order[j], order[i]];
+      await bridgePost('/api/library/reorder', { songs: order });
+      await refreshLibrary();
+    } else if (act === 'stack'){
+      const into = await pickSong(`Stack “${s.title}” into…`,
+        `Its ${s.versions.length === 1 ? 'version becomes a version' : 'versions become versions'} of the song you pick, on top of that stack; “${s.title}” disappears as a separate song.`, key);
+      if (!into) return;
+      await bridgePost('/api/song/stack', { from: key, into });
+      await refreshLibrary();
+    } else if (act === 'trash'){
+      await trashSong(s);               // existing flow: archives + republishes
+    }
+  } catch (err){ alert(String(err.message || err)); }
+}
+
+async function verAct(act, vi){
+  if (!activeSong) return;
+  const s = activeSong, key = s.folder || s.title;
+  const v = s.versions[vi];
+  const file = v.src.split('/').pop();
+  try {
+    if (act === 'vup' || act === 'vdown'){
+      const j = act === 'vup' ? vi - 1 : vi + 1;
+      if (j < 0 || j >= s.versions.length) return;
+      const files = s.versions.map(x => x.src.split('/').pop());
+      [files[vi], files[j]] = [files[j], files[vi]];
+      await bridgePost('/api/version/reorder', { song: key, files });
+    } else if (act === 'unstack'){
+      const title = prompt(`Unstack “${v.name}” into its own song — title:`, v.name);
+      if (title === null) return;
+      await bridgePost('/api/song/unstack', { song: key, file, title: title.trim() });
+    } else if (act === 'vtrash'){
+      if (s.versions.length === 1) return songAct('trash', activeSongIndex); // last version = the song
+      await bridgePost('/api/version/trash', { song: key, file });
+    }
+    await refreshLibrary();
+  } catch (err){ alert(String(err.message || err)); }
+}
+
+// Swap an element's contents for a text input; Enter/blur saves, Escape cancels.
+function inlineRename(container, value, save){
+  const input = document.createElement('input');
+  input.className = 'inline-edit'; input.type = 'text';
+  input.value = value; input.maxLength = 120;
+  container.replaceChildren(input);
+  input.focus(); input.select();
+  let done = false;
+  const finish = async (commit) => {
+    if (done) return; done = true;
+    const v = input.value.trim();
+    try { if (commit && v && v !== value) await save(v); }
+    catch (err){ alert(String(err.message || err)); }
+    await refreshLibrary();             // re-render restores the display either way
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('click', (e) => e.stopPropagation());
+}
+
+let pickCloser = null;
+function pickSong(title, hint, excludeKey){
+  return new Promise((resolve) => {
+    $('pickTitle').textContent = title;
+    $('pickHint').textContent = hint || '';
+    const opts = songs.filter(s => (s.folder || s.title) !== excludeKey);
+    $('pickList').innerHTML = opts.length ? opts.map(s => `
+      <div class="trash-item pick" data-key="${esc(s.folder || s.title)}" style="cursor:pointer">
+        <span class="tname">${esc(s.title)}</span>
+        <span class="tmeta">${s.versions.length} version${s.versions.length===1?'':'s'}</span>
+      </div>`).join('') : '<div class="cempty">No other songs to stack into.</div>';
+    const close = (val) => { $('pickModal').classList.remove('open'); pickCloser = null; resolve(val); };
+    pickCloser = close;
+    $('pickList').querySelectorAll('.pick').forEach(el => el.onclick = () => close(el.dataset.key));
+    $('pickCancel').onclick = () => close(null);
+    $('pickModal').onclick = (e) => { if (e.target === $('pickModal')) close(null); };
+    $('pickModal').classList.add('open');
   });
 }
 
@@ -895,16 +1095,30 @@ function renderVersions(){
   $('verName').textContent = ver.name;
   $('verTag').textContent = activeVer === 0 ? 'LATEST' : (ver.date || '');
   $('verTag').className = activeVer === 0 ? 'latest' : 'vdate';
-  $('verMenu').innerHTML = activeSong.versions.map((v, vi) => `
+  const owner = document.body.classList.contains('local') && !document.body.classList.contains('shared');
+  const last = activeSong.versions.length - 1;
+  $('verMenu').innerHTML = (owner ? `
+    <div class="vmhead"><span>Stack</span>
+      <span class="ec" id="verEditBtn" title="Edit the stack — reorder, rename, unstack, trash">✏️</span>
+    </div>` : '')
+  + activeSong.versions.map((v, vi) => `
     <div class="veritem ${vi===activeVer?'active':''}" data-vi="${vi}"
-         title="${readyByVer[vi]==='failed' ? esc(v.name)+' failed to load — click to retry' : 'Switch to '+esc(v.name)+' — keeps the playback position'}">
+         title="${editing ? '' : readyByVer[vi]==='failed' ? esc(v.name)+' failed to load — click to retry' : 'Switch to '+esc(v.name)+' — keeps the playback position'}">
       <span class="${dotCls(vi)}"></span>
       <span class="vname">${esc(v.name)}</span>
+      ${editing ? `
+      <span class="ec ${vi===0?'disabled':''}" data-act="vup" title="Move up the stack">▲</span>
+      <span class="ec ${vi===last?'disabled':''}" data-act="vdown" title="Move down the stack">▼</span>
+      <span class="ec" data-act="unstack" title="Unstack “${esc(v.name)}” into its own song">⏏</span>
+      <span class="ec danger" data-act="vtrash" title="Move “${esc(v.name)}” to the trash">🗑</span>`
+      : `
       ${vi===0 ? '<span class="latest">LATEST</span>' : (v.date ? `<span class="vdate">${esc(v.date)}</span>` : '')}
       <span class="cpy" data-act="share" title="Copy share link to ${esc(v.name)} (opens the player)">🔗</span>
       <span class="cpy" data-act="audio" title="Copy direct link to the audio file">🎵</span>
-      <a class="dl" href="${esc(v.src)}" download="${esc(activeSong.title)} — ${esc(v.name)}${esc(extOf(v.src))}" title="Download ${esc(v.name)}">⬇</a>
+      <a class="dl" href="${esc(v.src)}" download="${esc(activeSong.title)} — ${esc(v.name)}${esc(extOf(v.src))}" title="Download ${esc(v.name)}">⬇</a>`}
     </div>`).join('');
+  const veb = $('verMenu').querySelector('#verEditBtn');
+  if (veb) veb.addEventListener('click', (e) => { e.stopPropagation(); setEditing(!editing); });
   $('verMenu').querySelectorAll('.veritem').forEach(el => {
     el.querySelectorAll('.cpy').forEach(b => b.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -912,8 +1126,20 @@ function renderVersions(){
       copyText(b.dataset.act === 'audio' ? audioUrl(v) : shareUrl(activeSong, v), b);
     }));
     el.addEventListener('click', (e) => {
+      const vi = Number(el.dataset.vi);
+      if (editing){
+        const ec = e.target.closest('.ec');
+        if (ec && !ec.classList.contains('disabled')) return verAct(ec.dataset.act, vi);
+        const nameEl = e.target.closest('.vname');
+        if (nameEl){
+          const v = activeSong.versions[vi];
+          inlineRename(nameEl, v.name, (nv) => bridgePost('/api/version/rename',
+            { song: activeSong.folder || activeSong.title, file: v.src.split('/').pop(), name: nv }));
+        }
+        return;                         // edit mode: rows don't switch versions
+      }
       if (e.target.closest('a.dl, .cpy')) return;   // download/copy clicks don't switch
-      switchVersion(Number(el.dataset.vi));
+      switchVersion(vi);
       toggleVerMenu(false);
     });
   });
@@ -1467,7 +1693,12 @@ probeBridge().then(up => {
 
 // ---------- Keyboard ----------
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape'){ closeAdd(); closeTrash(); return; }
+  if (e.key === 'Escape'){
+    closeAdd(); closeTrash();
+    if (pickCloser) pickCloser(null);
+    else if (editing) setEditing(false);
+    return;
+  }
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
   switch (e.key) {
     case ' ': e.preventDefault(); togglePlay(); break;

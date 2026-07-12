@@ -280,6 +280,8 @@
 
   /* Shared (project-link) view: read-only surface for bandmates */
   body.shared .addbtn { display: none; }
+  /* …except uploads, once the band inbox (Supabase) is configured */
+  body.shared.inboxok #addBtn { display: inline-flex; }
 
   /* Trash — only when the local bridge is up (owner authoring) */
   #trashBtn { display: none; }
@@ -416,6 +418,13 @@
           <label>System password (unlocks your GitHub token)</label>
           <input type="password" id="ghPass" autocomplete="current-password" />
           <div class="hint"><span class="linky" id="ghReconf">Reconfigure GitHub connection…</span></div>
+        </div>
+
+        <div id="inboxPassRow" style="display:none">
+          <label>Band password</label>
+          <input type="password" id="inboxPass" autocomplete="off" />
+          <div class="hint">Files drop into the band inbox and are imported automatically —
+            live a minute or two later. <span class="linky" id="inboxToGh" style="display:none">I'm the owner — set up GitHub publishing instead…</span></div>
         </div>
       </div>
 
@@ -993,6 +1002,7 @@ function openSong(songIndex, autoplay, startVer = 0){
   renderVlog();
   highlight(songIndex);
   setMediaSession();
+  refreshSongComments(s.id);   // pull bandmates' latest comments (sitewide mode)
 }
 
 function wireVersion(w, vi){
@@ -1235,34 +1245,108 @@ $('vol').oninput = (e) => { curVolume = parseFloat(e.target.value); wsByVer.forE
 $('shuffleBtn').onclick = () => { shuffle=!shuffle; $('shuffleBtn').classList.toggle('active', shuffle); if (pos!==-1) buildOrder(order[pos]); };
 $('repeatBtn').onclick = () => { repeat = repeat==='off'?'all':repeat==='all'?'one':'off'; $('repeatBtn').classList.toggle('active', repeat!=='off'); $('repeatBtn').title=`Repeat: ${repeat}`; $('repeatBtn').style.fontWeight = repeat==='one'?'700':'400'; };
 
-// ---------- Comments (timestamped, per song, stored in localStorage) ----------
+// ---------- Comments (timestamped, per song) ----------
+// With Supabase configured below, comments are SITEWIDE — everyone sees the
+// same pool, written straight from this page (Row Level Security limits what
+// the public key can do: read/add/delete comments, drop files in the inbox).
+// Without it (or offline), comments fall back to this browser's localStorage.
+const SUPA_URL = '';   // e.g. https://abcd1234.supabase.co
+const SUPA_KEY = '';   // the "anon / publishable" key — safe to publish
+const supaOn = () => !!(SUPA_URL && SUPA_KEY);
+async function supaFetch(path, opts = {}){
+  const r = await fetch(SUPA_URL + path, { ...opts,
+    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, ...(opts.headers || {}) } });
+  if (!r.ok) throw new Error('Supabase ' + r.status);
+  return r;
+}
+
 const CKEY = 'mp_comments_v1';
-function allComments(){ try { return JSON.parse(localStorage.getItem(CKEY) || '{}'); } catch(e){ return {}; } }
-function saveComments(o){ localStorage.setItem(CKEY, JSON.stringify(o)); }
+function localComments(){ try { return JSON.parse(localStorage.getItem(CKEY) || '{}'); } catch(e){ return {}; } }
+function saveLocal(o){ localStorage.setItem(CKEY, JSON.stringify(o)); }
+let commentCache = null;   // song_id -> [comments], mirrors the shared table
+const mapRow = (r) => ({ id: r.id, time: r.time_s, text: r.text, name: r.name || '',
+                         version: r.version || '', at: Date.parse(r.created_at) });
+function allComments(){ return commentCache || localComments(); }
 function commentsFor(id){ return (allComments()[id] || []).slice().sort((a,b)=>a.time-b.time); }
 function countComments(id){ return (allComments()[id] || []).length; }
 
-function addComment(){
+async function loadRemoteComments(){
+  if (!supaOn()) return;
+  try {
+    const rows = await (await supaFetch('/rest/v1/comments?select=*&order=created_at.asc')).json();
+    commentCache = {};
+    rows.forEach(r => (commentCache[r.song_id] ||= []).push(mapRow(r)));
+  } catch { commentCache = null; return; }   // offline → this-browser comments
+  // One-time: fold this browser's old local comments into the shared pool.
+  try {
+    if (!localStorage.getItem('mp_comments_migrated')){
+      const rows = [];
+      for (const [song_id, list] of Object.entries(localComments()))
+        for (const c of list)
+          rows.push({ song_id, time_s: c.time, text: c.text, name: c.name || '',
+                      version: c.version || '',
+                      created_at: new Date(c.at || Date.now()).toISOString() });
+      if (rows.length){
+        const r = await supaFetch('/rest/v1/comments', { method: 'POST',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          body: JSON.stringify(rows) });
+        (await r.json()).forEach(row => (commentCache[row.song_id] ||= []).push(mapRow(row)));
+      }
+      localStorage.setItem('mp_comments_migrated', '1');
+    }
+  } catch {}
+  if (songs.length) renderList();
+  if (activeSong){ renderComments(); renderMarkers(); }
+}
+
+// Pick up bandmates' new comments whenever a song is opened.
+async function refreshSongComments(id){
+  if (!commentCache) return;
+  try {
+    const rows = await (await supaFetch('/rest/v1/comments?select=*&song_id=eq.'
+      + encodeURIComponent(id) + '&order=created_at.asc')).json();
+    commentCache[id] = rows.map(mapRow);
+    if (activeSong && activeSong.id === id){ renderComments(); renderMarkers(); }
+  } catch {}
+}
+
+async function addComment(){
   if (!activeSong) return;
   const text = $('cinput').value.trim();
   if (!text) return;
   const w = curWS();
   const time = w ? w.getCurrentTime() : 0;
-  const all = allComments();
-  (all[activeSong.id] ||= []).push({
-    id: Date.now()+''+Math.floor(Math.random()*999),
-    time, text, name: $('cname').value.trim(),
-    version: activeSong.versions[activeVer].name, at: Date.now()
-  });
-  saveComments(all);
+  const name = $('cname').value.trim();
+  const version = activeSong.versions[activeVer].name;
+  if (commentCache){
+    try {
+      const r = await supaFetch('/rest/v1/comments', { method: 'POST',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({ song_id: activeSong.id, time_s: time, text, name, version }) });
+      (commentCache[activeSong.id] ||= []).push(mapRow((await r.json())[0]));
+    } catch { alert('Could not post the comment — check your connection and try again.'); return; }
+  } else {
+    const all = localComments();
+    (all[activeSong.id] ||= []).push({
+      id: Date.now()+''+Math.floor(Math.random()*999),
+      time, text, name, version, at: Date.now()
+    });
+    saveLocal(all);
+  }
   $('cinput').value = '';
   renderComments(); renderMarkers(); refreshListBadges();
 }
-function deleteComment(cid){
+async function deleteComment(cid){
   if (!activeSong) return;
-  const all = allComments();
-  all[activeSong.id] = (all[activeSong.id]||[]).filter(c => c.id !== cid);
-  saveComments(all);
+  if (commentCache){
+    try { await supaFetch('/rest/v1/comments?id=eq.' + encodeURIComponent(cid), { method: 'DELETE' }); }
+    catch { alert('Could not delete — check your connection.'); return; }
+    commentCache[activeSong.id] = (commentCache[activeSong.id]||[]).filter(c => c.id !== cid);
+  } else {
+    const all = localComments();
+    all[activeSong.id] = (all[activeSong.id]||[]).filter(c => c.id !== cid);
+    saveLocal(all);
+  }
   renderComments(); renderMarkers(); refreshListBadges();
 }
 function seekTo(t){ const w=curWS(); if (w){ w.setTime(t); $('curTime').textContent=fmt(t); $('atTime').textContent=fmt(t); } }
@@ -1500,6 +1584,15 @@ function showAddMode(){
   $('addForm').style.display = 'block';
   $('addActions').style.display = 'flex';
   $('ghAuthRow').style.display = 'none';
+  $('inboxPassRow').style.display = 'none';
+  if (addMode === 'inbox'){
+    modeEl.className = 'mode github';
+    modeEl.textContent = '● Band upload — files land in the shared inbox and are imported automatically.';
+    $('inboxPassRow').style.display = 'block';
+    $('inboxToGh').style.display = document.body.classList.contains('shared') ? 'none' : 'inline';
+    syncFileUI();
+    return;
+  }
   if (addMode === 'local'){
     modeEl.className = 'mode local';
     modeEl.textContent = '● Local bridge connected — files land in tracks/, WAVs auto-compress to AAC.';
@@ -1525,15 +1618,28 @@ async function openAdd(){
   $('addMode').className = 'mode';
   $('addMode').textContent = 'Checking for the local bridge…';
   await probeBridge();
-  addMode = bridgeUp ? 'local' : (ghConfig() ? 'github' : 'setup');
+  // Owner surfaces first (bridge, then GitHub token), band inbox for everyone
+  // else; shared project links never see the GitHub setup form.
+  addMode = bridgeUp ? 'local'
+    : document.body.classList.contains('shared') ? (supaOn() ? 'inbox' : 'none')
+    : ghConfig() ? 'github'
+    : supaOn() ? 'inbox' : 'setup';
+  if (addMode === 'none'){
+    $('addMode').className = 'mode none';
+    $('addMode').textContent = 'Uploads are not available from this link.';
+    $('addForm').style.display = 'none'; $('addActions').style.display = 'flex';
+    return;
+  }
   showAddMode();
 }
+$('inboxToGh').onclick = () => { addMode = 'setup'; showAddMode(); };
+$('inboxPass').value = localStorage.getItem('mp_band_pass') || '';
 function closeAdd(){ $('addModal').classList.remove('open'); }
 $('addBtn').onclick = openAdd;
 $('addClose').onclick = closeAdd;
 $('addModal').addEventListener('click', (e) => { if (e.target === $('addModal')) closeAdd(); });
 $('ghReconf').onclick = () => { addMode = 'setup'; showAddMode(); };
-$('ghCancel').onclick = () => { addMode = bridgeUp ? 'local' : (ghConfig() ? 'github' : 'setup'); if (addMode === 'setup' && !ghConfig()) { closeAdd(); } else showAddMode(); };
+$('ghCancel').onclick = () => { addMode = bridgeUp ? 'local' : (ghConfig() ? 'github' : (supaOn() ? 'inbox' : 'setup')); if (addMode === 'setup' && !ghConfig()) { closeAdd(); } else showAddMode(); };
 $('ghSave').onclick = async () => {
   const owner = $('ghOwner').value.trim(), repo = $('ghRepo').value.trim();
   const branch = $('ghBranch').value.trim() || 'main';
@@ -1619,6 +1725,35 @@ async function doUpload(){
       await ghPut(cfg, pat, 'tracks.json', utf8b64(JSON.stringify(data, null, 2) + '\n'), `Update manifest: ${song}`);
       setAddStatus(`Committed ✓ — "${song}" goes live when GitHub Pages rebuilds (~1–2 min).`, 'ok');
       $('ghPass').value = '';
+    } else if (addMode === 'inbox'){
+      const pass = $('inboxPass').value.trim();
+      if (!pass){ setAddStatus('Enter the band password.', 'err'); btn.disabled = false; return; }
+      localStorage.setItem('mp_band_pass', pass);
+      const INBOX_MAX = 50 * 1024 * 1024;   // Supabase free-tier per-file ceiling
+      const big = files.find(f => f.size > INBOX_MAX);
+      if (big) throw new Error(`${big.name} is over 50 MB — export an MP3/M4A instead of WAV.`);
+      const put = async (path, body, type) => {
+        const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${path}`, {
+          method: 'POST',
+          headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+                     'Content-Type': type, 'x-upsert': 'true' },
+          body });
+        if (r.status === 400 || r.status === 403) throw new Error('Upload rejected — wrong band password?');
+        if (!r.ok) throw new Error('Upload failed (' + r.status + ')');
+      };
+      const enc = (...seg) => seg.map(encodeURIComponent).join('/');
+      let firstBase = null;
+      for (const [i, f] of files.entries()){
+        setAddStatus(`Uploading ${i+1}/${files.length}: ${f.name}…`);
+        const ext = (f.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+        const verName = (multi || !$('addVerName').value.trim())
+          ? f.name.replace(/\.[^.]+$/, '') : $('addVerName').value.trim();
+        firstBase ??= verName;
+        await put(enc(pass, song, verName + ext), f, f.type || 'application/octet-stream');
+      }
+      if (note && firstBase)
+        await put(enc(pass, song, firstBase + '.changelog.md'), note + '\n', 'text/markdown');
+      setAddStatus(`Uploaded ✓ — "${song}" appears once the inbox is imported (~1–2 min while the studio Mac is online).`, 'ok');
     } else {
       setAddStatus('No upload transport available.', 'err');
     }
@@ -1769,7 +1904,9 @@ function setMediaSession(){
 }
 
 window.addEventListener('resize', renderMarkers);
+if (supaOn()) document.body.classList.add('inboxok');   // band uploads from shared views
 init();
+loadRemoteComments();
 </script>
 </body>
 </html>

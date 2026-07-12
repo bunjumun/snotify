@@ -278,6 +278,10 @@
   .modal .hint { font-size: 11.5px; color: var(--text-mute); margin-top: 4px; line-height: 1.45; }
   .modal .linky { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 12px; }
 
+  /* Band gate: nothing renders until the magic words are said */
+  body.locked .wrap, body.locked .dock { visibility: hidden; }
+  #gateModal.open { background: var(--bg); }
+
   /* Shared (project-link) view: read-only surface for bandmates */
   body.shared .addbtn { display: none; }
   /* …except uploads, once the band inbox (Supabase) is configured */
@@ -367,6 +371,20 @@
 </style>
 </head>
 <body>
+  <!-- Band gate — a client-side lock checked before anything shows -->
+  <div class="modal-back" id="gateModal">
+    <div class="modal" style="max-width:360px">
+      <h2>🎵 S'notify</h2>
+      <div class="hint" style="margin-bottom:6px">Band only — say the magic words.</div>
+      <label>Band name</label>
+      <input type="text" id="gateName" autocomplete="off" autocapitalize="none" />
+      <label>Band password</label>
+      <input type="password" id="gatePass" autocomplete="off" />
+      <div class="status err" id="gateErr"></div>
+      <div class="actions"><button class="btn primary" id="gateGo">Enter</button></div>
+    </div>
+  </div>
+
   <div class="wrap">
     <header class="app">
       <div class="logo">🎵</div>

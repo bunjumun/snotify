@@ -344,6 +344,9 @@
   .veritem .cpy:hover, .vlog-copy:hover { color: var(--text); background: var(--bg-row); }
 
   @media (max-width: 660px) {
+    /* The version menu anchors to a mid-row button — pin it to the viewport
+       instead so version names and edit controls aren't clipped off-screen. */
+    .vermenu { position: fixed; left: 10px; right: 10px; bottom: 132px; min-width: 0; max-width: none; }
     .now .nowartist, .now .sep { display: none; }
     .vol { display: none; }
     .timeline .time.dur { display: none; }

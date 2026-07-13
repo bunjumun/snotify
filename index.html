@@ -1614,7 +1614,75 @@ $('atTime').onclick = () => { const w=curWS(); if (w) seekTo(w.getCurrentTime())
 const BRIDGE = 'http://127.0.0.1:8765';
 const GHKEY = 'snotify_gh_v1';
 const GH_MAX_BYTES = 45 * 1024 * 1024; // stay under the Contents API ceiling
+const INBOX_MAX = 50 * 1024 * 1024;    // Supabase free-tier per-file ceiling
 const LOSSLESS_RE = /\.(wav|aif|aiff|flac)$/i;
+
+// ---- Browser-side compression (remote uploads) ----------------------------
+// The studio Mac's bridge transcodes lossless masters with afconvert, but the
+// browser can't run it — so uploads from other computers (GitHub / inbox)
+// would send the raw WAV and blow past the size ceiling. Here we decode the
+// audio with the Web Audio API and re-encode to MP3 (lamejs, lazy-loaded)
+// right in the page, so a full-length WAV lands as a ~6–8 MB file.
+let _lame = null;
+async function loadLame(){
+  if (_lame) return _lame;
+  for (const url of ['https://cdn.jsdelivr.net/npm/@breezystack/lamejs@1.2.7/+esm',
+                     'https://esm.sh/@breezystack/lamejs@1.2.7']){
+    try { _lame = (await import(url)).default || (await import(url)); if (_lame?.Mp3Encoder) return _lame; }
+    catch {}
+  }
+  throw new Error('Could not load the audio compressor — check your connection.');
+}
+const _f2i16 = (f) => { const o = new Int16Array(f.length);
+  for (let i = 0; i < f.length; i++){ const s = Math.max(-1, Math.min(1, f[i])); o[i] = s < 0 ? s*0x8000 : s*0x7fff; }
+  return o; };
+async function compressToMp3(file, setStatus){
+  const lame = await loadLame();
+  setStatus?.(`Reading ${file.name}…`);
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ac = new AC();
+  let audio;
+  try { audio = await ac.decodeAudioData(await file.arrayBuffer()); }
+  finally { try { ac.close(); } catch {} }
+  // MP3 tops out at 48 kHz — resample anything higher (e.g. 88.2/96k masters).
+  const rate = audio.sampleRate > 48000 ? 44100 : audio.sampleRate;
+  if (rate !== audio.sampleRate){
+    const off = new OfflineAudioContext(audio.numberOfChannels,
+      Math.ceil(audio.duration * rate), rate);
+    const src = off.createBufferSource(); src.buffer = audio;
+    src.connect(off.destination); src.start();
+    audio = await off.startRendering();
+  }
+  const ch = Math.min(2, audio.numberOfChannels);
+  const left = _f2i16(audio.getChannelData(0));
+  const right = ch > 1 ? _f2i16(audio.getChannelData(1)) : null;
+  const enc = new lame.Mp3Encoder(ch, rate, 224);
+  const N = 1152, out = [];
+  for (let i = 0; i < left.length; i += N){
+    const l = left.subarray(i, i + N);
+    const buf = ch > 1 ? enc.encodeBuffer(l, right.subarray(i, i + N)) : enc.encodeBuffer(l);
+    if (buf.length) out.push(buf);
+    if (i % (N * 400) === 0){
+      setStatus?.(`Compressing ${file.name}… ${Math.round(i / left.length * 100)}%`);
+      await new Promise(r => setTimeout(r));   // keep the UI responsive
+    }
+  }
+  const tail = enc.flush(); if (tail.length) out.push(tail);
+  const blob = new Blob(out, { type: 'audio/mpeg' });
+  return new File([blob], file.name.replace(/\.[^.]+$/, '.mp3'), { type: 'audio/mpeg' });
+}
+// Compress any lossless files in a list; pass others through untouched.
+async function prepareForRemote(files, setStatus){
+  const out = [];
+  for (const f of files){
+    if (LOSSLESS_RE.test(f.name)){
+      const mp3 = await compressToMp3(f, setStatus);
+      setStatus?.(`Compressed ${f.name} → ${(mp3.size/1048576).toFixed(1)} MB`);
+      out.push(mp3);
+    } else out.push(f);
+  }
+  return out;
+}
 
 let bridgeUp = false;
 async function probeBridge(){
@@ -1711,11 +1779,11 @@ function syncFileUI(){
     $('addVerName').value = files[0].name.replace(/\.[^.]+$/, '');
   let hint = '';
   if (multi) hint = `${files.length} files — each becomes a version named after its filename.`;
-  if (files && files.length && addMode === 'github'){
-    const lossless = [...files].some(f => LOSSLESS_RE.test(f.name));
-    const tooBig = [...files].find(f => f.size > GH_MAX_BYTES);
-    if (lossless) hint += ' Note: WAV/AIFF publish as-is from the page (no transcoding in the browser) — for auto-AAC use the local bridge.';
-    if (tooBig) hint += ` ⚠ ${tooBig.name} is ${(tooBig.size/1048576).toFixed(0)} MB — over the ${(GH_MAX_BYTES/1048576)|0} MB GitHub API limit.`;
+  // Remote transports (GitHub / band inbox) compress lossless files here in
+  // the browser before uploading; the local bridge does its own AAC transcode.
+  if (files && files.length && (addMode === 'github' || addMode === 'inbox')){
+    if ([...files].some(f => LOSSLESS_RE.test(f.name)))
+      hint += ' WAV/AIFF are compressed to MP3 in your browser before upload — this can take a few seconds.';
   }
   $('addFileHint').textContent = hint;
 }
@@ -1802,7 +1870,7 @@ function chosenSongTitle(){
 }
 
 async function doUpload(){
-  const files = [...($('addFile').files || [])];
+  let files = [...($('addFile').files || [])];
   const song = chosenSongTitle();
   if (!files.length){ setAddStatus('Choose at least one audio file.', 'err'); return; }
   if (!song){ setAddStatus('Give the song a title.', 'err'); return; }
@@ -1833,8 +1901,9 @@ async function doUpload(){
       let pat;
       try { pat = await ghUnlock(pass); }
       catch { setAddStatus('Wrong password (or corrupted vault).', 'err'); btn.disabled = false; return; }
+      files = await prepareForRemote(files, setAddStatus);   // WAV → MP3 in-browser
       const oversize = files.find(f => f.size > GH_MAX_BYTES);
-      if (oversize) throw new Error(`${oversize.name} exceeds the GitHub API size limit — compress it (or upload via the local bridge).`);
+      if (oversize) throw new Error(`${oversize.name} is ${(oversize.size/1048576).toFixed(0)} MB — over GitHub's ${(GH_MAX_BYTES/1048576)|0} MB limit even after compression. Upload via the studio Mac.`);
 
       // 1) audio files
       const added = [];
@@ -1875,9 +1944,9 @@ async function doUpload(){
       const pass = $('inboxPass').value.trim();
       if (!pass){ setAddStatus('Enter the band password.', 'err'); btn.disabled = false; return; }
       localStorage.setItem('mp_band_pass', pass);
-      const INBOX_MAX = 50 * 1024 * 1024;   // Supabase free-tier per-file ceiling
+      files = await prepareForRemote(files, setAddStatus);   // WAV → MP3 in-browser
       const big = files.find(f => f.size > INBOX_MAX);
-      if (big) throw new Error(`${big.name} is over 50 MB — export an MP3/M4A instead of WAV.`);
+      if (big) throw new Error(`${big.name} is ${(big.size/1048576).toFixed(0)} MB — over the ${(INBOX_MAX/1048576)|0} MB limit even after compression. Upload via the studio Mac.`);
       const put = async (path, body, type) => {
         const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${path}`, {
           method: 'POST',

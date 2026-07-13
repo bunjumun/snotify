@@ -1,19 +1,17 @@
 #!/usr/bin/env node
-// Build tracks.json from the tracks/ folder.
+// Build tracks.json from the tracks/ folder — MULTI-BAND layout:
 //
 //   node generate-manifest.mjs
 //
-// Two conventions, mix freely:
-//
-//   tracks/Loose Song.mp3            -> a 1-version song
-//   tracks/Midnight Drive/           -> a song whose VERSIONS are the files inside:
+//   tracks/<band>/Loose Song.mp3     -> a 1-version song for that band
+//   tracks/<band>/Midnight Drive/    -> a song whose VERSIONS are the files inside:
 //       Rough Demo.mp3
 //       Mix v2.mp3
 //       Final Master.mp3             -> newest file is listed first = top of the stack
 //
 // Version order = most-recently-modified first (your latest mix goes on top).
-// Reorder or rename freely by editing tracks.json afterward.
-// Cover art: drop covers/<Song Name>.jpg, or cover.jpg inside the song folder.
+// Reorder or rename freely from the player's edit mode (or tracks.json).
+// Cover art: drop cover.jpg inside a song folder.
 
 import { readdirSync, writeFileSync, existsSync, statSync, readFileSync, utimesSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
@@ -99,124 +97,131 @@ const attachChangelog = (version, dir, base) => {
   return version;
 };
 
-const covers = existsSync('covers') ? readdirSync('covers') : [];
-const findCover = (base, folderFiles, folderPath) => {
-  // 1) cover.* inside the song folder
+const findCover = (folderFiles, folderPath) => {
+  // cover.* inside the song folder
   if (folderFiles) {
     const inFolder = folderFiles.find(f => isImage(f) && basename(f, extname(f)).toLowerCase() === 'cover');
     if (inFolder) return `${folderPath}/${inFolder}`;
   }
-  // 2) covers/<base>.*
-  for (const ext of IMAGE) {
-    const hit = covers.find(c => c.toLowerCase() === (base + ext).toLowerCase());
-    if (hit) return `covers/${hit}`;
-  }
   return undefined;
 };
 
-if (!existsSync('tracks')) { writeFileSync('tracks.json', JSON.stringify({ title: COLLECTION_TITLE, songs: [] }, null, 2) + '\n'); console.log('No tracks/ folder — wrote empty manifest.'); process.exit(0); }
+// ---------------------------------------------------------------------------
+// MULTI-BAND: tracks/<band>/<song>/<version files>. Each first-level folder
+// under tracks/ is a band; the manifest is { bands: [{slug, title, songs}] }.
+// ---------------------------------------------------------------------------
+if (!existsSync('tracks')) { writeFileSync('tracks.json', JSON.stringify({ title: COLLECTION_TITLE, bands: [] }, null, 2) + '\n'); console.log('No tracks/ folder — wrote empty manifest.'); process.exit(0); }
 
-const entries = readdirSync('tracks', { withFileTypes: true });
-const songs = [];
+const scanBand = (bandSlug) => {
+  const bandRoot = join('tracks', bandSlug);
+  const entries = readdirSync(bandRoot, { withFileTypes: true });
+  const songs = [];
 
-// Folders: a folder = a song; its audio files = versions.
-for (const ent of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-  if (ent.name.startsWith('.') || !ent.isDirectory()) continue;
-  const dir = join('tracks', ent.name);
-  const files = readdirSync(dir);
-  const audio = pickVersionFiles(dir, files);   // newest first = top of stack
-  if (!audio.length) {
-    // Common with the DAW-bridge flow: changelog captured, audio not
-    // exported yet. Say so instead of silently dropping the song.
-    if (files.some(f => f.endsWith('.changelog.md') || f.endsWith('.snapshot.json')))
-      console.warn(`  ! "${ent.name}" has version notes but NO AUDIO yet — ` +
-                   `export your mix into tracks/${ent.name}/ (matching the version name) to publish it.`);
-    continue;
+  // Folders: a folder = a song; its audio files = versions.
+  for (const ent of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (ent.name.startsWith('.') || !ent.isDirectory()) continue;
+    const dir = join(bandRoot, ent.name);
+    const files = readdirSync(dir);
+    const audio = pickVersionFiles(dir, files);   // newest first = top of stack
+    if (!audio.length) {
+      // Common with the DAW-bridge flow: changelog captured, audio not
+      // exported yet. Say so instead of silently dropping the song.
+      if (files.some(f => f.endsWith('.changelog.md') || f.endsWith('.snapshot.json')))
+        console.warn(`  ! "${bandSlug}/${ent.name}" has version notes but NO AUDIO yet — ` +
+                     `export your mix into tracks/${bandSlug}/${ent.name}/ to publish it.`);
+      continue;
+    }
+    const versions = audio.map(f => {
+      const base = basename(f, extname(f));
+      return attachChangelog({
+        name: tidy(base),
+        src: `tracks/${bandSlug}/${ent.name}/${f}`,
+        date: dateOf(join(dir, f)),
+      }, dir, base);
+    });
+    const song = { folder: ent.name, title: tidy(ent.name), versions };
+    const cover = findCover(files, `tracks/${bandSlug}/${ent.name}`);
+    if (cover) song.cover = cover;
+    songs.push(song);
   }
-  const versions = audio.map(f => {
-    const base = basename(f, extname(f));
-    return attachChangelog({
-      name: tidy(base),
-      src: `tracks/${ent.name}/${f}`,
-      date: dateOf(join(dir, f)),
-    }, dir, base);
-  });
-  const song = { folder: ent.name, title: tidy(ent.name), versions };
-  const cover = findCover(ent.name, files, `tracks/${ent.name}`);
-  if (cover) song.cover = cover;
-  songs.push(song);
-}
 
-// Loose files in tracks/: each is a 1-version song; "Artist - Title" splits.
-const rootFiles = entries
-  .filter(e => !e.isDirectory() && !e.name.startsWith('.'))
-  .map(e => e.name);
-for (const file of pickVersionFiles('tracks', rootFiles).sort((a, b) => a.localeCompare(b))) {
-  const base = basename(file, extname(file));
-  let title = tidy(base), artist;
-  const m = base.match(/^(.+?)\s*[-–]\s*(.+)$/);
-  if (m) { artist = tidy(m[1]); title = tidy(m[2]); }
-  const song = { folder: file, title, versions: [attachChangelog(
-    { name: 'Original', src: `tracks/${file}`, date: dateOf(join('tracks', file)) },
-    'tracks', base,
-  )] };
-  if (artist) song.artist = artist;
-  const cover = findCover(base);
-  if (cover) song.cover = cover;
-  songs.push(song);
-}
+  // Loose files in the band folder: 1-version songs; "Artist - Title" splits.
+  const rootFiles = entries
+    .filter(e => !e.isDirectory() && !e.name.startsWith('.'))
+    .map(e => e.name);
+  for (const file of pickVersionFiles(bandRoot, rootFiles).sort((a, b) => a.localeCompare(b))) {
+    const base = basename(file, extname(file));
+    let title = tidy(base), artist;
+    const m = base.match(/^(.+?)\s*[-–]\s*(.+)$/);
+    if (m) { artist = tidy(m[1]); title = tidy(m[2]); }
+    const song = { folder: file, title, versions: [attachChangelog(
+      { name: 'Original', src: `tracks/${bandSlug}/${file}`, date: dateOf(join(bandRoot, file)) },
+      bandRoot, base,
+    )] };
+    if (artist) song.artist = artist;
+    songs.push(song);
+  }
+  return songs;
+};
+
+const bands = readdirSync('tracks', { withFileTypes: true })
+  .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+  .sort((a, b) => a.name.localeCompare(b.name))
+  .map(e => ({ slug: e.name, title: tidy(e.name), songs: scanBand(e.name) }));
 
 // ---------------------------------------------------------------------------
 // Merge with the existing manifest so UI edits survive rebuilds.
-// The player's edit mode (and hand edits) own: song ORDER, `title`, `artist`,
-// `cover`, per-version `name`, and VERSION ORDER within a song. This scan owns
-// everything derived from disk: which songs/versions exist, `src`, `date`,
-// changelog sidecars. Songs are keyed by `folder`; versions by `src`.
+// The player's edit mode (and hand edits) own: band `title`, song ORDER,
+// song `title`, `artist`, `cover`, per-version `name`, and VERSION ORDER.
+// This scan owns everything derived from disk: which bands/songs/versions
+// exist, `src`, `date`, changelog sidecars. Bands are keyed by `slug`,
+// songs by `folder`, versions by `src`.
 // ---------------------------------------------------------------------------
 let prev = null;
 try { prev = JSON.parse(readFileSync('tracks.json', 'utf8')); } catch { /* first run */ }
 
 let title = COLLECTION_TITLE;
-let merged = songs;
-if (prev && Array.isArray(prev.songs)) {
-  if (typeof prev.title === 'string' && prev.title.trim()) title = prev.title;
-  const freshByFolder = new Map(songs.map(s => [s.folder, s]));
-  const seen = new Set();
+if (prev && typeof prev.title === 'string' && prev.title.trim()) title = prev.title;
 
-  const applyOverrides = (fresh, old) => {
-    if (typeof old.title === 'string' && old.title.trim()) fresh.title = old.title;
-    if (old.artist) fresh.artist = old.artist;
-    if (old.cover && (existsSync(old.cover) || /^https?:/i.test(old.cover))) fresh.cover = old.cover;
-    const oldBySrc = new Map((old.versions || []).map(v => [v.src, v]));
-    for (const v of fresh.versions) {
-      const ov = oldBySrc.get(v.src);
-      if (ov && typeof ov.name === 'string' && ov.name.trim()) v.name = ov.name;
-    }
-    // Keep the saved stack order; files the old manifest didn't know are the
-    // newest additions and go on top.
-    const rank = new Map((old.versions || []).map((v, i) => [v.src, i]));
-    fresh.versions = [
-      ...fresh.versions.filter(v => !rank.has(v.src)),
-      ...fresh.versions.filter(v => rank.has(v.src))
-                       .sort((a, b) => rank.get(a.src) - rank.get(b.src)),
-    ];
-    return fresh;
-  };
-
-  // Existing songs keep their saved order…
-  const kept = [];
-  for (const old of prev.songs) {
-    const key = old.folder || old.title;
-    const fresh = freshByFolder.get(key);
-    if (fresh && !seen.has(key)) { seen.add(key); kept.push(applyOverrides(fresh, old)); }
+const applyOverrides = (fresh, old) => {
+  if (typeof old.title === 'string' && old.title.trim()) fresh.title = old.title;
+  if (old.artist) fresh.artist = old.artist;
+  if (old.cover && (existsSync(old.cover) || /^https?:/i.test(old.cover))) fresh.cover = old.cover;
+  const oldBySrc = new Map((old.versions || []).map(v => [v.src, v]));
+  for (const v of fresh.versions) {
+    const ov = oldBySrc.get(v.src);
+    if (ov && typeof ov.name === 'string' && ov.name.trim()) v.name = ov.name;
   }
-  // …new folders go on top.
-  const added = songs.filter(s => !seen.has(s.folder));
-  merged = [...added, ...kept];
+  // Keep the saved stack order; files the old manifest didn't know are the
+  // newest additions and go on top.
+  const rank = new Map((old.versions || []).map((v, i) => [v.src, i]));
+  fresh.versions = [
+    ...fresh.versions.filter(v => !rank.has(v.src)),
+    ...fresh.versions.filter(v => rank.has(v.src))
+                     .sort((a, b) => rank.get(a.src) - rank.get(b.src)),
+  ];
+  return fresh;
+};
+
+if (prev && Array.isArray(prev.bands)) {
+  for (const band of bands) {
+    const oldBand = prev.bands.find(b => b.slug === band.slug);
+    if (!oldBand) continue;
+    if (typeof oldBand.title === 'string' && oldBand.title.trim()) band.title = oldBand.title;
+    const freshByFolder = new Map(band.songs.map(s => [s.folder, s]));
+    const seen = new Set();
+    const kept = [];
+    for (const old of oldBand.songs || []) {
+      const key = old.folder || old.title;
+      const fresh = freshByFolder.get(key);
+      if (fresh && !seen.has(key)) { seen.add(key); kept.push(applyOverrides(fresh, old)); }
+    }
+    band.songs = [...band.songs.filter(s => !seen.has(s.folder)), ...kept];
+  }
 }
 
-writeFileSync('tracks.json', JSON.stringify({ title, songs: merged }, null, 2) + '\n');
-const vCount = merged.reduce((n, s) => n + s.versions.length, 0);
+writeFileSync('tracks.json', JSON.stringify({ title, bands }, null, 2) + '\n');
+const sCount = bands.reduce((n, b) => n + b.songs.length, 0);
+const vCount = bands.reduce((n, b) => n + b.songs.reduce((m, s) => m + s.versions.length, 0), 0);
 const enc = transcodedCount ? `, ${transcodedCount} file${transcodedCount===1?'':'s'} compressed to AAC` : '';
-console.log(`Wrote tracks.json: ${merged.length} song${merged.length===1?'':'s'}, ${vCount} version${vCount===1?'':'s'}${enc}.`);
-if (!merged.length) console.log('(No audio found in tracks/ — add some files and run again.)');
+console.log(`Wrote tracks.json: ${bands.length} band${bands.length===1?'':'s'}, ${sCount} song${sCount===1?'':'s'}, ${vCount} version${vCount===1?'':'s'}${enc}.`);

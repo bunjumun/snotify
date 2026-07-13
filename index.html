@@ -278,6 +278,17 @@
   .modal .hint { font-size: 11.5px; color: var(--text-mute); margin-top: 4px; line-height: 1.45; }
   .modal .linky { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 12px; }
 
+  /* Band gate: nothing renders until the magic words are said */
+  body.locked .wrap, body.locked .dock { visibility: hidden; }
+  #gateModal.open { background: var(--bg); }
+
+  /* Single-mix view (?b&s&v, no login): playback only — no comments, no
+     library affordances. Band members log in for everything else. */
+  body.singlemix #cToggle, body.singlemix #vlogToggle, body.singlemix #shareBtn,
+  body.singlemix #addBtn, body.singlemix .song .scpy { display: none !important; }
+  .mixhint { margin: 12px 4px 0; color: var(--text-mute); font-size: 12px; }
+  .mixhint .linky { color: var(--accent); cursor: pointer; text-decoration: underline; }
+
   /* Shared (project-link) view: read-only surface for bandmates */
   body.shared .addbtn { display: none; }
   /* …except uploads, once the band inbox (Supabase) is configured */
@@ -366,7 +377,21 @@
   }
 </style>
 </head>
-<body>
+<body class="locked">
+  <!-- Band gate — a client-side lock checked before anything shows -->
+  <div class="modal-back" id="gateModal">
+    <div class="modal" style="max-width:360px">
+      <h2>🎵 S'notify</h2>
+      <div class="hint" style="margin-bottom:6px">Band only — say the magic words.</div>
+      <label>Band name</label>
+      <input type="text" id="gateName" autocomplete="off" autocapitalize="none" />
+      <label>Band password</label>
+      <input type="password" id="gatePass" autocomplete="off" />
+      <div class="status err" id="gateErr"></div>
+      <div class="actions"><button class="btn primary" id="gateGo">Enter</button></div>
+    </div>
+  </div>
+
   <div class="wrap">
     <header class="app">
       <div class="logo">🎵</div>
@@ -387,6 +412,7 @@
     </header>
     <div id="list" class="loading">Loading…</div>
     <div class="edithint">Edit mode — tap a title to rename · ▲▼ reorder · ⧉ stack into another song · 🗑 trash. Open a song's version menu to edit its stack.</div>
+    <div class="mixhint" id="mixHint" style="display:none">Shared mix · <span class="linky" id="mixLogin">band members log in</span> for the full library</div>
   </div>
 
   <!-- Add-music modal -->
@@ -608,14 +634,13 @@ function cssVar(n){ return getComputedStyle(document.documentElement).getPropert
 $('vol').value = curVolume;
 
 // ---------- Deep-link routing ----------
-// Canonical (what the 🔗 buttons copy):  ?p=<slug>&s=<folder>&v=<name>
+// Canonical (what the 🔗 buttons copy):  ?b=<band>&s=<folder>&v=<name>
 // Query strings survive messaging apps and link-preview redirectors, which
-// routinely strip #fragments — hash links "went to the main page" when
-// shared through them. The old hash form stays readable for links already
-// sent out:  #/p/<slug>/s/<folder>/v/<name>  (hash wins when both exist).
+// routinely strip #fragments. Old hash links (#/p/../s/..) still parse.
+// Band sub-URLs (/<band>/) are stub pages that redirect here with ?b=.
 function parseRoute(){
   const seg = location.hash.replace(/^#\/?/, '').split('/').map(x => { try { return decodeURIComponent(x); } catch { return x; } });
-  const r = { project: null, song: null, version: null };
+  const r = { band: null, project: null, song: null, version: null };
   for (let i = 0; i + 1 < seg.length; i += 2){
     if (seg[i] === 'p') r.project = seg[i+1];
     else if (seg[i] === 's') r.song = seg[i+1];
@@ -623,14 +648,81 @@ function parseRoute(){
   }
   if (!r.project && !r.song){
     const q = new URLSearchParams(location.search);
-    r.project = q.get('p'); r.song = q.get('s'); r.version = q.get('v');
+    r.band = q.get('b'); r.project = q.get('p'); r.song = q.get('s'); r.version = q.get('v');
   }
   return r;
 }
 let route = parseRoute();
 window.addEventListener('hashchange', () => { route = parseRoute(); init(); });
 
+// ---------- Band login (gate) ----------
+// Checked server-side: a Supabase RPC compares band + password against the
+// bands table, so no credentials live in this page or the repo. Being a
+// static site, the audio files themselves remain technically reachable by
+// direct URL — the gate keeps the *site* band-only, it isn't DRM.
+const AUTH_KEY = 'mp_auth_v1';
+const bandSlugOf = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+function auths(){ try { return JSON.parse(localStorage.getItem(AUTH_KEY) || '{}'); } catch { return {}; } }
+const isAuthed = (b) => !!auths()[b];
+function grantAuth(b){
+  const a = auths(); a[b] = 1;
+  localStorage.setItem(AUTH_KEY, JSON.stringify(a));
+  localStorage.setItem('mp_last_band', b);
+}
+
+function unlockView(){ document.body.classList.remove('locked'); $('gateModal').classList.remove('open'); }
+function showGate(bandSlug, hard = true){
+  if (hard){
+    document.body.classList.add('locked');
+    $('trackCount').textContent = '';
+    $('list').className = ''; $('list').innerHTML = '';
+  }
+  if (bandSlug) $('gateName').value = bandSlug;
+  $('gateErr').textContent = '';
+  $('gateModal').classList.add('open');
+  ($('gateName').value ? $('gatePass') : $('gateName')).focus();
+}
+async function tryUnlock(){
+  const slugIn = bandSlugOf($('gateName').value);
+  const pass = $('gatePass').value.trim().toLowerCase();
+  if (!slugIn || !pass){ $('gateErr').textContent = 'Both fields, please.'; return; }
+  $('gateGo').disabled = true; $('gateErr').textContent = '';
+  try {
+    const r = await supaFetch('/rest/v1/rpc/band_pass_ok', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ b: slugIn, p: pass }) });
+    if ((await r.json()) !== true){
+      $('gateErr').textContent = 'That’s not it — check with the band.';
+      return;
+    }
+    grantAuth(slugIn);
+    localStorage.setItem('mp_band_pass', pass);   // uploads reuse it
+    $('gatePass').value = '';
+    if (!route.band && !route.project && !route.song){
+      history.replaceState(null, '', pageBase() + '?b=' + encodeURIComponent(slugIn));
+      route = parseRoute();
+    }
+    await init();
+  } catch {
+    $('gateErr').textContent = 'Could not reach the login service — check your connection.';
+  } finally { $('gateGo').disabled = false; }
+}
+$('gateGo').onclick = tryUnlock;
+['gateName', 'gatePass'].forEach(id => $(id).addEventListener('keydown', (e) => {
+  if (e.key === 'Enter'){ e.preventDefault(); tryUnlock(); }
+}));
+// Voluntary login (from a shared mix): backdrop click closes the gate.
+$('gateModal').addEventListener('click', (e) => {
+  if (e.target === $('gateModal') && !document.body.classList.contains('locked'))
+    $('gateModal').classList.remove('open');
+});
+$('mixLogin').onclick = () => showGate(curBand, false);
+
 // ---------- Load manifest ----------
+let bandsData = [];                // manifest: [{slug, title, songs}]
+let curBand = null, curBandTitle = '';
+let singleMix = false;             // ungated one-mix view (?b&s&v, not logged in)
+
 async function init() {
   if (!WaveSurfer) return; // engine failed to load; message already shown
   try {
@@ -641,25 +733,68 @@ async function init() {
       const pr = await fetch('projects.json', { cache: 'no-cache' });
       projects = pr.ok ? ((await pr.json()).projects || []) : [];
     } catch { projects = []; }
-    if (data.title) { $('collectionTitle').textContent = data.title; document.title = data.title; }
-    songs = normalize(data);
-    curProject = null;
-    document.body.classList.remove('shared');
+    bandsData = Array.isArray(data.bands) ? data.bands : [];
+
+    curProject = null; curBand = null; singleMix = false;
+    document.body.classList.remove('shared', 'singlemix');
+    $('mixHint').style.display = 'none';
+
+    let band = route.band && bandSlugOf(route.band);
     if (route.project){
-      // A bad slug must never fall back to the full library.
-      document.body.classList.add('shared');
+      // A bad slug must never fall back to a band library.
       curProject = projects.find(p => p.slug === route.project) || null;
       if (!curProject) return showBadLink();
+      band = curProject.band || 'lakehorse';
+    } else if (!band && route.song){
+      band = 'lakehorse';            // links from before the multi-band era
+    }
+
+    if (!band){
+      // Main URL: straight to your band if this browser is logged in,
+      // otherwise the login page.
+      const last = localStorage.getItem('mp_last_band');
+      if (last && isAuthed(last) && bandsData.some(b => b.slug === last)) band = last;
+      else return showGate(null);
+    }
+
+    const bandData = bandsData.find(b => b.slug === band);
+    if (!bandData) return showBadLink();
+    curBand = band;
+    curBandTitle = bandData.title || band;
+
+    // A single mix (?b&s&v) plays without login; everything else is gated.
+    singleMix = !!(route.song && route.version && !isAuthed(band));
+    if (!singleMix && !isAuthed(band)) return showGate(band);
+
+    songs = normalize(bandData);
+    if (curProject){
+      document.body.classList.add('shared');
       const byFolder = new Map(songs.map(s => [s.folder || s.title, s]));
       songs = curProject.songs.map(f => byFolder.get(f)).filter(Boolean);
       $('collectionTitle').textContent = curProject.name;
       document.title = curProject.name;
       if (!songs.length) return showBadLink('Nothing here yet', 'No mixes have been published to this project so far — check back soon.');
+    } else {
+      $('collectionTitle').textContent = curBandTitle;
+      document.title = curBandTitle + ' · S’notify';
     }
+
+    if (singleMix){
+      const s = songs.find(x => (x.folder || x.title) === route.song || x.title === route.song);
+      const v = s && s.versions.find(x => x.name === route.version);
+      if (!s || !v) return showBadLink();
+      songs = [{ ...s, versions: [v] }];
+      document.body.classList.add('singlemix', 'shared');
+      $('collectionTitle').textContent = s.title;
+      document.title = s.title;
+      $('mixHint').style.display = 'block';
+    }
+
+    unlockView();
     if (!songs.length) return showEmpty();
     renderList();
     applyDeepLink();
-  } catch (e) { route.project ? showBadLink() : showEmpty(); }
+  } catch (e) { (route.project || route.band) ? showBadLink() : showEmpty(); }
 }
 
 function showBadLink(head, body){
@@ -702,10 +837,9 @@ function normalize(data){
     if (!versions.length) return null;
     return {
       folder: s.folder || null,   // stable key for project membership + deep links
-      // Stable id: slug of the title only. Including the list index (as
-      // before) shifted every song's id — and its saved comments — whenever
-      // a song was added or removed above it.
-      id: s.id || slug(s.title || filename(versions[0].src)) || 'song-' + i,
+      // Stable id, band-scoped so songs in different bands never share a
+      // comment pool: <band>/<slug-of-title>.
+      id: curBand + '/' + (s.id || slug(s.title || filename(versions[0].src)) || 'song-' + i),
       title: s.title || filename(versions[0].src),
       artist: s.artist || '',
       cover: s.cover || null,
@@ -784,7 +918,7 @@ function renderList() {
         if (ec && !ec.classList.contains('disabled')) return songAct(ec.dataset.act, i);
         const ttl = e.target.closest('.title');
         if (ttl) inlineRename(ttl, songs[i].title, (v) =>
-          bridgePost('/api/song/rename', { song: songs[i].folder || songs[i].title, title: v }));
+          bridgePost('/api/song/rename', { band: curBand, song: songs[i].folder || songs[i].title, title: v }));
         return;                         // edit mode: rows don't start playback
       }
       if (e.target.closest('.sdel')) return;
@@ -857,13 +991,13 @@ async function songAct(act, i){
       if (j < 0 || j >= songs.length) return;
       const order = songs.map(x => x.folder || x.title);
       [order[i], order[j]] = [order[j], order[i]];
-      await bridgePost('/api/library/reorder', { songs: order });
+      await bridgePost('/api/library/reorder', { band: curBand, songs: order });
       await refreshLibrary();
     } else if (act === 'stack'){
       const into = await pickSong(`Stack “${s.title}” into…`,
         `Its ${s.versions.length === 1 ? 'version becomes a version' : 'versions become versions'} of the song you pick, on top of that stack; “${s.title}” disappears as a separate song.`, key);
       if (!into) return;
-      await bridgePost('/api/song/stack', { from: key, into });
+      await bridgePost('/api/song/stack', { band: curBand, from: key, into });
       await refreshLibrary();
     } else if (act === 'trash'){
       await trashSong(s);               // existing flow: archives + republishes
@@ -882,14 +1016,14 @@ async function verAct(act, vi){
       if (j < 0 || j >= s.versions.length) return;
       const files = s.versions.map(x => x.src.split('/').pop());
       [files[vi], files[j]] = [files[j], files[vi]];
-      await bridgePost('/api/version/reorder', { song: key, files });
+      await bridgePost('/api/version/reorder', { band: curBand, song: key, files });
     } else if (act === 'unstack'){
       const title = prompt(`Unstack “${v.name}” into its own song — title:`, v.name);
       if (title === null) return;
-      await bridgePost('/api/song/unstack', { song: key, file, title: title.trim() });
+      await bridgePost('/api/song/unstack', { band: curBand, song: key, file, title: title.trim() });
     } else if (act === 'vtrash'){
       if (s.versions.length === 1) return songAct('trash', activeSongIndex); // last version = the song
-      await bridgePost('/api/version/trash', { song: key, file });
+      await bridgePost('/api/version/trash', { band: curBand, song: key, file });
     }
     await refreshLibrary();
   } catch (err){ alert(String(err.message || err)); }
@@ -1099,14 +1233,15 @@ const pageBase = () => location.href.split('#')[0].split('?')[0];
 function projectFor(song){
   if (curProject) return curProject;
   const key = song.folder || song.title;
-  return projects.find(p => (p.songs || []).includes(key)) || null;
+  return projects.find(p => (p.band || 'lakehorse') === curBand
+                            && (p.songs || []).includes(key)) || null;
 }
-// Player deep link — scoped to a project when the song belongs to one.
-// Query form (not #hash): survives messaging apps and link redirectors.
+// Player deep link. Query form (not #hash): survives messaging apps and
+// link redirectors. A version link (?b&s&v) plays WITHOUT login; song and
+// band links require it.
 function shareUrl(song, ver){
-  const p = projectFor(song);
   const q = new URLSearchParams();
-  if (p) q.set('p', p.slug);
+  q.set('b', curBand);
   q.set('s', song.folder || song.title);
   if (ver) q.set('v', ver.name);
   return pageBase() + '?' + q.toString();
@@ -1119,9 +1254,11 @@ async function copyText(text, el){
   if (el){ const old = el.textContent; el.textContent = '✓'; setTimeout(() => { el.textContent = old; }, 900); }
 }
 
-// Header 🔗: the whole view — this project (album) or the entire library.
+// Header 🔗: the whole view — this project (album) or the band's library.
+// Both are login-gated for whoever opens them.
 $('shareBtn').onclick = () => copyText(
-  curProject ? pageBase() + '?p=' + encodeURIComponent(curProject.slug) : pageBase(),
+  curProject ? pageBase() + '?p=' + encodeURIComponent(curProject.slug)
+             : pageBase() + '?b=' + encodeURIComponent(curBand || ''),
   $('shareBtn'));
 
 function renderVersions(){
@@ -1177,7 +1314,7 @@ function renderVersions(){
         if (nameEl){
           const v = activeSong.versions[vi];
           inlineRename(nameEl, v.name, (nv) => bridgePost('/api/version/rename',
-            { song: activeSong.folder || activeSong.title, file: v.src.split('/').pop(), name: nv }));
+            { band: curBand, song: activeSong.folder || activeSong.title, file: v.src.split('/').pop(), name: nv }));
         }
         return;                         // edit mode: rows don't switch versions
       }
@@ -1382,7 +1519,7 @@ function renderComments(){
 
 function renderMarkers(){
   const mk = $('markers'); mk.innerHTML = '';
-  if (!activeSong) return;
+  if (!activeSong || singleMix) return;
   const w = curWS(); const dur = w ? w.getDuration() : 0;
   if (!dur) return;
   commentsFor(activeSong.id).forEach(c => {
@@ -1416,6 +1553,7 @@ function timeago(ts){
 }
 
 function openDrawer(open){
+  if (singleMix) return;   // comments are band-only; the shared-mix view has none
   if (open){ $('vlogDrawer').classList.remove('open'); $('vlogToggle').classList.remove('active'); }
   $('drawer').classList.toggle('open', open); $('cToggle').classList.toggle('active', open);
   if (open) renderComments();
@@ -1679,6 +1817,7 @@ async function doUpload(){
         const fd = new FormData();
         fd.append('file', f);
         fd.append('song', song);
+        fd.append('band', curBand);
         fd.append('version', multi ? '' : $('addVerName').value.trim());
         if (note) fd.append('note', note);
         const r = await (await fetch(BRIDGE + '/api/song/upload', { method: 'POST', body: fd })).json();
@@ -1704,22 +1843,24 @@ async function doUpload(){
         const ext = (f.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
         const verName = (multi || !$('addVerName').value.trim())
           ? f.name.replace(/\.[^.]+$/, '') : $('addVerName').value.trim();
-        const path = `tracks/${song}/${verName}${ext}`;
+        const path = `tracks/${curBand}/${song}/${verName}${ext}`;
         await ghPut(cfg, pat, path, await fileB64(f), `Add ${song} — ${verName}`);
         added.push({ name: verName, src: path });
       }
       // 2) changelog sidecar
       if (note){
         setAddStatus('Committing changelog…');
-        await ghPut(cfg, pat, `tracks/${song}/${added[0].name}.changelog.md`, utf8b64(note + '\n'), `Changelog for ${song} — ${added[0].name}`);
+        await ghPut(cfg, pat, `tracks/${curBand}/${song}/${added[0].name}.changelog.md`, utf8b64(note + '\n'), `Changelog for ${song} — ${added[0].name}`);
       }
       // 3) manifest
       setAddStatus('Updating tracks.json…');
       const cur = await ghApi(cfg, pat, 'GET', `contents/tracks.json?ref=${cfg.branch}`);
-      const data = cur ? JSON.parse(b64utf8(cur.content)) : { title: $('collectionTitle').textContent, songs: [] };
-      if (!Array.isArray(data.songs)) data.songs = [];
-      let s = data.songs.find(x => x.title === song);
-      if (!s){ s = { title: song, versions: [] }; data.songs.push(s); }
+      const data = cur ? JSON.parse(b64utf8(cur.content)) : { title: "S'notify", bands: [] };
+      if (!Array.isArray(data.bands)) data.bands = [];
+      let bsec = data.bands.find(x => x.slug === curBand);
+      if (!bsec){ bsec = { slug: curBand, title: curBandTitle || curBand, songs: [] }; data.bands.push(bsec); }
+      let s = bsec.songs.find(x => (x.folder || x.title) === song || x.title === song);
+      if (!s){ s = { folder: song, title: song, versions: [] }; bsec.songs.push(s); }
       const today = new Date().toISOString().slice(0, 10);
       for (const a of added.reverse()){ // keep picker order on top
         s.versions = (s.versions || []).filter(v => v.name !== a.name);
@@ -1754,10 +1895,10 @@ async function doUpload(){
         const verName = (multi || !$('addVerName').value.trim())
           ? f.name.replace(/\.[^.]+$/, '') : $('addVerName').value.trim();
         firstBase ??= verName;
-        await put(enc(pass, song, verName + ext), f, f.type || 'application/octet-stream');
+        await put(enc(curBand, pass, song, verName + ext), f, f.type || 'application/octet-stream');
       }
       if (note && firstBase)
-        await put(enc(pass, song, firstBase + '.changelog.md'), note + '\n', 'text/markdown');
+        await put(enc(curBand, pass, song, firstBase + '.changelog.md'), note + '\n', 'text/markdown');
       setAddStatus(`Uploaded ✓ — "${song}" appears once the inbox is imported (~1–2 min while the studio Mac is online).`, 'ok');
     } else {
       setAddStatus('No upload transport available.', 'err');
@@ -1797,7 +1938,7 @@ async function refreshTrash(){
 async function trashSong(song){
   if (!song || !song.folder) return;
   try {
-    const j = await bridgePost('/api/song/trash', { song: song.folder });
+    const j = await bridgePost('/api/song/trash', { band: curBand, song: song.folder });
     if (activeSongIndex !== -1 && songs[activeSongIndex] === song){
       destroyPlayers(); activeSong = null; activeSongIndex = -1;
       $('nowTitle').textContent = 'Nothing playing'; $('nowArtist').textContent = '';
@@ -1816,18 +1957,19 @@ function renderTrash(items){
     return;
   }
   $('trashList').innerHTML = items.map(t => `
-    <div class="trash-item" data-song="${esc(t.song)}">
-      <span class="tname">${esc(t.song)}</span>
+    <div class="trash-item" data-song="${esc(t.song)}" data-band="${esc(t.band || 'lakehorse')}">
+      <span class="tname">${t.band && t.band !== curBand ? `<span style="color:var(--text-mute)">${esc(t.band)} · </span>` : ''}${esc(t.song)}</span>
       <span class="tmeta">${t.versions} version${t.versions===1?'':'s'}</span>
       <button class="btn ghost restore">Restore</button>
       <button class="btn danger">Delete forever</button>
     </div>`).join('');
   $('trashList').querySelectorAll('.trash-item').forEach(el => {
     const song = el.dataset.song;
+    const band = el.dataset.band;
     el.querySelector('.restore').addEventListener('click', async () => {
       try {
         setTrashStatus(`Restoring “${song}”…`);
-        const j = await bridgePost('/api/trash/restore', { song });
+        const j = await bridgePost('/api/trash/restore', { band, song });
         renderTrash(j.items || []);
         setTrashStatus(`Restored “${song}” ✓`, 'ok');
         await init(); fillSongSelect();
@@ -1843,7 +1985,7 @@ function renderTrash(items){
       }
       try {
         setTrashStatus(`Deleting “${song}” forever…`);
-        const j = await bridgePost('/api/trash/delete', { song });
+        const j = await bridgePost('/api/trash/delete', { band, song });
         renderTrash(j.items || []);
         setTrashStatus(`“${song}” permanently deleted.`, 'ok');
       } catch (err) { setTrashStatus(String(err.message || err), 'err'); }
@@ -1873,6 +2015,7 @@ probeBridge().then(up => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape'){
     closeAdd(); closeTrash();
+    if (!document.body.classList.contains('locked')) $('gateModal').classList.remove('open');
     if (pickCloser) pickCloser(null);
     else if (editing) setEditing(false);
     return;

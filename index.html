@@ -282,6 +282,10 @@
   body.locked .wrap, body.locked .dock { visibility: hidden; }
   #gateModal.open { background: var(--bg); }
 
+  /* Log out — only while signed into a band (hidden on shared/single-mix views) */
+  #logoutBtn { display: none; }
+  body.authed:not(.singlemix):not(.shared) #logoutBtn { display: inline-flex; }
+
   /* Single-mix view (?b&s&v, no login): playback only — no comments, no
      library affordances. Band members log in for everything else. */
   body.singlemix #cToggle, body.singlemix #vlogToggle, body.singlemix #shareBtn,
@@ -424,6 +428,7 @@
       <button class="addbtn" id="trashBtn" title="Trash — deleted songs are archived here until you confirm permanent deletion">
         🗑<span id="trashCount"></span>
       </button>
+      <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
     </header>
     <div id="list" class="loading">Loading…</div>
     <div class="edithint">Edit mode — tap a title to rename · ▲▼ reorder · ⧉ stack into another song · 🗑 trash. Open a song's version menu to edit its stack.</div>
@@ -805,6 +810,21 @@ $('gateModal').addEventListener('click', (e) => {
 });
 $('mixLogin').onclick = () => showGate(curBand, false);
 
+// Log out of the current band → back to the home page (band-name entry).
+function logout(){
+  const a = auths(); delete a[curBand];
+  localStorage.setItem(AUTH_KEY, JSON.stringify(a));
+  localStorage.removeItem('mp_band_pass');
+  if (localStorage.getItem('mp_last_band') === curBand) localStorage.removeItem('mp_last_band');
+  try { destroyPlayers(); } catch {}
+  activeSong = null; activeSongIndex = -1;
+  document.body.classList.remove('authed', 'editing');
+  history.replaceState(null, '', pageBase());
+  route = parseRoute();
+  init();
+}
+$('logoutBtn').onclick = logout;
+
 // ---------- Load manifest ----------
 let bandsData = [];                // manifest: [{slug, title, songs}]
 let curBand = null, curBandTitle = '';
@@ -876,6 +896,7 @@ async function init() {
       $('mixHint').style.display = 'block';
     }
 
+    document.body.classList.toggle('authed', isAuthed(curBand));
     unlockView();
     if (!songs.length) return showEmpty();
     renderList();

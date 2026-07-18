@@ -378,17 +378,32 @@
 </style>
 </head>
 <body class="locked">
-  <!-- Band gate — a client-side lock checked before anything shows -->
+  <!-- Band gate — two-step front door: name, then password. -->
   <div class="modal-back" id="gateModal">
     <div class="modal" style="max-width:360px">
       <h2>🎵 S'notify</h2>
-      <div class="hint" style="margin-bottom:6px">Band only — say the magic words.</div>
-      <label>Band name</label>
-      <input type="text" id="gateName" autocomplete="off" autocapitalize="none" />
-      <label>Band password</label>
-      <input type="password" id="gatePass" autocomplete="off" />
-      <div class="status err" id="gateErr"></div>
-      <div class="actions"><button class="btn primary" id="gateGo">Enter</button></div>
+
+      <!-- Step 1: which band? -->
+      <div id="gateStep1">
+        <div class="hint" style="margin-bottom:6px">Enter your band to continue.</div>
+        <label>Band name</label>
+        <input type="text" id="gateName" autocomplete="off" autocapitalize="none" />
+        <div class="status err" id="gateErr1"></div>
+        <div id="gateSuggest" style="display:none"></div>
+        <div class="actions"><button class="btn primary" id="gateNext">Continue</button></div>
+      </div>
+
+      <!-- Step 2: password for the resolved band -->
+      <div id="gateStep2" style="display:none">
+        <div class="hint" style="margin-bottom:6px">Password for <b id="gateBandLabel"></b>.</div>
+        <label>Band password</label>
+        <input type="password" id="gatePass" autocomplete="off" />
+        <div class="status err" id="gateErr2"></div>
+        <div class="actions">
+          <button class="btn ghost" id="gateBack">Back</button>
+          <button class="btn primary" id="gateGo">Enter</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -671,46 +686,118 @@ function grantAuth(b){
 }
 
 function unlockView(){ document.body.classList.remove('locked'); $('gateModal').classList.remove('open'); }
+
+// Fuzzy band lookup, client-side against the (already public) manifest — no
+// extra backend. Match the typed name against each band's slug and title.
+const nrm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function lev(a, b){
+  const m = a.length, n = b.length; if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i), cur = new Array(n + 1);
+  for (let i = 1; i <= m; i++){
+    cur[0] = i;
+    for (let j = 1; j <= n; j++)
+      cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+    [prev, cur] = [cur, prev];
+  }
+  return prev[n];
+}
+function resolveBand(input){
+  const q = nrm(input);
+  if (!q) return { kind: 'empty' };
+  const exact = bandsData.find(b => b.slug === q || nrm(b.title) === q);
+  if (exact) return { kind: 'exact', band: exact };
+  let best = null, bestScore = 0;
+  for (const b of bandsData) for (const cand of [b.slug, nrm(b.title)]){
+    if (!cand) continue;
+    const score = 1 - lev(q, cand) / Math.max(q.length, cand.length);
+    if (score > bestScore){ bestScore = score; best = b; }
+  }
+  return (best && bestScore >= 0.6) ? { kind: 'suggest', band: best } : { kind: 'none' };
+}
+
+let pendingBand = null;
+function gateStep(n){
+  $('gateStep1').style.display = n === 1 ? 'block' : 'none';
+  $('gateStep2').style.display = n === 2 ? 'block' : 'none';
+  $('gateSuggest').style.display = 'none';
+  $('gateErr1').textContent = ''; $('gateErr2').textContent = '';
+  setTimeout(() => (n === 1 ? $('gateName') : $('gatePass')).focus(), 0);
+}
 function showGate(bandSlug, hard = true){
   if (hard){
     document.body.classList.add('locked');
     $('trackCount').textContent = '';
     $('list').className = ''; $('list').innerHTML = '';
   }
-  if (bandSlug) $('gateName').value = bandSlug;
-  $('gateErr').textContent = '';
+  // Prefill only when the gate is reached via a specific band link; the main
+  // URL's home box always starts empty.
+  const b = bandSlug ? bandsData.find(x => x.slug === bandSlug) : null;
+  $('gateName').value = b ? (b.title || b.slug) : (bandSlug || '');
+  $('gatePass').value = '';
+  gateStep(1);
   $('gateModal').classList.add('open');
-  ($('gateName').value ? $('gatePass') : $('gateName')).focus();
 }
-async function tryUnlock(){
-  const slugIn = bandSlugOf($('gateName').value);
+
+// Step 1: resolve the typed band name.
+function gateNext(){
+  const res = resolveBand($('gateName').value);
+  $('gateSuggest').style.display = 'none'; $('gateErr1').textContent = '';
+  if (res.kind === 'empty'){ $('gateErr1').textContent = 'Enter your band name.'; return; }
+  if (res.kind === 'exact'){ proceedToBand(res.band); return; }
+  if (res.kind === 'suggest'){
+    $('gateSuggest').style.display = 'block';
+    $('gateSuggest').innerHTML =
+      `<div class="hint">Did you mean <b>${esc(res.band.title || res.band.slug)}</b>? ` +
+      `<span class="linky" id="sugYes">Yes</span> &nbsp;·&nbsp; <span class="linky" id="sugNo">No</span></div>`;
+    $('sugYes').onclick = () => proceedToBand(res.band);
+    $('sugNo').onclick = () => { $('gateSuggest').style.display = 'none'; $('gateName').select(); };
+    return;
+  }
+  // Unknown band — point them to the owner.
+  $('gateSuggest').style.display = 'block';
+  $('gateSuggest').innerHTML =
+    `<div class="hint">No band by that name here. Email ` +
+    `<a href="mailto:bunjumun@gmail.com?subject=S'notify%20band%20page">bunjumun@gmail.com</a> ` +
+    `to set one up.</div>`;
+}
+// Already logged in on this device → straight in; otherwise ask the password.
+function proceedToBand(band){
+  pendingBand = band;
+  if (isAuthed(band.slug)) return enterBand(band.slug);
+  $('gateBandLabel').textContent = band.title || band.slug;
+  gateStep(2);
+}
+async function enterBand(slug){
+  history.replaceState(null, '', pageBase() + '?b=' + encodeURIComponent(slug));
+  route = parseRoute();
+  await init();
+}
+// Step 2: password check for the resolved band.
+async function gateGo(){
+  if (!pendingBand) return gateStep(1);
   const pass = $('gatePass').value.trim().toLowerCase();
-  if (!slugIn || !pass){ $('gateErr').textContent = 'Both fields, please.'; return; }
-  $('gateGo').disabled = true; $('gateErr').textContent = '';
+  if (!pass){ $('gateErr2').textContent = 'Enter the password.'; return; }
+  $('gateGo').disabled = true; $('gateErr2').textContent = '';
   try {
     const r = await supaFetch('/rest/v1/rpc/band_pass_ok', { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ b: slugIn, p: pass }) });
+      body: JSON.stringify({ b: pendingBand.slug, p: pass }) });
     if ((await r.json()) !== true){
-      $('gateErr').textContent = 'That’s not it — check with the band.';
-      return;
+      $('gateErr2').textContent = 'That’s not it — check with the band.'; return;
     }
-    grantAuth(slugIn);
+    grantAuth(pendingBand.slug);
     localStorage.setItem('mp_band_pass', pass);   // uploads reuse it
     $('gatePass').value = '';
-    if (!route.band && !route.project && !route.song){
-      history.replaceState(null, '', pageBase() + '?b=' + encodeURIComponent(slugIn));
-      route = parseRoute();
-    }
-    await init();
+    await enterBand(pendingBand.slug);
   } catch {
-    $('gateErr').textContent = 'Could not reach the login service — check your connection.';
+    $('gateErr2').textContent = 'Could not reach the login service — check your connection.';
   } finally { $('gateGo').disabled = false; }
 }
-$('gateGo').onclick = tryUnlock;
-['gateName', 'gatePass'].forEach(id => $(id).addEventListener('keydown', (e) => {
-  if (e.key === 'Enter'){ e.preventDefault(); tryUnlock(); }
-}));
+$('gateNext').onclick = gateNext;
+$('gateGo').onclick = gateGo;
+$('gateBack').onclick = () => gateStep(1);
+$('gateName').addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); gateNext(); } });
+$('gatePass').addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); gateGo(); } });
 // Voluntary login (from a shared mix): backdrop click closes the gate.
 $('gateModal').addEventListener('click', (e) => {
   if (e.target === $('gateModal') && !document.body.classList.contains('locked'))
@@ -750,11 +837,10 @@ async function init() {
     }
 
     if (!band){
-      // Main URL: straight to your band if this browser is logged in,
-      // otherwise the login page.
-      const last = localStorage.getItem('mp_last_band');
-      if (last && isAuthed(last) && bandsData.some(b => b.slug === last)) band = last;
-      else return showGate(null);
+      // Main URL always lands on the home page (band-name entry) — nobody
+      // ends up inside a band without asking for it by name. The name is
+      // pre-filled with your last band, so it's one click if you're known.
+      return showGate(null);
     }
 
     const bandData = bandsData.find(b => b.slug === band);

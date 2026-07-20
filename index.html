@@ -1712,7 +1712,7 @@ $('atTime').onclick = () => { const w=curWS(); if (w) seekTo(w.getCurrentTime())
 // path carries the band password, which is what the storage policy checks),
 // then an Edge Function moves them into the permanent bucket and writes the
 // song/version rows. Nothing here depends on the studio Mac being awake.
-const INBOX_MAX = 100 * 1024 * 1024;   // match the Storage project's max-file-size setting
+const INBOX_MAX = 50 * 1024 * 1024;    // Supabase free-tier per-file ceiling (fixed, not adjustable)
 const LOSSLESS_RE = /\.(wav|aif|aiff|flac)$/i;
 
 // ---- Browser-side compression ---------------------------------------------

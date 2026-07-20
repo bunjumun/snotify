@@ -106,6 +106,9 @@
   .drawer.open { max-height: 46vh; }
   .drawer .pad { max-width: 1000px; margin: 0 auto; padding: 14px 20px; }
   .drawer h3 { margin: 0 0 10px; font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
+  .cdl { float: right; background: none; border: 1px solid var(--line); color: var(--text-dim); border-radius: 6px; padding: 2px 8px; font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .3px; cursor: pointer; }
+  .cdl:hover { border-color: var(--accent); color: var(--accent); }
+  .cdl[disabled] { opacity: .35; cursor: default; }
   .composer { display: flex; gap: 8px; margin-bottom: 12px; }
   .composer .at { flex: none; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 8px; background: rgba(108,92,231,.15); color: var(--accent); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; }
   .composer input { flex: 1; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; outline: none; }
@@ -511,7 +514,9 @@
 
     <div class="drawer" id="drawer">
       <div class="pad">
-        <h3>Comments <span id="cdrawerHint" style="text-transform:none;font-weight:400"></span></h3>
+        <h3>Comments <span id="cdrawerHint" style="text-transform:none;font-weight:400"></span>
+          <button class="cdl" id="cdlBtn" title="Download these comments as a text file">↓ .txt</button>
+        </h3>
         <div class="composer">
           <span class="at" id="atTime" title="Comment is pinned to this timestamp — seek the waveform to move it">0:00</span>
           <input id="cname" type="text" placeholder="Name" maxlength="40" style="flex:none;width:90px" title="Shown with your comments (remembered on this device)" />
@@ -1548,6 +1553,7 @@ function seekTo(t){ const w=curWS(); if (w){ w.setTime(t); $('curTime').textCont
 function renderComments(){
   const list = activeSong ? commentsFor(activeSong.id) : [];
   $('cCount').textContent = list.length;
+  $('cdlBtn').disabled = !list.length;
   $('cdrawerHint').textContent = activeSong ? `on “${activeSong.title}”` : '';
   if (!activeSong){ $('clist').innerHTML = `<div class="cempty">Play a song to leave comments.</div>`; return; }
   if (!list.length){ $('clist').innerHTML = `<div class="cempty">No comments yet — seek to a spot and add one.</div>`; return; }
@@ -1566,6 +1572,43 @@ function renderComments(){
     });
   });
 }
+
+// Mix notes are most useful next to the DAW, not in a browser tab — so the
+// drawer can spill the open song's comments into a plain-text list, grouped by
+// mix and ordered by position in the song.
+function commentsText(song, list){
+  const out = [`${song.title} — comments`,
+               `Exported ${new Date().toLocaleString()}`];
+  const groups = new Map(song.versions.map(v => [v.name, []]));
+  list.forEach(c => {
+    const k = c.version || '';
+    if (!groups.has(k)) groups.set(k, []);   // comment on a since-renamed mix
+    groups.get(k).push(c);
+  });
+  for (const [name, cs] of groups){
+    if (!cs.length) continue;
+    out.push('', `[${name || 'unknown mix'}]`);
+    cs.sort((a, b) => a.time - b.time).forEach(c => {
+      const who = [c.name, c.at ? new Date(c.at).toLocaleDateString() : '']
+                    .filter(Boolean).join(', ');
+      out.push(`  ${fmt(c.time)}  ${c.text}${who ? `  — ${who}` : ''}`);
+    });
+  }
+  return out.join('\n') + '\n';
+}
+function downloadComments(){
+  if (!activeSong) return;
+  const list = commentsFor(activeSong.id);
+  if (!list.length) return;
+  const url = URL.createObjectURL(
+    new Blob([commentsText(activeSong, list)], { type: 'text/plain;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = activeSong.title.replace(/[\/\\:*?"<>|]/g, '-') + ' comments.txt';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$('cdlBtn').onclick = downloadComments;
 
 function renderMarkers(){
   const mk = $('markers'); mk.innerHTML = '';

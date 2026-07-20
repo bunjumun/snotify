@@ -262,6 +262,8 @@
   .modal input:focus, .modal select:focus, .modal textarea:focus { border-color: var(--accent); }
   .modal textarea { resize: vertical; min-height: 60px; }
   .modal input[type=file] { width: 100%; color: var(--text-dim); font-size: 13px; padding: 8px 0; }
+  .modal label.check { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-dim); margin: 6px 0 0; cursor: pointer; }
+  .modal label.check input { margin: 0; }
   .modal .row { display: flex; gap: 10px; }
   .modal .row > div { flex: 1; }
   .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
@@ -450,6 +452,7 @@
         <label>Audio file(s)</label>
         <input type="file" id="addFile" accept="audio/*,.wav,.aif,.aiff,.flac,.mp3,.m4a,.aac,.ogg,.opus" multiple />
         <div class="hint" id="addFileHint"></div>
+        <label class="check"><input type="checkbox" id="addCompress" /> Compress WAV/AIFF/FLAC to MP3 before upload</label>
 
         <label>Song</label>
         <select id="addSongSel"></select>
@@ -953,8 +956,8 @@ function showEmpty() {
       <h2>No songs yet 🎧</h2>
       <p>Hit <b>Add</b> and pick your mixes. Give the first upload a song title; every later
       file you add under that title stacks on top as a new <em>version</em>.</p>
-      <p>WAV and AIFF are fine — they're compressed to MP3 right here in the browser before
-      upload, so your lossless master stays on your own drive.</p>
+      <p>WAV and AIFF upload as-is by default — check the compress box in the Add dialog
+      if you'd rather send a smaller MP3 instead.</p>
     </div>`;
 }
 
@@ -1709,7 +1712,7 @@ $('atTime').onclick = () => { const w=curWS(); if (w) seekTo(w.getCurrentTime())
 // path carries the band password, which is what the storage policy checks),
 // then an Edge Function moves them into the permanent bucket and writes the
 // song/version rows. Nothing here depends on the studio Mac being awake.
-const INBOX_MAX = 50 * 1024 * 1024;    // Supabase free-tier per-file ceiling
+const INBOX_MAX = 100 * 1024 * 1024;   // match the Storage project's max-file-size setting
 const LOSSLESS_RE = /\.(wav|aif|aiff|flac)$/i;
 
 // ---- Browser-side compression ---------------------------------------------
@@ -1764,11 +1767,13 @@ async function compressToMp3(file, setStatus){
   const blob = new Blob(out, { type: 'audio/mpeg' });
   return new File([blob], file.name.replace(/\.[^.]+$/, '.mp3'), { type: 'audio/mpeg' });
 }
-// Compress any lossless files in a list; pass others through untouched.
-async function prepareForUpload(files, setStatus){
+// Compress lossless files only when asked to, or when one is too big for the
+// inbox ceiling to accept raw — otherwise the master goes up untouched.
+async function prepareForUpload(files, setStatus, wantCompress){
   const out = [];
   for (const f of files){
-    if (LOSSLESS_RE.test(f.name)){
+    const lossless = LOSSLESS_RE.test(f.name);
+    if (lossless && (wantCompress || f.size > INBOX_MAX)){
       const mp3 = await compressToMp3(f, setStatus);
       setStatus?.(`Compressed ${f.name} → ${(mp3.size/1048576).toFixed(1)} MB`);
       out.push(mp3);
@@ -1799,8 +1804,12 @@ function syncFileUI(){
     $('addVerName').value = files[0].name.replace(/\.[^.]+$/, '');
   let hint = '';
   if (multi) hint = `${files.length} files — each becomes a version named after its filename.`;
-  if (files && files.length && [...files].some(f => LOSSLESS_RE.test(f.name)))
-    hint += ' WAV/AIFF are compressed to MP3 in your browser before upload — this can take a few seconds.';
+  if (files && files.length && [...files].some(f => LOSSLESS_RE.test(f.name))){
+    const over = [...files].some(f => LOSSLESS_RE.test(f.name) && f.size > INBOX_MAX);
+    hint += over
+      ? ` A WAV/AIFF here is over ${(INBOX_MAX/1048576)|0} MB, so it'll be compressed to MP3 regardless of the checkbox.`
+      : ' Check the box above to compress WAV/AIFF/FLAC to MP3 in your browser before upload — otherwise the master uploads as-is.';
+  }
   $('addFileHint').textContent = hint;
 }
 $('addFile').addEventListener('change', syncFileUI);
@@ -1818,6 +1827,7 @@ function openAdd(){
   modeEl.textContent = `● Uploading to ${curBandTitle || curBand}.`;
   $('addForm').style.display = 'block';
   $('addActions').style.display = 'flex';
+  $('addCompress').checked = false;
   syncFileUI();
 }
 function closeAdd(){ $('addModal').classList.remove('open'); }
@@ -1845,7 +1855,7 @@ async function doUpload(){
     const pass = bandPass(curBand);
     if (!pass){ closeAdd(); showGate(curBand, false); return; }
 
-    files = await prepareForUpload(files, setAddStatus);   // WAV → MP3 in-browser
+    files = await prepareForUpload(files, setAddStatus, $('addCompress').checked);
     const big = files.find(f => f.size > INBOX_MAX);
     if (big) throw new Error(`${big.name} is ${(big.size/1048576).toFixed(0)} MB — over the ${(INBOX_MAX/1048576)|0} MB limit even after compression.`);
 

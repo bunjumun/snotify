@@ -122,7 +122,6 @@
   .cmt .body { flex: 1; min-width: 0; }
   .cmt .body .txt { word-wrap: break-word; }
   .cmt .body .who { color: var(--text-mute); font-size: 11px; margin-top: 2px; }
-  .cmt .who .vtag { color: var(--text-dim); }
   .cmt .del { flex: none; color: var(--text-mute); cursor: pointer; opacity: 0; font-size: 16px; line-height: 1; padding: 2px 4px; }
   .cmt:hover .del { opacity: 1; } .cmt .del:hover { color: #ff6b6b; }
   .cempty { color: var(--text-mute); font-size: 13px; padding: 6px 10px; }
@@ -1297,6 +1296,7 @@ function switchVersion(vi){
     $('durTime').textContent = fmt(to.getDuration());
     $('curTime').textContent = fmt(to.getCurrentTime());
     updateNow(); renderVersions(); renderMarkers(); renderVlog();
+    if ($('drawer').classList.contains('open')) renderComments();
   };
   if (readyByVer[vi] === true) doSwap();
   else { renderVersions(); to.once('ready', doSwap); } // chip pulses until buffered
@@ -1508,6 +1508,13 @@ const mapRow = (r) => ({ id: r.id, time: r.time_s, text: r.text, name: r.name ||
                          version: r.version || '', at: Date.parse(r.created_at) });
 function commentsFor(id){ return (commentCache[id] || []).slice().sort((a,b)=>a.time-b.time); }
 function countComments(id){ return (commentCache[id] || []).length; }
+// Comments are pinned to the mix version playing when they were left — a
+// note about a vocal level in v1 doesn't belong on v3's waveform.
+function commentsForActiveVersion(){
+  if (!activeSong) return [];
+  const name = activeSong.versions[activeVer]?.name || '';
+  return commentsFor(activeSong.id).filter(c => (c.version || '') === name);
+}
 
 // One call fetches the whole band's comments; the pool is small and this keeps
 // bandmates' latest remarks in sync after any edit.
@@ -1551,16 +1558,17 @@ async function deleteComment(cid){
 function seekTo(t){ const w=curWS(); if (w){ w.setTime(t); $('curTime').textContent=fmt(t); $('atTime').textContent=fmt(t); } }
 
 function renderComments(){
-  const list = activeSong ? commentsFor(activeSong.id) : [];
+  const list = activeSong ? commentsForActiveVersion() : [];
+  const verName = activeSong ? (activeSong.versions[activeVer]?.name || '') : '';
   $('cCount').textContent = list.length;
-  $('cdlBtn').disabled = !list.length;
-  $('cdrawerHint').textContent = activeSong ? `on “${activeSong.title}”` : '';
+  $('cdlBtn').disabled = !activeSong || !commentsFor(activeSong.id).length;
+  $('cdrawerHint').textContent = activeSong ? `on “${activeSong.title}”${verName ? ` · ${verName}` : ''}` : '';
   if (!activeSong){ $('clist').innerHTML = `<div class="cempty">Play a song to leave comments.</div>`; return; }
-  if (!list.length){ $('clist').innerHTML = `<div class="cempty">No comments yet — seek to a spot and add one.</div>`; return; }
+  if (!list.length){ $('clist').innerHTML = `<div class="cempty">No comments on this version yet — seek to a spot and add one.</div>`; return; }
   $('clist').innerHTML = list.map(c => `
     <div class="cmt" data-id="${c.id}" data-t="${c.time}">
       <span class="t">${fmt(c.time)}</span>
-      <div class="body"><div class="txt">${esc(c.text)}</div><div class="who">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}on <span class="vtag">${esc(c.version)}</span> · ${timeago(c.at)}</div></div>
+      <div class="body"><div class="txt">${esc(c.text)}</div><div class="who">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}${timeago(c.at)}</div></div>
       <span class="del" title="Delete">×</span>
     </div>`).join('');
   $('clist').querySelectorAll('.cmt').forEach(el => {
@@ -1615,7 +1623,7 @@ function renderMarkers(){
   if (!activeSong || singleMix) return;
   const w = curWS(); const dur = w ? w.getDuration() : 0;
   if (!dur) return;
-  commentsFor(activeSong.id).forEach(c => {
+  commentsForActiveVersion().forEach(c => {
     const el = document.createElement('div');
     el.className = 'mk';
     el.style.left = Math.min(100, Math.max(0, (c.time/dur)*100)) + '%';

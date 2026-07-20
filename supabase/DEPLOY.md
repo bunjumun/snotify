@@ -79,6 +79,18 @@ reachable only through the password-checked RPCs.
 - Rotate the Supabase service key when you're done: nothing needs it at runtime
   (Edge Functions get the service role injected).
 
+## 7. Site admin — add more bands from the browser
+
+Run `schema-v4.sql` (additive, idempotent) to add the `admin_config` table and
+the `admin_*` RPCs. On the site, the "Site admin" link under the band-name
+login box first-time-sets an admin password + recovery question, then unlocks
+a small form to add a new band (slug, title, password) without touching SQL.
+This is a site-wide password, separate from every band's own password, and
+its session isn't remembered across a tab close (band logins are).
+
+Forgot it? The recovery question resets it — there's no email step and no
+dashboard fallback, so don't lose the answer.
+
 ## The studio-Mac bridge
 
 `daw assistant/bridge/` is dormant. Nothing on the site depends on it, and its

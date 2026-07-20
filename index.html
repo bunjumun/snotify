@@ -414,6 +414,79 @@
           <button class="btn primary" id="gateGo">Enter</button>
         </div>
       </div>
+
+      <div class="hint" style="margin-top:14px;text-align:center">
+        <span class="linky" id="adminOpenLink">Site admin</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Site admin: password-gated, used only to add new bands/libraries -->
+  <div class="modal-back" id="adminModal">
+    <div class="modal" style="max-width:380px">
+      <h2>Site admin</h2>
+
+      <!-- First-time setup -->
+      <div id="adminSetup" style="display:none">
+        <div class="hint" style="margin-bottom:6px">First time here — set an admin
+          password and a recovery question. There's no email to reset through,
+          so don't lose the answer.</div>
+        <label>Admin password</label>
+        <input type="password" id="adminSetupPass" autocomplete="off" />
+        <label>Recovery question</label>
+        <input type="text" id="adminSetupQ" placeholder="e.g. What was the first band's name?" maxlength="200" />
+        <label>Answer</label>
+        <input type="text" id="adminSetupA" autocomplete="off" maxlength="200" />
+        <div class="status err" id="adminSetupErr"></div>
+        <div class="actions">
+          <button class="btn ghost" id="adminSetupClose">Close</button>
+          <button class="btn primary" id="adminSetupGo">Set up</button>
+        </div>
+      </div>
+
+      <!-- Login -->
+      <div id="adminLoginStep" style="display:none">
+        <label>Admin password</label>
+        <input type="password" id="adminPass" autocomplete="off" />
+        <div class="status err" id="adminLoginErr"></div>
+        <div class="hint" style="margin-top:6px"><span class="linky" id="adminForgotLink">Forgot password?</span></div>
+        <div class="actions">
+          <button class="btn ghost" id="adminLoginClose">Close</button>
+          <button class="btn primary" id="adminLoginGo">Log in</button>
+        </div>
+      </div>
+
+      <!-- Recovery -->
+      <div id="adminRecover" style="display:none">
+        <div class="hint" id="adminRecoverQ" style="margin-bottom:6px"></div>
+        <label>Answer</label>
+        <input type="text" id="adminRecoverA" autocomplete="off" />
+        <label>New admin password</label>
+        <input type="password" id="adminRecoverNew" autocomplete="off" />
+        <div class="status err" id="adminRecoverErr"></div>
+        <div class="actions">
+          <button class="btn ghost" id="adminRecoverBack">Back</button>
+          <button class="btn primary" id="adminRecoverGo">Reset password</button>
+        </div>
+      </div>
+
+      <!-- Add a band, once logged in -->
+      <div id="adminPanel" style="display:none">
+        <div class="hint" style="margin-bottom:6px">Add another project as a new band library.</div>
+        <label>Band name</label>
+        <input type="text" id="adminBandTitle" placeholder="e.g. Some Other Band" maxlength="120" />
+        <label>URL slug</label>
+        <input type="text" id="adminBandSlug" placeholder="e.g. someotherband" autocomplete="off" autocapitalize="none" maxlength="60" />
+        <div class="hint" id="adminSlugHint">Lowercase letters, numbers and hyphens only — this is what goes in the link.</div>
+        <label>Band password</label>
+        <input type="text" id="adminBandPass" autocomplete="off" maxlength="120" />
+        <div class="status err" id="adminPanelErr"></div>
+        <div class="status" id="adminPanelStatus"></div>
+        <div class="actions">
+          <button class="btn ghost" id="adminClose">Close</button>
+          <button class="btn primary" id="adminCreateGo">Create band</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -791,6 +864,114 @@ function logout(){
   init();
 }
 $('logoutBtn').onclick = logout;
+
+// ---------- Site admin ----------
+// Gated separately from band logins: this password only unlocks adding new
+// bands/libraries, never library contents. Session-only (sessionStorage) —
+// closing the tab logs it out, unlike band logins which persist in
+// localStorage. The server re-checks the password on every admin_create_band
+// call, so a stale/cleared session just falls back to the login step.
+const ADMIN_KEY = 'mp_admin_v1';
+const adminPass = () => sessionStorage.getItem(ADMIN_KEY) || '';
+function adminHideAll(){
+  ['adminSetup', 'adminLoginStep', 'adminRecover', 'adminPanel']
+    .forEach(id => $(id).style.display = 'none');
+}
+function adminShowPanel(){
+  adminHideAll(); $('adminPanel').style.display = 'block';
+  $('adminBandTitle').value = ''; $('adminBandSlug').value = ''; $('adminBandPass').value = '';
+  $('adminPanelErr').textContent = ''; $('adminPanelStatus').textContent = '';
+}
+async function adminShowLoggedOut(){
+  adminHideAll();
+  if (adminPass()){ adminShowPanel(); return; }
+  let status = { configured: true };
+  try { status = await rpc('admin_status', {}); } catch {}
+  if (status && status.configured === false){
+    $('adminSetup').style.display = 'block';
+    $('adminSetupPass').value = ''; $('adminSetupQ').value = ''; $('adminSetupA').value = '';
+    $('adminSetupErr').textContent = '';
+  } else {
+    $('adminLoginStep').style.display = 'block';
+    $('adminPass').value = ''; $('adminLoginErr').textContent = '';
+  }
+}
+function openAdmin(){ $('adminModal').classList.add('open'); adminShowLoggedOut(); }
+function closeAdmin(){ $('adminModal').classList.remove('open'); }
+async function adminDoSetup(){
+  const password = $('adminSetupPass').value;
+  const question = $('adminSetupQ').value.trim();
+  const answer = $('adminSetupA').value.trim();
+  if (!password || !question || !answer){ $('adminSetupErr').textContent = 'All three fields are required.'; return; }
+  $('adminSetupGo').disabled = true;
+  try {
+    await rpc('admin_setup', { password, question, answer });
+    sessionStorage.setItem(ADMIN_KEY, password);
+    adminShowPanel();
+  } catch (e) { $('adminSetupErr').textContent = e.message || 'Setup failed.'; }
+  finally { $('adminSetupGo').disabled = false; }
+}
+async function adminDoLogin(){
+  const password = $('adminPass').value;
+  if (!password){ $('adminLoginErr').textContent = 'Enter the admin password.'; return; }
+  $('adminLoginGo').disabled = true;
+  try {
+    const ok = await rpc('admin_login', { password });
+    if (ok !== true){ $('adminLoginErr').textContent = 'Wrong password.'; return; }
+    sessionStorage.setItem(ADMIN_KEY, password);
+    adminShowPanel();
+  } catch { $('adminLoginErr').textContent = 'Could not reach the login service.'; }
+  finally { $('adminLoginGo').disabled = false; }
+}
+async function adminShowRecover(){
+  adminHideAll(); $('adminRecover').style.display = 'block';
+  $('adminRecoverA').value = ''; $('adminRecoverNew').value = ''; $('adminRecoverErr').textContent = '';
+  try {
+    const status = await rpc('admin_status', {});
+    $('adminRecoverQ').textContent = (status && status.question) || '';
+  } catch { $('adminRecoverQ').textContent = ''; }
+}
+async function adminDoRecover(){
+  const answer = $('adminRecoverA').value;
+  const newPassword = $('adminRecoverNew').value;
+  if (!answer || !newPassword){ $('adminRecoverErr').textContent = 'Answer and new password are both required.'; return; }
+  $('adminRecoverGo').disabled = true;
+  try {
+    const ok = await rpc('admin_recover', { answer, new_password: newPassword });
+    if (!ok){ $('adminRecoverErr').textContent = 'That answer doesn’t match.'; return; }
+    sessionStorage.setItem(ADMIN_KEY, newPassword);
+    adminShowPanel();
+  } catch (e) { $('adminRecoverErr').textContent = e.message || 'Reset failed.'; }
+  finally { $('adminRecoverGo').disabled = false; }
+}
+async function adminDoCreate(){
+  const title = $('adminBandTitle').value.trim();
+  const slug = $('adminBandSlug').value.trim().toLowerCase();
+  const bandPassword = $('adminBandPass').value;
+  if (!slug || !bandPassword){ $('adminPanelErr').textContent = 'Slug and band password are required.'; return; }
+  $('adminCreateGo').disabled = true; $('adminPanelErr').textContent = ''; $('adminPanelStatus').textContent = '';
+  try {
+    await rpc('admin_create_band', { admin_password: adminPass(), slug, title, band_password: bandPassword });
+    $('adminPanelStatus').textContent = `Created — share this link: ${pageBase()}?b=${encodeURIComponent(slug)}`;
+    $('adminBandTitle').value = ''; $('adminBandSlug').value = ''; $('adminBandPass').value = '';
+  } catch (e) {
+    if (/wrong admin password/i.test(e.message || '')){
+      sessionStorage.removeItem(ADMIN_KEY); adminShowLoggedOut(); return;
+    }
+    $('adminPanelErr').textContent = e.message || 'Could not create the band.';
+  } finally { $('adminCreateGo').disabled = false; }
+}
+$('adminOpenLink').onclick = openAdmin;
+$('adminSetupClose').onclick = closeAdmin;
+$('adminLoginClose').onclick = closeAdmin;
+$('adminClose').onclick = closeAdmin;
+$('adminSetupGo').onclick = adminDoSetup;
+$('adminLoginGo').onclick = adminDoLogin;
+$('adminForgotLink').onclick = adminShowRecover;
+$('adminRecoverBack').onclick = adminShowLoggedOut;
+$('adminRecoverGo').onclick = adminDoRecover;
+$('adminCreateGo').onclick = adminDoCreate;
+$('adminModal').addEventListener('click', (e) => { if (e.target === $('adminModal')) closeAdmin(); });
 
 // ---------- Load the library ----------
 // Everything comes from Supabase RPCs. Nothing is readable with the

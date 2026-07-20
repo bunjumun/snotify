@@ -127,15 +127,21 @@ for (const u of publicUrls) {
   if (!r.ok) process.exitCode = 1;
 }
 
-// smoke-test get_library with the real band password (service key can read it)
-const bandsRows = await (await api('/rest/v1/bands?select=slug,pass')).json();
+// smoke-test: band passwords are hashed (schema-v5), so there's no plaintext
+// left to call get_library with — the service key bypasses RLS instead,
+// reading songs/versions straight from the tables.
+const bandsRows = await (await api('/rest/v1/bands?select=slug')).json();
 for (const b of bandsRows) {
-  const r = await api('/rest/v1/rpc/get_library', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ b: b.slug, p: b.pass }),
-  });
-  const lib = await r.json();
-  console.log(`  get_library(${b.slug}): ${lib.songs.length} songs — ` +
-    lib.songs.map((s) => `${s.title}(${s.versions.length}v)`).join(', '));
+  const songs = await (await api(
+    `/rest/v1/songs?band=eq.${encodeURIComponent(b.slug)}&trashed_at=is.null&select=title,id`
+  )).json();
+  const counts = await Promise.all(songs.map(async (s) => {
+    const vs = await (await api(
+      `/rest/v1/versions?song_id=eq.${s.id}&trashed_at=is.null&select=id`
+    )).json();
+    return vs.length;
+  }));
+  console.log(`  ${b.slug}: ${songs.length} songs — ` +
+    songs.map((s, i) => `${s.title}(${counts[i]}v)`).join(', '));
 }
 console.log('\nDone.');

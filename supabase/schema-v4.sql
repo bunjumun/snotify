@@ -77,8 +77,9 @@ end $$;
 
 -- Add another project as a new band/library. Re-checks the admin password
 -- server-side — the client's "logged in" state is never trusted on its own,
--- same discipline as every _require_pass call for bands. Band passwords
--- stay plaintext, matching every existing band (band_pass_ok's own posture).
+-- same discipline as every _require_pass call for bands. Requires pgcrypto
+-- (created above) since the band password is hashed on the way in, same as
+-- schema-v5 does for every existing band.
 create or replace function admin_create_band(admin_password text, slug text, title text, band_password text) returns void
 language plpgsql security definer set search_path = public as $$
 declare s text := lower(trim(coalesce(slug, '')));
@@ -95,5 +96,7 @@ begin
   if exists (select 1 from bands where slug = s) then
     raise exception 'a band with that slug already exists';
   end if;
-  insert into bands (slug, pass, title) values (s, band_password, coalesce(nullif(trim(title), ''), s));
+  -- hashed, same as every band password since schema-v5
+  insert into bands (slug, pass, title)
+  values (s, crypt(band_password, gen_salt('bf')), coalesce(nullif(trim(title), ''), s));
 end $$;

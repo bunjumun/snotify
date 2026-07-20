@@ -91,6 +91,15 @@ its session isn't remembered across a tab close (band logins are).
 Forgot it? The recovery question resets it — there's no email step and no
 dashboard fallback, so don't lose the answer.
 
+## 8. Encrypt band passwords
+
+Run `schema-v5.sql` any time (idempotent, independent of the steps above) to
+bcrypt-hash every band password in place and redefine `band_pass_ok` to verify
+against the hash. Nothing in `index.html`, the Edge Functions, or the storage
+policies changes — they all authenticate through `band_pass_ok`, so the fix
+is entirely server-side. Do this once; safe to re-run (already-hashed rows
+are skipped) and safe to run before or after `schema-v4.sql`.
+
 ## The studio-Mac bridge
 
 `daw assistant/bridge/` is dormant. Nothing on the site depends on it, and its

@@ -1027,7 +1027,7 @@ function setEditing(on){
 }
 $('editBtn').onclick = () => setEditing(!editing);
 
-// Re-fetch the manifest after a bridge edit and rebind the active song
+// Re-read the library after an edit and rebind the active song
 // (players are rebuilt only when its version files actually changed).
 async function refreshLibrary(){
   const prev = activeSong;

@@ -293,20 +293,22 @@
   .mixhint { margin: 12px 4px 0; color: var(--text-mute); font-size: 12px; }
   .mixhint .linky { color: var(--accent); cursor: pointer; text-decoration: underline; }
 
-  /* Shared (project-link) view: read-only surface for bandmates */
+  /* Shared (project-link) view: listening surface — no library editing,
+     but logged-in bandmates can still add mixes and copy the link */
   body.shared .addbtn { display: none; }
-  /* …except uploads, once the band inbox (Supabase) is configured */
-  body.shared.inboxok #addBtn { display: inline-flex; }
+  body.shared #addBtn, body.shared #shareBtn { display: inline-flex; }
 
-  /* Trash — only when the local bridge is up (owner authoring) */
+  /* Authoring affordances light up for any logged-in band member */
+  #addBtn, #projBtn { display: none; }
+  body.authed #addBtn { display: inline-flex; }
+  body.authed:not(.shared):not(.singlemix) #projBtn { display: inline-flex; }
   #trashBtn { display: none; }
-  body.local #trashBtn { display: inline-flex; }
-  body.shared #trashBtn { display: none; }
+  body.authed:not(.shared):not(.singlemix) #trashBtn { display: inline-flex; }
   .song .sdel {
     display: none; color: var(--text-mute); font-size: 14px;
     padding: 2px 7px; border-radius: 6px; cursor: pointer;
   }
-  body.local:not(.shared) .song { grid-template-columns: 30px 1fr auto auto auto; }
+  body.authed:not(.shared):not(.singlemix) .song { grid-template-columns: 30px 1fr auto auto auto; }
   /* Per-song share link (the whole stack) — hover on desktop, dimmed-visible on touch */
   .song .scpy {
     opacity: 0; color: var(--text-mute); font-size: 13px;
@@ -315,8 +317,8 @@
   .song:hover .scpy { opacity: 1; }
   .song .scpy:hover { color: var(--text); background: var(--bg-soft); }
   @media (hover: none) { .song .scpy { opacity: .55; } }
-  body.local:not(.shared) .song .sdel { display: block; opacity: 0; transition: opacity .12s; }
-  body.local:not(.shared) .song:hover .sdel { opacity: 1; }
+  body.authed:not(.shared):not(.singlemix) .song .sdel { display: block; opacity: 0; transition: opacity .12s; }
+  body.authed:not(.shared):not(.singlemix) .song:hover .sdel { opacity: 1; }
   .song .sdel:hover { color: #ff6b6b; background: var(--bg-soft); }
   .trash-item {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -332,7 +334,7 @@
 
   /* Edit mode (pencil) — reorder / rename / stack / unstack / trash */
   #editBtn { display: none; }
-  body.local:not(.shared) #editBtn { display: inline-flex; }
+  body.authed:not(.shared):not(.singlemix) #editBtn { display: inline-flex; }
   #editBtn.active { color: var(--accent); border-color: var(--accent); }
   .editctl { display: flex; gap: 2px; align-items: center; flex: none; }
   .ec {
@@ -424,6 +426,7 @@
         Add
       </button>
       <button class="addbtn" id="shareBtn" title="Copy a share link to everything in this view — the project, or the whole library">🔗</button>
+      <button class="addbtn" id="projBtn" title="Make a share link for a hand-picked set of songs">🎞</button>
       <button class="addbtn" id="editBtn" title="Edit — reorder, rename, stack, unstack, trash">✏️</button>
       <button class="addbtn" id="trashBtn" title="Trash — deleted songs are archived here until you confirm permanent deletion">
         🗑<span id="trashCount"></span>
@@ -439,7 +442,7 @@
   <div class="modal-back" id="addModal">
     <div class="modal">
       <h2>Add music</h2>
-      <div class="mode" id="addMode">Checking for the local bridge…</div>
+      <div class="mode" id="addMode">Preparing…</div>
 
       <div id="addForm">
         <label>Audio file(s)</label>
@@ -460,42 +463,8 @@
         <label>Change notes (optional — becomes this version's changelog)</label>
         <textarea id="addNote" placeholder="- Vocal +2 dB&#10;- New outro"></textarea>
 
-        <div id="ghAuthRow" style="display:none">
-          <label>System password (unlocks your GitHub token)</label>
-          <input type="password" id="ghPass" autocomplete="current-password" />
-          <div class="hint"><span class="linky" id="ghReconf">Reconfigure GitHub connection…</span></div>
-        </div>
-
-        <div id="inboxPassRow" style="display:none">
-          <label>Band password</label>
-          <input type="password" id="inboxPass" autocomplete="off" />
-          <div class="hint">Files drop into the band inbox and are imported automatically —
-            live a minute or two later. <span class="linky" id="inboxToGh" style="display:none">I'm the owner — set up GitHub publishing instead…</span></div>
-        </div>
-      </div>
-
-      <div id="ghSetup" style="display:none">
-        <div class="hint" style="margin-bottom:6px">
-          One-time setup: uploads from the published page commit straight to your repo via the
-          GitHub API. The token is stored <b>only in this browser</b>, encrypted with a system
-          password you choose — never in the repo. Create a fine-grained token with
-          <b>Contents: Read &amp; write</b> for this one repository.
-        </div>
-        <div class="row">
-          <div><label>Owner</label><input type="text" id="ghOwner" placeholder="your-username" /></div>
-          <div><label>Repo</label><input type="text" id="ghRepo" placeholder="my-music" /></div>
-        </div>
-        <div class="row">
-          <div><label>Branch</label><input type="text" id="ghBranch" value="main" /></div>
-        </div>
-        <label>Personal access token</label>
-        <input type="password" id="ghPat" autocomplete="off" placeholder="github_pat_…" />
-        <label>Choose a system password</label>
-        <input type="password" id="ghNewPass" autocomplete="new-password" />
-        <div class="actions">
-          <button class="btn ghost" id="ghCancel">Back</button>
-          <button class="btn primary" id="ghSave">Encrypt &amp; save</button>
-        </div>
+        <div class="hint">Uploads are imported straight away — the new version shows up
+          as soon as this finishes.</div>
       </div>
 
       <div class="status" id="addStatus"></div>
@@ -630,7 +599,6 @@ const filename = (p) => decodeURIComponent(p.split('/').pop().replace(/\.[^.]+$/
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 
 let songs = [];
-let projects = [];                 // from projects.json — share-link groupings
 let curProject = null;             // project scoping the current view (via #/p/<slug>)
 let order = [], pos = -1;          // play order over songs
 let shuffle = false, repeat = 'off';
@@ -660,7 +628,7 @@ $('vol').value = curVolume;
 // Band sub-URLs (/<band>/) are stub pages that redirect here with ?b=.
 function parseRoute(){
   const seg = location.hash.replace(/^#\/?/, '').split('/').map(x => { try { return decodeURIComponent(x); } catch { return x; } });
-  const r = { band: null, project: null, song: null, version: null };
+  const r = { band: null, album: null, project: null, song: null, version: null };
   for (let i = 0; i + 1 < seg.length; i += 2){
     if (seg[i] === 'p') r.project = seg[i+1];
     else if (seg[i] === 's') r.song = seg[i+1];
@@ -669,6 +637,7 @@ function parseRoute(){
   if (!r.project && !r.song){
     const q = new URLSearchParams(location.search);
     r.band = q.get('b'); r.project = q.get('p'); r.song = q.get('s'); r.version = q.get('v');
+    r.album = q.get('al');
   }
   return r;
 }
@@ -680,44 +649,38 @@ window.addEventListener('hashchange', () => { route = parseRoute(); init(); });
 // bands table, so no credentials live in this page or the repo. Being a
 // static site, the audio files themselves remain technically reachable by
 // direct URL — the gate keeps the *site* band-only, it isn't DRM.
+// Every library read and write is an RPC that re-checks the password, so the
+// password itself is what we keep — not a "logged in" flag. (v1 stored a bare
+// 1; those entries read as logged-out and ask for the password once.)
 const AUTH_KEY = 'mp_auth_v1';
 const bandSlugOf = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
 function auths(){ try { return JSON.parse(localStorage.getItem(AUTH_KEY) || '{}'); } catch { return {}; } }
-const isAuthed = (b) => !!auths()[b];
-function grantAuth(b){
-  const a = auths(); a[b] = 1;
+const bandPass = (b) => { const v = auths()[b]; return typeof v === 'string' ? v : ''; };
+const isAuthed = (b) => !!bandPass(b);
+function grantAuth(b, pass){
+  const a = auths(); a[b] = pass;
   localStorage.setItem(AUTH_KEY, JSON.stringify(a));
   localStorage.setItem('mp_last_band', b);
 }
+function clearAuth(b){
+  const a = auths(); delete a[b];
+  localStorage.setItem(AUTH_KEY, JSON.stringify(a));
+}
+// The band password was wrong or has changed since we cached it.
+const isAuthErr = (e) => e && (e.status === 401 || e.status === 403 || /band password/i.test(e.message || ''));
 
 function unlockView(){ document.body.classList.remove('locked'); $('gateModal').classList.remove('open'); }
 
-// Fuzzy band lookup, client-side against the (already public) manifest — no
-// extra backend. Match the typed name against each band's slug and title.
-const nrm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-function lev(a, b){
-  const m = a.length, n = b.length; if (!m) return n; if (!n) return m;
-  let prev = Array.from({ length: n + 1 }, (_, i) => i), cur = new Array(n + 1);
-  for (let i = 1; i <= m; i++){
-    cur[0] = i;
-    for (let j = 1; j <= n; j++)
-      cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
-    [prev, cur] = [cur, prev];
-  }
-  return prev[n];
-}
-function resolveBand(input){
-  const q = nrm(input);
-  if (!q) return { kind: 'empty' };
-  const exact = bandsData.find(b => b.slug === q || nrm(b.title) === q);
-  if (exact) return { kind: 'exact', band: exact };
-  let best = null, bestScore = 0;
-  for (const b of bandsData) for (const cand of [b.slug, nrm(b.title)]){
-    if (!cand) continue;
-    const score = 1 - lev(q, cand) / Math.max(q.length, cand.length);
-    if (score > bestScore){ bestScore = score; best = b; }
-  }
-  return (best && bestScore >= 0.6) ? { kind: 'suggest', band: best } : { kind: 'none' };
+// Fuzzy band lookup happens server-side now — there is no public manifest to
+// scan, and the RPC deliberately reveals at most one band name per query.
+async function resolveBand(input){
+  if (!String(input || '').trim()) return { kind: 'empty' };
+  try {
+    const r = await rpc('resolve_band', { q: input });
+    return r && r.kind !== 'none'
+      ? { kind: r.kind, band: { slug: r.slug, title: r.title } }
+      : { kind: 'none' };
+  } catch { return { kind: 'offline' }; }
 }
 
 let pendingBand = null;
@@ -728,26 +691,27 @@ function gateStep(n){
   $('gateErr1').textContent = ''; $('gateErr2').textContent = '';
   setTimeout(() => (n === 1 ? $('gateName') : $('gatePass')).focus(), 0);
 }
-function showGate(bandSlug, hard = true){
+function showGate(bandSlug, hard = true, bandTitle = null){
   if (hard){
+    document.body.classList.remove('authed');
     document.body.classList.add('locked');
     $('trackCount').textContent = '';
     $('list').className = ''; $('list').innerHTML = '';
   }
   // Prefill only when the gate is reached via a specific band link; the main
   // URL's home box always starts empty.
-  const b = bandSlug ? bandsData.find(x => x.slug === bandSlug) : null;
-  $('gateName').value = b ? (b.title || b.slug) : (bandSlug || '');
+  $('gateName').value = bandTitle || bandSlug || '';
   $('gatePass').value = '';
   gateStep(1);
   $('gateModal').classList.add('open');
 }
 
 // Step 1: resolve the typed band name.
-function gateNext(){
-  const res = resolveBand($('gateName').value);
+async function gateNext(){
   $('gateSuggest').style.display = 'none'; $('gateErr1').textContent = '';
+  const res = await resolveBand($('gateName').value);
   if (res.kind === 'empty'){ $('gateErr1').textContent = 'Enter your band name.'; return; }
+  if (res.kind === 'offline'){ $('gateErr1').textContent = 'Could not reach the login service — check your connection.'; return; }
   if (res.kind === 'exact'){ proceedToBand(res.band); return; }
   if (res.kind === 'suggest'){
     $('gateSuggest').style.display = 'block';
@@ -784,14 +748,10 @@ async function gateGo(){
   if (!pass){ $('gateErr2').textContent = 'Enter the password.'; return; }
   $('gateGo').disabled = true; $('gateErr2').textContent = '';
   try {
-    const r = await supaFetch('/rest/v1/rpc/band_pass_ok', { method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ b: pendingBand.slug, p: pass }) });
-    if ((await r.json()) !== true){
+    if ((await rpc('band_pass_ok', { b: pendingBand.slug, p: pass })) !== true){
       $('gateErr2').textContent = 'That’s not it — check with the band.'; return;
     }
-    grantAuth(pendingBand.slug);
-    localStorage.setItem('mp_band_pass', pass);   // uploads reuse it
+    grantAuth(pendingBand.slug, pass);
     $('gatePass').value = '';
     await enterBand(pendingBand.slug);
   } catch {
@@ -812,9 +772,9 @@ $('mixLogin').onclick = () => showGate(curBand, false);
 
 // Log out of the current band → back to the home page (band-name entry).
 function logout(){
-  const a = auths(); delete a[curBand];
-  localStorage.setItem(AUTH_KEY, JSON.stringify(a));
-  localStorage.removeItem('mp_band_pass');
+  clearAuth(curBand);
+  localStorage.removeItem('mp_band_pass');   // pre-v3 key — clear it out
+  commentCache = {};
   if (localStorage.getItem('mp_last_band') === curBand) localStorage.removeItem('mp_last_band');
   try { destroyPlayers(); } catch {}
   activeSong = null; activeSongIndex = -1;
@@ -825,33 +785,29 @@ function logout(){
 }
 $('logoutBtn').onclick = logout;
 
-// ---------- Load manifest ----------
-let bandsData = [];                // manifest: [{slug, title, songs}]
+// ---------- Load the library ----------
+// Everything comes from Supabase RPCs. Nothing is readable with the
+// publishable key on its own: the only passwordless calls are a single shared
+// mix version, the scrap of project metadata needed to show the right gate,
+// and band-name resolution. Library, projects, comments and every edit go
+// through functions that re-check the band password server-side.
 let curBand = null, curBandTitle = '';
 let singleMix = false;             // ungated one-mix view (?b&s&v, not logged in)
 
 async function init() {
   if (!WaveSurfer) return; // engine failed to load; message already shown
+  curProject = null; curBand = null; singleMix = false;
+  document.body.classList.remove('shared', 'singlemix');
+  $('mixHint').style.display = 'none';
   try {
-    const res = await fetch('tracks.json', { cache: 'no-cache' });
-    if (!res.ok) throw 0;
-    const data = await res.json();
-    try {
-      const pr = await fetch('projects.json', { cache: 'no-cache' });
-      projects = pr.ok ? ((await pr.json()).projects || []) : [];
-    } catch { projects = []; }
-    bandsData = Array.isArray(data.bands) ? data.bands : [];
-
-    curProject = null; curBand = null; singleMix = false;
-    document.body.classList.remove('shared', 'singlemix');
-    $('mixHint').style.display = 'none';
-
     let band = route.band && bandSlugOf(route.band);
+    let projMeta = null;
+
     if (route.project){
       // A bad slug must never fall back to a band library.
-      curProject = projects.find(p => p.slug === route.project) || null;
-      if (!curProject) return showBadLink();
-      band = curProject.band || 'lakehorse';
+      projMeta = await rpc('get_project_meta', { proj: route.project });
+      if (!projMeta) return showBadLink();
+      band = projMeta.band;
     } else if (!band && route.song){
       band = 'lakehorse';            // links from before the multi-band era
     }
@@ -863,41 +819,57 @@ async function init() {
       return showGate(null);
     }
 
-    const bandData = bandsData.find(b => b.slug === band);
-    if (!bandData) return showBadLink();
-    curBand = band;
-    curBandTitle = bandData.title || band;
-
     // A single mix (?b&s&v) plays without login; everything else is gated.
-    singleMix = !!(route.song && route.version && !isAuthed(band));
-    if (!singleMix && !isAuthed(band)) return showGate(band);
+    if (!route.project && route.song && route.version && !isAuthed(band)){
+      const sv = await rpc('get_shared_version', { b: band, s: route.song, v: route.version });
+      if (!sv) return showBadLink();
+      singleMix = true;
+      curBand = sv.band; curBandTitle = sv.band_title || sv.band;
+      songs = normalize({ songs: [sv.song] });
+      if (!songs.length) return showBadLink();
+      document.body.classList.add('singlemix', 'shared');
+      document.body.classList.remove('authed');
+      $('collectionTitle').textContent = songs[0].title;
+      document.title = songs[0].title;
+      $('mixHint').style.display = 'block';
+      commentCache = {};             // comments are for logged-in bandmates
+      unlockView(); renderList(); applyDeepLink();
+      return;
+    }
 
-    songs = normalize(bandData);
-    if (curProject){
+    if (!isAuthed(band)) return showGate(band, true, projMeta && projMeta.band_title);
+
+    let payload;
+    try {
+      payload = route.project
+        ? await rpc('get_project', { proj: route.project, p: bandPass(band) })
+        : await rpc('get_library', { b: band, p: bandPass(band) });
+    } catch (err) {
+      // Cached password no longer works (changed, or a v1 flag) — ask again.
+      if (isAuthErr(err)){ clearAuth(band); return showGate(band, true, projMeta && projMeta.band_title); }
+      throw err;
+    }
+    if (!payload) return showBadLink();
+
+    curBand = payload.band || payload.slug || band;
+    curBandTitle = payload.band_title || payload.title || curBand;
+    songs = normalize(payload);
+
+    if (route.project){
+      curProject = { slug: payload.slug, name: payload.name, band: payload.band,
+                     songs: songs.map(s => s.folder || s.title) };
       document.body.classList.add('shared');
-      const byFolder = new Map(songs.map(s => [s.folder || s.title, s]));
-      songs = curProject.songs.map(f => byFolder.get(f)).filter(Boolean);
-      $('collectionTitle').textContent = curProject.name;
-      document.title = curProject.name;
+      $('collectionTitle').textContent = payload.name;
+      document.title = payload.name;
       if (!songs.length) return showBadLink('Nothing here yet', 'No mixes have been published to this project so far — check back soon.');
     } else {
       $('collectionTitle').textContent = curBandTitle;
       document.title = curBandTitle + ' · S’notify';
     }
 
-    if (singleMix){
-      const s = songs.find(x => (x.folder || x.title) === route.song || x.title === route.song);
-      const v = s && s.versions.find(x => x.name === route.version);
-      if (!s || !v) return showBadLink();
-      songs = [{ ...s, versions: [v] }];
-      document.body.classList.add('singlemix', 'shared');
-      $('collectionTitle').textContent = s.title;
-      document.title = s.title;
-      $('mixHint').style.display = 'block';
-    }
-
-    document.body.classList.toggle('authed', isAuthed(curBand));
+    document.body.classList.add('authed');
     unlockView();
+    loadComments();                  // in the background — badges fill in
     if (!songs.length) return showEmpty();
     renderList();
     applyDeepLink();
@@ -927,17 +899,26 @@ function applyDeepLink(){
   openSong(i, false, vi); // opened paused — browsers block autoplay on load anyway
 }
 
+// Rows store the object path inside the 'tracks' bucket; the bucket is public
+// by exact URL but not listable, so a link plays and a crawl finds nothing.
+function publicUrl(p){
+  if (!p) return null;
+  if (/^(https?:|data:|blob:)/.test(p)) return p;
+  return SUPA_URL + '/storage/v1/object/public/tracks/'
+       + p.replace(/^tracks\//, '').split('/').map(encodeURIComponent).join('/');
+}
+
 function normalize(data){
   const arr = data.songs || data.tracks || [];
   return arr.map((s, i) => {
     let versions;
     if (Array.isArray(s.versions) && s.versions.length)
       versions = s.versions.map(v => ({
-        name: v.name || 'Version', src: v.src, date: v.date || '',
+        name: v.name || 'Version', src: publicUrl(v.src), date: v.date || '',
         changelog: v.changelog || '', changes: Array.isArray(v.changes) ? v.changes : null,
       }));
     else if (s.src)
-      versions = [{ name: s.name || 'Original', src: s.src, date: s.date || '',
+      versions = [{ name: s.name || 'Original', src: publicUrl(s.src), date: s.date || '',
                     changelog: s.changelog || '', changes: Array.isArray(s.changes) ? s.changes : null }];
     else return null;
     versions = versions.filter(v => v.src);
@@ -949,11 +930,16 @@ function normalize(data){
       id: curBand + '/' + (s.id || slug(s.title || filename(versions[0].src)) || 'song-' + i),
       title: s.title || filename(versions[0].src),
       artist: s.artist || '',
-      cover: s.cover || null,
+      album: (s.album || '').trim() || null,   // grouping; falls back to band name
+      cover: publicUrl(s.cover),
       versions,
     };
   }).filter(Boolean);
 }
+// Album layer: a song's album, defaulting to the band name when none is set.
+// The hierarchy is always band → album → song → version.
+const albumOf = (song) => (song && song.album) || curBandTitle || curBand || '';
+const albumSlugOf = (song) => slug(albumOf(song));
 
 function showEmpty() {
   $('trackCount').textContent = '';
@@ -961,29 +947,10 @@ function showEmpty() {
   $('list').innerHTML = `
     <div class="empty">
       <h2>No songs yet 🎧</h2>
-      <p>Make a folder per song inside <code>tracks/</code> and drop each mix inside it — every file
-      becomes a stacked <em>version</em>. Then run <code>node generate-manifest.mjs</code>.
-      WAV exports are fine: the generator auto-compresses them to hosted-friendly AAC
-      (<code>.m4a</code>) and keeps your lossless master local.</p>
-      <pre>tracks/
-  Midnight Drive/
-    Rough Demo.mp3
-    Mix v2.mp3
-    Final Master.mp3      ← newest file shows on top of the stack</pre>
-      <p>Or hand-write <code>tracks.json</code>:</p>
-      <pre>{
-  "title": "S'notify",
-  "songs": [
-    {
-      "title": "Midnight Drive", "artist": "Me",
-      "versions": [
-        { "name": "Final Master", "src": "tracks/Midnight Drive/master.mp3" },
-        { "name": "Mix v2",       "src": "tracks/Midnight Drive/v2.mp3" },
-        { "name": "Rough Demo",   "src": "tracks/Midnight Drive/demo.mp3" }
-      ]
-    }
-  ]
-}</pre>
+      <p>Hit <b>Add</b> and pick your mixes. Give the first upload a song title; every later
+      file you add under that title stacks on top as a new <em>version</em>.</p>
+      <p>WAV and AIFF are fine — they're compressed to MP3 right here in the browser before
+      upload, so your lossless master stays on your own drive.</p>
     </div>`;
 }
 
@@ -1025,7 +992,7 @@ function renderList() {
         if (ec && !ec.classList.contains('disabled')) return songAct(ec.dataset.act, i);
         const ttl = e.target.closest('.title');
         if (ttl) inlineRename(ttl, songs[i].title, (v) =>
-          bridgePost('/api/song/rename', { band: curBand, song: songs[i].folder || songs[i].title, title: v }));
+          libRpc('rename_song', { f: songs[i].folder || songs[i].title, new_title: v }));
         return;                         // edit mode: rows don't start playback
       }
       if (e.target.closest('.sdel')) return;
@@ -1069,7 +1036,7 @@ async function refreshLibrary(){
   const prevSrc = prev ? prev.versions[activeVer]?.src : null;
   await init();
   fillSongSelect();
-  if (document.body.classList.contains('local')) refreshTrash();
+  if (document.body.classList.contains('authed')) refreshTrash();
   if (!prev) return;
   const i = songs.findIndex(s => (s.folder || s.title) === prevFolder);
   if (i === -1){                        // active song was stacked away or trashed
@@ -1098,13 +1065,13 @@ async function songAct(act, i){
       if (j < 0 || j >= songs.length) return;
       const order = songs.map(x => x.folder || x.title);
       [order[i], order[j]] = [order[j], order[i]];
-      await bridgePost('/api/library/reorder', { band: curBand, songs: order });
+      await libRpc('reorder_songs', { folders: order });
       await refreshLibrary();
     } else if (act === 'stack'){
       const into = await pickSong(`Stack “${s.title}” into…`,
         `Its ${s.versions.length === 1 ? 'version becomes a version' : 'versions become versions'} of the song you pick, on top of that stack; “${s.title}” disappears as a separate song.`, key);
       if (!into) return;
-      await bridgePost('/api/song/stack', { band: curBand, from: key, into });
+      await libRpc('stack_songs', { from_f: key, into_f: into });
       await refreshLibrary();
     } else if (act === 'trash'){
       await trashSong(s);               // existing flow: archives + republishes
@@ -1116,21 +1083,20 @@ async function verAct(act, vi){
   if (!activeSong) return;
   const s = activeSong, key = s.folder || s.title;
   const v = s.versions[vi];
-  const file = v.src.split('/').pop();
   try {
     if (act === 'vup' || act === 'vdown'){
       const j = act === 'vup' ? vi - 1 : vi + 1;
       if (j < 0 || j >= s.versions.length) return;
-      const files = s.versions.map(x => x.src.split('/').pop());
-      [files[vi], files[j]] = [files[j], files[vi]];
-      await bridgePost('/api/version/reorder', { band: curBand, song: key, files });
+      const names = s.versions.map(x => x.name);
+      [names[vi], names[j]] = [names[j], names[vi]];
+      await libRpc('reorder_versions', { f: key, names });
     } else if (act === 'unstack'){
       const title = prompt(`Unstack “${v.name}” into its own song — title:`, v.name);
-      if (title === null) return;
-      await bridgePost('/api/song/unstack', { band: curBand, song: key, file, title: title.trim() });
+      if (title === null || !title.trim()) return;
+      await libRpc('unstack_version', { f: key, ver_name: v.name, new_title: title.trim() });
     } else if (act === 'vtrash'){
       if (s.versions.length === 1) return songAct('trash', activeSongIndex); // last version = the song
-      await bridgePost('/api/version/trash', { band: curBand, song: key, file });
+      await libRpc('trash_version', { f: key, ver_name: v.name });
     }
     await refreshLibrary();
   } catch (err){ alert(String(err.message || err)); }
@@ -1335,14 +1301,7 @@ const extOf = (p) => { const m = String(p).match(/\.[^.]+$/); return m ? m[0] : 
 const dotCls = (vi) => readyByVer[vi] === false ? 'dot loading' : readyByVer[vi] === 'failed' ? 'dot failed' : 'dot';
 
 // ---------- Share links ----------
-const encPath = (p) => String(p).split('/').map(encodeURIComponent).join('/');
 const pageBase = () => location.href.split('#')[0].split('?')[0];
-function projectFor(song){
-  if (curProject) return curProject;
-  const key = song.folder || song.title;
-  return projects.find(p => (p.band || 'lakehorse') === curBand
-                            && (p.songs || []).includes(key)) || null;
-}
 // Player deep link. Query form (not #hash): survives messaging apps and
 // link redirectors. A version link (?b&s&v) plays WITHOUT login; song and
 // band links require it.
@@ -1353,8 +1312,8 @@ function shareUrl(song, ver){
   if (ver) q.set('v', ver.name);
   return pageBase() + '?' + q.toString();
 }
-// Absolute URL of the raw audio file (paths contain spaces — encode per segment).
-function audioUrl(ver){ return new URL(encPath(ver.src), pageBase()).href; }
+// The raw audio file — already an absolute (encoded) storage URL.
+function audioUrl(ver){ return ver.src; }
 async function copyText(text, el){
   try { await navigator.clipboard.writeText(text); }
   catch { prompt('Copy this link:', text); return; }
@@ -1377,7 +1336,7 @@ function renderVersions(){
   $('verName').textContent = ver.name;
   $('verTag').textContent = activeVer === 0 ? 'LATEST' : (ver.date || '');
   $('verTag').className = activeVer === 0 ? 'latest' : 'vdate';
-  const owner = document.body.classList.contains('local') && !document.body.classList.contains('shared');
+  const owner = document.body.classList.contains('authed') && !document.body.classList.contains('shared');
   const last = activeSong.versions.length - 1;
   $('verMenu').innerHTML = `
     <div class="vmhead"><span>Stack</span>
@@ -1420,8 +1379,8 @@ function renderVersions(){
         const nameEl = e.target.closest('.vname');
         if (nameEl){
           const v = activeSong.versions[vi];
-          inlineRename(nameEl, v.name, (nv) => bridgePost('/api/version/rename',
-            { band: curBand, song: activeSong.folder || activeSong.title, file: v.src.split('/').pop(), name: nv }));
+          inlineRename(nameEl, v.name, (nv) => libRpc('rename_version',
+            { f: activeSong.folder || activeSong.title, old_name: v.name, new_name: nv }));
         }
         return;                         // edit mode: rows don't switch versions
       }
@@ -1497,107 +1456,91 @@ $('shuffleBtn').onclick = () => { shuffle=!shuffle; $('shuffleBtn').classList.to
 $('repeatBtn').onclick = () => { repeat = repeat==='off'?'all':repeat==='all'?'one':'off'; $('repeatBtn').classList.toggle('active', repeat!=='off'); $('repeatBtn').title=`Repeat: ${repeat}`; $('repeatBtn').style.fontWeight = repeat==='one'?'700':'400'; };
 
 // ---------- Comments (timestamped, per song) ----------
-// With Supabase configured below, comments are SITEWIDE — everyone sees the
-// same pool, written straight from this page (Row Level Security limits what
-// the public key can do: read/add/delete comments, drop files in the inbox).
-// Without it (or offline), comments fall back to this browser's localStorage.
+// Comments are SITEWIDE — everyone in the band sees the same pool. Like the
+// library itself they go through password-checked RPCs, so a shared single-mix
+// link can play the audio but never reads or writes the band's comments.
 const SUPA_URL = 'https://twgukeyoayfqldnojrkg.supabase.co';
 const SUPA_KEY = 'sb_publishable_zIiAxxA5Zk1yRNzignANXA_rEp3vKdG';   // publishable — safe to ship
 const supaOn = () => !!(SUPA_URL && SUPA_KEY);
 async function supaFetch(path, opts = {}){
   const r = await fetch(SUPA_URL + path, { ...opts,
     headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, ...(opts.headers || {}) } });
-  if (!r.ok) throw new Error('Supabase ' + r.status);
+  if (!r.ok){
+    let msg = 'Supabase ' + r.status;
+    try { const j = await r.json(); msg = j.message || j.error || msg; } catch {}
+    const e = new Error(msg); e.status = r.status; throw e;
+  }
   return r;
 }
+// Call a database function. Arguments travel in the POST body, so a band
+// password never lands in a URL, a log, or a browser history entry.
+async function rpc(fn, args){
+  const r = await supaFetch('/rest/v1/rpc/' + fn, { method: 'POST',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args || {}) });
+  if (r.status === 204) return null;
+  return r.json().catch(() => null);
+}
+// Same, with the current band + its password filled in — every library edit.
+function libRpc(fn, args){
+  if (!curBand || !bandPass(curBand)) throw new Error('Log in to your band first.');
+  return rpc(fn, { b: curBand, p: bandPass(curBand), ...args });
+}
+// The two operations that must delete storage objects, and the inbox import:
+// both need the service role, so they live in Edge Functions.
+async function edgeFn(name, body){
+  const r = await fetch(`${SUPA_URL}/functions/v1/${name}`, {
+    method: 'POST',
+    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+               'Content-Type': 'application/json' },
+    body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || `${name} failed (${r.status})`);
+  return j;
+}
 
-const CKEY = 'mp_comments_v1';
-function localComments(){ try { return JSON.parse(localStorage.getItem(CKEY) || '{}'); } catch(e){ return {}; } }
-function saveLocal(o){ localStorage.setItem(CKEY, JSON.stringify(o)); }
-let commentCache = null;   // song_id -> [comments], mirrors the shared table
+let commentCache = {};   // song_id -> [comments], mirrors the shared table
 const mapRow = (r) => ({ id: r.id, time: r.time_s, text: r.text, name: r.name || '',
                          version: r.version || '', at: Date.parse(r.created_at) });
-function allComments(){ return commentCache || localComments(); }
-function commentsFor(id){ return (allComments()[id] || []).slice().sort((a,b)=>a.time-b.time); }
-function countComments(id){ return (allComments()[id] || []).length; }
+function commentsFor(id){ return (commentCache[id] || []).slice().sort((a,b)=>a.time-b.time); }
+function countComments(id){ return (commentCache[id] || []).length; }
 
-async function loadRemoteComments(){
-  if (!supaOn()) return;
+// One call fetches the whole band's comments; the pool is small and this keeps
+// bandmates' latest remarks in sync after any edit.
+async function loadComments(){
+  if (!curBand || !isAuthed(curBand)){ commentCache = {}; return; }
   try {
-    const rows = await (await supaFetch('/rest/v1/comments?select=*&order=created_at.asc')).json();
+    const rows = await libRpc('get_comments', {});
     commentCache = {};
-    rows.forEach(r => (commentCache[r.song_id] ||= []).push(mapRow(r)));
-  } catch { commentCache = null; return; }   // offline → this-browser comments
-  // One-time: fold this browser's old local comments into the shared pool.
-  try {
-    if (!localStorage.getItem('mp_comments_migrated')){
-      const rows = [];
-      for (const [song_id, list] of Object.entries(localComments()))
-        for (const c of list)
-          rows.push({ song_id, time_s: c.time, text: c.text, name: c.name || '',
-                      version: c.version || '',
-                      created_at: new Date(c.at || Date.now()).toISOString() });
-      if (rows.length){
-        const r = await supaFetch('/rest/v1/comments', { method: 'POST',
-          headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
-          body: JSON.stringify(rows) });
-        (await r.json()).forEach(row => (commentCache[row.song_id] ||= []).push(mapRow(row)));
-      }
-      localStorage.setItem('mp_comments_migrated', '1');
-    }
-  } catch {}
+    (rows || []).forEach(r => (commentCache[r.song_id] ||= []).push(mapRow(r)));
+  } catch { return; }   // offline / stale password — leave what we have
   if (activeSong){ refreshListBadges(); renderComments(); renderMarkers(); }
-  else if (songs.length) renderList();
+  else if (songs.length) refreshListBadges();
 }
-
 // Pick up bandmates' new comments whenever a song is opened.
-async function refreshSongComments(id){
-  if (!commentCache) return;
-  try {
-    const rows = await (await supaFetch('/rest/v1/comments?select=*&song_id=eq.'
-      + encodeURIComponent(id) + '&order=created_at.asc')).json();
-    commentCache[id] = rows.map(mapRow);
-    if (activeSong && activeSong.id === id){ renderComments(); renderMarkers(); }
-  } catch {}
-}
+const refreshSongComments = () => loadComments();
 
 async function addComment(){
   if (!activeSong) return;
+  if (!isAuthed(curBand)){ showGate(curBand, false); return; }
   const text = $('cinput').value.trim();
   if (!text) return;
   const w = curWS();
   const time = w ? w.getCurrentTime() : 0;
   const name = $('cname').value.trim();
   const version = activeSong.versions[activeVer].name;
-  if (commentCache){
-    try {
-      const r = await supaFetch('/rest/v1/comments', { method: 'POST',
-        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
-        body: JSON.stringify({ song_id: activeSong.id, time_s: time, text, name, version }) });
-      (commentCache[activeSong.id] ||= []).push(mapRow((await r.json())[0]));
-    } catch { alert('Could not post the comment — check your connection and try again.'); return; }
-  } else {
-    const all = localComments();
-    (all[activeSong.id] ||= []).push({
-      id: Date.now()+''+Math.floor(Math.random()*999),
-      time, text, name, version, at: Date.now()
-    });
-    saveLocal(all);
-  }
+  try {
+    const row = await libRpc('add_comment', { sid: activeSong.id, time_s: time,
+                                              txt: text, who: name, ver: version });
+    (commentCache[activeSong.id] ||= []).push(mapRow(row));
+  } catch (err){ alert('Could not post the comment: ' + (err.message || err)); return; }
   $('cinput').value = '';
   renderComments(); renderMarkers(); refreshListBadges();
 }
 async function deleteComment(cid){
-  if (!activeSong) return;
-  if (commentCache){
-    try { await supaFetch('/rest/v1/comments?id=eq.' + encodeURIComponent(cid), { method: 'DELETE' }); }
-    catch { alert('Could not delete — check your connection.'); return; }
-    commentCache[activeSong.id] = (commentCache[activeSong.id]||[]).filter(c => c.id !== cid);
-  } else {
-    const all = localComments();
-    all[activeSong.id] = (all[activeSong.id]||[]).filter(c => c.id !== cid);
-    saveLocal(all);
-  }
+  if (!activeSong || !isAuthed(curBand)) return;
+  try { await libRpc('delete_comment', { cid }); }
+  catch (err){ alert('Could not delete: ' + (err.message || err)); return; }
+  commentCache[activeSong.id] = (commentCache[activeSong.id]||[]).filter(c => c.id !== cid);
   renderComments(); renderMarkers(); refreshListBadges();
 }
 function seekTo(t){ const w=curWS(); if (w){ w.setTime(t); $('curTime').textContent=fmt(t); $('atTime').textContent=fmt(t); } }
@@ -1711,25 +1654,17 @@ $('cname').addEventListener('input', () => localStorage.setItem('mp_name', $('cn
 $('atTime').onclick = () => { const w=curWS(); if (w) seekTo(w.getCurrentTime()); $('cinput').focus(); };
 
 // ---------- Add music (upload) ----------
-// Two transports behind one dialog:
-//  · LOCAL — the DAW-assistant bridge on 127.0.0.1:8765 saves into tracks/,
-//    auto-compresses lossless files, and rebuilds tracks.json. Instant.
-//  · GITHUB — from the published page, files are committed via the GitHub
-//    Contents API using a personal access token stored ONLY in this browser,
-//    encrypted (AES-GCM, key derived from a system password via PBKDF2).
-//    Live once Pages rebuilds (~1 min).
-const BRIDGE = 'http://127.0.0.1:8765';
-const GHKEY = 'snotify_gh_v1';
-const GH_MAX_BYTES = 45 * 1024 * 1024; // stay under the Contents API ceiling
+// One transport, from any device: files go into the band inbox bucket (the
+// path carries the band password, which is what the storage policy checks),
+// then an Edge Function moves them into the permanent bucket and writes the
+// song/version rows. Nothing here depends on the studio Mac being awake.
 const INBOX_MAX = 50 * 1024 * 1024;    // Supabase free-tier per-file ceiling
 const LOSSLESS_RE = /\.(wav|aif|aiff|flac)$/i;
 
-// ---- Browser-side compression (remote uploads) ----------------------------
-// The studio Mac's bridge transcodes lossless masters with afconvert, but the
-// browser can't run it — so uploads from other computers (GitHub / inbox)
-// would send the raw WAV and blow past the size ceiling. Here we decode the
-// audio with the Web Audio API and re-encode to MP3 (lamejs, lazy-loaded)
-// right in the page, so a full-length WAV lands as a ~6–8 MB file.
+// ---- Browser-side compression ---------------------------------------------
+// A raw WAV master would blow past the size ceiling, so we decode it with the
+// Web Audio API and re-encode to MP3 (lamejs, lazy-loaded) right in the page:
+// a full-length WAV lands as a ~6–8 MB file and the master stays on your disk.
 let _lame = null;
 async function loadLame(){
   if (_lame) return _lame;
@@ -1779,7 +1714,7 @@ async function compressToMp3(file, setStatus){
   return new File([blob], file.name.replace(/\.[^.]+$/, '.mp3'), { type: 'audio/mpeg' });
 }
 // Compress any lossless files in a list; pass others through untouched.
-async function prepareForRemote(files, setStatus){
+async function prepareForUpload(files, setStatus){
   const out = [];
   for (const f of files){
     if (LOSSLESS_RE.test(f.name)){
@@ -1791,80 +1726,7 @@ async function prepareForRemote(files, setStatus){
   return out;
 }
 
-let bridgeUp = false;
-async function probeBridge(){
-  try {
-    const c = new AbortController(); const t = setTimeout(() => c.abort(), 900);
-    const r = await fetch(BRIDGE + '/api/status', { signal: c.signal });
-    clearTimeout(t); bridgeUp = r.ok;
-  } catch { bridgeUp = false; }
-  return bridgeUp;
-}
-
-// --- Encrypted PAT vault (CLAUDE.md §6: password-protected, localStorage only) ---
-const b64buf = {
-  enc(buf){ const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); },
-  dec(s){ return Uint8Array.from(atob(s), ch => ch.charCodeAt(0)); },
-};
-async function vaultKey(pass, salt){
-  const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey({ name:'PBKDF2', salt, iterations: 250000, hash:'SHA-256' },
-    km, { name:'AES-GCM', length: 256 }, false, ['encrypt','decrypt']);
-}
-function ghConfig(){ try { return JSON.parse(localStorage.getItem(GHKEY) || 'null'); } catch { return null; } }
-async function ghStore(owner, repo, branch, pat, pass){
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await vaultKey(pass, salt);
-  const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, new TextEncoder().encode(pat));
-  localStorage.setItem(GHKEY, JSON.stringify({
-    owner: owner.trim(), repo: repo.trim(), branch: (branch || 'main').trim(),
-    salt: b64buf.enc(salt), iv: b64buf.enc(iv), ct: b64buf.enc(ct),
-  }));
-}
-async function ghUnlock(pass){
-  const c = ghConfig(); if (!c) throw new Error('GitHub not configured');
-  const key = await vaultKey(pass, b64buf.dec(c.salt));
-  const pt = await crypto.subtle.decrypt({ name:'AES-GCM', iv: b64buf.dec(c.iv) }, key, b64buf.dec(c.ct));
-  return new TextDecoder().decode(pt);
-}
-
-// --- GitHub Contents API ---
-const ghPath = (p) => p.split('/').map(encodeURIComponent).join('/');
-const utf8b64 = (s) => b64buf.enc(new TextEncoder().encode(s));
-const b64utf8 = (s) => new TextDecoder().decode(b64buf.dec(s.replace(/\s/g, '')));
-async function ghApi(cfg, pat, method, path, body){
-  const r = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${pat}`, Accept: 'application/vnd.github+json' },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (r.status === 404) return null;
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(`GitHub ${r.status}: ${j.message || 'request failed'}`);
-  return j;
-}
-async function ghShaOf(cfg, pat, path){
-  const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-  const name = path.slice(path.lastIndexOf('/') + 1);
-  const listing = await ghApi(cfg, pat, 'GET', `contents/${ghPath(dir)}?ref=${cfg.branch}`);
-  return Array.isArray(listing) ? (listing.find(e => e.name === name)?.sha ?? null) : null;
-}
-async function ghPut(cfg, pat, path, contentB64, message){
-  const sha = await ghShaOf(cfg, pat, path);
-  const body = { message, content: contentB64, branch: cfg.branch };
-  if (sha) body.sha = sha;
-  return ghApi(cfg, pat, 'PUT', `contents/${ghPath(path)}`, body);
-}
-const fileB64 = (file) => new Promise((res, rej) => {
-  const r = new FileReader();
-  r.onload = () => res(String(r.result).split(',')[1]);
-  r.onerror = () => rej(new Error('could not read file'));
-  r.readAsDataURL(file);
-});
-
 // --- Modal ---
-let addMode = 'none'; // 'local' | 'github' | 'setup' | 'none'
 function setAddStatus(msg, cls){ const el = $('addStatus'); el.textContent = msg || ''; el.className = 'status' + (cls ? ' ' + cls : ''); }
 
 function fillSongSelect(){
@@ -1886,90 +1748,31 @@ function syncFileUI(){
     $('addVerName').value = files[0].name.replace(/\.[^.]+$/, '');
   let hint = '';
   if (multi) hint = `${files.length} files — each becomes a version named after its filename.`;
-  // Remote transports (GitHub / band inbox) compress lossless files here in
-  // the browser before uploading; the local bridge does its own AAC transcode.
-  if (files && files.length && (addMode === 'github' || addMode === 'inbox')){
-    if ([...files].some(f => LOSSLESS_RE.test(f.name)))
-      hint += ' WAV/AIFF are compressed to MP3 in your browser before upload — this can take a few seconds.';
-  }
+  if (files && files.length && [...files].some(f => LOSSLESS_RE.test(f.name)))
+    hint += ' WAV/AIFF are compressed to MP3 in your browser before upload — this can take a few seconds.';
   $('addFileHint').textContent = hint;
 }
 $('addFile').addEventListener('change', syncFileUI);
 
-function showAddMode(){
-  const modeEl = $('addMode');
-  $('ghSetup').style.display = 'none';
-  $('addForm').style.display = 'block';
-  $('addActions').style.display = 'flex';
-  $('ghAuthRow').style.display = 'none';
-  $('inboxPassRow').style.display = 'none';
-  if (addMode === 'inbox'){
-    modeEl.className = 'mode github';
-    modeEl.textContent = '● Band upload — files land in the shared inbox and are imported automatically.';
-    $('inboxPassRow').style.display = 'block';
-    $('inboxToGh').style.display = document.body.classList.contains('shared') ? 'none' : 'inline';
-    syncFileUI();
-    return;
-  }
-  if (addMode === 'local'){
-    modeEl.className = 'mode local';
-    modeEl.textContent = '● Local bridge connected — files land in tracks/, WAVs auto-compress to AAC.';
-  } else if (addMode === 'github'){
-    const c = ghConfig();
-    modeEl.className = 'mode github';
-    modeEl.textContent = `● Publishing via GitHub → ${c.owner}/${c.repo} (${c.branch}). Live when Pages rebuilds.`;
-    $('ghAuthRow').style.display = 'block';
-  } else if (addMode === 'setup'){
-    modeEl.className = 'mode none';
-    modeEl.textContent = 'No local bridge found — set up GitHub publishing to upload from this page.';
-    $('addForm').style.display = 'none';
-    $('ghSetup').style.display = 'block';
-    $('addActions').style.display = 'none';
-  }
-  syncFileUI();
-}
-
-async function openAdd(){
+// Reaching this dialog at all means you're logged in — Add is hidden in the
+// ungated single-mix view — so the band password comes from the session and is
+// never asked for a second time.
+function openAdd(){
+  if (!curBand || !isAuthed(curBand)) return showGate(curBand, false);
   $('addModal').classList.add('open');
   setAddStatus('');
   fillSongSelect();
-  $('addMode').className = 'mode';
-  $('addMode').textContent = 'Checking for the local bridge…';
-  await probeBridge();
-  // Owner surfaces first (bridge, then GitHub token), band inbox for everyone
-  // else; shared project links never see the GitHub setup form.
-  addMode = bridgeUp ? 'local'
-    : document.body.classList.contains('shared') ? (supaOn() ? 'inbox' : 'none')
-    : ghConfig() ? 'github'
-    : supaOn() ? 'inbox' : 'setup';
-  if (addMode === 'none'){
-    $('addMode').className = 'mode none';
-    $('addMode').textContent = 'Uploads are not available from this link.';
-    $('addForm').style.display = 'none'; $('addActions').style.display = 'flex';
-    return;
-  }
-  showAddMode();
+  const modeEl = $('addMode');
+  modeEl.className = 'mode github';
+  modeEl.textContent = `● Uploading to ${curBandTitle || curBand}.`;
+  $('addForm').style.display = 'block';
+  $('addActions').style.display = 'flex';
+  syncFileUI();
 }
-$('inboxToGh').onclick = () => { addMode = 'setup'; showAddMode(); };
-$('inboxPass').value = localStorage.getItem('mp_band_pass') || '';
 function closeAdd(){ $('addModal').classList.remove('open'); }
 $('addBtn').onclick = openAdd;
 $('addClose').onclick = closeAdd;
 $('addModal').addEventListener('click', (e) => { if (e.target === $('addModal')) closeAdd(); });
-$('ghReconf').onclick = () => { addMode = 'setup'; showAddMode(); };
-$('ghCancel').onclick = () => { addMode = bridgeUp ? 'local' : (ghConfig() ? 'github' : (supaOn() ? 'inbox' : 'setup')); if (addMode === 'setup' && !ghConfig()) { closeAdd(); } else showAddMode(); };
-$('ghSave').onclick = async () => {
-  const owner = $('ghOwner').value.trim(), repo = $('ghRepo').value.trim();
-  const branch = $('ghBranch').value.trim() || 'main';
-  const pat = $('ghPat').value.trim(), pass = $('ghNewPass').value;
-  if (!owner || !repo || !pat){ setAddStatus('Owner, repo, and token are all required.', 'err'); return; }
-  if (!pass || pass.length < 4){ setAddStatus('Pick a system password (4+ characters).', 'err'); return; }
-  await ghStore(owner, repo, branch, pat, pass);
-  $('ghPat').value = ''; $('ghNewPass').value = '';
-  addMode = bridgeUp ? 'local' : 'github';
-  setAddStatus('GitHub connection saved (token encrypted in this browser only).', 'ok');
-  showAddMode();
-};
 
 function chosenSongTitle(){
   const sel = $('addSongSel').value;
@@ -1986,99 +1789,50 @@ async function doUpload(){
   const btn = $('addGo');
   btn.disabled = true;
   try {
-    if (addMode === 'local'){
-      for (const [i, f] of files.entries()){
-        setAddStatus(`Uploading ${i+1}/${files.length}: ${f.name}…`);
-        const fd = new FormData();
-        fd.append('file', f);
-        fd.append('song', song);
-        fd.append('band', curBand);
-        fd.append('version', multi ? '' : $('addVerName').value.trim());
-        if (note) fd.append('note', note);
-        const r = await (await fetch(BRIDGE + '/api/song/upload', { method: 'POST', body: fd })).json();
-        if (r.error) throw new Error(r.error);
-      }
-      setAddStatus(`Done ✓ — added to "${song}". Refreshing…`, 'ok');
-      await init();               // re-fetch tracks.json (bridge already rebuilt it)
-      fillSongSelect();
-    } else if (addMode === 'github'){
-      const cfg = ghConfig();
-      const pass = $('ghPass').value;
-      if (!pass){ setAddStatus('Enter your system password to unlock the GitHub token.', 'err'); btn.disabled = false; return; }
-      let pat;
-      try { pat = await ghUnlock(pass); }
-      catch { setAddStatus('Wrong password (or corrupted vault).', 'err'); btn.disabled = false; return; }
-      files = await prepareForRemote(files, setAddStatus);   // WAV → MP3 in-browser
-      const oversize = files.find(f => f.size > GH_MAX_BYTES);
-      if (oversize) throw new Error(`${oversize.name} is ${(oversize.size/1048576).toFixed(0)} MB — over GitHub's ${(GH_MAX_BYTES/1048576)|0} MB limit even after compression. Upload via the studio Mac.`);
+    // The inbox storage policy reads the password out of the object path, so
+    // uploads still carry it — but it comes from the session, not the user.
+    const pass = bandPass(curBand);
+    if (!pass){ closeAdd(); showGate(curBand, false); return; }
 
-      // 1) audio files
-      const added = [];
-      for (const [i, f] of files.entries()){
-        setAddStatus(`Committing ${i+1}/${files.length}: ${f.name}…`);
-        const ext = (f.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
-        const verName = (multi || !$('addVerName').value.trim())
-          ? f.name.replace(/\.[^.]+$/, '') : $('addVerName').value.trim();
-        const path = `tracks/${curBand}/${song}/${verName}${ext}`;
-        await ghPut(cfg, pat, path, await fileB64(f), `Add ${song} — ${verName}`);
-        added.push({ name: verName, src: path });
-      }
-      // 2) changelog sidecar
-      if (note){
-        setAddStatus('Committing changelog…');
-        await ghPut(cfg, pat, `tracks/${curBand}/${song}/${added[0].name}.changelog.md`, utf8b64(note + '\n'), `Changelog for ${song} — ${added[0].name}`);
-      }
-      // 3) manifest
-      setAddStatus('Updating tracks.json…');
-      const cur = await ghApi(cfg, pat, 'GET', `contents/tracks.json?ref=${cfg.branch}`);
-      const data = cur ? JSON.parse(b64utf8(cur.content)) : { title: "S'notify", bands: [] };
-      if (!Array.isArray(data.bands)) data.bands = [];
-      let bsec = data.bands.find(x => x.slug === curBand);
-      if (!bsec){ bsec = { slug: curBand, title: curBandTitle || curBand, songs: [] }; data.bands.push(bsec); }
-      let s = bsec.songs.find(x => (x.folder || x.title) === song || x.title === song);
-      if (!s){ s = { folder: song, title: song, versions: [] }; bsec.songs.push(s); }
-      const today = new Date().toISOString().slice(0, 10);
-      for (const a of added.reverse()){ // keep picker order on top
-        s.versions = (s.versions || []).filter(v => v.name !== a.name);
-        const entry = { name: a.name, src: a.src, date: today };
-        if (note && !multi) entry.changelog = note;
-        s.versions.unshift(entry);
-      }
-      await ghPut(cfg, pat, 'tracks.json', utf8b64(JSON.stringify(data, null, 2) + '\n'), `Update manifest: ${song}`);
-      setAddStatus(`Committed ✓ — "${song}" goes live when GitHub Pages rebuilds (~1–2 min).`, 'ok');
-      $('ghPass').value = '';
-    } else if (addMode === 'inbox'){
-      const pass = $('inboxPass').value.trim();
-      if (!pass){ setAddStatus('Enter the band password.', 'err'); btn.disabled = false; return; }
-      localStorage.setItem('mp_band_pass', pass);
-      files = await prepareForRemote(files, setAddStatus);   // WAV → MP3 in-browser
-      const big = files.find(f => f.size > INBOX_MAX);
-      if (big) throw new Error(`${big.name} is ${(big.size/1048576).toFixed(0)} MB — over the ${(INBOX_MAX/1048576)|0} MB limit even after compression. Upload via the studio Mac.`);
-      const put = async (path, body, type) => {
-        const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${path}`, {
-          method: 'POST',
-          headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
-                     'Content-Type': type, 'x-upsert': 'true' },
-          body });
-        if (r.status === 400 || r.status === 403) throw new Error('Upload rejected — wrong band password?');
-        if (!r.ok) throw new Error('Upload failed (' + r.status + ')');
-      };
-      const enc = (...seg) => seg.map(encodeURIComponent).join('/');
-      let firstBase = null;
-      for (const [i, f] of files.entries()){
-        setAddStatus(`Uploading ${i+1}/${files.length}: ${f.name}…`);
-        const ext = (f.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
-        const verName = (multi || !$('addVerName').value.trim())
-          ? f.name.replace(/\.[^.]+$/, '') : $('addVerName').value.trim();
-        firstBase ??= verName;
-        await put(enc(curBand, pass, song, verName + ext), f, f.type || 'application/octet-stream');
-      }
-      if (note && firstBase)
-        await put(enc(curBand, pass, song, firstBase + '.changelog.md'), note + '\n', 'text/markdown');
-      setAddStatus(`Uploaded ✓ — "${song}" appears once the inbox is imported (~1–2 min while the studio Mac is online).`, 'ok');
-    } else {
-      setAddStatus('No upload transport available.', 'err');
+    files = await prepareForUpload(files, setAddStatus);   // WAV → MP3 in-browser
+    const big = files.find(f => f.size > INBOX_MAX);
+    if (big) throw new Error(`${big.name} is ${(big.size/1048576).toFixed(0)} MB — over the ${(INBOX_MAX/1048576)|0} MB limit even after compression.`);
+
+    // The inbox storage policy checks the password embedded in the path, so a
+    // wrong one is rejected here before a single byte is stored.
+    const put = async (path, body, type) => {
+      const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${path}`, {
+        method: 'POST',
+        headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+                   'Content-Type': type, 'x-upsert': 'true' },
+        body });
+      if (r.ok) return;
+      // Storage answers 400 for a whole family of problems, so report what it
+      // actually said rather than guessing "wrong password" every time.
+      let detail = '';
+      try { const j = await r.json(); detail = j.message || j.error || ''; } catch {}
+      throw new Error(`Upload of ${decodeURIComponent(path.split('/').pop())} failed `
+                    + `(${r.status}${detail ? ': ' + detail : ''})`);
+    };
+    const enc = (...seg) => seg.map(encodeURIComponent).join('/');
+    let firstBase = null;
+    for (const [i, f] of files.entries()){
+      setAddStatus(`Uploading ${i+1}/${files.length}: ${f.name}…`);
+      const ext = (f.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+      const verName = (multi || !$('addVerName').value.trim())
+        ? f.name.replace(/\.[^.]+$/, '') : $('addVerName').value.trim();
+      firstBase ??= verName;
+      await put(enc(curBand, pass, song, verName + ext), f, f.type || 'application/octet-stream');
     }
+    if (note && firstBase)
+      await put(enc(curBand, pass, song, firstBase + '.changelog.md'), note + '\n', 'text/markdown');
+
+    // Import right away rather than waiting on a poller somewhere.
+    setAddStatus('Importing…');
+    const res = await edgeFn('import-inbox', { band: curBand, pass, song });
+    setAddStatus(`Done ✓ — ${res.imported} mix${res.imported === 1 ? '' : 'es'} added to “${song}”.`, 'ok');
+    await init();
+    fillSongSelect();
     $('addFile').value = ''; $('addVerName').value = ''; $('addNote').value = '';
     syncFileUI();
   } catch (err) {
@@ -2089,65 +1843,69 @@ async function doUpload(){
 }
 $('addGo').onclick = doUpload;
 
-// ---------- Trash (archive deleted songs; confirm to remove forever) ----------
-// Authoring surface: only lights up when the local bridge is running.
-async function bridgePost(path, body){
-  const r = await fetch(BRIDGE + path, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const j = await r.json();
-  if (j.error) throw new Error(j.error);
-  return j;
-}
+// ---------- Trash (soft-deleted songs and versions; confirm to remove forever) ----------
+// Trashing only sets a timestamp, so nothing leaves storage until someone
+// confirms. Permanent deletion has to remove the audio objects as well, which
+// needs the service role — hence the library-admin Edge Function.
 function setTrashStatus(msg, cls){ const el = $('trashStatus'); el.textContent = msg || ''; el.className = 'status' + (cls ? ' ' + cls : ''); }
-function trashBadge(items){ $('trashCount').textContent = items.length ? ` ${items.length}` : ''; }
+function trashBadge(n){ $('trashCount').textContent = n ? ` ${n}` : ''; }
 
 async function refreshTrash(){
+  if (!curBand || !isAuthed(curBand)) return { songs: [], versions: [] };
   try {
-    const j = await (await fetch(BRIDGE + '/api/trash')).json();
-    trashBadge(j.items || []);
-    return j.items || [];
-  } catch { return []; }
+    const t = await libRpc('get_trash', {});
+    trashBadge((t.songs || []).length + (t.versions || []).length);
+    return t;
+  } catch { return { songs: [], versions: [] }; }
 }
 
 async function trashSong(song){
   if (!song || !song.folder) return;
   try {
-    const j = await bridgePost('/api/song/trash', { band: curBand, song: song.folder });
+    await libRpc('trash_song', { f: song.folder });
     if (activeSongIndex !== -1 && songs[activeSongIndex] === song){
       destroyPlayers(); activeSong = null; activeSongIndex = -1;
       $('nowTitle').textContent = 'Nothing playing'; $('nowArtist').textContent = '';
       renderVersions(); setPlayingUI(false);
     }
-    trashBadge(j.items || []);
     await init();
     fillSongSelect();
+    refreshTrash();
   } catch (err) { alert('Could not move to trash: ' + (err.message || err)); }
 }
 
-function renderTrash(items){
-  trashBadge(items);
-  if (!items.length){
+function renderTrash(t){
+  const songRows = t.songs || [], verRows = t.versions || [];
+  trashBadge(songRows.length + verRows.length);
+  if (!songRows.length && !verRows.length){
     $('trashList').innerHTML = '<div class="cempty">Trash is empty.</div>';
     return;
   }
-  $('trashList').innerHTML = items.map(t => `
-    <div class="trash-item" data-song="${esc(t.song)}" data-band="${esc(t.band || 'lakehorse')}">
-      <span class="tname">${t.band && t.band !== curBand ? `<span style="color:var(--text-mute)">${esc(t.band)} · </span>` : ''}${esc(t.song)}</span>
-      <span class="tmeta">${t.versions} version${t.versions===1?'':'s'}</span>
+  $('trashList').innerHTML =
+    songRows.map(s => `
+    <div class="trash-item" data-kind="song" data-folder="${esc(s.folder)}" data-label="${esc(s.title)}">
+      <span class="tname">${esc(s.title)}</span>
+      <span class="tmeta">${s.versions} version${s.versions===1?'':'s'}</span>
+      <button class="btn ghost restore">Restore</button>
+      <button class="btn danger">Delete forever</button>
+    </div>`).join('') +
+    verRows.map(v => `
+    <div class="trash-item" data-kind="version" data-folder="${esc(v.folder)}" data-name="${esc(v.name)}" data-label="${esc(v.name)}">
+      <span class="tname"><span style="color:var(--text-mute)">${esc(v.song)} · </span>${esc(v.name)}</span>
+      <span class="tmeta">version</span>
       <button class="btn ghost restore">Restore</button>
       <button class="btn danger">Delete forever</button>
     </div>`).join('');
+
   $('trashList').querySelectorAll('.trash-item').forEach(el => {
-    const song = el.dataset.song;
-    const band = el.dataset.band;
+    const { kind, folder, name, label } = el.dataset;
     el.querySelector('.restore').addEventListener('click', async () => {
       try {
-        setTrashStatus(`Restoring “${song}”…`);
-        const j = await bridgePost('/api/trash/restore', { band, song });
-        renderTrash(j.items || []);
-        setTrashStatus(`Restored “${song}” ✓`, 'ok');
+        setTrashStatus(`Restoring “${label}”…`);
+        await (kind === 'song' ? libRpc('restore_song', { f: folder })
+                               : libRpc('restore_version', { f: folder, ver_name: name }));
+        renderTrash(await refreshTrash());
+        setTrashStatus(`Restored “${label}” ✓`, 'ok');
         await init(); fillSongSelect();
       } catch (err) { setTrashStatus(String(err.message || err), 'err'); }
     });
@@ -2160,10 +1918,13 @@ function renderTrash(items){
         return;
       }
       try {
-        setTrashStatus(`Deleting “${song}” forever…`);
-        const j = await bridgePost('/api/trash/delete', { band, song });
-        renderTrash(j.items || []);
-        setTrashStatus(`“${song}” permanently deleted.`, 'ok');
+        setTrashStatus(`Deleting “${label}” forever…`);
+        await edgeFn('library-admin', {
+          band: curBand, pass: bandPass(curBand),
+          action: kind === 'song' ? 'delete_song_forever' : 'delete_version_forever',
+          song: folder, name });
+        renderTrash(await refreshTrash());
+        setTrashStatus(`“${label}” permanently deleted.`, 'ok');
       } catch (err) { setTrashStatus(String(err.message || err), 'err'); }
     });
   });
@@ -2180,12 +1941,34 @@ $('trashBtn').onclick = openTrash;
 $('trashClose').onclick = closeTrash;
 $('trashModal').addEventListener('click', (e) => { if (e.target === $('trashModal')) closeTrash(); });
 
-// Light up the authoring affordances (per-song 🗑 + trash can) when local.
-probeBridge().then(up => {
-  if (!up) return;
-  document.body.classList.add('local');
-  refreshTrash();
-});
+// ---------- Share a hand-picked set of songs as a project ----------
+// A project is an ordered list of songs behind an unguessable slug. Opening
+// one still asks for the band password — the slug decides *what* you see, not
+// *whether* you may see it.
+const projSlug = () => {
+  const a = new Uint8Array(8); crypto.getRandomValues(a);
+  const cs = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  return [...a].map(n => cs[n % cs.length]).join('');
+};
+$('projBtn').onclick = async () => {
+  if (!curBand || !isAuthed(curBand)) return;
+  const name = prompt('Name this share link (e.g. “Album rough mixes”):',
+                      curBandTitle + ' mixes');
+  if (name === null || !name.trim()) return;
+  const all = confirm(`Include all ${songs.length} songs in this view?\n\nOK = all · Cancel = choose them one at a time`);
+  const picked = [];
+  for (const s of songs){
+    const key = s.folder || s.title;
+    if (all || confirm(`Include “${s.title}”?`)) picked.push(key);
+  }
+  if (!picked.length) return alert('Pick at least one song.');
+  const slug = projSlug();
+  try {
+    await libRpc('upsert_project', { proj: slug, proj_name: name.trim(), folders: picked });
+    await copyText(pageBase() + '?p=' + encodeURIComponent(slug), $('projBtn'));
+    alert(`“${name.trim()}” created — the link is on your clipboard.`);
+  } catch (err){ alert('Could not create the link: ' + (err.message || err)); }
+};
 
 // ---------- Keyboard ----------
 document.addEventListener('keydown', (e) => {
@@ -2228,9 +2011,7 @@ function setMediaSession(){
 }
 
 window.addEventListener('resize', renderMarkers);
-if (supaOn()) document.body.classList.add('inboxok');   // band uploads from shared views
 init();
-loadRemoteComments();
 </script>
 </body>
 </html>

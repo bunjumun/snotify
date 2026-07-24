@@ -16,7 +16,7 @@ update bands set pass = crypt(pass, gen_salt('bf'))
 where pass !~ '^\$2[aby]\$\d{2}\$';
 
 create or replace function band_pass_ok(b text, p text) returns boolean
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = public, extensions as $$
   select exists (
     select 1 from bands
     where slug = lower(b) and pass = crypt(coalesce(p, ''), pass))

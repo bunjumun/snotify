@@ -39,7 +39,7 @@ $$;
 -- One-time setup. Refuses once a row exists — admin_recover is how the
 -- password changes after that, not this.
 create or replace function admin_setup(password text, question text, answer text) returns void
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 begin
   if exists (select 1 from admin_config) then
     raise exception using errcode = '42501', message = 'admin already configured';
@@ -52,7 +52,7 @@ begin
 end $$;
 
 create or replace function admin_login(password text) returns boolean
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = public, extensions as $$
   select exists (
     select 1 from admin_config
     where password_hash = crypt(coalesce(password, ''), password_hash))
@@ -61,7 +61,7 @@ $$;
 -- Recovery: the right answer resets the password; doesn't need the old one
 -- at all. Wrong answer just returns false — no hint about why.
 create or replace function admin_recover(answer text, new_password text) returns boolean
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare ok boolean;
 begin
   select (answer_hash = crypt(_norm_answer(answer), answer_hash)) into ok from admin_config;
@@ -81,7 +81,7 @@ end $$;
 -- (created above) since the band password is hashed on the way in, same as
 -- schema-v5 does for every existing band.
 create or replace function admin_create_band(admin_password text, slug text, title text, band_password text) returns void
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare s text := lower(trim(coalesce(slug, '')));
 begin
   if not admin_login(admin_password) then

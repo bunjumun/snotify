@@ -93,7 +93,7 @@ begin
   if coalesce(band_password, '') = '' then
     raise exception 'band password required';
   end if;
-  if exists (select 1 from bands where slug = s) then
+  if exists (select 1 from bands where bands.slug = s) then
     raise exception 'a band with that slug already exists';
   end if;
   -- hashed, same as every band password since schema-v5

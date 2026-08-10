@@ -7,9 +7,9 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=17" />
+<link rel="stylesheet" href="core.css?v=19" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=17" />
+<link rel="stylesheet" href="theme-dazzle.css?v=19" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -160,6 +160,7 @@
   /* Single-mix view (?b&s&v, no login): playback only — no comments, no
      library affordances. Band members log in for everything else. */
   body.singlemix #cToggle, body.singlemix #vlogToggle, body.singlemix #shareBtn,
+  body.singlemix #lyricToggle,
   body.singlemix #todoToggle,
   body.singlemix #addBtn, body.singlemix .song .scpy { display: none !important; }
 
@@ -167,6 +168,90 @@
      but logged-in bandmates can still add mixes and copy the link */
   body.shared .addbtn { display: none; }
   body.shared #addBtn, body.shared #shareBtn { display: inline-flex; }
+
+  /* ---------- Lyrics ---------- */
+  .lyr-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .lyr-drop { position: relative; flex: none; }
+  .lyr-drop .vermenu { bottom: auto; top: calc(100% + 6px); left: 0; right: auto; min-width: 240px; }
+  .lyr-drop.open .vermenu { display: block; }
+  .lyr-switch { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-dim); font-size: 12px; }
+  .lyr-switch b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .lyr-body {
+    max-height: 30vh; overflow-y: auto; padding: 2px 0;
+    font-size: 15px; line-height: 1.75; white-space: pre-wrap;
+  }
+  .lyr-line { padding: 0 6px; border-radius: 5px; }
+  .lyr-line.blank { min-height: 10px; }
+  /* A line with alternatives only announces itself in review mode — lyrics
+     should read as lyrics until you go looking. */
+  body.lyr-review .lyr-line.has { background: rgba(255,180,84,.13); cursor: pointer; box-shadow: inset 2px 0 0 var(--warn); }
+  body.lyr-review .lyr-line.has:hover { background: rgba(255,180,84,.22); }
+  /* Something you have staged. Deliberately loud, and only ever visible in
+     review mode, so nobody mistakes a try-on for the band's draft. */
+  .lyr-line.staged { background: rgba(0,208,164,.16); box-shadow: inset 2px 0 0 var(--accent-2); cursor: pointer; }
+  .lyr-star {
+    display: none; margin: 1px 0 1px 4px; color: var(--warn); cursor: pointer;
+    font-size: 12px; letter-spacing: .5px;
+  }
+  body.lyr-review .lyr-star { display: block; }
+  .lyr-star:hover { color: var(--text); }
+  .lyr-star .cnt { color: var(--text-mute); font-size: 11px; }
+  .lyr-edit {
+    display: none; width: 100%; min-height: 26vh; resize: vertical;
+    background: var(--field); border: 1px solid var(--accent); color: var(--text);
+    border-radius: 8px; padding: 10px 12px; font: inherit; font-size: 15px;
+    line-height: 1.7; outline: none;
+  }
+  body.lyr-editing .lyr-edit { display: block; }
+  body.lyr-editing .lyr-body { display: none; }
+  .lyr-stage {
+    display: none; align-items: center; gap: 10px; margin-top: 10px;
+    padding: 9px 12px; background: var(--bg-row);
+    border: 1px solid var(--accent-2); border-radius: var(--radius); font-size: 12.5px;
+  }
+  .lyr-stage.open { display: flex; }
+  .lyr-stage .btn { padding: 6px 14px; font-size: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; }
+  .lyr-stage .btn.primary { background: var(--accent); color: #fff; }
+  .lyr-stage .btn.ghost { background: var(--bg-soft); color: var(--text-dim); border: 1px solid var(--line); }
+  /* The alternatives popover */
+  .lyr-pop {
+    display: none; position: fixed; z-index: 90; width: min(420px, 92vw);
+    background: var(--bg-soft); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px;
+  }
+  .lyr-pop.open { display: block; }
+  .lyr-pop-head { color: var(--text-mute); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; margin-bottom: 8px; }
+  .lyr-pop-list { max-height: 40vh; overflow-y: auto; margin: 0 -4px; }
+  .lyr-opt { display: flex; gap: 9px; padding: 7px 8px; border-radius: 7px; cursor: pointer; }
+  .lyr-opt:hover { background: var(--bg-hover); }
+  .lyr-opt .key {
+    flex: none; width: 18px; height: 18px; border-radius: 4px; text-align: center;
+    font-size: 11px; font-weight: 800; line-height: 18px;
+    background: var(--bg-row); border: 1px solid var(--line); color: var(--text-dim);
+  }
+  .lyr-opt.orig .key { border-color: var(--accent-2); color: var(--accent-2); }
+  .lyr-opt .body { flex: 1; min-width: 0; }
+  .lyr-opt .body .txt { word-wrap: break-word; }
+  .lyr-opt .body .who { color: var(--text-mute); font-size: 11px; margin-top: 2px; }
+  .lyr-opt .act { flex: none; color: var(--text-mute); font-size: 11px; opacity: 0; }
+  .lyr-opt:hover .act { opacity: 1; }
+  .lyr-opt .act:hover { color: var(--accent); }
+  /* A tweak of someone else's suggestion sits under it, one level only. */
+  .lyr-opt.reply { margin-left: 26px; }
+  .lyr-opt.note { cursor: default; }
+  .lyr-opt.note .key { border-style: dashed; }
+  .lyr-pop-add { display: flex; gap: 7px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .lyr-pop-add input {
+    flex: 1; background: var(--field); border: 1px solid var(--line); color: var(--text);
+    border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px; outline: none;
+  }
+  .lyr-pop-add input:focus { border-color: var(--accent); }
+  .lyr-pop-add .btn { border: none; border-radius: 8px; padding: 7px 14px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--accent); color: #fff; }
+  .lyr-pop-add .btn.ghost { background: var(--bg-row); color: var(--text-dim); border: 1px solid var(--line); }
+  /* A note is only ever a reply to a suggestion — there is nothing to discuss
+     about a line until someone has proposed something for it. */
+  #lyrPopNote { display: none; }
+  .lyr-pop.replying #lyrPopNote { display: block; }
 
   /* Cross-page buttons + admin: band members only, and never on a shared mix */
   #artBtn, #homeBtn { display: none; }
@@ -400,6 +485,17 @@
     </div>
   </div>
 
+  <!-- A line's alternatives, and the tweaks people hung off them -->
+  <div class="lyr-pop" id="lyrPop">
+    <div class="lyr-pop-head" id="lyrPopHead"></div>
+    <div class="lyr-pop-list" id="lyrPopList"></div>
+    <div class="lyr-pop-add">
+      <input type="text" id="lyrPopInput" maxlength="300" placeholder="Suggest this line instead…" />
+      <button class="btn primary" id="lyrPopGo">Suggest</button>
+      <button class="btn ghost" id="lyrPopNote" title="Say what you think, without offering a line">Note</button>
+    </div>
+  </div>
+
   <!-- Song picker (stack target) -->
   <div class="modal-back" id="pickModal">
     <div class="modal">
@@ -416,6 +512,43 @@
       <div class="pad">
         <h3>Version history <span id="vlogHint" style="text-transform:none;font-weight:400"></span></h3>
         <div class="vlog-list" id="vlogList"></div>
+      </div>
+    </div>
+
+    <div class="drawer" id="lyricDrawer">
+      <div class="pad">
+        <h3>Lyrics <span id="lyricHint" style="text-transform:none;font-weight:400"></span>
+          <button class="cdl" id="lyricDl" title="Download these lyrics as a text file">↓ .txt</button>
+          <button class="cdl" id="lyricPop" title="Open in a new tab">⧉ open</button>
+        </h3>
+
+        <div class="lyr-bar">
+          <div class="lyr-drop" id="lyrDrop">
+            <button class="verbtn" id="lyrDraftBtn" title="Choose a draft">
+              <span class="vname" id="lyrDraftName">—</span>
+              <svg class="caret" viewBox="0 0 10 6"><path d="M0 0l5 6 5-6z"/></svg>
+            </button>
+            <div class="vermenu" id="lyrDraftMenu"></div>
+          </div>
+          <label class="lyr-switch" title="Suggestions are hidden until you ask for them">
+            <input type="checkbox" id="lyrReview" /> <span>Suggestions <b id="lyrSugCount">0</b></span>
+          </label>
+          <span style="flex:1"></span>
+          <button class="cdl" id="lyrEdit" title="Write or rewrite these lyrics">✎ edit</button>
+        </div>
+
+        <div class="lyr-body" id="lyrBody"></div>
+        <textarea class="lyr-edit" id="lyrEditor" spellcheck="false"
+                  placeholder="Type the lyrics. One line per line."></textarea>
+
+        <!-- Staged changes live here and nowhere else: what you are trying is
+             never mixed into the reading view. -->
+        <div class="lyr-stage" id="lyrStage">
+          <span id="lyrStageMsg"></span>
+          <span style="flex:1"></span>
+          <button class="btn ghost" id="lyrReset">Reset</button>
+          <button class="btn primary" id="lyrSave">Save as new draft</button>
+        </div>
       </div>
     </div>
 
@@ -456,6 +589,10 @@
           <button class="cbtn" id="vlogToggle" title="Version history / changelog (v)" style="margin-left:0">
             <svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 00-9 9H1l3.9 3.9L8.8 12H6a7 7 0 117 7 7 7 0 01-4.9-2L6.7 18.4A9 9 0 1013 3zm-1 5v5l4.25 2.52.75-1.23-3.5-2.08V8H12z"/></svg>
             <span>Log</span>
+          </button>
+          <button class="cbtn" id="lyricToggle" title="Lyrics (l)" style="margin-left:0">
+            <svg viewBox="0 0 24 24"><path d="M4 5h16v2H4V5zm0 4h11v2H4V9zm0 4h16v2H4v-2zm0 4h11v2H4v-2z"/></svg>
+            <span>Lyrics</span>
           </button>
           <button class="cbtn" id="cToggle" title="Comments (c)" style="margin-left:0">
             <svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 012 2v9a2 2 0 01-2 2H8l-4 4V6a2 2 0 012-2z"/></svg>
@@ -542,7 +679,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=17"></script>
+<script src="core.js?v=19"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -1146,6 +1283,7 @@ function openSong(songIndex, autoplay, startVer = 0){
   highlight(songIndex);
   setMediaSession();
   refreshSongComments(s.id);   // pull bandmates' latest comments (sitewide mode)
+  loadLyrics();                // the words follow the song, not the mix
 }
 
 function wireVersion(w, vi){
@@ -1936,6 +2074,450 @@ function refreshListBadges(){
 }
 
 
+// ---------- Lyrics ----------
+// The words live on the SONG, not on a mix — one set across every version.
+// A draft's body is immutable; changing the words means writing the next draft,
+// which is why line numbers are a safe anchor for a suggestion.
+//
+// Two rules the interface lives by:
+//   1. Suggestions are invisible until you ask for them. Lyrics read as lyrics.
+//   2. What you are trying on is never mixed into the reading view. Staging
+//      implies review mode, so two people on the same link read the same words.
+let lyrDrafts = [], lyrSugs = [], lyrIdx = 0;
+let lyrStaged = [];          // {line, text, sugId, kind:'replace'|'insert'}
+let lyrPopLine = null;       // which line the popover is about
+let lyrPopKind = 'replace';  // …and whether it is about a line or a gap
+
+const lyrSubject = () => activeSong ? activeSong.id : null;   // '<band>/<key>'
+const lyrDraft = () => lyrDrafts[lyrIdx] || null;
+const lyrLines = (d) => (d ? String(d.body).split('\n') : []);
+const lyrFor = (draftId) => lyrSugs.filter(s => s.draft_id === draftId && s.status === 'open');
+const lyrRoots = (draftId, line, kind) =>
+  lyrFor(draftId).filter(s => !s.parent_id && s.line_no === line && s.kind === kind);
+const lyrReplies = (id) => lyrSugs.filter(s => s.parent_id === id);
+// A tweak counts as an alternative; a note is only discussion.
+const lyrAlts = (root) => [root, ...lyrReplies(root.id).filter(r => r.kind !== 'note')];
+
+async function loadLyrics(){
+  const sid = lyrSubject();
+  lyrDrafts = []; lyrSugs = []; lyrIdx = 0; lyrStaged = [];
+  if (!sid || !isAuthed(curBand)){ renderLyrics(); return; }
+  try {
+    const r = await libRpc('get_lyrics', { sid });
+    lyrDrafts = (r && r.drafts) || [];
+    lyrSugs   = (r && r.suggestions) || [];
+    lyrIdx = Math.max(0, lyrDrafts.length - 1);      // newest by default
+  } catch { /* no lyrics schema yet, or offline — the drawer says so */ }
+  renderLyrics();
+}
+
+// What the words look like with everything you have staged applied. Inserts go
+// in from the bottom up so earlier indices stay valid.
+function lyrWorking(){
+  const d = lyrDraft();
+  if (!d) return [];
+  const lines = lyrLines(d).slice();
+  lyrStaged.filter(x => x.kind === 'replace').forEach(x => { lines[x.line] = x.text; });
+  lyrStaged.filter(x => x.kind === 'insert').sort((a, b) => b.line - a.line)
+           .forEach(x => lines.splice(x.line, 0, x.text));
+  return lines;
+}
+const lyrStagedAt = (line) => lyrStaged.find(x => x.kind === 'replace' && x.line === line);
+
+// Lines the draft this one grew from had, and this one dropped. Derived by
+// diffing against base_id rather than stored — a star at the gap is how you
+// find the suggestions that went with those lines.
+function lyrCuts(d){
+  if (!d || !d.base_id) return {};
+  const base = lyrDrafts.find(x => x.id === d.base_id);
+  if (!base) return {};
+  const mine = new Set(lyrLines(d).map(l => l.trim()).filter(Boolean));
+  const out = {};                                   // line index → [removed lines]
+  let at = 0;
+  lyrLines(base).forEach(l => {
+    const t = l.trim();
+    if (!t) return;
+    if (mine.has(t)) at = Math.min(lyrLines(d).length, at + 1);
+    else (out[at] ||= []).push(l);
+  });
+  return out;
+}
+
+function renderLyrics(){
+  const d = lyrDraft(), body = $('lyrBody');
+  const sugTotal = d ? lyrFor(d.id).filter(x => !x.parent_id).length : 0;
+  $('lyrSugCount').textContent = sugTotal;
+  $('lyricHint').textContent = activeSong ? `on “${activeSong.title}”` : '';
+  $('lyrDraftName').textContent = d ? `Draft ${d.n}${d.name ? ' · ' + d.name : ''}` : 'No lyrics yet';
+  $('lyricDl').disabled = !d;
+  $('lyricPop').disabled = !d;
+
+  if (!activeSong){ body.innerHTML = `<div class="cempty">Open a song to see its lyrics.</div>`; return; }
+  if (!d){
+    body.innerHTML = `<div class="cempty">No lyrics yet — hit ✎ edit to write them.</div>`;
+    return;
+  }
+
+  const lines = lyrWorking();
+  const cuts = lyrCuts(d);
+  const staged = new Set(lyrStaged.filter(x => x.kind === 'replace').map(x => x.line));
+  // Inserts shift what a rendered row means, so walk the original indices and
+  // interleave the staged inserts as we go.
+  const ins = lyrStaged.filter(x => x.kind === 'insert');
+  let html = '', oi = 0;                              // oi = index in the draft
+  const starAt = (i) => {
+    const adds = lyrRoots(d.id, i, 'insert');
+    const cut  = cuts[i] || [];
+    if (!adds.length && !cut.length) return '';
+    const bits = [];
+    if (adds.length) bits.push(`${adds.length} suggested`);
+    if (cut.length) bits.push(`${cut.length} cut`);
+    return `<div class="lyr-star" data-star="${i}" title="${esc(bits.join(' · '))} — click to see">★ <span class="cnt">${esc(bits.join(' · '))}</span></div>`;
+  };
+  for (let i = 0; i <= lyrLines(d).length; i++){
+    html += starAt(i);
+    if (i === lyrLines(d).length) break;
+    // any staged inserts that belong before this line
+    ins.filter(x => x.line === i).forEach(x => {
+      html += `<div class="lyr-line staged" data-ins="${i}">${esc(x.text) || '&nbsp;'}</div>`;
+    });
+    const text = lines[oi] !== undefined ? lines[oi] : '';
+    const has = lyrRoots(d.id, i, 'replace').length > 0;
+    html += `<div class="lyr-line ${has ? 'has' : ''} ${staged.has(i) ? 'staged' : ''} ${text.trim() ? '' : 'blank'}" `
+          + `data-line="${i}">${esc(lyrStagedAt(i) ? lyrStagedAt(i).text : text) || '&nbsp;'}</div>`;
+    oi++;
+  }
+  body.innerHTML = html;
+
+  $('lyrStage').classList.toggle('open', lyrStaged.length > 0);
+  $('lyrStageMsg').textContent = lyrStaged.length
+    ? `Trying ${lyrStaged.length} change${lyrStaged.length === 1 ? '' : 's'} — nobody else sees this yet.`
+    : '';
+}
+
+// ---- the draft stack ----
+function renderLyrDraftMenu(){
+  $('lyrDraftMenu').innerHTML = lyrDrafts.map((d, i) => `
+    <div class="veritem ${i === lyrIdx ? 'active' : ''}" data-draft="${i}">
+      <span class="vname">Draft ${d.n}</span>
+      <span class="vdate">${d.name ? esc(d.name) + ' · ' : ''}${new Date(d.created_at).toLocaleDateString()}</span>
+      <span class="ec" data-dup="${i}" title="Move up">▲</span>
+      <span class="ec" data-ddn="${i}" title="Move down">▼</span>
+      <span class="ec danger" data-ddel="${i}" title="Delete this draft">🗑</span>
+    </div>`).join('') || `<div class="cempty">No drafts yet.</div>`;
+}
+$('lyrDraftBtn').onclick = (e) => {
+  e.stopPropagation();
+  renderLyrDraftMenu();
+  $('lyrDrop').classList.toggle('open');
+};
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#lyrDrop')) $('lyrDrop').classList.remove('open');
+  if (!e.target.closest('#lyrPop') && !e.target.closest('.lyr-line') && !e.target.closest('.lyr-star'))
+    $('lyrPop').classList.remove('open');
+});
+$('lyrDraftMenu').addEventListener('click', async (e) => {
+  e.stopPropagation();
+  const del = e.target.closest('[data-ddel]');
+  if (del){
+    const d = lyrDrafts[+del.dataset.ddel];
+    if (!confirm(`Delete draft ${d.n}? Its suggestions go with it. Other drafts are untouched.`)) return;
+    try { await libRpc('delete_lyric_draft', { draft: d.id }); }
+    catch (err){ alert('Could not delete: ' + (err.message || err)); return; }
+    await loadLyrics(); renderLyrDraftMenu();
+    return;
+  }
+  const up = e.target.closest('[data-dup]'), dn = e.target.closest('[data-ddn]');
+  if (up || dn){
+    const i = +(up || dn).dataset[up ? 'dup' : 'ddn'];
+    const j = up ? i - 1 : i + 1;
+    if (j < 0 || j >= lyrDrafts.length) return;
+    [lyrDrafts[i], lyrDrafts[j]] = [lyrDrafts[j], lyrDrafts[i]];
+    if (lyrIdx === i) lyrIdx = j; else if (lyrIdx === j) lyrIdx = i;
+    try { await libRpc('reorder_lyric_drafts', { sid: lyrSubject(), ids: lyrDrafts.map(d => d.id) }); }
+    catch (err){ alert('Could not reorder: ' + (err.message || err)); }
+    renderLyrDraftMenu(); renderLyrics();
+    return;
+  }
+  const pick = e.target.closest('[data-draft]');
+  if (pick){
+    lyrIdx = +pick.dataset.draft; lyrStaged = [];
+    $('lyrDrop').classList.remove('open');
+    renderLyrics();
+  }
+});
+
+// ---- review mode ----
+$('lyrReview').onchange = () => {
+  document.body.classList.toggle('lyr-review', $('lyrReview').checked);
+  if (!$('lyrReview').checked && lyrStaged.length){
+    // staging implies review: turning it off would hide what you are trying
+    $('lyrReview').checked = true;
+    document.body.classList.add('lyr-review');
+  }
+};
+
+// ---- writing the words by hand ----
+$('lyrEdit').onclick = () => {
+  if (!activeSong) return;
+  const editing = document.body.classList.toggle('lyr-editing');
+  if (editing){
+    $('lyrEditor').value = lyrWorking().join('\n');
+    $('lyrEditor').focus();
+    $('lyrStage').classList.add('open');
+    $('lyrStageMsg').textContent = 'Editing — saving writes a new draft.';
+    $('lyrEdit').textContent = '✕ cancel';
+  } else {
+    $('lyrEdit').textContent = '✎ edit';
+    renderLyrics();
+  }
+};
+
+// ---- the popover ----
+function openLyrPop(target, line, kind){
+  const d = lyrDraft(); if (!d) return;
+  lyrPopLine = line; lyrPopKind = kind;
+  const roots = lyrRoots(d.id, line, kind);
+  const cut = kind === 'insert' ? (lyrCuts(d)[line] || []) : [];
+  const orig = kind === 'replace' ? lyrLines(d)[line] : '';
+  const staged = kind === 'replace' ? lyrStagedAt(line) : null;
+
+  $('lyrPopHead').textContent = kind === 'insert'
+    ? `Between the lines${cut.length ? ' · ' + cut.length + ' cut from the last draft' : ''}`
+    : `Line ${line + 1}`;
+
+  let html = '';
+  let k = 0;
+  const letter = () => String.fromCharCode(97 + k++);
+  roots.forEach(r => {
+    lyrAlts(r).forEach((alt, ai) => {
+      html += `<div class="lyr-opt ${ai ? 'reply' : ''}" data-take="${alt.id}">
+        <span class="key">${letter()}</span>
+        <div class="body"><div class="txt">${esc(alt.text)}</div>
+          <div class="who">${alt.name ? '<b>' + esc(alt.name) + '</b> · ' : ''}${timeago(Date.parse(alt.created_at))}${ai ? ' · tweak' : ''}</div></div>
+        <span class="act" data-reply="${r.id}">reply</span>
+        <span class="act" data-delsug="${alt.id}">×</span>
+      </div>`;
+    });
+    lyrReplies(r.id).filter(x => x.kind === 'note').forEach(nt => {
+      html += `<div class="lyr-opt reply note">
+        <span class="key">💬</span>
+        <div class="body"><div class="txt">${esc(nt.text)}</div>
+          <div class="who">${nt.name ? '<b>' + esc(nt.name) + '</b> · ' : ''}${timeago(Date.parse(nt.created_at))}</div></div>
+        <span class="act" data-delsug="${nt.id}">×</span>
+      </div>`;
+    });
+  });
+  cut.forEach((l, i) => {
+    html += `<div class="lyr-opt" data-restore="${i}" data-restext="${esc(l)}">
+      <span class="key">★</span>
+      <div class="body"><div class="txt">${esc(l)}</div>
+        <div class="who">cut from the previous draft — put it back</div></div>
+    </div>`;
+  });
+  if (staged){
+    html += `<div class="lyr-opt orig" data-revert="${line}">
+      <span class="key">↩</span>
+      <div class="body"><div class="txt">${esc(orig)}</div>
+        <div class="who">the original line — undo what you staged</div></div>
+    </div>`;
+  }
+  if (!html) html = `<div class="cempty">Nothing suggested here yet.</div>`;
+  $('lyrPopList').innerHTML = html;
+  $('lyrPopInput').value = '';
+  $('lyrPopInput').placeholder = kind === 'insert' ? 'Suggest a new line here…' : 'Suggest this line instead…';
+  $('lyrPopInput').dataset.parent = '';
+  $('lyrPop').classList.remove('replying');
+
+  const r = target.getBoundingClientRect();
+  const pop = $('lyrPop');
+  pop.classList.add('open');
+  const w = pop.getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w.width - 8)) + 'px';
+  pop.style.top  = Math.max(8, r.top - w.height - 8) + 'px';
+}
+
+$('lyrBody').addEventListener('click', (e) => {
+  const star = e.target.closest('.lyr-star');
+  if (star){ openLyrPop(star, +star.dataset.star, 'insert'); return; }
+  const line = e.target.closest('.lyr-line');
+  if (!line || line.dataset.line === undefined) return;
+  if (!$('lyrReview').checked && !line.classList.contains('staged')) return;
+  openLyrPop(line, +line.dataset.line, 'replace');
+});
+
+$('lyrPop').addEventListener('click', async (e) => {
+  const d = lyrDraft(); if (!d) return;
+  const del = e.target.closest('[data-delsug]');
+  if (del){
+    const sug = lyrSugs.find(x => x.id === del.dataset.delsug);
+    if (sug && sug.name && sug.name.trim().toLowerCase() !== ($('cname').value.trim().toLowerCase())
+        && !confirm(`This was suggested by "${sug.name}" — remove it anyway?`)) return;
+    try { await libRpc('delete_lyric_suggestion', { sug: del.dataset.delsug }); }
+    catch (err){ alert('Could not remove: ' + (err.message || err)); return; }
+    lyrSugs = lyrSugs.filter(x => x.id !== del.dataset.delsug && x.parent_id !== del.dataset.delsug);
+    openLyrPop($('lyrBody').querySelector(`[data-line="${lyrPopLine}"]`) || $('lyrBody'), lyrPopLine, lyrPopKind);
+    renderLyrics();
+    return;
+  }
+  const rep = e.target.closest('[data-reply]');
+  if (rep){
+    $('lyrPopInput').dataset.parent = rep.dataset.reply;
+    $('lyrPop').classList.add('replying');
+    $('lyrPopInput').placeholder = 'Tweak the line, or leave a note…';
+    $('lyrPopInput').focus();
+    return;
+  }
+  const take = e.target.closest('[data-take]');
+  if (take){
+    const alt = lyrSugs.find(x => x.id === take.dataset.take);
+    if (!alt) return;
+    stageChange(alt.kind === 'insert' ? 'insert' : 'replace', lyrPopLine, alt.text, alt.id);
+    return;
+  }
+  const res = e.target.closest('[data-restore]');
+  if (res){ stageChange('insert', lyrPopLine, res.dataset.restext, null); return; }
+  const rev = e.target.closest('[data-revert]');
+  if (rev){
+    lyrStaged = lyrStaged.filter(x => !(x.kind === 'replace' && x.line === +rev.dataset.revert));
+    $('lyrPop').classList.remove('open');
+    renderLyrics();
+  }
+});
+
+function stageChange(kind, line, text, sugId){
+  // staging implies review — you must be able to see what you are trying
+  if (!$('lyrReview').checked){ $('lyrReview').checked = true; document.body.classList.add('lyr-review'); }
+  if (kind === 'replace') lyrStaged = lyrStaged.filter(x => !(x.kind === 'replace' && x.line === line));
+  lyrStaged.push({ kind, line, text, sugId });
+  $('lyrPop').classList.remove('open');
+  renderLyrics();
+}
+
+async function addLyrSuggestion(asNote){
+  const d = lyrDraft(); if (!d) return;
+  const txt = $('lyrPopInput').value.trim();
+  if (!txt) return;
+  const parent = $('lyrPopInput').dataset.parent || null;
+  // Replying with a line is a tweak — another option people can take. Replying
+  // with a note is just talking, and never appears among the choices.
+  const kind = parent ? (asNote ? 'note' : 'replace') : lyrPopKind;
+  try {
+    const row = await libRpc('add_lyric_suggestion', {
+      draft: d.id, ln: lyrPopLine, kind, txt, who: $('cname').value.trim(), parent });
+    lyrSugs.push(row);
+  } catch (err){ alert('Could not suggest that: ' + (err.message || err)); return; }
+  if (!$('lyrReview').checked){ $('lyrReview').checked = true; document.body.classList.add('lyr-review'); }
+  openLyrPop($('lyrBody').querySelector(`[data-line="${lyrPopLine}"]`) || $('lyrBody'), lyrPopLine, lyrPopKind);
+  renderLyrics();
+}
+$('lyrPopGo').onclick = () => addLyrSuggestion(false);
+$('lyrPopNote').onclick = () => addLyrSuggestion(true);
+$('lyrPopInput').addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); addLyrSuggestion(false); } });
+
+// Selecting a phrase is a shortcut to suggesting the line it sits in. What gets
+// stored is the whole line — see the plan: sub-line anchors die the moment
+// anyone edits the words around them.
+$('lyrBody').addEventListener('mouseup', () => {
+  if (!$('lyrReview').checked) return;
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed) return;
+  const el = sel.anchorNode && (sel.anchorNode.parentElement || sel.anchorNode).closest?.('.lyr-line');
+  if (!el || el.dataset.line === undefined) return;
+  openLyrPop(el, +el.dataset.line, 'replace');
+  $('lyrPopInput').value = lyrLines(lyrDraft())[+el.dataset.line] || '';
+  $('lyrPopInput').select();
+});
+
+// ---- committing ----
+$('lyrReset').onclick = () => {
+  if (document.body.classList.contains('lyr-editing')){
+    document.body.classList.remove('lyr-editing');
+    $('lyrEdit').textContent = '✎ edit';
+  }
+  lyrStaged = [];
+  renderLyrics();
+};
+$('lyrSave').onclick = async () => {
+  const sid = lyrSubject(); if (!sid) return;
+  const editing = document.body.classList.contains('lyr-editing');
+  const d = lyrDraft();
+  const body = editing ? $('lyrEditor').value : lyrWorking().join('\n');
+  if (!body.trim()){ alert('There are no words to save.'); return; }
+  const nextN = (lyrDrafts.reduce((m, x) => Math.max(m, x.n), 0) || 0) + 1;
+  if (!confirm(`Save this as draft ${nextN}? Draft ${d ? d.n : '—'} stays exactly as it is.`)) return;
+
+  // What survives: every open suggestion whose line still reads the same in the
+  // new body. A line this draft drops takes its suggestions out of view — they
+  // stay on the draft they were written against, behind the star at the gap.
+  const carry = [];
+  if (d){
+    const nowLines = body.split('\n').map(l => l.trim());
+    const oldLines = lyrLines(d).map(l => l.trim());
+    lyrFor(d.id).filter(s => !s.parent_id && s.kind === 'replace').forEach(s => {
+      const was = oldLines[s.line_no];
+      const at = was ? nowLines.indexOf(was) : -1;
+      if (at !== -1 && !lyrStaged.some(x => x.kind === 'replace' && x.line === s.line_no))
+        carry.push({ id: s.id, line_no: at });
+    });
+  }
+  const applied = lyrStaged.map(x => x.sugId).filter(Boolean);
+  $('lyrSave').disabled = true;
+  try {
+    await libRpc('add_lyric_draft', { sid, body, who: $('cname').value.trim(),
+                                      base: d ? d.id : null, applied, carry });
+  } catch (err){ alert('Could not save: ' + (err.message || err)); $('lyrSave').disabled = false; return; }
+  $('lyrSave').disabled = false;
+  document.body.classList.remove('lyr-editing');
+  $('lyrEdit').textContent = '✎ edit';
+  lyrStaged = [];
+  await loadLyrics();
+};
+
+// ---- getting the words out ----
+function lyrText(){
+  const d = lyrDraft();
+  return `${activeSong ? activeSong.title : 'Lyrics'} — draft ${d ? d.n : ''}\n`
+       + `${d && d.name ? d.name + ' · ' : ''}${d ? new Date(d.created_at).toLocaleDateString() : ''}\n\n`
+       + (d ? d.body : '') + '\n';
+}
+$('lyricDl').onclick = () => {
+  if (!lyrDraft()) return;
+  const url = URL.createObjectURL(new Blob([lyrText()], { type: 'text/plain;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (activeSong ? activeSong.title.replace(/[\/\\:*?"<>|]/g, '-') : 'lyrics') + ' lyrics.txt';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+// A bare, printable tab. Written straight into the window rather than served,
+// so there is no fourth page to keep in step with the other three.
+$('lyricPop').onclick = () => {
+  const d = lyrDraft(); if (!d) return;
+  const w = window.open('', '_blank');
+  if (!w) return;
+  w.document.write(`<!doctype html><meta charset="utf-8">`
+    + `<title>${esc(activeSong.title)} — lyrics</title>`
+    + `<style>body{background:#08080a;color:#fff;font:16px/1.8 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;`
+    + `margin:0;padding:48px 24px;} .w{max-width:640px;margin:0 auto;white-space:pre-wrap}`
+    + `h1{font-size:20px;margin:0 0 4px;letter-spacing:.06em;text-transform:uppercase}`
+    + `.sub{color:#6c6e78;font-size:12px;margin-bottom:28px}`
+    + `@media print{body{background:#fff;color:#000}}</style>`
+    + `<div class="w"><h1>${esc(activeSong.title)}</h1>`
+    + `<div class="sub">Draft ${d.n}${d.name ? ' · ' + esc(d.name) : ''} · ${new Date(d.created_at).toLocaleDateString()}</div>`
+    + `${esc(d.body)}</div>`);
+  w.document.close();
+};
+
+function openLyrics(open){
+  if (singleMix) return;
+  if (open){ $('drawer').classList.remove('open'); $('cToggle').classList.remove('active');
+             $('vlogDrawer').classList.remove('open'); $('vlogToggle').classList.remove('active'); }
+  $('lyricDrawer').classList.toggle('open', open);
+  $('lyricToggle').classList.toggle('active', open);
+}
+$('lyricToggle').onclick = () => openLyrics(!$('lyricDrawer').classList.contains('open'));
+
 // ---------- To-do (every thread on this song, GitHub-issues style) ----------
 let todoTab = 'open';
 function renderTodo(){
@@ -2012,6 +2594,7 @@ $('todoTabClosed').onclick  = () => { todoTab = 'resolved'; renderTodo(); };
 function openDrawer(open){
   if (singleMix) return;   // comments are band-only; the shared-mix view has none
   if (open){ $('vlogDrawer').classList.remove('open'); $('vlogToggle').classList.remove('active'); }
+  if (open){ $('lyricDrawer').classList.remove('open'); $('lyricToggle').classList.remove('active'); }
   $('drawer').classList.toggle('open', open); $('cToggle').classList.toggle('active', open);
   if (open) renderComments();
 }
@@ -2048,6 +2631,7 @@ function renderVlog(){
 
 function openVlog(open){
   if (open){ $('drawer').classList.remove('open'); $('cToggle').classList.remove('active'); }
+  if (open){ $('lyricDrawer').classList.remove('open'); $('lyricToggle').classList.remove('active'); }
   $('vlogDrawer').classList.toggle('open', open); $('vlogToggle').classList.toggle('active', open);
   if (open) renderVlog();
 }
@@ -2403,6 +2987,7 @@ document.addEventListener('keydown', (e) => {
     case 's': $('shuffleBtn').click(); break;
     case 'r': $('repeatBtn').click(); break;
     case 'c': openDrawer(!$('drawer').classList.contains('open')); break;
+    case 'l': openLyrics(!$('lyricDrawer').classList.contains('open')); break;
     case 'v': openVlog(!$('vlogDrawer').classList.contains('open')); break;
     default:
       // number keys 1-9 switch versions

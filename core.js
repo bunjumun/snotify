@@ -879,6 +879,87 @@ document.body.insertAdjacentHTML('beforeend', `
     </div>
   </div>`);
 
+// --- the dazzle workshop ---
+// The tool the theme paints itself with, exposed with the handful of knobs
+// that actually change the character of a scheme.
+const dzOpts = () => ({
+  w: +$('dzW').value, h: +$('dzH').value, seed: +$('dzSeed').value,
+  cuts: +$('dzCuts').value, scale: +$('dzScale').value / 10,
+  ink:    $('dzInvert').checked ? '#08080a' : '#ffffff',
+  ground: $('dzInvert').checked ? '#ffffff' : '#08080a',
+  stretch: false,
+});
+function dzRender(){
+  $('dzCutsVal').textContent  = $('dzCuts').value;
+  $('dzScaleVal').textContent = (+$('dzScale').value / 10).toFixed(1);
+  $('dzWVal').textContent     = $('dzW').value;
+  $('dzHVal').textContent     = $('dzH').value;
+  $('dzSeedVal').textContent  = $('dzSeed').value;
+  $('dzPreview').innerHTML = dazzleSVG(dzOpts());
+}
+function openDazzleTool(){
+  $('dazzleModal').classList.add('open');
+  dzRender();
+}
+['dzCuts','dzScale','dzW','dzH','dzSeed','dzInvert'].forEach(id => on(id, 'input', dzRender));
+on('dzRandom', 'click', () => {
+  $('dzSeed').value = 1 + Math.floor(Math.random() * 9999);
+  $('dzCuts').value = 4 + Math.floor(Math.random() * 12);
+  $('dzScale').value = 5 + Math.floor(Math.random() * 30);
+  dzRender();
+});
+on('dzClose', 'click', () => $('dazzleModal').classList.remove('open'));
+on('dazzleModal', 'click', (e) => { if (e.target === $('dazzleModal')) $('dazzleModal').classList.remove('open'); });
+
+function saveBlob(blob, name){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const dzName = (ext) => `dazzle-${$('dzSeed').value}-${$('dzCuts').value}p.${ext}`;
+on('dzSvg', 'click', () => saveBlob(new Blob([dazzleSVG(dzOpts())], { type: 'image/svg+xml' }), dzName('svg')));
+// PNG goes through a canvas at the scheme's own pixel size — what you see in
+// the preview is what lands in the file.
+on('dzPng', 'click', () => {
+  const o = dzOpts();
+  const img = new Image();
+  img.onload = () => {
+    const cv = document.createElement('canvas');
+    cv.width = o.w; cv.height = o.h;
+    cv.getContext('2d').drawImage(img, 0, 0, o.w, o.h);
+    cv.toBlob(b => b && saveBlob(b, dzName('png')), 'image/png');
+  };
+  img.src = 'data:image/svg+xml,' + encodeURIComponent(dazzleSVG(o));
+});
+
+// Opening the menu. This lives next to the render so the two cannot be
+// separated again: an earlier edit replaced the block that held it and left
+// the button wired to nothing.
+function toolMenuOpen(open){
+  const m = $('toolMenu'), b = $('toolsBtn');
+  if (!m || !b) return;
+  if (open){
+    const r = b.getBoundingClientRect();
+    m.style.top = (r.bottom + 6) + 'px';
+    m.style.left = Math.max(8, Math.min(r.left, innerWidth - 300)) + 'px';
+  }
+  m.classList.toggle('open', open);
+  b.classList.toggle('on', open);
+}
+on('toolsBtn', 'click', (e) => { e.stopPropagation(); toolMenuOpen(!$('toolMenu').classList.contains('open')); });
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#toolMenu') && !e.target.closest('#toolsBtn')) toolMenuOpen(false);
+});
+on('toolMenu', 'click', (e) => {
+  if (e.target.closest('a.toolitem')){ toolMenuOpen(false); return; }   // opens its own tab
+  const b = e.target.closest('[data-tool]');
+  if (!b) return;
+  toolMenuOpen(false);
+  if (b.dataset.tool === 'dazzle') openDazzleTool();
+});
+
 // --- the tools manager ---
 // The draft is the resolved list WITH the hidden ones still in it, so the
 // panel shows everything that exists and lets you turn each on or off.

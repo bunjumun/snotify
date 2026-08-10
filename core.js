@@ -191,13 +191,13 @@ function dazzlePanels(w, h, n, rand){
 
 // One panel's paint: flat, or stripes at this panel's own angle with widths
 // that never settle into a rhythm.
-function dazzlePanelSVG(poly, i, rand, ink, ground, scale){
+function dazzlePanelSVG(poly, i, rand, ink, ground, scale, flat, varied){
   const pts = poly.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
   const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]);
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
   const span = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-  const flip = rand() < 0.22;                       // a few panels stay flat
+  const flip = rand() < flat;                       // some panels stay unstriped
   const base = flip && rand() < 0.5 ? ink : ground;
   let out = `<g clip-path="url(#dp${i})"><rect x="${(cx - span).toFixed(1)}" y="${(cy - span).toFixed(1)}" `
           + `width="${(span * 2).toFixed(1)}" height="${(span * 2).toFixed(1)}" fill="${base}"/>`;
@@ -207,9 +207,11 @@ function dazzlePanelSVG(poly, i, rand, ink, ground, scale){
     let x = cx - span;
     let guard = 0;
     while (x < cx + span && guard++ < 90){
-      // uneven bands: a wide one, a hairline, a medium — never the same twice
-      const bar = (2 + rand() * 9) * scale;
-      const gap = (2 + rand() * 11) * scale;
+      // Uneven bands: a wide one, a hairline, a medium. `varied` is how far
+      // from a regular stripe pattern they are allowed to wander — at 0 the
+      // panel is a plain ruled field, at 1 no two bands are alike.
+      const bar = (3 + rand() * 10 * varied) * scale;
+      const gap = (3 + rand() * 12 * varied) * scale;
       out += `<rect x="${x.toFixed(1)}" y="${(cy - span).toFixed(1)}" `
            + `width="${bar.toFixed(1)}" height="${(span * 2).toFixed(1)}" fill="${ink}"/>`;
       x += bar + gap;
@@ -221,12 +223,13 @@ function dazzlePanelSVG(poly, i, rand, ink, ground, scale){
 
 // A whole scheme, as standalone SVG markup.
 function dazzleSVG({ w = 1200, h = 120, seed = 1, cuts = 7, ink = '#ffffff',
-                     ground = '#08080a', scale = 1, stretch = true } = {}){
+                     ground = '#08080a', scale = 1, stretch = true,
+                     flat = 0.22, varied = 0.85 } = {}){
   const rand = rng(seed);
   const panels = dazzlePanels(w, h, cuts, rand);
   let defs = '', body = '';
   panels.forEach((poly, i) => {
-    const part = dazzlePanelSVG(poly, i, rand, ink, ground, scale);
+    const part = dazzlePanelSVG(poly, i, rand, ink, ground, scale, flat, varied);
     defs += part.defs; body += part.body;
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" `
@@ -835,10 +838,10 @@ document.body.insertAdjacentHTML('beforeend', `
           <input type="range" id="dzCuts" min="1" max="18" value="8" /></label>
         <label>Stripe scale <span class="dz-val" id="dzScaleVal">1.0</span>
           <input type="range" id="dzScale" min="3" max="45" value="10" /></label>
-        <label>Width <span class="dz-val" id="dzWVal">1200</span>
-          <input type="range" id="dzW" min="200" max="2400" step="20" value="1200" /></label>
-        <label>Height <span class="dz-val" id="dzHVal">600</span>
-          <input type="range" id="dzH" min="120" max="2400" step="20" value="600" /></label>
+        <label>Flat panels <span class="dz-val" id="dzFlatVal">22%</span>
+          <input type="range" id="dzFlat" min="0" max="70" value="22" /></label>
+        <label>Band variation <span class="dz-val" id="dzVarVal">0.85</span>
+          <input type="range" id="dzVar" min="0" max="100" value="85" /></label>
         <label>Seed <span class="dz-val" id="dzSeedVal">1</span>
           <input type="range" id="dzSeed" min="1" max="9999" value="1" /></label>
         <label class="check"><input type="checkbox" id="dzInvert" /> Invert (black on white)</label>
@@ -882,9 +885,16 @@ document.body.insertAdjacentHTML('beforeend', `
 // --- the dazzle workshop ---
 // The tool the theme paints itself with, exposed with the handful of knobs
 // that actually change the character of a scheme.
+// The canvas is fixed at 2:1. Pixel dimensions were a slider for no reason —
+// the SVG is resolution-independent and the PNG is written at twice this, so
+// the only thing width and height ever changed was the aspect. What they cost
+// was two of the six controls that do change how a scheme looks.
+const DZ_W = 1200, DZ_H = 600;
 const dzOpts = () => ({
-  w: +$('dzW').value, h: +$('dzH').value, seed: +$('dzSeed').value,
+  w: DZ_W, h: DZ_H, seed: +$('dzSeed').value,
   cuts: +$('dzCuts').value, scale: +$('dzScale').value / 10,
+  flat:   +$('dzFlat').value / 100,          // how many panels stay unstriped
+  varied: +$('dzVar').value / 100,           // how uneven the bands run
   ink:    $('dzInvert').checked ? '#08080a' : '#ffffff',
   ground: $('dzInvert').checked ? '#ffffff' : '#08080a',
   stretch: false,
@@ -892,8 +902,8 @@ const dzOpts = () => ({
 function dzRender(){
   $('dzCutsVal').textContent  = $('dzCuts').value;
   $('dzScaleVal').textContent = (+$('dzScale').value / 10).toFixed(1);
-  $('dzWVal').textContent     = $('dzW').value;
-  $('dzHVal').textContent     = $('dzH').value;
+  $('dzFlatVal').textContent  = $('dzFlat').value + '%';
+  $('dzVarVal').textContent   = (+$('dzVar').value / 100).toFixed(2);
   $('dzSeedVal').textContent  = $('dzSeed').value;
   $('dzPreview').innerHTML = dazzleSVG(dzOpts());
 }
@@ -901,11 +911,13 @@ function openDazzleTool(){
   $('dazzleModal').classList.add('open');
   dzRender();
 }
-['dzCuts','dzScale','dzW','dzH','dzSeed','dzInvert'].forEach(id => on(id, 'input', dzRender));
+['dzCuts','dzScale','dzFlat','dzVar','dzSeed','dzInvert'].forEach(id => on(id, 'input', dzRender));
 on('dzRandom', 'click', () => {
-  $('dzSeed').value = 1 + Math.floor(Math.random() * 9999);
-  $('dzCuts').value = 4 + Math.floor(Math.random() * 12);
+  $('dzSeed').value  = 1 + Math.floor(Math.random() * 9999);
+  $('dzCuts').value  = 4 + Math.floor(Math.random() * 12);
   $('dzScale').value = 5 + Math.floor(Math.random() * 30);
+  $('dzFlat').value  = Math.floor(Math.random() * 45);
+  $('dzVar').value   = 35 + Math.floor(Math.random() * 65);
   dzRender();
 });
 on('dzClose', 'click', () => $('dazzleModal').classList.remove('open'));
@@ -927,8 +939,8 @@ on('dzPng', 'click', () => {
   const img = new Image();
   img.onload = () => {
     const cv = document.createElement('canvas');
-    cv.width = o.w; cv.height = o.h;
-    cv.getContext('2d').drawImage(img, 0, 0, o.w, o.h);
+    cv.width = o.w * 2; cv.height = o.h * 2;      // 2400×1200 — worth printing
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
     cv.toBlob(b => b && saveBlob(b, dzName('png')), 'image/png');
   };
   img.src = 'data:image/svg+xml,' + encodeURIComponent(dazzleSVG(o));

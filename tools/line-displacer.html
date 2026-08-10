@@ -1,0 +1,1643 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Image Line Displacer with Advanced Controls</title>
+
+    <style>
+
+        body {
+
+            font-family: Arial, sans-serif;
+
+            display: flex;
+
+            justify-content: center;
+
+            align-items: flex-start;
+
+            min-height: 100vh;
+
+            background-color: #f0f0f0;
+
+            padding: 20px;
+
+            box-sizing: border-box;
+
+            gap: 20px;
+
+        }
+
+
+
+        .container {
+
+            display: flex;
+
+            gap: 20px;
+
+            flex-wrap: wrap; /* Allows wrapping on smaller screens */
+
+            width: 100%;
+
+            max-width: 1200px;
+
+        }
+
+
+
+        .controls {
+
+            background-color: #fff;
+
+            padding: 20px;
+
+            border-radius: 8px;
+
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+
+            flex: 1;
+
+            min-width: 300px; /* Minimum width for controls */
+
+            max-width: 350px;
+
+        }
+
+
+
+        .canvas-container {
+
+            background-color: #fff;
+
+            padding: 20px;
+
+            border-radius: 8px;
+
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+
+            flex: 2;
+
+            display: flex;
+
+            flex-direction: column;
+
+            align-items: center;
+
+            gap: 15px;
+
+            min-width: 400px; /* Minimum width for canvas */
+
+        }
+
+
+
+        canvas {
+
+            border: 1px solid #ddd;
+
+            background-color: #fff;
+
+            display: block; /* Remove extra space below canvas */
+
+        }
+
+
+
+        .control-group {
+
+            margin-bottom: 15px;
+
+        }
+
+
+
+        label {
+
+            display: block;
+
+            margin-bottom: 5px;
+
+            font-weight: bold;
+
+            color: #333;
+
+        }
+
+
+
+        input[type="range"],
+
+        input[type="number"],
+
+        select,
+
+        input[type="file"] {
+
+            width: calc(100% - 10px); /* Adjust for padding/border */
+
+            padding: 8px;
+
+            border: 1px solid #ddd;
+
+            border-radius: 4px;
+
+            box-sizing: border-box; /* Include padding/border in width */
+
+            margin-top: 3px;
+
+        }
+
+
+
+        input[type="color"] {
+
+            width: 50px; /* Smaller width for color input */
+
+            height: 30px;
+
+            padding: 0;
+
+            border: none;
+
+            margin-left: 10px;
+
+            vertical-align: middle; /* Align with label text */
+
+        }
+
+
+
+        input::file-selector-button {
+
+            background-color: #007bff;
+
+            color: white;
+
+            border: none;
+
+            border-radius: 4px;
+
+            cursor: pointer;
+
+            font-size: 16px;
+
+            transition: background-color 0.3s ease;
+
+        }
+
+
+
+        input::file-selector-button:hover {
+
+            background-color: #0056b3;
+
+        }
+
+
+
+        button {
+
+            background-color: #007bff;
+
+            color: white;
+
+            padding: 10px 15px;
+
+            border: none;
+
+            border-radius: 4px;
+
+            cursor: pointer;
+
+            font-size: 16px;
+
+            width: 100%;
+
+            margin-top: 10px;
+
+        }
+
+
+
+        button:hover {
+
+            background-color: #0056b3;
+
+        }
+
+
+
+        .slider-output {
+
+            display: inline-block;
+
+            margin-left: 10px;
+
+            min-width: 30px;
+
+            text-align: right;
+
+            font-weight: bold;
+
+            color: #555;
+
+        }
+
+
+
+        .layer-controls {
+
+            margin-bottom: 15px;
+
+            padding: 10px;
+
+            border: 1px dashed #ccc;
+
+            border-radius: 5px;
+
+            background-color: #f9f9f9;
+
+        }
+
+
+
+        .color-input-group {
+
+            display: flex;
+
+            align-items: center;
+
+            margin-bottom: 5px;
+
+        }
+
+
+
+        #imagePreview {
+
+            display: none;
+
+            max-width: 100%;
+
+            height: auto;
+
+            margin-top: 10px;
+
+            border: 1px solid #ddd;
+
+            border-radius: 4px;
+
+        }
+
+
+
+        .plotter-output {
+
+            margin-top: 20px;
+
+            border-top: 1px solid #eee;
+
+            padding-top: 20px;
+
+        }
+
+
+
+        .plotter-layer-container {
+
+            margin-bottom: 15px;
+
+            padding: 10px;
+
+            border: 1px dashed #ccc;
+
+            border-radius: 5px;
+
+            background-color: #f9f9f9;
+
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+
+
+    <div class="container">
+
+        <div class="controls">
+
+            <h2>Image Line Displacer</h2>
+
+
+
+            <h3>General Controls</h3>
+
+            <div class="control-group">
+
+                <label for="imageUpload">Upload Image:</label>
+
+                <input type="file" id="imageUpload" accept="image/*">
+
+            </div>
+
+            <img id="imagePreview" src="#" alt="Image Preview">
+
+
+
+            <div class="color-input-group">
+
+                <label for="bgColor">Background Color:</label>
+
+                <input type="color" id="bgColor" value="#FFFFFF">
+
+            </div>
+
+
+
+            <div class="control-group">
+
+                <label for="globalLineOpacity">Global Line Opacity:</label>
+
+                <input type="range" id="globalLineOpacity" value="1" min="0" max="1" step="0.01" class="control-input">
+
+                <span class="slider-output" id="globalLineOpacityValue">1</span>
+
+            </div>
+
+
+
+            <div class="control-group">
+
+                <label for="globalRotation">Global Rotation (degrees):</label>
+
+                <input type="range" id="globalRotation" value="0" min="-180" max="180" step="1" class="control-input">
+
+                <span class="slider-output" id="globalRotationValue">0</span>
+
+            </div>
+
+
+
+            <h3>Displacement Controls</h3>
+
+            <div class="control-group">
+
+                <label for="displacementStrength">Displacement Strength:</label>
+
+                <input type="range" id="displacementStrength" value="20" min="0" max="100" step="1" class="control-input">
+
+                <span class="slider-output" id="displacementStrengthValue">20</span>
+
+            </div>
+
+            <div class="control-group">
+
+                <label for="displacementAxis">Displacement Axis:</label>
+
+                <select id="displacementAxis" class="control-input">
+
+                    <option value="vertical">Vertical</option>
+
+                    <option value="horizontal">Horizontal</option>
+
+                </select>
+
+            </div>
+
+            <div class="control-group">
+
+                <label for="invertDisplacement">Invert Displacement:</label>
+
+                <input type="checkbox" id="invertDisplacement">
+
+            </div>
+
+            <div class="control-group">
+
+                <label for="samplingPixelStep">Sampling Pixel Step:</label>
+
+                <input type="range" id="samplingPixelStep" value="1" min="1" max="10" step="1" class="control-input">
+
+                <span class="slider-output" id="samplingPixelStepValue">1</span>
+
+            </div>
+
+
+
+            <h3>Line Properties</h3>
+
+            <div class="control-group">
+
+                <label for="approximationLineSpacing">Line Spacing:</label>
+
+                <input type="range" id="approximationLineSpacing" value="5" min="1" max="20" step="0.5" class="control-input">
+
+                <span class="slider-output" id="approximationLineSpacingValue">5</span>
+
+            </div>
+
+            <div class="control-group">
+
+                <label for="approximationLineWidth">Line Width:</label>
+
+                <input type="range" id="approximationLineWidth" value="1" min="0.1" max="5" step="0.1" class="control-input">
+
+                <span class="slider-output" id="approximationLineWidthValue">1</span>
+
+            </div>
+
+
+
+            <div class="control-group">
+
+                <label for="rgbLayerSeparation">Separate RGB Layers:</label>
+
+                <input type="checkbox" id="rgbLayerSeparation" checked>
+
+            </div>
+
+
+
+            <div id="rgbAngleControls">
+
+                <h4>RGB Line Angle Controls (for separate layers)</h4>
+
+                <div class="layer-controls">
+
+                    <h5>Red Layer</h5>
+
+                    <div class="control-group">
+
+                        <label for="redAngle">Angle (degrees):</label>
+
+                        <input type="range" id="redAngle" value="0" min="-180" max="180" step="1" class="control-input">
+
+                        <span class="slider-output" id="redAngleValue">0</span>
+
+                    </div>
+
+                </div>
+
+                <div class="layer-controls">
+
+                    <h5>Green Layer</h5>
+
+                    <div class="control-group">
+
+                        <label for="greenAngle">Angle (degrees):</label>
+
+                        <input type="range" id="greenAngle" value="0" min="-180" max="180" step="1" class="control-input">
+
+                        <span class="slider-output" id="greenAngleValue">0</span>
+
+                    </div>
+
+                </div>
+
+                <div class="layer-controls">
+
+                    <h5>Blue Layer</h5>
+
+                    <div class="control-group">
+
+                        <label for="blueAngle">Angle (degrees):</label>
+
+                        <input type="range" id="blueAngle" value="0" min="-180" max="180" step="1" class="control-input">
+
+                        <span class="slider-output" id="blueAngleValue">0</span>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+
+            <button id="drawDisplacedButton">Draw Displaced Lines</button>
+
+            <button id="generatePlotterLayers">Generate Plotter Layers</button>
+
+
+
+        </div>
+
+
+
+        <div class="canvas-container">
+
+            <h2>Live Preview</h2>
+
+            <canvas id="interactiveCanvas" width="600" height="600"></canvas>
+
+
+
+            <div class="plotter-output" id="plotterOutput">
+
+                <h3>Plotter Layer Output (PNG)</h3>
+
+                <p>Click "Generate Plotter Layers" to create individual layers below.</p>
+
+                <div id="plotterOutputDiv">
+
+                    </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <script>
+
+        const interactiveCanvas = document.getElementById('interactiveCanvas');
+
+        const interactiveCtx = interactiveCanvas.getContext('2d');
+
+
+
+        // General Controls
+
+        const imageUpload = document.getElementById('imageUpload');
+
+        const imagePreview = document.getElementById('imagePreview');
+
+        const bgColor = document.getElementById('bgColor');
+
+        const globalLineOpacity = document.getElementById('globalLineOpacity');
+
+        const globalLineOpacityValue = document.getElementById('globalLineOpacityValue');
+
+        const globalRotation = document.getElementById('globalRotation');
+
+        const globalRotationValue = document.getElementById('globalRotationValue');
+
+
+
+
+
+        // Displacement Controls
+
+        const displacementStrength = document.getElementById('displacementStrength');
+
+        const displacementStrengthValue = document.getElementById('displacementStrengthValue');
+
+        const displacementAxis = document.getElementById('displacementAxis');
+
+        const invertDisplacement = document.getElementById('invertDisplacement');
+
+        const samplingPixelStep = document.getElementById('samplingPixelStep');
+
+        const samplingPixelStepValue = document.getElementById('samplingPixelStepValue');
+
+
+
+        // Line Properties
+
+        const approximationLineSpacing = document.getElementById('approximationLineSpacing');
+
+        const approximationLineSpacingValue = document.getElementById('approximationLineSpacingValue');
+
+        const approximationLineWidth = document.getElementById('approximationLineWidthValue');
+
+        const rgbLayerSeparation = document.getElementById('rgbLayerSeparation');
+
+
+
+        // RGB Angle Controls
+
+        const rgbAngleControls = document.getElementById('rgbAngleControls');
+
+        const redAngle = document.getElementById('redAngle');
+
+        const redAngleValue = document.getElementById('redAngleValue');
+
+        const greenAngle = document.getElementById('greenAngle');
+
+        const greenAngleValue = document.getElementById('greenAngleValue');
+
+        const blueAngle = document.getElementById('blueAngle');
+
+        const blueAngleValue = document.getElementById('blueAngleValue');
+
+
+
+        const drawDisplacedButton = document.getElementById('drawDisplacedButton');
+
+        const generatePlotterLayersButton = document.getElementById('generatePlotterLayers');
+
+        const plotterOutputDiv = document.getElementById('plotterOutputDiv');
+
+
+
+        let currentCanvasWidth = interactiveCanvas.width;
+
+        let currentCanvasHeight = interactiveCanvas.height;
+
+
+
+        let plotterGeneratedCanvases = [];
+
+        let currentImage = null; // Stores the loaded image element
+
+
+
+        // --- Utility Functions ---
+
+
+
+        function toRadians(degrees) {
+
+            return degrees * (Math.PI / 180);
+
+        }
+
+
+
+        function drawImageDisplacedLines(ctx, image, lineSpacing, lineWidth, displacementStrength, displacementAxis, separateRGB, invertDisplacement, samplingPixelStep, globalRotation, redLineAngle = 0, greenLineAngle = 0, blueLineAngle = 0) {
+
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+            ctx.fillStyle = bgColor.value; // Use chosen background color
+
+            ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+
+
+            if (!image) return;
+
+
+
+            // Create an offscreen canvas to get pixel data
+
+            const tempCanvas = document.createElement('canvas');
+
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+
+
+
+            // Ensure image fits within current canvas size, scaling it down if needed
+
+            const aspectRatio = image.width / image.height;
+
+            let imgDrawWidth = ctx.canvas.width;
+
+            let imgDrawHeight = ctx.canvas.height;
+
+
+
+            if (imgDrawWidth / imgDrawHeight > aspectRatio) { // Canvas is wider than image
+
+                imgDrawWidth = imgDrawHeight * aspectRatio;
+
+            } else { // Canvas is taller than image
+
+                imgDrawHeight = imgDrawWidth / aspectRatio;
+
+            }
+
+
+
+            tempCanvas.width = Math.floor(imgDrawWidth);
+
+            tempCanvas.height = Math.floor(imgDrawHeight);
+
+
+
+            tempCtx.drawImage(image, 0, 0, tempCanvas.width, tempCanvas.height);
+
+            const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+
+            const pixels = imageData.data;
+
+
+
+            const canvasWidth = ctx.canvas.width;
+
+            const canvasHeight = ctx.canvas.height;
+
+
+
+            const centerX = canvasWidth / 2;
+
+            const centerY = canvasHeight / 2;
+
+
+
+            // Apply global rotation before drawing anything
+
+            ctx.save();
+
+            ctx.translate(centerX, centerY);
+
+            ctx.rotate(toRadians(globalRotation));
+
+            ctx.translate(-centerX, -centerY);
+
+
+
+            ctx.globalAlpha = parseFloat(globalLineOpacity.value); // Apply global line opacity
+
+
+
+            const getDisplacementValue = (pixelValue) => {
+
+                let displacement = (1 - (pixelValue / 255)); // Darker pixels displace more
+
+                if (invertDisplacement) {
+
+                    displacement = (pixelValue / 255); // Brighter pixels displace more
+
+                }
+
+                return displacement * displacementStrength;
+
+            }
+
+
+
+            const drawLayer = (channelIndex, color, lineAngle) => {
+
+                ctx.save(); // Save context for individual layer rotation
+
+                ctx.translate(centerX, centerY); // Translate to center for rotation
+
+                ctx.rotate(toRadians(lineAngle)); // Rotate layer
+
+                ctx.translate(-centerX, -centerY); // Translate back
+
+
+
+                ctx.beginPath();
+
+                ctx.strokeStyle = color;
+
+                ctx.lineWidth = lineWidth;
+
+
+
+                const startY = (canvasHeight - imgDrawHeight) / 2;
+
+                const startX = (canvasWidth - imgDrawWidth) / 2;
+
+
+
+                if (displacementAxis === 'vertical') {
+
+                    for (let y = startY; y <= startY + imgDrawHeight; y += lineSpacing) {
+
+                        const currentY = y;
+
+                        ctx.moveTo(startX, currentY);
+
+                        for (let x = startX; x <= startX + imgDrawWidth; x += samplingPixelStep) { // Use samplingPixelStep
+
+                            const imgX = Math.floor((x - startX) * (tempCanvas.width / imgDrawWidth));
+
+                            const imgY = Math.floor((currentY - startY) * (tempCanvas.height / imgDrawHeight));
+
+
+
+                            const pixelIndex = (imgY * tempCanvas.width + imgX) * 4;
+
+                            // Ensure pixelIndex + channelIndex is within bounds
+
+                            const actualChannelIndex = Math.min(pixelIndex + channelIndex, pixels.length - 1);
+
+                            const channelValue = pixels[actualChannelIndex];
+
+
+
+                            let displacementAmount = getDisplacementValue(channelValue);
+
+                            let displacedY = currentY + displacementAmount;
+
+                            ctx.lineTo(x, displacedY);
+
+                        }
+
+                    }
+
+                } else { // horizontal
+
+                    for (let x = startX; x <= startX + imgDrawWidth; x += lineSpacing) {
+
+                        const currentX = x;
+
+                        ctx.moveTo(currentX, startY);
+
+                        for (let y = startY; y <= startY + imgDrawHeight; y += samplingPixelStep) { // Use samplingPixelStep
+
+                            const imgX = Math.floor((currentX - startX) * (tempCanvas.width / imgDrawWidth));
+
+                            const imgY = Math.floor((y - startY) * (tempCanvas.height / imgDrawHeight));
+
+
+
+                            const pixelIndex = (imgY * tempCanvas.width + imgX) * 4;
+
+                            // Ensure pixelIndex + channelIndex is within bounds
+
+                            const actualChannelIndex = Math.min(pixelIndex + channelIndex, pixels.length - 1);
+
+                            const channelValue = pixels[actualChannelIndex];
+
+
+
+                            let displacementAmount = getDisplacementValue(channelValue);
+
+                            let displacedX = currentX + displacementAmount;
+
+                            ctx.lineTo(displacedX, y);
+
+                        }
+
+                    }
+
+                }
+
+                ctx.stroke();
+
+                ctx.restore(); // Restore context for this layer
+
+            };
+
+
+
+            if (separateRGB) {
+
+                // Live preview uses semi-transparent colors to show the blend
+
+                drawLayer(0, 'rgba(255, 0, 0, 0.5)', parseFloat(redAngle.value));
+
+                drawLayer(1, 'rgba(0, 255, 0, 0.5)', parseFloat(greenAngle.value));
+
+                drawLayer(2, 'rgba(0, 0, 255, 0.5)', parseFloat(blueAngle.value));
+
+            } else {
+
+                ctx.beginPath();
+
+                ctx.strokeStyle = 'black'; // Grayscale output color
+
+                ctx.lineWidth = lineWidth;
+
+
+
+                const startY = (canvasHeight - imgDrawHeight) / 2;
+
+                const startX = (canvasWidth - imgDrawWidth) / 2;
+
+
+
+                if (displacementAxis === 'vertical') {
+
+                    for (let y = startY; y <= startY + imgDrawHeight; y += lineSpacing) {
+
+                        ctx.moveTo(startX, y);
+
+                        for (let x = startX; x <= startX + imgDrawWidth; x += samplingPixelStep) { // Use samplingPixelStep
+
+                            const imgX = Math.floor((x - startX) * (tempCanvas.width / imgDrawWidth));
+
+                            const imgY = Math.floor((y - startY) * (tempCanvas.height / imgDrawHeight));
+
+
+
+                            const pixelIndex = (imgY * tempCanvas.width + imgX) * 4;
+
+                            const r = pixels[pixelIndex];
+
+                            const g = pixels[pixelIndex + 1];
+
+                            const b = pixels[pixelIndex + 2];
+
+                            const gray = (r + g + b) / 3; // Simple average for grayscale
+
+
+
+                            let displacementAmount = getDisplacementValue(gray);
+
+                            let displacedY = y + displacementAmount;
+
+                            ctx.lineTo(x, displacedY);
+
+                        }
+
+                    }
+
+                } else { // horizontal
+
+                    for (let x = startX; x <= startX + imgDrawWidth; x += lineSpacing) {
+
+                        ctx.moveTo(x, startY);
+
+                        for (let y = startY; y <= startY + imgDrawHeight; y += samplingPixelStep) { // Use samplingPixelStep
+
+                            const imgX = Math.floor((x - startX) * (tempCanvas.width / imgDrawWidth));
+
+                            const imgY = Math.floor((y - startY) * (tempCanvas.height / imgDrawHeight));
+
+
+
+                            const pixelIndex = (imgY * tempCanvas.width + imgX) * 4;
+
+                            const r = pixels[pixelIndex];
+
+                            const g = pixels[pixelIndex + 1];
+
+                            const b = pixels[pixelIndex + 2];
+
+                            const gray = (r + g + b) / 3;
+
+
+
+                            let displacementAmount = getDisplacementValue(gray);
+
+                            let displacedX = x + displacementAmount;
+
+                            ctx.lineTo(displacedX, y);
+
+                        }
+
+                    }
+
+                }
+
+                ctx.stroke();
+
+            }
+
+            ctx.restore(); // Restore context for global rotation
+
+        }
+
+
+
+        function generatePlotterLayers() {
+
+            plotterOutputDiv.innerHTML = ''; // Clear previous outputs
+
+            plotterGeneratedCanvases = [];
+
+
+
+            if (!currentImage) {
+
+                plotterOutputDiv.innerHTML = '<p>Please upload an image to generate plotter layers.</p>';
+
+                return;
+
+            }
+
+
+
+            const lineSpacing = parseFloat(approximationLineSpacing.value);
+
+            const lineWidth = parseFloat(approximationLineWidth.value);
+
+            const strength = parseFloat(displacementStrength.value);
+
+            const axis = displacementAxis.value;
+
+            const separateRGB = rgbLayerSeparation.checked;
+
+            const invertDisp = invertDisplacement.checked;
+
+            const sampleStep = parseFloat(samplingPixelStep.value);
+
+            const globalRot = parseFloat(globalRotation.value);
+
+
+
+            const getDisplacementValueForPlotter = (pixelValue) => {
+
+                let displacement = (1 - (pixelValue / 255));
+
+                if (invertDisp) {
+
+                    displacement = (pixelValue / 255);
+
+                }
+
+                return displacement * strength;
+
+            }
+
+
+
+            const generateLayerCanvas = (color, angle, channelIndex, layerName) => {
+
+                const layerCanvas = document.createElement('canvas');
+
+                layerCanvas.width = currentCanvasWidth;
+
+                layerCanvas.height = currentCanvasHeight;
+
+                const layerCtx = layerCanvas.getContext('2d');
+
+
+
+                layerCtx.clearRect(0, 0, layerCanvas.width, layerCanvas.height);
+
+                layerCtx.fillStyle = bgColor.value; // Use chosen background color for plotter layers
+
+                layerCtx.fillRect(0, 0, layerCanvas.width, layerCanvas.height);
+
+                layerCtx.globalAlpha = 1; // Plotter layers are typically opaque
+
+
+
+                const tempCanvas = document.createElement('canvas');
+
+                const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+
+                const aspectRatio = currentImage.width / currentImage.height;
+
+                let imgDrawWidth = layerCanvas.width;
+
+                let imgDrawHeight = layerCanvas.height;
+
+                if (imgDrawWidth / imgDrawHeight > aspectRatio) imgDrawWidth = imgDrawHeight * aspectRatio;
+
+                else imgDrawHeight = imgDrawWidth / aspectRatio;
+
+                tempCanvas.width = Math.floor(imgDrawWidth);
+
+                tempCanvas.height = Math.floor(imgDrawHeight);
+
+                tempCtx.drawImage(currentImage, 0, 0, tempCanvas.width, tempCanvas.height);
+
+                const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+
+                const pixels = imageData.data;
+
+
+
+                const centerX = layerCanvas.width / 2;
+
+                const centerY = layerCanvas.height / 2;
+
+
+
+                layerCtx.save(); // Save context for global rotation for plotter layer
+
+                layerCtx.translate(centerX, centerY);
+
+                layerCtx.rotate(toRadians(globalRot));
+
+                layerCtx.translate(-centerX, -centerY);
+
+
+
+                layerCtx.save(); // Save context for individual layer rotation
+
+                layerCtx.translate(centerX, centerY);
+
+                layerCtx.rotate(toRadians(angle));
+
+                layerCtx.translate(-centerX, -centerY);
+
+
+
+
+
+                layerCtx.beginPath();
+
+                layerCtx.strokeStyle = color; // Solid color for plotter layers
+
+                layerCtx.lineWidth = lineWidth;
+
+
+
+                const startY = (layerCanvas.height - imgDrawHeight) / 2;
+
+                const startX = (layerCanvas.width - imgDrawWidth) / 2;
+
+
+
+
+
+                if (axis === 'vertical') {
+
+                    for (let y = startY; y <= startY + imgDrawHeight; y += lineSpacing) {
+
+                        const currentY = y;
+
+                        layerCtx.moveTo(startX, currentY);
+
+                        for (let x = startX; x <= startX + imgDrawWidth; x += sampleStep) {
+
+                            const imgX = Math.floor((x - startX) * (tempCanvas.width / imgDrawWidth));
+
+                            const imgY = Math.floor((currentY - startY) * (tempCanvas.height / imgDrawHeight));
+
+                            const pixelIndex = (imgY * tempCanvas.width + imgX) * 4;
+
+                            const actualChannelIndex = Math.min(pixelIndex + channelIndex, pixels.length - 1);
+
+                            const channelValue = pixels[actualChannelIndex];
+
+                            let displacementAmount = getDisplacementValueForPlotter(channelValue);
+
+                            let displacedY = currentY + displacementAmount;
+
+                            layerCtx.lineTo(x, displacedY);
+
+                        }
+
+                    }
+
+                } else { // horizontal
+
+                    for (let x = startX; x <= startX + imgDrawWidth; x += lineSpacing) {
+
+                        const currentX = x;
+
+                        layerCtx.moveTo(currentX, startY);
+
+                        for (let y = startY; y <= startY + imgDrawHeight; y += sampleStep) {
+
+                            const imgX = Math.floor((currentX - startX) * (tempCanvas.width / imgDrawWidth));
+
+                            const imgY = Math.floor((y - startY) * (tempCanvas.height / imgDrawHeight));
+
+                            const pixelIndex = (imgY * tempCanvas.width + imgX) * 4;
+
+                            const actualChannelIndex = Math.min(pixelIndex + channelIndex, pixels.length - 1);
+
+                            const channelValue = pixels[actualChannelIndex];
+
+                            let displacementAmount = getDisplacementValueForPlotter(channelValue);
+
+                            let displacedX = currentX + displacementAmount;
+
+                            layerCtx.lineTo(displacedX, y);
+
+                        }
+
+                    }
+
+                }
+
+                layerCtx.stroke();
+
+                layerCtx.restore(); // Restore context for individual layer rotation
+
+                layerCtx.restore(); // Restore context for global rotation
+
+                return layerCanvas;
+
+            };
+
+
+
+            if (separateRGB) {
+
+                const redLayer = generateLayerCanvas('red', parseFloat(redAngle.value), 0, 'Red Layer');
+
+                addPlotterLayerToOutput(redLayer, 'Red Layer');
+
+
+
+                const greenLayer = generateLayerCanvas('green', parseFloat(greenAngle.value), 1, 'Green Layer');
+
+                addPlotterLayerToOutput(greenLayer, 'Green Layer');
+
+
+
+                const blueLayer = generateLayerCanvas('blue', parseFloat(blueAngle.value), 2, 'Blue Layer');
+
+                addPlotterLayerToOutput(blueLayer, 'Blue Layer');
+
+            } else {
+
+                // Generate a single grayscale layer for plotter output
+
+                const layerCanvas = document.createElement('canvas');
+
+                layerCanvas.width = currentCanvasWidth;
+
+                layerCanvas.height = currentCanvasHeight;
+
+                const layerCtx = layerCanvas.getContext('2d');
+
+
+
+                layerCtx.clearRect(0, 0, layerCanvas.width, layerCanvas.height);
+
+                layerCtx.fillStyle = bgColor.value; // Use chosen background color
+
+                layerCtx.fillRect(0, 0, layerCanvas.width, layerCanvas.height);
+
+                layerCtx.globalAlpha = 1; // Plotter layers are typically opaque
+
+
+
+                const tempCanvas = document.createElement('canvas');
+
+                const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+
+                const aspectRatio = currentImage.width / currentImage.height;
+
+                let imgDrawWidth = layerCanvas.width;
+
+                let imgDrawHeight = layerCanvas.height;
+
+                if (imgDrawWidth / imgDrawHeight > aspectRatio) imgDrawWidth = imgDrawHeight * aspectRatio;
+
+                else imgDrawHeight = imgDrawWidth / aspectRatio;
+
+                tempCanvas.width = Math.floor(imgDrawWidth);
+
+                tempCanvas.height = Math.floor(imgDrawHeight);
+
+                tempCtx.drawImage(currentImage, 0, 0, tempCanvas.width, tempCanvas.height);
+
+                const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+
+                const pixels = imageData.data;
+
+
+
+                const centerX = layerCanvas.width / 2;
+
+                const centerY = layerCanvas.height / 2;
+
+
+
+                layerCtx.save(); // Save context for global rotation for plotter layer
+
+                layerCtx.translate(centerX, centerY);
+
+                layerCtx.rotate(toRadians(globalRot));
+
+                layerCtx.translate(-centerX, -centerY);
+
+
+
+
+
+                layerCtx.beginPath();
+
+                layerCtx.strokeStyle = 'black'; // Grayscale output color
+
+                layerCtx.lineWidth = lineWidth;
+
+
+
+                const startY = (layerCanvas.height - imgDrawHeight) / 2;
+
+                const startX = (layerCanvas.width - imgDrawWidth) / 2;
+
+
+
+                if (axis === 'vertical') {
+
+                    for (let y = startY; y <= startY + imgDrawHeight; y += lineSpacing) {
+
+                        layerCtx.moveTo(startX, y);
+
+                        for (let x = startX; x <= startX + imgDrawWidth; x += sampleStep) {
+
+                            const imgX = Math.floor((x - startX) * (tempCanvas.width / imgDrawWidth));
+
+                            const imgY = Math.floor((y - startY) * (tempCanvas.height / imgDrawHeight));
+
+
+
+                            const pixelIndex = (imgY * tempCanvas.width + imgX) * 4;
+
+                            const r = pixels[pixelIndex];
+
+                            const g = pixels[pixelIndex + 1];
+
+                            const b = pixels[pixelIndex + 2];
+
+                            const gray = (r + g + b) / 3;
+
+
+
+                            let displacementAmount = getDisplacementValueForPlotter(gray);
+
+                            let displacedY = y + displacementAmount;
+
+                            layerCtx.lineTo(x, displacedY);
+
+                        }
+
+                    }
+
+                } else { // horizontal
+
+                    for (let x = startX; x <= startX + imgDrawWidth; x += lineSpacing) {
+
+                        layerCtx.moveTo(x, startY);
+
+                        for (let y = startY; y <= startY + imgDrawHeight; y += sampleStep) {
+
+                            const imgX = Math.floor((x - startX) * (tempCanvas.width / imgDrawWidth));
+
+                            const imgY = Math.floor((y - startY) * (tempCanvas.height / imgDrawHeight));
+
+
+
+                            const pixelIndex = (imgY * tempCanvas.width + imgX) * 4;
+
+                            const r = pixels[pixelIndex];
+
+                            const g = pixels[pixelIndex + 1];
+
+                            const b = pixels[pixelIndex + 2];
+
+                            const gray = (r + g + b) / 3;
+
+
+
+                            let displacementAmount = getDisplacementValueForPlotter(gray);
+
+                            let displacedX = x + displacementAmount;
+
+                            layerCtx.lineTo(displacedX, y);
+
+                        }
+
+                    }
+
+                }
+
+                layerCtx.stroke();
+
+                layerCtx.restore(); // Restore context for global rotation
+
+                addPlotterLayerToOutput(layerCanvas, 'Grayscale Layer');
+
+            }
+
+        }
+
+
+
+        function addPlotterLayerToOutput(canvas, layerName) {
+
+            const container = document.createElement('div');
+
+            container.classList.add('plotter-layer-container');
+
+
+
+            const heading = document.createElement('h4');
+
+            heading.textContent = layerName;
+
+            container.appendChild(heading);
+
+
+
+            const img = document.createElement('img');
+
+            img.src = canvas.toDataURL('image/png');
+
+            img.alt = layerName;
+
+            img.style.maxWidth = '100%';
+
+            img.style.height = 'auto';
+
+            img.style.border = '1px solid #ddd';
+
+            img.style.borderRadius = '4px';
+
+            container.appendChild(img);
+
+
+
+            const downloadLink = document.createElement('a');
+
+            downloadLink.href = canvas.toDataURL('image/png');
+
+            downloadLink.download = `${layerName.replace(/\s/g, '_')}_plotter.png`;
+
+            downloadLink.textContent = `Download ${layerName} PNG`;
+
+            downloadLink.style.display = 'block';
+
+            downloadLink.style.marginTop = '10px';
+
+            downloadLink.style.textAlign = 'center';
+
+            downloadLink.style.textDecoration = 'none';
+
+            downloadLink.style.backgroundColor = '#28a745';
+
+            downloadLink.style.color = 'white';
+
+            downloadLink.style.padding = '8px 12px';
+
+            downloadLink.style.borderRadius = '4px';
+
+            container.appendChild(downloadLink);
+
+
+
+            plotterOutputDiv.appendChild(container);
+
+            plotterGeneratedCanvases.push(canvas);
+
+        }
+
+
+
+        // --- Event Listeners and Initial Setup ---
+
+
+
+        // Helper to update slider output and redraw
+
+        document.querySelectorAll('input[type="range"]').forEach(input => {
+
+            const output = document.getElementById(input.id + 'Value');
+
+            if (output) {
+
+                input.addEventListener('input', () => {
+
+                    output.textContent = input.value;
+
+                    drawDisplaced(); // Redraw on slider change for live preview
+
+                });
+
+            }
+
+        });
+
+
+
+        // Event listeners for other controls (select, checkbox, color)
+
+        document.querySelectorAll('select, input[type="checkbox"], input[type="color"]').forEach(control => {
+
+            control.addEventListener('change', drawDisplaced);
+
+        });
+
+
+
+        // Special handling for the RGB separation checkbox
+
+        rgbLayerSeparation.addEventListener('change', () => {
+
+            // Show/hide RGB angle controls based on checkbox state
+
+            rgbAngleControls.style.display = rgbLayerSeparation.checked ? 'block' : 'none';
+
+            drawDisplaced();
+
+        });
+
+
+
+
+
+        imageUpload.addEventListener('change', (event) => {
+
+            const file = event.target.files?.[0]; // Use optional chaining for safer access
+
+            if (file) {
+
+                const reader = new FileReader();
+
+                reader.onload = (e) => {
+
+                    const img = new Image();
+
+                    img.onload = () => {
+
+                        currentImage = img;
+
+                        imagePreview.src = e.target.result;
+
+                        imagePreview.style.display = 'block';
+
+                        drawDisplaced();
+
+                    };
+
+                    img.src = e.target.result;
+
+                };
+
+                reader.readAsDataURL(file);
+
+            } else {
+
+                currentImage = null;
+
+                imagePreview.style.display = 'none';
+
+                imagePreview.src = '#';
+
+                drawDisplaced();
+
+            }
+
+        });
+
+
+
+        function drawDisplaced() {
+
+            // Read all current parameter values
+
+            const lineSpacing = parseFloat(approximationLineSpacing.value);
+
+            const lineWidth = parseFloat(approximationLineWidth.value);
+
+            const displacementStrengthVal = parseFloat(displacementStrength.value);
+
+            const displacementAxisVal = displacementAxis.value;
+
+            const separateRGBVal = rgbLayerSeparation.checked;
+
+            const invertDisplacementVal = invertDisplacement.checked;
+
+            const samplingPixelStepVal = parseFloat(samplingPixelStep.value);
+
+            const globalRotationVal = parseFloat(globalRotation.value);
+
+
+
+            const redAngleVal = parseFloat(redAngle.value);
+
+            const greenAngleVal = parseFloat(greenAngle.value);
+
+            const blueAngleVal = parseFloat(blueAngle.value);
+
+
+
+            drawImageDisplacedLines(
+
+                interactiveCtx,
+
+                currentImage,
+
+                lineSpacing,
+
+                lineWidth,
+
+                displacementStrengthVal,
+
+                displacementAxisVal,
+
+                separateRGBVal,
+
+                invertDisplacementVal,
+
+                samplingPixelStepVal,
+
+                globalRotationVal,
+
+                redAngleVal,
+
+                greenAngleVal,
+
+                blueAngleVal
+
+            );
+
+        }
+
+
+
+        drawDisplacedButton.addEventListener('click', drawDisplaced);
+
+        generatePlotterLayersButton.addEventListener('click', generatePlotterLayers);
+
+
+
+        // Initial setup on page load
+
+        // Ensure RGB angle controls visibility matches the initial checkbox state
+
+        rgbAngleControls.style.display = rgbLayerSeparation.checked ? 'block' : 'none';
+
+        drawDisplaced(); // Perform an initial draw
+
+    </script>
+
+</body>
+
+</html>

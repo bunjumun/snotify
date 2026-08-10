@@ -670,15 +670,32 @@ on('textSave', 'click', saveTextEdit);
 // one band's library — hence a menu in the header of every page rather than a
 // feature of the player or the art board. The first is the dazzle generator
 // the theme itself uses; anything made here saves to your own machine.
+// Built-in tools run in a modal here; the rest are standalone pages under
+// tools/ that open in their own tab, because they are full applications with
+// their own canvases, keyboard maps and controllers — wrapping them in a
+// dialog would only get in their way.
 const TOOLS = [
   { id: 'dazzle', label: '▨  Dazzle camouflage generator',
-    hint: 'Generate a scheme and save it as SVG or PNG' },
+    hint: 'Panels, stripe angles, seed — save as SVG or PNG' },
+  { href: 'tools/moire-maker.html', label: '◎  Moiré pattern toy',
+    hint: 'Two line fields, live interference, gamepad mapping' },
+  { href: 'tools/moire-zip.html', label: '⧉  Moiré colour separation',
+    hint: 'Split an image per channel and export the set as a ZIP' },
+  { href: 'tools/line-displacer.html', label: '≋  Image line displacer',
+    hint: 'Redraw a photograph as displaced lines' },
+  { href: 'tools/pen-separator.html', label: '✎  Highlighter plotter separator',
+    hint: 'Mk2 — split artwork into pen layers for a plotter' },
+  { href: 'tools/vj-mixer.html', label: '◐  VJ mixer',
+    hint: 'Two live generators, crossfade, mic reactive, gamepad or MIDI' },
 ];
 
 document.body.insertAdjacentHTML('beforeend', `
   <div id="toolMenu">
-    ${TOOLS.map(t => `<button class="toolitem" data-tool="${t.id}">
-        <b>${t.label}</b><span>${t.hint}</span></button>`).join('')}
+    ${TOOLS.map(t => t.href
+      ? `<a class="toolitem" href="${t.href}" target="_blank" rel="noopener">
+           <b>${t.label}</b><span>${t.hint}</span></a>`
+      : `<button class="toolitem" data-tool="${t.id}">
+           <b>${t.label}</b><span>${t.hint}</span></button>`).join('')}
   </div>
 
   <div class="modal-back" id="dazzleModal">
@@ -730,6 +747,7 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('#toolMenu') && !e.target.closest('#toolsBtn')) toolMenuOpen(false);
 });
 on('toolMenu', 'click', (e) => {
+  if (e.target.closest('a.toolitem')){ toolMenuOpen(false); return; }   // opens its own tab
   const b = e.target.closest('[data-tool]');
   if (!b) return;
   toolMenuOpen(false);

@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Color Separation Moiré Image ZIP Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        #controls {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 15px;
+            width: 90%;
+            max-width: 1000px;
+        }
+
+        .control-group { display: flex; flex-direction: column; position: relative; padding: 5px; }
+        .control-group-full { grid-column: 1 / -1; }
+
+        .channel-controls {
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 4px;
+            grid-column: span 2;
+        }
+        .channel-controls label {
+            display: inline-flex;
+            align-items: center;
+            margin-right: 20px;
+        }
+
+        label {
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+            display: block;
+        }
+
+        input[type="range"], input[type="text"], select { width: 100%; padding: 8px; box-sizing: border-box; }
+
+        canvas {
+            border: 2px solid #ccc;
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        #ledPreviewCanvas {
+             image-rendering: pixelated; 
+             width: 160px;
+             height: 160px;
+        }
+
+        .button-group {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+
+        #generateZipButton { background-color: #007bff; }
+        #generateZipButton:disabled { background-color: #ccc; cursor: not-allowed; }
+        #generateZipButton:hover:enabled { background-color: #0056b3; }
+
+        #statusMessage {
+            grid-column: 1 / -1;
+            text-align: center;
+            font-weight: bold;
+            padding: 5px;
+            min-height: 20px;
+        }
+        .status-ready { color: #28a745; }
+        .status-encoding { color: #ffc107; }
+        .status-error { color: #dc3545; }
+    </style>
+</head>
+<body>
+<h1>Color Separation Moiré Image ZIP Generator</h1>
+
+<div id="controls">
+    <div class="control-group control-group-full">
+        <label for="imageUpload">1. Upload an Image to Separate and Moiré:</label>
+        <input type="file" id="imageUpload" accept="image/*">
+    </div>
+
+    <div class="channel-controls">
+        <p style="margin-top:0; font-weight:bold;">2. Enable/Disable Color Channels:</p>
+        <label><input type="checkbox" id="channelR" checked> Red Channel</label>
+        <label><input type="checkbox" id="channelG" checked> Green Channel</label>
+        <label><input type="checkbox" id="channelB" checked> Blue Channel</label>
+        <label style="margin-top:10px;"><input type="checkbox" id="ledOptimize"> Optimize for 16×16 RGB LEDs</label>
+    </div>
+
+    <div class="control-group">
+        <label for="canvasWidth">Canvas Width: <span id="canvasWidthValue">500</span>px</label>
+        <input type="range" id="canvasWidth" min="200" max="800" value="500">
+    </div>
+    <div class="control-group">
+        <label for="canvasHeight">Canvas Height: <span id="canvasHeightValue">500</span>px</label>
+        <input type="range" id="canvasHeight" min="200" max="800" value="500">
+    </div>
+    <div class="control-group">
+        <label for="separationDistance">Color Separation Distance: <span id="separationDistanceValue">10</span>px</label>
+        <input type="range" id="separationDistance" min="0" max="50" value="10">
+    </div>
+    <div class="control-group">
+        <label for="lineThickness">Moiré Line Thickness: <span id="lineThicknessValue">1.0</span>px</label>
+        <input type="range" id="lineThickness" min="0.5" max="5" value="1.0" step="0.1">
+    </div>
+    <div class="control-group">
+        <label for="moireOpacity">Moiré Transparency: <span id="moireOpacityValue">1.00</span></label>
+        <input type="range" id="moireOpacity" min="0" max="1" step="0.05" value="1">
+    </div>
+    <div class="control-group">
+        <label for="imageCount">Number of Images to Generate: <span id="imageCountValue">10</span></label>
+        <input type="range" id="imageCount" min="1" max="50" value="10">
+    </div>
+
+    <p id="statusMessage" class="status-ready">Please upload an image to begin.</p>
+
+    <div class="button-group">
+        <button id="generateZipButton" disabled>3. Generate & Download Image ZIP</button>
+        <button id="downloadCanvasButton" disabled>Download Current Frame</button>
+        <label style="display:flex; align-items:center; gap:8px;">
+            <input type="checkbox" id="moireToggle" checked> Show Moiré Pattern
+        </label>
+    </div>
+</div>
+
+<div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; justify-content:center;">
+    <div style="text-align:center;">
+        <canvas id="moireCanvas" width="500" height="500"></canvas>
+        <p style="margin-top:5px;">Full Resolution Preview</p>
+    </div>
+    <div style="text-align:center;">
+        <canvas id="ledPreviewCanvas" width="160" height="160" style="border:2px solid #ccc; background:white;"></canvas>
+        <p style="margin-top:5px;">16×16 LED Preview</p>
+    </div>
+    <div style="text-align:center;">
+        <canvas id="overlayPreviewCanvas" width="500" height="500" style="border:2px solid #ccc; background:white;"></canvas>
+        <p style="margin-top:5px;">Overlay Preview (Original Image + Moiré)</p>
+        <label for="overlayOpacity">Overlay Opacity: <span id="overlayOpacityValue">0.50</span></label>
+        <input type="range" id="overlayOpacity" min="0" max="1" step="0.05" value="0.5" style="width:100%;">
+    </div>
+</div>
+
+<canvas id="tempCanvasR" style="display:none;"></canvas>
+<canvas id="tempCanvasG" style="display:none;"></canvas>
+<canvas id="tempCanvasB" style="display:none;"></canvas>
+
+<script>
+// --- Element References ---
+const canvas = document.getElementById('moireCanvas');
+const ctx = canvas.getContext('2d');
+const imageUpload = document.getElementById('imageUpload');
+// Renamed the button
+const generateZipButton = document.getElementById('generateZipButton'); 
+const downloadCanvasButton = document.getElementById('downloadCanvasButton');
+const statusMessage = document.getElementById('statusMessage');
+const moireToggle = document.getElementById('moireToggle');
+const ledOptimize = document.getElementById('ledOptimize');
+
+const tempCanvasR = document.getElementById('tempCanvasR');
+const tempCtxR = tempCanvasR.getContext('2d');
+const tempCanvasG = document.getElementById('tempCanvasG');
+const tempCtxG = tempCanvasG.getContext('2d');
+const tempCanvasB = document.getElementById('tempCanvasB');
+const tempCtxB = tempCanvasB.getContext('2d');
+
+const ledPreviewCanvas = document.getElementById('ledPreviewCanvas');
+const ledPreviewCtx = ledPreviewCanvas.getContext('2d');
+const overlayPreviewCanvas = document.getElementById('overlayPreviewCanvas');
+const overlayPreviewCtx = overlayPreviewCanvas.getContext('2d');
+
+const channelR = document.getElementById('channelR');
+const channelG = document.getElementById('channelG');
+const channelB = document.getElementById('channelB');
+
+const canvasWidthSlider = document.getElementById('canvasWidth');
+const canvasHeightSlider = document.getElementById('canvasHeight');
+const separationDistanceSlider = document.getElementById('separationDistance');
+const lineThicknessSlider = document.getElementById('lineThickness');
+const moireOpacitySlider = document.getElementById('moireOpacity');
+// Renamed the slider
+const imageCountSlider = document.getElementById('imageCount'); 
+const overlayOpacitySlider = document.getElementById('overlayOpacity');
+
+const canvasWidthValueSpan = document.getElementById('canvasWidthValue');
+const canvasHeightValueSpan = document.getElementById('canvasHeightValue');
+const separationDistanceValueSpan = document.getElementById('separationDistanceValue');
+const lineThicknessValueSpan = document.getElementById('lineThicknessValue');
+const moireOpacityValueSpan = document.getElementById('moireOpacityValue');
+// Renamed the span
+const imageCountValueSpan = document.getElementById('imageCountValue'); 
+const overlayOpacityValueSpan = document.getElementById('overlayOpacityValue'); 
+
+let uploadedImage = null;
+
+// --- Parameter Collection ---
+function collectFixedParams() {
+    return {
+        canvasWidth: parseInt(canvasWidthSlider.value),
+        canvasHeight: parseInt(canvasHeightSlider.value),
+        lineThickness: parseFloat(lineThicknessSlider.value),
+        separationDistance: parseInt(separationDistanceSlider.value),
+        channelR: channelR.checked,
+        channelG: channelG.checked,
+        channelB: channelB.checked,
+        moireOpacity: parseFloat(moireOpacitySlider.value),
+        ledOptimize: ledOptimize.checked,
+        overlayOpacity: parseFloat(overlayOpacitySlider.value),
+        imageCount: parseInt(imageCountSlider.value)
+    };
+}
+
+// --- Random Parameter Generation ---
+function generateRandomParams() {
+    const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+    const randFloat = (min, max) => Math.random() * (max - min) + min;
+    const lineTypes = ['parallel', 'radial'];
+    
+    return {
+        lineType: lineTypes[randInt(0, 1)], 
+        blendMode: ['multiply', 'screen', 'overlay', 'difference', 'exclusion'][randInt(0, 4)],
+        
+        // Opacities are now ONLY the random component (0.3 to 1.0)
+        opacity1: randFloat(0.3, 1.0),
+        opacity2: randFloat(0.3, 1.0),
+
+        rotation1: randFloat(0, 360), density1: randInt(10, 80), scale1: randFloat(0.5, 1.5),
+        dashPattern1: (Math.random() > 0.6) ? [randInt(1, 15), randInt(1, 15)] : [],
+        offsetX1: randInt(-50, 50), offsetY1: randInt(-50, 50),
+        lineColor1: `#${Math.random().toString(16).substr(-6).toUpperCase()}`,
+
+        rotation2: randFloat(0, 360), density2: randInt(10, 80), scale2: randFloat(0.5, 1.5),
+        dashPattern2: (Math.random() > 0.6) ? [randInt(1, 15), randInt(1, 15)] : [],
+        offsetX2: randInt(-50, 50), offsetY2: randInt(-50, 50),
+        lineColor2: `#${Math.random().toString(16).substr(-6).toUpperCase()}`,
+    };
+}
+
+// --- Color Separation ---
+function separateChannel(image, channel, tempCtx, tempCanvas, width, height) {
+    tempCanvas.width = width;
+    tempCanvas.height = height;
+    
+    const imageRatio = image.width / image.height;
+    const canvasRatio = width / height;
+    let drawWidth, drawHeight, offsetX, offsetY;
+
+    if (imageRatio > canvasRatio) { 
+        drawHeight = height;
+        drawWidth = height * imageRatio;
+        offsetX = (width - drawWidth) / 2;
+        offsetY = 0;
+    } else { 
+        drawWidth = width;
+        drawHeight = width / imageRatio;
+        offsetX = 0;
+        offsetY = (height - drawHeight) / 2;
+    }
+    tempCtx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+
+    const imageData = tempCtx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+    let channelIndex = (channel === 'R') ? 0 : (channel === 'G') ? 1 : 2;
+
+    for (let i = 0; i < data.length; i += 4) {
+        const value = data[i + channelIndex];
+        data[i] = (channel === 'R') ? value : 0;
+        data[i + 1] = (channel === 'G') ? value : 0;
+        data[i + 2] = (channel === 'B') ? value : 0;
+    }
+    tempCtx.putImageData(imageData, 0, 0);
+    
+    return tempCtx;
+}
+
+// --- Moiré Drawing (FIXED TRANSPARENCY) ---
+function drawMoiréLines(context, params, width, height, centerX, centerY, moireGlobalOpacity) {
+    context.globalCompositeOperation = params.blendMode;
+    context.lineWidth = params.lineThickness;
+
+    function drawLines(ctx, patternParams) {
+        ctx.save();
+        ctx.strokeStyle = patternParams.lineColor;
+        // FIX: The effective opacity is the random pattern opacity * times the slider's global opacity
+        ctx.globalAlpha = patternParams.opacity * moireGlobalOpacity; 
+
+        if (patternParams.dash && patternParams.dash.length > 0 && patternParams.dash.some(d => d > 0)) {
+            ctx.setLineDash(patternParams.dash);
+        } else {
+            ctx.setLineDash([]);
+        }
+
+        ctx.translate(centerX + patternParams.offsetX, centerY + patternParams.offsetY);
+        ctx.scale(patternParams.scale, patternParams.scale);
+        ctx.rotate(patternParams.rotation * Math.PI / 180);
+        ctx.translate(-(centerX + patternParams.offsetX), -(centerY + patternParams.offsetY));
+
+        if (patternParams.type === 'parallel') {
+            const spacing = width / patternParams.density;
+            for (let i = -width; i <= width * 2; i += spacing) {
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(width, i);
+                ctx.stroke();
+            }
+        } else if (patternParams.type === 'radial') {
+            const numLines = patternParams.density;
+            const angleStep = (2 * Math.PI) / numLines;
+            for (let i = 0; i < numLines; i++) {
+                ctx.beginPath();
+                ctx.moveTo(centerX + patternParams.offsetX, centerY + patternParams.offsetY);
+                const lineLength = Math.max(width, height) * 2;
+                const x = (centerX + patternParams.offsetX) + Math.cos(angleStep * i) * lineLength;
+                const y = (centerY + patternParams.offsetY) + Math.sin(angleStep * i) * lineLength;
+                ctx.lineTo(x, y);
+                ctx.stroke();
+            }
+        }
+        ctx.restore();
+    }
+
+    const p1 = {
+        type: params.lineType, rotation: params.rotation1, density: params.density1, scale: params.scale1,
+        dash: params.dashPattern1, offsetX: params.offsetX1, offsetY: params.offsetY1,
+        lineColor: params.lineColor1, opacity: params.opacity1 
+    };
+    const p2 = {
+        type: params.lineType, rotation: params.rotation2, density: params.density2, scale: params.scale2,
+        dash: params.dashPattern2, offsetX: params.offsetX2, offsetY: params.offsetY2,
+        lineColor: params.lineColor2, opacity: params.opacity2 
+    };
+
+    drawLines(context, p1);
+    drawLines(context, p2);
+    context.globalAlpha = 1.0; 
+}
+
+// --- Final Drawing and Combining ---
+function drawFinalPattern(fullParams, targetCanvas, baseImage) {
+    if (!targetCanvas || !baseImage) return;
+
+    const width = fullParams.canvasWidth;
+    const height = fullParams.canvasHeight;
+    targetCanvas.width = width;
+    targetCanvas.height = height;
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const sepD = fullParams.separationDistance;
+
+    targetCanvas.getContext('2d').clearRect(0, 0, width, height);
+    targetCanvas.getContext('2d').fillStyle = 'white'; 
+    targetCanvas.getContext('2d').fillRect(0, 0, width, height);
+    
+    const moireOpacity = moireToggle.checked ? fullParams.moireOpacity : 0;
+
+    const redCtx = separateChannel(baseImage, 'R', tempCtxR, tempCanvasR, width, height);
+    drawMoiréLines(redCtx, fullParams, width, height, centerX, centerY, moireOpacity);
+    
+    const greenCtx = separateChannel(baseImage, 'G', tempCtxG, tempCanvasG, width, height);
+    drawMoiréLines(greenCtx, fullParams, width, height, centerX, centerY, moireOpacity);
+
+    const blueCtx = separateChannel(baseImage, 'B', tempCtxB, tempCanvasB, width, height);
+    drawMoiréLines(blueCtx, fullParams, width, height, centerX, centerY, moireOpacity);
+
+    // 2. Combine Channels onto the Final Canvas with Offset and Toggles
+    if (fullParams.channelR) {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.drawImage(tempCanvasR, -sepD, -sepD);
+    }
+    
+    if (fullParams.channelG) {
+        ctx.globalCompositeOperation = 'lighter'; 
+        ctx.drawImage(tempCanvasG, 0, 0);
+    }
+
+    if (fullParams.channelB) {
+        ctx.globalCompositeOperation = 'lighter'; 
+        ctx.drawImage(tempCanvasB, sepD, sepD);
+    }
+    
+    ctx.globalCompositeOperation = 'source-over'; 
+}
+
+// --- ZIP Creation Function (NEW) ---
+function generateImageZip() {
+    if (!uploadedImage) {
+        alert("Please upload an image first!");
+        return;
+    }
+    
+    if (!channelR.checked && !channelG.checked && !channelB.checked) {
+        alert("Please enable at least one color channel (R, G, or B) to generate images.");
+        return;
+    }
+
+    const fixedParams = collectFixedParams();
+    const imageCount = fixedParams.imageCount;
+    
+    statusMessage.textContent = `Preparing ${imageCount} images... 🎨`;
+    statusMessage.className = 'status-encoding';
+    generateZipButton.disabled = true;
+    downloadCanvasButton.disabled = true;
+
+    const zip = new JSZip();
+    const zipFolderName = "moire_images";
+
+    // 1. Generate and Add Images to Zip
+    for (let i = 0; i < imageCount; i++) {
+        const frameParams = Object.assign({}, fixedParams, generateRandomParams());
+        drawFinalPattern(frameParams, canvas, uploadedImage);
+        
+        // Convert canvas data URL to base64
+        const imageDataURL = canvas.toDataURL("image/png");
+        const base64Data = imageDataURL.substring(imageDataURL.indexOf(',') + 1);
+
+        const fileName = `moire_frame_${String(i + 1).padStart(2, '0')}.png`;
+        zip.folder(zipFolderName).file(fileName, base64Data, {base64: true});
+
+        statusMessage.textContent = `Generated image ${i + 1} of ${imageCount}...`;
+    }
+
+    // 2. Generate and Download ZIP
+    zip.generateAsync({type:"blob"})
+    .then(function(content) {
+        saveAs(content, "moire-images.zip"); // saveAs is provided by FileSaver.js
+        
+        statusMessage.textContent = `${imageCount} images downloaded as ZIP! ✅`;
+        statusMessage.className = 'status-ready';
+        generateZipButton.disabled = false;
+        downloadCanvasButton.disabled = false;
+        updateDisplay(); // Redraw final image after generation
+    })
+    .catch(function(error) {
+        console.error("ZIP Generation Error:", error);
+        statusMessage.textContent = 'Error: ZIP creation failed.';
+        statusMessage.className = 'status-error';
+        generateZipButton.disabled = false;
+        downloadCanvasButton.disabled = false;
+    });
+}
+
+// --- Event Handlers and Previews ---
+
+function handleImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+            uploadedImage = img;
+            generateZipButton.disabled = false;
+            downloadCanvasButton.disabled = false;
+            statusMessage.textContent = 'Image loaded! Click "Generate & Download Image ZIP" when ready.';
+            statusMessage.className = 'status-ready';
+            updateDisplay();
+        };
+        img.onerror = function() {
+            statusMessage.textContent = 'Error loading image.';
+            statusMessage.className = 'status-error';
+        }
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function updateDisplay() {
+    const fixedParams = collectFixedParams();
+    separationDistanceValueSpan.textContent = fixedParams.separationDistance;
+    lineThicknessValueSpan.textContent = fixedParams.lineThickness.toFixed(1);
+    moireOpacityValueSpan.textContent = fixedParams.moireOpacity.toFixed(2);
+    canvasWidthValueSpan.textContent = fixedParams.canvasWidth;
+    canvasHeightValueSpan.textContent = fixedParams.canvasHeight;
+    imageCountValueSpan.textContent = fixedParams.imageCount; // Updated span
+    overlayOpacityValueSpan.textContent = fixedParams.overlayOpacity.toFixed(2);
+    
+    canvas.width = fixedParams.canvasWidth;
+    canvas.height = fixedParams.canvasHeight;
+
+    if (uploadedImage) {
+        const randomParams = Object.assign({}, fixedParams, generateRandomParams());
+        drawFinalPattern(randomParams, canvas, uploadedImage);
+    } else {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // --- LED Preview ---
+    ledPreviewCtx.clearRect(0, 0, ledPreviewCanvas.width, ledPreviewCanvas.height);
+    ledPreviewCtx.imageSmoothingEnabled = false;
+
+    if (uploadedImage) {
+        const smallCanvas = document.createElement('canvas');
+        smallCanvas.width = 16; smallCanvas.height = 16;
+        const sctx = smallCanvas.getContext('2d');
+        
+        // Draw the full moire canvas scaled down to 16x16
+        sctx.drawImage(canvas, 0, 0, 16, 16);
+        
+        if (fixedParams.ledOptimize) {
+            const imgData = sctx.getImageData(0, 0, 16, 16);
+            const data = imgData.data;
+            // Quantize to 6 levels (0, 51, 102, 153, 204, 255) per channel
+            for (let i = 0; i < data.length; i += 4) {
+                data[i] = Math.round(data[i] / 51) * 51;
+                data[i+1] = Math.round(data[i+1] / 51) * 51;
+                data[i+2] = Math.round(data[i+2] / 51) * 51;
+            }
+            sctx.putImageData(imgData, 0, 0);
+        }
+        
+        // Draw the 16x16 pixelated result onto the large preview canvas
+        ledPreviewCtx.drawImage(smallCanvas, 0, 0, ledPreviewCanvas.width, ledPreviewCanvas.height);
+    }
+
+    // --- Overlay Preview ---
+    overlayPreviewCanvas.width = fixedParams.canvasWidth;
+    overlayPreviewCanvas.height = fixedParams.canvasHeight;
+    overlayPreviewCtx.clearRect(0, 0, overlayPreviewCanvas.width, overlayPreviewCanvas.height);
+    
+    if (uploadedImage) {
+        const imgRatio = uploadedImage.width / uploadedImage.height;
+        const canvasRatio = overlayPreviewCanvas.width / overlayPreviewCanvas.height;
+        let drawWidth, drawHeight, offsetX, offsetY;
+        
+        if (imgRatio > canvasRatio) {
+            drawHeight = overlayPreviewCanvas.height;
+            drawWidth = drawHeight * imgRatio;
+            offsetX = (overlayPreviewCanvas.width - drawWidth) / 2;
+            offsetY = 0;
+        } else {
+            drawWidth = overlayPreviewCanvas.width;
+            drawHeight = drawWidth / imgRatio;
+            offsetX = 0;
+            offsetY = (overlayPreviewCanvas.height - drawHeight) / 2;
+        }
+        overlayPreviewCtx.drawImage(uploadedImage, offsetX, offsetY, drawWidth, drawHeight);
+        
+        overlayPreviewCtx.globalAlpha = fixedParams.overlayOpacity;
+        overlayPreviewCtx.drawImage(canvas, 0, 0, overlayPreviewCanvas.width, overlayPreviewCanvas.height);
+        overlayPreviewCtx.globalAlpha = 1.0;
+    }
+}
+
+// --- Event Listeners ---
+
+imageUpload.addEventListener('change', handleImageUpload);
+// Changed event listener to the new function
+generateZipButton.addEventListener('click', generateImageZip); 
+
+downloadCanvasButton.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'moire_current_frame.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+});
+
+// Add listeners for all control inputs and checkboxes
+[canvasWidthSlider, canvasHeightSlider, lineThicknessSlider, separationDistanceSlider,
+ imageCountSlider, moireOpacitySlider, overlayOpacitySlider, // Removed frameDelaySlider
+ channelR, channelG, channelB, moireToggle, ledOptimize].forEach(el => {
+    el.addEventListener('input', updateDisplay);
+});
+
+// Initial run
+updateDisplay();
+</script>
+</body>
+</html>

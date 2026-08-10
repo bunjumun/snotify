@@ -250,6 +250,7 @@ body.texting .dock { display: none; }
 .toolitem {
   display: block; width: 100%; text-align: left; background: none; border: none;
   color: var(--text); font: inherit; padding: 9px 11px; border-radius: 8px; cursor: pointer;
+  text-decoration: none;
 }
 .toolitem:hover { background: var(--bg-hover); }
 .toolitem b { display: block; font-size: 13.5px; font-weight: 600; }

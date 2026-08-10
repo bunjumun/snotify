@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Advanced Interactive Moiré Pattern Toy (Gamepad Mapping)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        #controls {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); /* Adjusted for more controls */
+            gap: 15px;
+            width: 90%;
+            max-width: 900px; /* Wider for more controls */
+            position: relative;
+        }
+
+        /* Map Mode Status Bar */
+        #mapModeStatus {
+            grid-column: 1 / -1; /* Spans all columns */
+            text-align: center;
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #007bff;
+            padding: 10px;
+            border: 2px dashed #007bff;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            display: none; /* Hidden by default */
+            background-color: rgba(255, 255, 255, 0.9);
+            z-index: 5; /* Ensure it's above other elements if needed, but not blocking */
+        }
+        #mapModeStatus.active {
+            display: block; /* Show when active */
+        }
+
+        .highlight-slider {
+            /* Highlight the parent control-group, not just the input, for better visibility */
+            outline: 3px solid #FFD700; /* Gold highlight */
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.8);
+            border-radius: 5px; /* Match control-group border-radius */
+        }
+
+        @media (max-width: 900px) {
+            #controls {
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            }
+        }
+        @media (max-width: 600px) {
+            #controls {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            padding: 5px; /* Add padding for the highlight border */
+            border-radius: 5px; /* For the highlight effect */
+            transition: outline 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        label {
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+            display: block;
+        }
+
+        /* Styling for all range inputs */
+        input[type="range"] {
+            width: 100%;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 8px;
+            background: #ddd;
+            border-radius: 5px;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+
+        input[type="range"]:hover {
+            opacity: 1;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Styling for color pickers */
+        input[type="color"] {
+            width: 100%;
+            height: 40px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        /* Styling for text inputs */
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 1em;
+            box-sizing: border-box; /* Include padding in width */
+        }
+
+        /* Styling for select dropdown */
+        select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: white;
+            font-size: 1em;
+            cursor: pointer;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #dc3545; /* Red for reset */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-top: 10px;
+            transition: background-color 0.3s ease;
+            grid-column: 1 / -1; /* Make button span all columns */
+            justify-self: center; /* Center the button */
+            width: fit-content; /* Only take up necessary width */
+        }
+
+        button.control-button { /* Style for other control buttons */
+            background-color: #007bff;
+            margin-right: 10px;
+        }
+
+        button.control-button:hover {
+            background-color: #0056b3;
+        }
+
+        #moireCanvas {
+            border: 2px solid #ccc;
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            max-width: 100%;
+            display: block;
+        }
+        #gamepadStatus {
+            grid-column: 1 / -1;
+            text-align: center;
+            color: #666;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        .button-group {
+            grid-column: 1 / -1; /* Make button group span all columns */
+            display: flex;
+            flex-wrap: wrap; /* Allow buttons to wrap */
+            justify-content: center;
+            gap: 15px; /* Space between buttons */
+            margin-top: 10px;
+        }
+        .map-control-button {
+            background-color: #28a745; /* Green for mapping */
+            transition: background-color 0.3s ease;
+        }
+        .map-control-button:hover {
+            background-color: #218838;
+        }
+        .map-control-button.active-map-button { /* Style for active map mode button */
+            background-color: #ffc107; /* Yellow when active */
+            color: #333;
+            border: 1px solid #e0a800;
+        }
+        .map-control-button.active-map-button:hover {
+            background-color: #e0a800;
+        }
+    </style>
+</head>
+<body>
+    <h1>Super Advanced Interactive Moiré Pattern Toy (Gamepad Mapping)</h1>
+
+    <div id="controls">
+        <div id="mapModeStatus" class="active">
+            Gamepad Status: No gamepad connected.
+        </div>
+        <div class="control-group">
+            <label for="lineType">Line Type:</label>
+            <select id="lineType">
+                <option value="parallel">Parallel Lines</option>
+                <option value="radial">Radial Lines</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label for="globalCompositeOperation">Blend Mode:</label>
+            <select id="globalCompositeOperation">
+                <option value="source-over">Normal</option>
+                <option value="multiply">Multiply</option>
+                <option value="screen">Screen</option>
+                <option value="overlay">Overlay</option>
+                <option value="darken">Darken</option>
+                <option value="lighten">Lighten</option>
+                <option value="color-dodge">Color Dodge</option>
+                <option value="color-burn">Color Burn</option>
+                <option value="hard-light">Hard Light</option>
+                <option value="soft-light">Soft Light</option>
+                <option value="difference">Difference</option>
+                <option value="exclusion">Exclusion</option>
+                <option value="hue">Hue</option>
+                <option value="saturation">Saturation</option>
+                <option value="color">Color</option>
+                <option value="luminosity">Luminosity</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label for="canvasWidth">Canvas Width: <span id="canvasWidthValue">500</span>px</label>
+            <input type="range" id="canvasWidth" min="200" max="800" value="500">
+        </div>
+        <div class="control-group">
+            <label for="canvasHeight">Canvas Height: <span id="canvasHeightValue">500</span>px</label>
+            <input type="range" id="canvasHeight" min="200" max="800" value="500">
+        </div>
+
+        <div class="control-group">
+            <label for="rotation1">Pattern 1 Rotation: <span id="rotation1Value">0</span>°</label>
+            <input type="range" id="rotation1" min="0" max="360" value="0" step="0.1">
+        </div>
+        <div class="control-group">
+            <label for="density1">Pattern 1 Density/Count: <span id="density1Value">20</span></label>
+            <input type="range" id="density1" min="5" max="100" value="20">
+        </div>
+        <div class="control-group">
+            <label for="scale1">Pattern 1 Scale: <span id="scale1Value">1.0</span></label>
+            <input type="range" id="scale1" min="0.1" max="3.0" value="1.0" step="0.01">
+        </div>
+        <div class="control-group">
+            <label for="dashPattern1">Pattern 1 Dash (e.g., 5 5): <span id="dashPattern1Value">No Dash</span></label>
+            <input type="text" id="dashPattern1" value="" placeholder="e.g., 5 5">
+        </div>
+        <div class="control-group">
+            <label for="offsetX1">Pattern 1 Offset X: <span id="offsetX1Value">0</span>px</label>
+            <input type="range" id="offsetX1" min="-100" max="100" value="0">
+        </div>
+        <div class="control-group">
+            <label for="offsetY1">Pattern 1 Offset Y: <span id="offsetY1Value">0</span>px</label>
+            <input type="range" id="offsetY1" min="-100" max="100" value="0">
+        </div>
+        <div class="control-group">
+            <label for="lineColor1">Pattern 1 Line Color:</label>
+            <input type="color" id="lineColor1" value="#000000">
+        </div>
+        <div class="control-group">
+            <label for="opacity1">Pattern 1 Opacity: <span id="opacity1Value">1.0</span></label>
+            <input type="range" id="opacity1" min="0" max="1" value="1" step="0.01">
+        </div>
+
+        <div class="control-group">
+            <label for="rotation2">Pattern 2 Rotation: <span id="rotation2Value">0</span>°</label>
+            <input type="range" id="rotation2" min="0" max="360" value="0" step="0.1">
+        </div>
+        <div class="control-group">
+            <label for="density2">Pattern 2 Density/Count: <span id="density2Value">20</span></label>
+            <input type="range" id="density2" min="5" max="100" value="20">
+        </div>
+        <div class="control-group">
+            <label for="scale2">Pattern 2 Scale: <span id="scale2Value">1.0</span></label>
+            <input type="range" id="scale2" min="0.1" max="3.0" value="1.0" step="0.01">
+        </div>
+        <div class="control-group">
+            <label for="dashPattern2">Pattern 2 Dash (e.g., 5 5): <span id="dashPattern2Value">No Dash</span></label>
+            <input type="text" id="dashPattern2" value="" placeholder="e.g., 5 5">
+        </div>
+        <div class="control-group">
+            <label for="offsetX2">Pattern 2 Offset X: <span id="offsetX2Value">0</span>px</label>
+            <input type="range" id="offsetX2" min="-100" max="100" value="0">
+        </div>
+        <div class="control-group">
+            <label for="offsetY2">Pattern 2 Offset Y: <span id="offsetY2Value">0</span>px</label>
+            <input type="range" id="offsetY2" min="-100" max="100" value="0">
+        </div>
+        <div class="control-group">
+            <label for="lineColor2">Pattern 2 Line Color:</label>
+            <input type="color" id="lineColor2" value="#000000">
+        </div>
+        <div class="control-group">
+            <label for="opacity2">Pattern 2 Opacity: <span id="opacity2Value">1.0</span></label>
+            <input type="range" id="opacity2" min="0" max="1" value="1" step="0.01">
+        </div>
+
+        <div class="control-group">
+            <label for="lineThickness">Line Thickness: <span id="lineThicknessValue">1</span>px</label>
+            <input type="range" id="lineThickness" min="0.5" max="5" value="1" step="0.1">
+        </div>
+        <div class="control-group">
+            <label for="backgroundColor">Background Color:</label>
+            <input type="color" id="backgroundColor" value="#FFFFFF">
+        </div>
+         <div class="control-group">
+            <label for="animationSpeed">Animation Speed: <span id="animationSpeedValue">0.0</span>°/frame</label>
+            <input type="range" id="animationSpeed" min="-1.0" max="1.0" value="0.0" step="0.01">
+        </div>
+        <div class="button-group">
+            <button id="enableMapModeButton" class="map-control-button">Enable Map Mode</button>
+            <button id="clearMappingsButton" class="map-control-button">Clear Mappings</button>
+            <button id="freezeAnimationButton" class="control-button">Freeze Animation</button>
+            <button id="resetButton">Reset All Controls</button>
+        </div>
+        <p id="gamepadStatus">No gamepad connected.</p>
+    </div>
+
+    <canvas id="moireCanvas" width="500" height="500"></canvas>
+
+    <script>
+        // Get references to HTML elements
+        const canvas = document.getElementById('moireCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- Sliders and Controls ---
+        const lineTypeSelect = document.getElementById('lineType');
+        const globalCompositeOperationSelect = document.getElementById('globalCompositeOperation');
+        const canvasWidthSlider = document.getElementById('canvasWidth');
+        const canvasHeightSlider = document.getElementById('canvasHeight');
+
+        // Pattern 1
+        const rotation1Slider = document.getElementById('rotation1');
+        const density1Slider = document.getElementById('density1');
+        const scale1Slider = document.getElementById('scale1');
+        const dashPattern1Input = document.getElementById('dashPattern1');
+        const offsetX1Slider = document.getElementById('offsetX1');
+        const offsetY1Slider = document.getElementById('offsetY1');
+        const lineColor1Picker = document.getElementById('lineColor1');
+        const opacity1Slider = document.getElementById('opacity1');
+
+        // Pattern 2
+        const rotation2Slider = document.getElementById('rotation2');
+        const density2Slider = document.getElementById('density2');
+        const scale2Slider = document.getElementById('scale2');
+        const dashPattern2Input = document.getElementById('dashPattern2');
+        const offsetX2Slider = document.getElementById('offsetX2');
+        const offsetY2Slider = document.getElementById('offsetY2');
+        const lineColor2Picker = document.getElementById('lineColor2');
+        const opacity2Slider = document.getElementById('opacity2');
+
+        // Global
+        const lineThicknessSlider = document.getElementById('lineThickness');
+        const backgroundColorPicker = document.getElementById('backgroundColor');
+        const animationSpeedSlider = document.getElementById('animationSpeed');
+        const resetButton = document.getElementById('resetButton');
+        const freezeAnimationButton = document.getElementById('freezeAnimationButton');
+        const gamepadStatus = document.getElementById('gamepadStatus'); // This will now be the main status display
+
+
+        // Mapping specific elements
+        const enableMapModeButton = document.getElementById('enableMapModeButton');
+        const clearMappingsButton = document.getElementById('clearMappingsButton');
+        const mapModeStatus = document.getElementById('mapModeStatus'); // This is the new status bar
+
+
+        // --- Value Display Spans ---
+        const canvasWidthValueSpan = document.getElementById('canvasWidthValue');
+        const canvasHeightValueSpan = document.getElementById('canvasHeightValue');
+
+        const rotation1ValueSpan = document.getElementById('rotation1Value');
+        const density1ValueSpan = document.getElementById('density1Value');
+        const scale1ValueSpan = document.getElementById('scale1Value');
+        const dashPattern1ValueSpan = document.getElementById('dashPattern1Value');
+        const offsetX1ValueSpan = document.getElementById('offsetX1Value');
+        const offsetY1ValueSpan = document.getElementById('offsetY1Value');
+        const opacity1ValueSpan = document.getElementById('opacity1Value');
+
+        const rotation2ValueSpan = document.getElementById('rotation2Value');
+        const density2ValueSpan = document.getElementById('density2Value');
+        const scale2ValueSpan = document.getElementById('scale2Value');
+        const dashPattern2ValueSpan = document.getElementById('dashPattern2Value');
+        const offsetX2ValueSpan = document.getElementById('offsetX2Value');
+        const offsetY2ValueSpan = document.getElementById('offsetY2Value');
+        const opacity2ValueSpan = document.getElementById('opacity2Value');
+
+        const lineThicknessValueSpan = document.getElementById('lineThicknessValue');
+        const animationSpeedValueSpan = document.getElementById('animationSpeedValue');
+
+
+        // --- Default Values (for reset) ---
+        const defaultValues = {
+            lineType: 'parallel',
+            globalCompositeOperation: 'source-over',
+            canvasWidth: 500,
+            canvasHeight: 500,
+            rotation1: 0,
+            density1: 20,
+            scale1: 1,
+            dashPattern1: '',
+            offsetX1: 0,
+            offsetY1: 0,
+            lineColor1: '#000000',
+            opacity1: 1,
+            rotation2: 0,
+            density2: 20,
+            scale2: 1,
+            dashPattern2: '',
+            offsetX2: 0,
+            offsetY2: 0,
+            lineColor2: '#000000',
+            opacity2: 1,
+            lineThickness: 1,
+            backgroundColor: '#FFFFFF',
+            animationSpeed: 0.0
+        };
+
+        // --- Current State Variables (initialized from default or slider values) ---
+        let currentLineType = lineTypeSelect.value;
+        let currentGlobalCompositeOperation = globalCompositeOperationSelect.value;
+        let currentCanvasWidth = parseInt(canvasWidthSlider.value);
+        let currentCanvasHeight = parseInt(canvasHeightSlider.value);
+        let rotation1 = parseFloat(rotation1Slider.value);
+        let density1 = parseInt(density1Slider.value);
+        let scale1 = parseFloat(scale1Slider.value);
+        let dashPattern1 = dashPattern1Input.value.split(' ').map(Number).filter(n => !isNaN(n) && n > 0);
+        let offsetX1 = parseInt(offsetX1Slider.value);
+        let offsetY1 = parseInt(offsetY1Slider.value);
+        let lineColor1 = lineColor1Picker.value;
+        let opacity1 = parseFloat(opacity1Slider.value);
+        let rotation2 = parseFloat(rotation2Slider.value);
+        let density2 = parseInt(density2Slider.value);
+        let scale2 = parseFloat(scale2Slider.value);
+        let dashPattern2 = dashPattern2Input.value.split(' ').map(Number).filter(n => !isNaN(n) && n > 0);
+        let offsetX2 = parseInt(offsetX2Slider.value);
+        let offsetY2 = parseInt(offsetY2Slider.value);
+        let lineColor2 = lineColor2Picker.value;
+        let opacity2 = parseFloat(opacity2Slider.value);
+        let lineThickness = parseFloat(lineThicknessSlider.value);
+        let backgroundColor = backgroundColorPicker.value;
+        let animationSpeed = parseFloat(animationSpeedSlider.value);
+
+        let animationPaused = false;
+        let animationFrameId = null;
+
+        // --- Gamepad Mapping State ---
+        let mapModeActive = false;
+        let selectedControlGroup = null; // Reference to the parent .control-group element
+        // Stores mappings: { "button_0": "rotation1", "axis_0": "offsetX1" }
+        let controllerMappings = JSON.parse(localStorage.getItem('moireGamepadMappings')) || {};
+
+
+        /**
+         * Draws the moiré pattern on the canvas based on current parameters.
+         */
+        function drawMoiré() {
+            canvas.width = currentCanvasWidth;
+            canvas.height = currentCanvasHeight;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = backgroundColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.globalCompositeOperation = currentGlobalCompositeOperation;
+
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+
+            function drawLines(angle, density, scale, dash, offsetX, offsetY, color, opacity, type) {
+                ctx.save();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = lineThickness;
+                ctx.globalAlpha = opacity;
+
+                if (dash && dash.length > 0 && dash.some(d => d > 0)) {
+                    ctx.setLineDash(dash);
+                } else {
+                    ctx.setLineDash([]);
+                }
+
+                ctx.translate(centerX + offsetX, centerY + offsetY);
+                ctx.scale(scale, scale);
+                ctx.rotate(angle * Math.PI / 180);
+                ctx.translate(-(centerX + offsetX), -(centerY + offsetY));
+
+                if (type === 'parallel') {
+                    const spacing = canvas.width / density;
+                    for (let i = -canvas.width; i <= canvas.width * 2; i += spacing) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, i);
+                        ctx.lineTo(canvas.width, i);
+                        ctx.stroke();
+                    }
+                } else if (type === 'radial') {
+                    const numLines = density;
+                    const angleStep = (2 * Math.PI) / numLines;
+                    for (let i = 0; i < numLines; i++) {
+                        ctx.beginPath();
+                        ctx.moveTo(centerX + offsetX, centerY + offsetY);
+                        const lineLength = Math.max(canvas.width, canvas.height) * 2;
+                        const x = (centerX + offsetX) + Math.cos(angleStep * i) * lineLength;
+                        const y = (centerY + offsetY) + Math.sin(angleStep * i) * lineLength;
+                        ctx.lineTo(x, y);
+                        ctx.stroke();
+                    }
+                }
+                ctx.restore();
+            }
+
+            drawLines(rotation1, density1, scale1, dashPattern1, offsetX1, offsetY1, lineColor1, opacity1, currentLineType);
+            drawLines(rotation2, density2, scale2, dashPattern2, offsetX2, offsetY2, lineColor2, opacity2, currentLineType);
+        }
+
+        /**
+         * Reads all slider and picker values and updates the pattern.
+         */
+        function updatePattern() {
+            canvasWidthSlider.value = currentCanvasWidth; // Ensure slider reflects the current value
+            canvasHeightSlider.value = currentCanvasHeight;
+
+            currentCanvasWidth = parseInt(canvasWidthSlider.value);
+            currentCanvasHeight = parseInt(canvasHeightSlider.value);
+            canvasWidthValueSpan.textContent = currentCanvasWidth;
+            canvasHeightValueSpan.textContent = currentCanvasHeight;
+
+            currentLineType = lineTypeSelect.value;
+            currentGlobalCompositeOperation = globalCompositeOperationSelect.value;
+
+            rotation1 = parseFloat(rotation1Slider.value);
+            density1 = parseInt(density1Slider.value);
+            scale1 = parseFloat(scale1Slider.value);
+            dashPattern1 = dashPattern1Input.value.split(' ').filter(n => !isNaN(Number(n)) && Number(n) > 0).map(Number);
+            offsetX1 = parseInt(offsetX1Slider.value);
+            offsetY1 = parseInt(offsetY1Slider.value);
+            lineColor1 = lineColor1Picker.value;
+            opacity1 = parseFloat(opacity1Slider.value);
+
+            rotation1ValueSpan.textContent = rotation1.toFixed(1);
+            density1ValueSpan.textContent = density1;
+            scale1ValueSpan.textContent = scale1.toFixed(2);
+            dashPattern1ValueSpan.textContent = dashPattern1Input.value.trim() !== '' ? dashPattern1.join(' ') : 'No Dash';
+            offsetX1ValueSpan.textContent = offsetX1;
+            offsetY1ValueSpan.textContent = offsetY1;
+            opacity1ValueSpan.textContent = opacity1.toFixed(2);
+
+            rotation2 = parseFloat(rotation2Slider.value);
+            density2 = parseInt(density2Slider.value);
+            scale2 = parseFloat(scale2Slider.value);
+            dashPattern2 = dashPattern2Input.value.split(' ').filter(n => !isNaN(Number(n)) && Number(n) > 0).map(Number);
+            offsetX2 = parseInt(offsetX2Slider.value);
+            offsetY2 = parseInt(offsetY2Slider.value);
+            lineColor2 = lineColor2Picker.value;
+            opacity2 = parseFloat(opacity2Slider.value);
+
+            rotation2ValueSpan.textContent = rotation2.toFixed(1);
+            density2ValueSpan.textContent = density2;
+            scale2ValueSpan.textContent = scale2.toFixed(2);
+            dashPattern2ValueSpan.textContent = dashPattern2Input.value.trim() !== '' ? dashPattern2.join(' ') : 'No Dash';
+            offsetX2ValueSpan.textContent = offsetX2;
+            offsetY2ValueSpan.textContent = offsetY2;
+            opacity2ValueSpan.textContent = opacity2.toFixed(2);
+
+            lineThickness = parseFloat(lineThicknessSlider.value);
+            backgroundColor = backgroundColorPicker.value;
+            animationSpeed = parseFloat(animationSpeedSlider.value);
+            lineThicknessValueSpan.textContent = lineThickness;
+            animationSpeedValueSpan.textContent = animationSpeed.toFixed(2);
+
+            drawMoiré();
+        }
+
+        /**
+         * Resets all control values to their defaults.
+         */
+        function resetControls() {
+            Object.keys(defaultValues).forEach(key => {
+                const element = document.getElementById(key);
+                if (element) {
+                    if (element.type === 'color' || element.type === 'text' || element.tagName === 'SELECT') {
+                        element.value = defaultValues[key];
+                    } else if (element.type === 'range') {
+                        element.value = defaultValues[key];
+                    }
+                }
+            });
+
+            animationPaused = false;
+            freezeAnimationButton.textContent = "Freeze Animation";
+
+            updatePattern();
+        }
+
+        /**
+         * Toggles the animation paused state.
+         */
+        function toggleAnimation() {
+            animationPaused = !animationPaused;
+            freezeAnimationButton.textContent = animationPaused ? "Resume Animation" : "Freeze Animation";
+            if (!animationPaused && animationSpeed !== 0) {
+                startAnimationLoop();
+            } else if (animationPaused) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+        }
+
+
+        // --- Event Listeners for HTML Controls ---
+        const allInputs = document.querySelectorAll('input[type="range"], input[type="color"], input[type="text"], select');
+        allInputs.forEach(input => {
+            input.addEventListener('input', updatePattern);
+        });
+
+        resetButton.addEventListener('click', resetControls);
+        freezeAnimationButton.addEventListener('click', toggleAnimation);
+
+
+        // Initial draw when the page loads
+        updatePattern();
+
+
+        // ==========================================================
+        // === Animation Loop =======================================
+        // ==========================================================
+        let lastFrameTime = 0;
+        function animateRotation(currentTime) {
+            if (!animationPaused && animationSpeed !== 0) {
+                const deltaTime = (currentTime - lastFrameTime) / 1000;
+                lastFrameTime = currentTime;
+
+                rotation1Slider.value = (parseFloat(rotation1Slider.value) + animationSpeed * 60 * deltaTime) % 360;
+                rotation2Slider.value = (parseFloat(rotation2Slider.value) - animationSpeed * 60 * deltaTime * 0.8) % 360;
+
+                if (rotation1Slider.value < 0) rotation1Slider.value += 360;
+                if (rotation2Slider.value < 0) rotation2Slider.value += 360;
+
+                updatePattern();
+            }
+            animationFrameId = requestAnimationFrame(animateRotation);
+        }
+
+        function startAnimationLoop() {
+            if (animationFrameId === null) {
+                lastFrameTime = performance.now();
+                animationFrameId = requestAnimationFrame(animateRotation);
+            }
+        }
+        startAnimationLoop();
+
+
+        // ==========================================================
+        // === Gamepad Mapping & Control Logic ======================
+        // ==========================================================
+
+        let gamepadConnectedIndex = null;
+        let gamepadAnimationId = null;
+        let prevButtons = {};
+        let prevAxes = {};
+
+        const AXIS_THRESHOLD = 0.2;
+        const AXIS_CONTROL_SENSITIVITY = 0.5;
+        const BUTTON_CONTROL_STEP = 5;
+
+        // --- Gamepad API Event Listeners ---
+        window.addEventListener("gamepadconnected", (e) => {
+            console.log("Gamepad connected at index %d: %s. %d buttons, %d axes.",
+                e.gamepad.index, e.gamepad.id,
+                e.gamepad.buttons.length, e.gamepad.axes.length);
+            gamepadConnectedIndex = e.gamepad.index;
+            mapModeStatus.textContent = `Gamepad connected: ${e.gamepad.id}`;
+            gamepadStatus.textContent = `Gamepad connected: ${e.gamepad.id}`; // Initial status
+            mapModeStatus.classList.add('active'); // Ensure status bar is visible
+            startGamepadPollingLoop();
+        });
+
+        window.addEventListener("gamepaddisconnected", (e) => {
+            console.log("Gamepad disconnected from index %d: %s",
+                e.gamepad.index, e.gamepad.id);
+            if (gamepadConnectedIndex === e.gamepad.index) {
+                gamepadConnectedIndex = null;
+                mapModeStatus.textContent = "No gamepad connected.";
+                gamepadStatus.textContent = "No gamepad connected.";
+                mapModeStatus.classList.add('active'); // Ensure status bar is visible
+                stopGamepadPollingLoop();
+            }
+        });
+
+        function startGamepadPollingLoop() {
+            if (!gamepadAnimationId) {
+                gamepadPollingLoop();
+            }
+        }
+
+        function stopGamepadPollingLoop() {
+            if (gamepadAnimationId) {
+                cancelAnimationFrame(gamepadAnimationId);
+                gamepadAnimationId = null;
+            }
+        }
+
+        function gamepadPollingLoop() {
+            if (gamepadConnectedIndex !== null) {
+                const gamepads = navigator.getGamepads();
+                const gamepad = gamepads[gamepadConnectedIndex];
+
+                if (gamepad) {
+                    if (mapModeActive) {
+                        handleGamepadMapping(gamepad);
+                    } else {
+                        mapGamepadToControls(gamepad);
+                    }
+                }
+            }
+            gamepadAnimationId = requestAnimationFrame(gamepadPollingLoop);
+        }
+
+        /**
+         * Function to handle mapping a gamepad control to a slider.
+         */
+        function handleGamepadMapping(gamepad) {
+            // Update prev states for next frame's comparison BEFORE checking for new inputs
+            const currentButtons = {};
+            for (let i = 0; i < gamepad.buttons.length; i++) {
+                currentButtons[i] = gamepad.buttons[i].pressed;
+            }
+            const currentAxes = {};
+            for (let i = 0; i < gamepad.axes.length; i++) {
+                currentAxes[i] = gamepad.axes[i];
+            }
+
+
+            if (selectedControlGroup) {
+                const slider = selectedControlGroup.querySelector('input[type="range"], select'); // Get the actual control within the group
+                const sliderId = slider ? slider.id : null;
+                const sliderLabel = slider ? slider.labels[0]?.textContent.replace(':', '') : 'Unknown Control';
+
+                mapModeStatus.textContent = `Map Mode: Press a button or move a joystick on your gamepad for "${sliderLabel}".`;
+
+                // Check for new button press
+                for (let i = 0; i < gamepad.buttons.length; i++) {
+                    if (currentButtons[i] && !prevButtons[i]) { // Button just pressed
+                        if (sliderId) {
+                            controllerMappings[`button_${i}`] = sliderId;
+                            localStorage.setItem('moireGamepadMappings', JSON.stringify(controllerMappings));
+                            mapModeStatus.textContent = `Mapped "${sliderLabel}" to Gamepad Button ${i}. Click another control to map or click "Exit Map Mode".`;
+                            console.log(`Mapped ${sliderId} to button ${i}`);
+                            selectedControlGroup.classList.remove('highlight-slider');
+                            selectedControlGroup = null;
+                        }
+                        // Update prev state for this button immediately after processing
+                        prevButtons[i] = currentButtons[i];
+                        return; // Only map one control per detection cycle
+                    }
+                }
+
+                // Check for new axis movement
+                for (let i = 0; i < gamepad.axes.length; i++) {
+                    const axisValue = currentAxes[i];
+                    // Detect significant movement from previous state
+                    if (Math.abs(axisValue) > AXIS_THRESHOLD && Math.abs(prevAxes[i] || 0) < AXIS_THRESHOLD) {
+                        if (sliderId) {
+                            controllerMappings[`axis_${i}`] = sliderId;
+                            localStorage.setItem('moireGamepadMappings', JSON.stringify(controllerMappings));
+                            mapModeStatus.textContent = `Mapped "${sliderLabel}" to Gamepad Axis ${i}. Click another control to map or click "Exit Map Mode".`;
+                            console.log(`Mapped ${sliderId} to axis ${i}`);
+                            selectedControlGroup.classList.remove('highlight-slider');
+                            selectedControlGroup = null;
+                        }
+                        // Update prev state for this axis immediately after processing
+                        prevAxes[i] = currentAxes[i];
+                        return; // Only map one control per detection cycle
+                    }
+                }
+            } else {
+                mapModeStatus.textContent = 'Map Mode Active: Click a slider or select element to select it for mapping.';
+            }
+
+            // After checking all inputs, update prev states for next frame's comparison
+            // This is done here instead of the beginning to ensure single-press/movement detection
+            for (let i = 0; i < gamepad.buttons.length; i++) {
+                prevButtons[i] = currentButtons[i];
+            }
+            for (let i = 0; i < gamepad.axes.length; i++) {
+                prevAxes[i] = currentAxes[i];
+            }
+        }
+
+
+        /**
+         * Applies gamepad inputs to mapped sliders.
+         */
+        function mapGamepadToControls(gamepad) {
+            let changesMade = false;
+
+            // Update prev states for next frame's comparison BEFORE processing mapped controls
+            const currentButtons = {};
+            for (let i = 0; i < gamepad.buttons.length; i++) {
+                currentButtons[i] = gamepad.buttons[i]?.pressed;
+            }
+            const currentAxes = {};
+            for (let i = 0; i < gamepad.axes.length; i++) {
+                currentAxes[i] = gamepad.axes[i];
+            }
+
+            for (const mappingKey in controllerMappings) {
+                const sliderId = controllerMappings[mappingKey];
+                const slider = document.getElementById(sliderId);
+
+                if (!slider) continue;
+
+                if (mappingKey.startsWith('button_')) {
+                    const buttonIndex = parseInt(mappingKey.split('_')[1]);
+                    if (currentButtons[buttonIndex] && !prevButtons[buttonIndex]) { // Button just pressed
+                        if (slider.tagName === 'SELECT') { // Handle select (dropdowns)
+                            const options = Array.from(slider.options);
+                            let currentIndex = options.findIndex(option => option.selected);
+                            let nextIndex = (currentIndex + 1) % options.length;
+                            slider.value = options[nextIndex].value;
+                        } else if (slider.type === 'range') { // Handle range sliders
+                            const step = parseFloat(slider.step) || 1;
+                            // Small fixed step for button presses on sliders
+                            slider.value = parseFloat(slider.value) + step;
+                            slider.value = Math.max(parseFloat(slider.min), Math.min(parseFloat(slider.max), slider.value));
+                        }
+                        changesMade = true;
+                    }
+                } else if (mappingKey.startsWith('axis_')) {
+                    const axisIndex = parseInt(mappingKey.split('_')[1]);
+                    const axisValue = currentAxes[axisIndex];
+
+                    if (Math.abs(axisValue) > AXIS_THRESHOLD) {
+                        if (slider.type === 'range') {
+                            const minVal = parseFloat(slider.min);
+                            const maxVal = parseFloat(slider.max);
+                            const currentValue = parseFloat(slider.value);
+                            const step = parseFloat(slider.step) || 0.01; // Fine step for continuous control
+
+                            // Scale axis value (-1 to 1) to slider's range (min to max)
+                            // A better continuous control: add a fraction of the range based on axis value and sensitivity
+                            let newValue = currentValue + axisValue * (maxVal - minVal) * (AXIS_CONTROL_SENSITIVITY / 100);
+
+                            newValue = Math.max(minVal, Math.min(maxVal, newValue));
+                            slider.value = newValue;
+                            changesMade = true;
+                        }
+                        // Note: Selects and text inputs are not typically controlled by axes directly.
+                    }
+                }
+            }
+
+            // --- Hardcoded Gamepad Controls (if not mapped) ---
+            // These only activate if their corresponding button/axis hasn't been remapped by the user.
+
+            // Button 0 (A/X) -> Toggle Line Type (only if lineType not mapped)
+            if (!controllerMappings['button_0'] && currentButtons[0] && !prevButtons[0]) {
+                if (lineTypeSelect.value === 'parallel') {
+                    lineTypeSelect.value = 'radial';
+                } else {
+                    lineTypeSelect.value = 'parallel';
+                }
+                changesMade = true;
+            }
+
+            // Button 1 (B/Circle) -> Toggle Animation Freeze (always active for quick access)
+            if (currentButtons[1] && !prevButtons[1]) {
+                toggleAnimation();
+                changesMade = true;
+            }
+            // Button 2 (X/Square) -> Reset Controls (always active)
+            if (currentButtons[2] && !prevButtons[2]) {
+                resetControls();
+                changesMade = true;
+            }
+            // Button 3 (Y/Triangle) -> Cycle Blend Mode (Next) (only if globalCompositeOperation not mapped)
+            if (!controllerMappings['button_3'] && currentButtons[3] && !prevButtons[3]) {
+                let currentIndex = Array.from(globalCompositeOperationSelect.options).findIndex(option => option.selected);
+                let nextIndex = (currentIndex + 1) % globalCompositeOperationSelect.options.length;
+                globalCompositeOperationSelect.value = globalCompositeOperationSelect.options[nextIndex].value;
+                changesMade = true;
+            }
+
+            // Update prev states for next frame's comparison
+            for (let i = 0; i < gamepad.buttons.length; i++) {
+                prevButtons[i] = currentButtons[i];
+            }
+            for (let i = 0; i < gamepad.axes.length; i++) {
+                prevAxes[i] = currentAxes[i];
+            }
+
+            if (changesMade) {
+                updatePattern();
+            }
+        }
+
+
+        // --- Mapping Mode UI and Logic ---
+        enableMapModeButton.addEventListener('click', toggleMapMode);
+        clearMappingsButton.addEventListener('click', clearMappings);
+
+        function toggleMapMode() {
+            mapModeActive = !mapModeActive;
+            if (mapModeActive) {
+                enableMapModeButton.textContent = "Exit Map Mode";
+                enableMapModeButton.classList.add('active-map-button');
+                mapModeStatus.classList.add('active'); // Show status bar
+
+                mapModeStatus.textContent = 'Map Mode Active: Click a control (slider/dropdown) to select it for mapping.';
+                selectedControlGroup = null; // Clear any previously selected
+
+                // Add click listeners to ALL control groups for selection
+                document.querySelectorAll('.control-group').forEach(group => {
+                    group.addEventListener('click', selectControlForMapping);
+                });
+            } else {
+                enableMapModeButton.textContent = "Enable Map Mode";
+                enableMapModeButton.classList.remove('active-map-button');
+                mapModeStatus.classList.remove('active'); // Hide status bar
+
+                // Remove click listeners and highlights
+                document.querySelectorAll('.control-group').forEach(group => {
+                    group.removeEventListener('click', selectControlForMapping);
+                    group.classList.remove('highlight-slider'); // Ensure no highlights remain
+                });
+                selectedControlGroup = null; // Clear selected upon exit
+            }
+            console.log("Map Mode:", mapModeActive);
+            // Update gamepad status display to reflect mode
+            updateGamepadStatusDisplay();
+        }
+
+        function selectControlForMapping(event) {
+            if (!mapModeActive) return;
+
+            // Find the closest .control-group ancestor
+            let targetControlGroup = event.target.closest('.control-group');
+
+            // If a control group is clicked and it's not the currently selected one
+            if (targetControlGroup && targetControlGroup !== selectedControlGroup) {
+                // Remove highlight from previous group if any
+                if (selectedControlGroup) {
+                    selectedControlGroup.classList.remove('highlight-slider');
+                }
+
+                selectedControlGroup = targetControlGroup;
+                selectedControlGroup.classList.add('highlight-slider'); // Add highlight
+                const controlLabel = selectedControlGroup.querySelector('label')?.textContent.replace(':', '') || 'this control';
+                mapModeStatus.textContent = `Selected "${controlLabel}". Now press a button or move a joystick on your gamepad.`;
+                console.log("Selected control for mapping:", selectedControlGroup.id || controlLabel);
+            }
+        }
+
+        function clearMappings() {
+            if (confirm("Are you sure you want to clear all custom gamepad mappings? This cannot be undone.")) {
+                controllerMappings = {};
+                localStorage.removeItem('moireGamepadMappings');
+                alert("All gamepad mappings cleared!");
+                if (mapModeActive) {
+                    mapModeStatus.textContent = 'Map Mode Active: All mappings cleared. Select a control to map.';
+                }
+            }
+        }
+
+        // Initialize gamepad status message on load
+        function updateGamepadStatusDisplay() {
+            if (mapModeActive) {
+                // Map mode message is handled by mapModeStatus div
+            } else if (gamepadConnectedIndex !== null) {
+                mapModeStatus.textContent = `Gamepad connected: ${navigator.getGamepads()[gamepadConnectedIndex]?.id || 'Unknown Gamepad'}`;
+            } else {
+                mapModeStatus.textContent = "No gamepad connected.";
+            }
+            mapModeStatus.classList.add('active'); // Keep status bar visible generally
+        }
+
+        // Call on initial load
+        updateGamepadStatusDisplay();
+
+    </script>
+</body>
+</html>

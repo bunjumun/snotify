@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VJ MIXER</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+canvas { display: block; position: fixed; top: 0; left: 0; }
+
+#hud {
+  position: fixed; bottom: 10px; left: 10px;
+  font: 11px/1.75 'Courier New', monospace;
+  color: #0f0; background: rgba(0,0,0,0.85);
+  padding: 8px 12px; border: 1px solid #0a0;
+  pointer-events: none; user-select: none;
+  transition: opacity 0.4s;
+}
+#hud.hidden { opacity: 0; }
+.dim { color: #040; }
+.hi  { color: #ff0; }
+.ice { color: #4af; }
+.red { color: #f44; }
+.grn { color: #0f0; }
+
+#xfbar, #audbar {
+  display: inline-block; height: 7px;
+  background: #020; border: 1px solid #040;
+  vertical-align: middle; position: relative; overflow: hidden;
+}
+#xfbar { width: 110px; }
+#audbar { width: 70px; }
+#xfpos  { position: absolute; width: 3px; height: 7px; background: #0f0; top: 0; }
+#audlvl { position: absolute; left: 0; top: 0; height: 7px; background: #0f0; width: 0; }
+#beatdot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: #040; vertical-align: middle; margin-left: 3px;
+}
+
+#map {
+  position: fixed; bottom: 10px; right: 10px;
+  font: 9px/1.65 'Courier New', monospace;
+  color: #040; pointer-events: none; text-align: right;
+  transition: opacity 0.4s;
+}
+#map.hidden { opacity: 0; }
+
+/* ── MIDI Learn Panel ───────────────────────────────────────────── */
+#learn {
+  display: none;
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.97); border: 1px solid #0f0;
+  font: 11px/1.8 'Courier New', monospace; color: #0f0;
+  padding: 14px 18px; min-width: 340px; z-index: 100;
+  pointer-events: all;
+}
+#learn.visible { display: block; }
+#learn h2 { font-size: 12px; margin-bottom: 8px; color: #0f0; letter-spacing: 2px; }
+.lp-section { color: #050; font-size: 9px; margin: 8px 0 2px; letter-spacing: 1px; }
+.lp-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 1px 6px; cursor: pointer; border: 1px solid transparent;
+}
+.lp-row:hover { background: rgba(0,255,0,0.07); border-color: #030; }
+.lp-row.waiting { background: rgba(255,255,0,0.1); border-color: #880; color: #ff0; animation: blink 0.5s infinite; }
+.lp-row.assigned { border-color: #0a0; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.5} }
+.lp-label { flex: 1; }
+.lp-binding { color: #080; min-width: 80px; text-align: right; font-size: 10px; }
+.lp-binding.active { color: #0af; }
+.lp-clear { color: #400; margin-left: 8px; cursor: pointer; font-size: 10px; }
+.lp-clear:hover { color: #f44; }
+#learn-hint { margin-top: 10px; font-size: 9px; color: #050; }
+#learn-close { margin-top: 8px; cursor: pointer; color: #080; font-size: 10px; }
+#learn-close:hover { color: #0f0; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div><span id="cstat" class="dim">NO CONTROLLER — connect gamepad or MIDI</span></div>
+  <div>A: <span id="afx"></span> H:<span id="ahue"></span> S:<span id="aspd"></span> I:<span id="aint"></span> <span id="afrz"></span></div>
+  <div>B: <span id="bfx"></span> H:<span id="bhue"></span> S:<span id="bspd"></span> I:<span id="bint"></span> <span id="bfrz"></span></div>
+  <div>XF:<span id="xfbar"><span id="xfpos"></span></span><span id="xfv"></span> &nbsp;TRAIL:<span id="trv"></span></div>
+  <div>MIC:<span id="audstat" class="dim">OFF</span> <span id="audbar"><span id="audlvl"></span></span><span id="beatdot"></span> SENS:<span id="sensv"></span></div>
+  <div id="gfx" class="dim">&nbsp;</div>
+  <div class="dim" style="margin-top:2px;font-size:9px">
+    H=HUD &bull; M=mic &bull; P/O=sens &bull; `=MIDI map &bull; SPACE=flash
+  </div>
+</div>
+
+<div id="map">
+  LS-X crossfader &bull; LS-Y A-speed<br>
+  RS-X A-hue &bull; RS-Y B-speed<br>
+  LT A-intensity &bull; RT B-intensity<br>
+  A=strobe &bull; B=trails &bull; X=cycle-A &bull; Y=cycle-B<br>
+  LB=freeze-A &bull; RB=freeze-B<br>
+  L3=mic &bull; R3=beat-flash-toggle<br>
+  D&#x2191;&#x2193;=trails &bull; D&#x2190;&#x2192;=B-hue<br>
+  BACK=blackout &bull; START=flash<br>
+  &#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;<br>
+  Q/E=A-fx &bull; U/I=B-fx<br>
+  &larr;&rarr;=xfade &bull; &uarr;&darr;=A-speed<br>
+  W/S=B-speed &bull; 1/2=A-hue &bull; 3/4=B-hue<br>
+  Z=strobe &bull; T=trails &bull; B=blackout<br>
+  F=freeze-A &bull; G=freeze-B<br>
+  M=mic &bull; P/O=sens &bull; N=beat-flash<br>
+  `=MIDI map &bull; TAB=tap-tempo<br>
+  C=invert &bull; V=zoom-pulse
+</div>
+
+<!-- MIDI Learn Panel -->
+<div id="learn">
+  <h2>&#x25B6; MIDI LEARN</h2>
+  <div class="lp-section">── CONTINUOUS (CC) ──</div>
+  <div id="lp-cc-rows"></div>
+  <div class="lp-section">── TRIGGERS (NOTE ON) ──</div>
+  <div id="lp-note-rows"></div>
+  <div id="learn-hint">Click a row, then move a knob or press a pad on your MIDI controller.</div>
+  <div id="learn-close" onclick="closeLEARN()">[ CLOSE — press ` ]</div>
+</div>
+
+<script>'use strict';
+
+// ── Canvas ────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+const FX = ['TUNNEL','PLASMA','STARS','WAVES','GRID','VORTEX'];
+
+// ── Audio ─────────────────────────────────────────────────────────────
+let audioOn   = false;
+let analyser  = null;
+let freqData  = null;
+let audioSens = 1.5;
+const aud = { bass:0, mid:0, high:0, level:0, beat:false, flash:0 };
+let bassAvg = 0.08;
+
+function initAudio() {
+  if (analyser) { audioOn = !audioOn; updateAudHUD(); return; }
+  navigator.mediaDevices.getUserMedia({ audio:true, video:false })
+    .then(stream => {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ac.createMediaStreamSource(stream);
+      analyser = ac.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.72;
+      src.connect(analyser);
+      freqData = new Uint8Array(analyser.frequencyBinCount);
+      audioOn  = true;
+      updateAudHUD();
+    })
+    .catch(() => {
+      const el = document.getElementById('audstat');
+      el.textContent = 'DENIED'; el.className = 'red';
+    });
+}
+
+function updateAudHUD() {
+  const el = document.getElementById('audstat');
+  el.textContent = audioOn ? 'ON' : 'OFF';
+  el.className   = audioOn ? 'grn' : 'dim';
+}
+
+// Tap tempo (manual beat source)
+let tapTimes = [], tapBPM = 0, tapLast = 0, tapPhase = 0;
+function tapTempo() {
+  const now = performance.now();
+  if (now - tapLast > 2000) tapTimes = [];
+  tapLast = now;
+  tapTimes.push(now);
+  if (tapTimes.length > 8) tapTimes.shift();
+  if (tapTimes.length >= 2) {
+    const gaps = [];
+    for (let i=1; i<tapTimes.length; i++) gaps.push(tapTimes[i]-tapTimes[i-1]);
+    const avg = gaps.reduce((a,b)=>a+b,0) / gaps.length;
+    tapBPM = 60000 / avg;
+  }
+}
+
+function updateAudio(ts) {
+  aud.beat  = false;
+  aud.flash = Math.max(0, aud.flash - 0.1);
+
+  // Tap tempo beat pulse
+  if (tapBPM > 0) {
+    const beatMs = 60000 / tapBPM;
+    tapPhase = (ts % beatMs) / beatMs;
+    if (tapPhase < 0.04) { aud.beat = true; aud.flash = 1; }
+  }
+
+  if (!audioOn || !analyser) return;
+  analyser.getByteFrequencyData(freqData);
+  const len = freqData.length;
+  let b=0, m=0, hi=0;
+  for (let i=0;  i<6;   i++) b  += freqData[i];
+  for (let i=6;  i<32;  i++) m  += freqData[i];
+  for (let i=32; i<len; i++) hi += freqData[i];
+  b /= 6*255; m /= 26*255; hi /= (len-32)*255;
+
+  aud.bass  = aud.bass * 0.55 + b  * 0.45;
+  aud.mid   = aud.mid  * 0.60 + m  * 0.40;
+  aud.high  = aud.high * 0.60 + hi * 0.40;
+  aud.level = aud.bass*0.55 + aud.mid*0.3 + aud.high*0.15;
+
+  bassAvg = bassAvg * 0.94 + aud.bass * 0.06;
+  const isBeat = aud.bass > bassAvg * audioSens && aud.bass > 0.12;
+  if (isBeat) { aud.beat = true; aud.flash = 1; }
+}
+
+// ── Stars ─────────────────────────────────────────────────────────────
+function makeStar() { return { x:0, y:0, vx:0, vy:0, life:0, maxLife:100, hue:0, sz:1 }; }
+function spawnStar(s, hue, speedMult) {
+  const a = Math.random() * Math.PI * 2, spd = (0.6 + Math.random()*3.5)*(speedMult||1);
+  s.x = W/2+(Math.random()-0.5)*30; s.y = H/2+(Math.random()-0.5)*30;
+  s.vx = Math.cos(a)*spd; s.vy = Math.sin(a)*spd;
+  s.life = 0; s.maxLife = 80+Math.random()*140;
+  s.hue = (hue+Math.random()*60-30+360)%360; s.sz = 1+Math.random()*2.5;
+}
+
+function makeLayer(fx, hue) {
+  return { fx, hue, speed:1, intensity:1, frozen:false, t:0,
+           stars:Array.from({length:280}, makeStar), _sinit:false };
+}
+const layers = [ makeLayer(0,0), makeLayer(1,180) ];
+
+// ── Global state ──────────────────────────────────────────────────────
+let xfade   = 0.5;
+let strobe  = false, strobePh = 0;
+let blackout = false;
+let flashOp = 0;
+let invertOn = false;
+let zoomPulse = false, zoomScale = 1;
+let beatFlashEnable = true;
+const TRAIL_P = [0, 0.07, 0.17, 0.34, 0.58, 0.82];
+let trailIdx = 1, trails = TRAIL_P[trailIdx];
+
+// ── MIDI param tables ─────────────────────────────────────────────────
+// Each CC param: { label, cc (null=unmapped), set(0-1 normalized) }
+const CC_PARAMS = [
+  { id:'xfade',    label:'Crossfader',   cc:1,    set: v => xfade = v },
+  { id:'a-int',    label:'A Intensity',  cc:7,    set: v => layers[0].intensity = v },
+  { id:'a-hue',    label:'A Hue',        cc:10,   set: v => layers[0].hue = v*360 },
+  { id:'a-speed',  label:'A Speed',      cc:74,   set: v => layers[0].speed = 0.1+v*6.9 },
+  { id:'b-int',    label:'B Intensity',  cc:11,   set: v => layers[1].intensity = v },
+  { id:'b-hue',    label:'B Hue',        cc:73,   set: v => layers[1].hue = v*360 },
+  { id:'b-speed',  label:'B Speed',      cc:71,   set: v => layers[1].speed = 0.1+v*6.9 },
+  { id:'trails',   label:'Trails',       cc:75,   set: v => { trailIdx=Math.round(v*(TRAIL_P.length-1)); trails=TRAIL_P[trailIdx]; } },
+  { id:'aud-sens', label:'Audio Sens',   cc:76,   set: v => audioSens = 0.6+(1-v)*3.4 },
+];
+// Each NOTE param: { label, note (null=unmapped), fn() }
+const NOTE_PARAMS = [
+  { id:'strobe',   label:'Strobe Toggle',   note:48, fn: () => strobe=!strobe },
+  { id:'trails-c', label:'Trails Cycle',    note:50, fn: () => { trailIdx=(trailIdx+1)%TRAIL_P.length; trails=TRAIL_P[trailIdx]; } },
+  { id:'a-fx',     label:'Cycle A Effect',  note:52, fn: () => layers[0].fx=(layers[0].fx+1)%FX.length },
+  { id:'b-fx',     label:'Cycle B Effect',  note:53, fn: () => layers[1].fx=(layers[1].fx+1)%FX.length },
+  { id:'blackout', label:'Blackout',        note:55, fn: () => blackout=!blackout },
+  { id:'flash',    label:'Flash White',     note:57, fn: () => flashOp=1 },
+  { id:'freeze-a', label:'Freeze A',        note:59, fn: () => layers[0].frozen=!layers[0].frozen },
+  { id:'freeze-b', label:'Freeze B',        note:60, fn: () => layers[1].frozen=!layers[1].frozen },
+  { id:'mic',      label:'Mic Toggle',      note:62, fn: () => initAudio() },
+  { id:'invert',   label:'Invert Toggle',   note:64, fn: () => invertOn=!invertOn },
+  { id:'zoom',     label:'Zoom Pulse',      note:65, fn: () => zoomPulse=!zoomPulse },
+];
+
+function buildMaps() {
+  // rebuild lookup maps from param tables
+  window._CC_MAP   = {};
+  window._NOTE_MAP = {};
+  CC_PARAMS.forEach(p => { if (p.cc   !== null) _CC_MAP[p.cc]     = v => p.set(v/127); });
+  NOTE_PARAMS.forEach(p => { if (p.note !== null) _NOTE_MAP[p.note] = p.fn; });
+}
+buildMaps();
+
+// ── MIDI Learn ────────────────────────────────────────────────────────
+let learnOpen = false, learnTarget = null; // { type:'cc'|'note', param }
+
+function openLEARN() {
+  learnOpen = true;
+  document.getElementById('learn').classList.add('visible');
+  renderLearnPanel();
+}
+function closeLEARN() {
+  learnOpen = false;
+  learnTarget = null;
+  document.getElementById('learn').classList.remove('visible');
+  renderLearnPanel();
+}
+function toggleLEARN() { learnOpen ? closeLEARN() : openLEARN(); }
+
+function renderLearnPanel() {
+  function makeRow(type, p) {
+    const row = document.createElement('div');
+    row.className = 'lp-row' + (p.cc!==null||p.note!==null?' assigned':'');
+    if (learnTarget && learnTarget.param === p) row.classList.add('waiting');
+
+    const lbl = document.createElement('span');
+    lbl.className = 'lp-label';
+    lbl.textContent = p.label;
+
+    const bind = document.createElement('span');
+    bind.className = 'lp-binding' + (p.cc!==null||p.note!==null?' active':'');
+    const assigned = type==='cc' ? (p.cc!==null?`CC ${p.cc}`:'—') : (p.note!==null?`NOTE ${p.note}`:'—');
+    bind.textContent = assigned;
+
+    const clr = document.createElement('span');
+    clr.className = 'lp-clear';
+    clr.textContent = '✕';
+    clr.title = 'unmap';
+    clr.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (type==='cc')   p.cc   = null;
+      else               p.note = null;
+      buildMaps(); renderLearnPanel();
+    });
+
+    row.appendChild(lbl);
+    row.appendChild(bind);
+    row.appendChild(clr);
+
+    row.addEventListener('click', () => {
+      if (learnTarget && learnTarget.param===p) { learnTarget=null; renderLearnPanel(); return; }
+      learnTarget = { type, param:p };
+      renderLearnPanel();
+    });
+    return row;
+  }
+
+  const ccDiv = document.getElementById('lp-cc-rows');
+  const ntDiv = document.getElementById('lp-note-rows');
+  ccDiv.innerHTML = '';
+  ntDiv.innerHTML = '';
+  CC_PARAMS.forEach(p  => ccDiv.appendChild(makeRow('cc',   p)));
+  NOTE_PARAMS.forEach(p => ntDiv.appendChild(makeRow('note', p)));
+}
+
+// ── HUD ───────────────────────────────────────────────────────────────
+const hudEl   = document.getElementById('hud');
+const mapEl   = document.getElementById('map');
+const cstat   = document.getElementById('cstat');
+const xfposEl = document.getElementById('xfpos');
+
+function hud() {
+  const [A,B] = layers;
+  const $ = id => document.getElementById(id);
+  const set = (id,v,cls) => { const e=$( id); if(!e)return; e.textContent=v; if(cls!==undefined)e.className=cls; };
+  set('afx', FX[A.fx]); set('ahue',A.hue|0); set('aspd',A.speed.toFixed(1)); set('aint',A.intensity.toFixed(2));
+  set('afrz',A.frozen?'[FRZ]':'', A.frozen?'ice':'');
+  set('bfx', FX[B.fx]); set('bhue',B.hue|0); set('bspd',B.speed.toFixed(1)); set('bint',B.intensity.toFixed(2));
+  set('bfrz',B.frozen?'[FRZ]':'', B.frozen?'ice':'');
+  xfposEl.style.left = (xfade*100)+'%';
+  set('xfv', xfade.toFixed(2));
+  set('trv', trails.toFixed(2));
+  set('sensv', audioSens.toFixed(1));
+  $('audlvl').style.width = (Math.min(1,aud.level*2.5)*100)+'%';
+  $('beatdot').style.background = aud.beat?'#ff0':(aud.flash>0.3?`rgba(255,200,0,${aud.flash})`:'#040');
+
+  const tags=[];
+  if (strobe)    tags.push('STROBE');
+  if (blackout)  tags.push('BLACKOUT');
+  if (invertOn)  tags.push('INVERT');
+  if (zoomPulse) tags.push('ZOOM');
+  if (tapBPM>0)  tags.push(`TAP ${tapBPM.toFixed(0)}BPM`);
+  const gfx=$('gfx');
+  gfx.textContent = tags.join(' | ') || ' ';
+  gfx.className = tags.length?'hi':'dim';
+}
+
+// ── Draw helpers ──────────────────────────────────────────────────────
+function setFX(a) {
+  ctx.globalAlpha = Math.max(0,Math.min(1,a));
+  ctx.globalCompositeOperation = 'screen';
+}
+
+// ── TUNNEL ────────────────────────────────────────────────────────────
+function drawTunnel(L, a) {
+  ctx.save(); setFX(a);
+  const cx=W/2, cy=H/2, maxR=Math.hypot(cx,cy)*1.1;
+  const tSpeed = L.speed*(1+aud.bass*1.8);
+  const t = L.t*0.001*tSpeed;
+  const rings=10+(L.intensity*8|0), bb=aud.flash*40;
+  for (let i=rings; i>=0; i--) {
+    const ph=((t*0.5+i/rings)%1), r=ph*maxR;
+    const lw=(1.5+L.intensity*4)*(1-ph*0.6);
+    const br=Math.min(95, 25+ph*55+bb*(1-ph));
+    ctx.strokeStyle=`hsl(${(L.hue+i*28+t*25)%360},100%,${br}%)`;
+    ctx.lineWidth=lw;
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ── PLASMA ────────────────────────────────────────────────────────────
+function drawPlasma(L, a) {
+  ctx.save(); ctx.globalCompositeOperation='screen';
+  const t=L.t*0.001*L.speed;
+  const blobs=4+(L.intensity*2|0);
+  const spread=Math.min(W,H)*(0.33+aud.mid*0.25);
+  const baseR =Math.min(W,H)*(0.2+L.intensity*0.15+aud.bass*0.18);
+  for (let i=0; i<blobs; i++) {
+    const ang=t*(0.2+i*0.11)+i*(Math.PI*2/blobs);
+    const cx=W/2+Math.cos(ang)*spread, cy=H/2+Math.sin(ang*0.65+t*0.28)*spread;
+    const r=baseR*(0.75+Math.sin(t*1.1+i)*0.35);
+    const hue=(L.hue+i*(360/blobs)+t*18)%360;
+    const g=ctx.createRadialGradient(cx,cy,0,cx,cy,r);
+    g.addColorStop(0,  `hsla(${hue},100%,${70+aud.flash*25}%,${a})`);
+    g.addColorStop(0.5,`hsla(${(hue+45)%360},100%,32%,${a*0.7})`);
+    g.addColorStop(1,  `hsla(${hue},100%,5%,0)`);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.clip();
+    ctx.fillStyle=g; ctx.fillRect(cx-r,cy-r,r*2,r*2);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ── STARS ─────────────────────────────────────────────────────────────
+function drawStars(L, a) {
+  if (!L._sinit) {
+    L._sinit=true;
+    L.stars.forEach(s=>spawnStar(s,L.hue));
+    L.stars.forEach(s=>{ s.life=Math.random()*s.maxLife; });
+  }
+  ctx.save(); ctx.globalCompositeOperation='screen';
+  const bm=1+aud.flash*3.5, sm=1+aud.mid*0.8;
+  for (const s of L.stars) {
+    if (!L.frozen) { s.x+=s.vx*L.speed*bm; s.y+=s.vy*L.speed*bm; s.life++; }
+    if (s.x<-20||s.x>W+20||s.y<-20||s.y>H+20||s.life>=s.maxLife)
+      if (!L.frozen) spawnStar(s,L.hue,1+aud.bass*2);
+    const tt=s.life/s.maxLife;
+    const fade=tt<0.15?tt/0.15:1-(tt-0.15)/0.85;
+    const sz=s.sz*(1+tt*2.5*L.intensity)*sm;
+    ctx.globalAlpha=a*fade*L.intensity;
+    ctx.fillStyle=`hsl(${s.hue%360},100%,78%)`;
+    ctx.fillRect(s.x-sz/2,s.y-sz/2,sz,sz);
+  }
+  ctx.restore();
+}
+
+// ── WAVES ─────────────────────────────────────────────────────────────
+function drawWaves(L, a) {
+  ctx.save(); setFX(a);
+  const t=L.t*0.001*L.speed, n=6+(L.intensity*10|0);
+  const amp=H*0.13*(0.4+L.intensity)*(1+aud.mid*2.2);
+  const vOff=H*0.28*(1+aud.bass*0.6);
+  const steps=Math.ceil(W/3);
+  for (let i=0; i<n; i++) {
+    const hue=(L.hue+i*(300/n))%360, ph=i/n*Math.PI*2, freq=1.5+i*0.38;
+    const yBase=H/2+Math.sin(t*0.28+i)*vOff;
+    ctx.strokeStyle=`hsl(${hue},100%,${55+aud.flash*30}%)`;
+    ctx.lineWidth=1+L.intensity*2*(1-i/n*0.6);
+    ctx.beginPath();
+    for (let xi=0; xi<=steps; xi++) {
+      const x=xi/steps*W, y=yBase+Math.sin(x/W*Math.PI*2*freq+t+ph)*amp;
+      xi===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ── GRID ──────────────────────────────────────────────────────────────
+function drawGrid(L, a) {
+  ctx.save(); setFX(a);
+  const t=L.t*0.001*L.speed, wa=(22+L.intensity*50)*(1+aud.bass*2.5);
+  const br=42+aud.flash*35, cols=10, rows=7, segs=36;
+  for (let i=0; i<=cols; i++) {
+    ctx.strokeStyle=`hsl(${(L.hue+i*11)%360},100%,${br}%)`; ctx.lineWidth=1;
+    ctx.beginPath();
+    for (let j=0; j<=segs; j++) {
+      const p=j/segs, x=i*(W/cols)+Math.sin(p*Math.PI*2+t*1.2+i*0.55)*wa, y=p*H;
+      j===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+  for (let j=0; j<=rows; j++) {
+    ctx.strokeStyle=`hsl(${(L.hue+j*22+90)%360},100%,${br}%)`; ctx.lineWidth=1;
+    ctx.beginPath();
+    for (let i=0; i<=segs; i++) {
+      const p=i/segs, y=j*(H/rows)+Math.sin(p*Math.PI*2+t*0.85+j*0.65)*wa, x=p*W;
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ── VORTEX ────────────────────────────────────────────────────────────
+function drawVortex(L, a) {
+  ctx.save(); setFX(a);
+  const cx=W/2, cy=H/2;
+  const t=L.t*0.001*L.speed*(1+aud.bass*2);
+  const arms=2+(L.intensity*4|0), maxR=Math.hypot(cx,cy);
+  const twists=3+L.intensity*3+aud.flash*4, steps=280;
+  for (let arm=0; arm<arms; arm++) {
+    const base=(arm/arms)*Math.PI*2+t;
+    ctx.strokeStyle=`hsl(${(L.hue+arm*(360/arms))%360},100%,${58+aud.flash*30}%)`;
+    ctx.lineWidth=1+L.intensity;
+    ctx.beginPath();
+    for (let i=0; i<=steps; i++) {
+      const p=i/steps, r=p*maxR, ang=base+p*Math.PI*2*twists;
+      i===0?ctx.moveTo(cx+Math.cos(ang)*r,cy+Math.sin(ang)*r)
+           :ctx.lineTo(cx+Math.cos(ang)*r,cy+Math.sin(ang)*r);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawFX(L, a) {
+  switch(L.fx) {
+    case 0: drawTunnel(L,a); break; case 1: drawPlasma(L,a); break;
+    case 2: drawStars(L,a);  break; case 3: drawWaves(L,a);  break;
+    case 4: drawGrid(L,a);   break; case 5: drawVortex(L,a); break;
+  }
+}
+
+// ── Render loop ───────────────────────────────────────────────────────
+let last = 0;
+function render(ts) {
+  const dt = Math.min(ts-last, 50); last = ts;
+  layers.forEach(L => { if (!L.frozen) L.t += dt; });
+  pollGamepad();
+  updateAudio(ts);
+
+  // Zoom pulse on beat
+  if (zoomPulse && aud.flash > 0) {
+    zoomScale = 1 + aud.flash * 0.04;
+  } else {
+    zoomScale += (1 - zoomScale) * 0.2;
+  }
+
+  // Trail / clear
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=1-trails;
+  ctx.fillStyle='#000';
+  ctx.fillRect(0,0,W,H);
+
+  if (blackout) {
+    ctx.globalAlpha=1; ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+    hud(); requestAnimationFrame(render); return;
+  }
+
+  strobePh++;
+  if (strobe && strobePh%6<3) {
+    ctx.globalAlpha=0.92; ctx.globalCompositeOperation='source-over';
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+    hud(); requestAnimationFrame(render); return;
+  }
+
+  // Apply zoom transform around center
+  if (Math.abs(zoomScale-1) > 0.001) {
+    ctx.setTransform(zoomScale,0,0,zoomScale, W/2*(1-zoomScale), H/2*(1-zoomScale));
+  }
+
+  const aA=Math.cos(xfade*Math.PI/2), aB=Math.sin(xfade*Math.PI/2);
+  drawFX(layers[0], aA*layers[0].intensity);
+  drawFX(layers[1], aB*layers[1].intensity);
+
+  ctx.setTransform(1,0,0,1,0,0);
+
+  // Invert
+  if (invertOn) {
+    ctx.globalCompositeOperation='difference';
+    ctx.globalAlpha=1;
+    ctx.fillStyle='#fff';
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // Beat flash overlay
+  if (beatFlashEnable && aud.flash>0) {
+    ctx.globalCompositeOperation='source-over';
+    ctx.globalAlpha=aud.flash*0.16;
+    ctx.fillStyle='#fff';
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // Manual flash white
+  if (flashOp>0) {
+    ctx.globalCompositeOperation='source-over';
+    ctx.globalAlpha=flashOp;
+    ctx.fillStyle='#fff';
+    ctx.fillRect(0,0,W,H);
+    flashOp=Math.max(0,flashOp-0.055);
+  }
+
+  hud();
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+// ── Gamepad ────────────────────────────────────────────────────────────
+let gpIdx=null, prevB=[];
+window.addEventListener('gamepadconnected', e => {
+  gpIdx=e.gamepad.index;
+  cstat.textContent='GAMEPAD: '+e.gamepad.id.slice(0,35); cstat.className='grn';
+});
+window.addEventListener('gamepaddisconnected', e => {
+  if (gpIdx===e.gamepad.index) { gpIdx=null; cstat.textContent='NO CONTROLLER'; cstat.className='dim'; }
+});
+function dz(v) { const d=0.12; return Math.abs(v)<d?0:(v-Math.sign(v)*d)/(1-d); }
+function rose(bt,i) { return bt[i]&&bt[i].pressed&&!(prevB[i]&&prevB[i].pressed); }
+
+function pollGamepad() {
+  if (gpIdx===null) return;
+  const gp=navigator.getGamepads()[gpIdx]; if (!gp) return;
+  const {axes:ax,buttons:bt}=gp;
+  const lx=dz(ax[0]||0), ly=dz(ax[1]||0), rx=dz(ax[2]||0), ry=dz(ax[3]||0);
+  if (lx) xfade=Math.max(0,Math.min(1,xfade+lx*0.022));
+  if (ly) layers[0].speed=Math.max(0.1,Math.min(7,layers[0].speed-ly*0.06));
+  if (rx) layers[0].hue=(layers[0].hue+rx*2.8+360)%360;
+  if (ry) layers[1].speed=Math.max(0.1,Math.min(7,layers[1].speed-ry*0.06));
+  if (bt[6]&&bt[6].value>0.02) layers[0].intensity=0.05+bt[6].value*0.95;
+  if (bt[7]&&bt[7].value>0.02) layers[1].intensity=0.05+bt[7].value*0.95;
+  if (rose(bt,0))  strobe=!strobe;
+  if (rose(bt,1))  { trailIdx=(trailIdx+1)%TRAIL_P.length; trails=TRAIL_P[trailIdx]; }
+  if (rose(bt,2))  layers[0].fx=(layers[0].fx+1)%FX.length;
+  if (rose(bt,3))  layers[1].fx=(layers[1].fx+1)%FX.length;
+  if (rose(bt,4))  layers[0].frozen=!layers[0].frozen;
+  if (rose(bt,5))  layers[1].frozen=!layers[1].frozen;
+  if (rose(bt,8))  blackout=!blackout;
+  if (rose(bt,9))  flashOp=1;
+  if (rose(bt,10)) initAudio();
+  if (rose(bt,11)) beatFlashEnable=!beatFlashEnable;
+  if (rose(bt,12)) { trailIdx=Math.min(TRAIL_P.length-1,trailIdx+1); trails=TRAIL_P[trailIdx]; }
+  if (rose(bt,13)) { trailIdx=Math.max(0,trailIdx-1); trails=TRAIL_P[trailIdx]; }
+  if (rose(bt,14)) layers[1].hue=(layers[1].hue-22+360)%360;
+  if (rose(bt,15)) layers[1].hue=(layers[1].hue+22)%360;
+  prevB=Array.from(bt,b=>({pressed:b.pressed,value:b.value}));
+}
+
+// ── MIDI ──────────────────────────────────────────────────────────────
+if (navigator.requestMIDIAccess) {
+  navigator.requestMIDIAccess({sysex:false}).then(midi => {
+    function bind() {
+      let n=0;
+      for (const inp of midi.inputs.values()) { inp.onmidimessage=onMIDI; n++; }
+      if (n && gpIdx===null) { cstat.textContent=`MIDI: ${n} device(s)`; cstat.className='grn'; }
+    }
+    bind(); midi.onstatechange=bind;
+  }).catch(()=>{});
+}
+
+function onMIDI(msg) {
+  const [st,d1,d2]=msg.data, type=st&0xf0;
+  if (type===0xb0) {
+    // In learn mode, capture CC for waiting param
+    if (learnTarget && learnTarget.type==='cc') {
+      learnTarget.param.cc=d1;
+      buildMaps(); learnTarget=null; renderLearnPanel(); return;
+    }
+    if (_CC_MAP[d1]) _CC_MAP[d1](d2);
+  } else if (type===0x90 && d2>0) {
+    if (learnTarget && learnTarget.type==='note') {
+      learnTarget.param.note=d1;
+      buildMaps(); learnTarget=null; renderLearnPanel(); return;
+    }
+    if (_NOTE_MAP[d1]) _NOTE_MAP[d1]();
+  }
+}
+
+// ── Keyboard ──────────────────────────────────────────────────────────
+window.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (learnOpen && e.key==='Escape') { closeLEARN(); return; }
+  if (learnOpen) return; // block other keys while learn panel open (except ` to close)
+  switch(e.key) {
+    // Effect cycling
+    case 'q': layers[0].fx=(layers[0].fx-1+FX.length)%FX.length; break;
+    case 'e': layers[0].fx=(layers[0].fx+1)%FX.length; break;
+    case 'u': layers[1].fx=(layers[1].fx-1+FX.length)%FX.length; break;
+    case 'i': layers[1].fx=(layers[1].fx+1)%FX.length; break;
+    // Crossfader
+    case 'ArrowLeft':  xfade=Math.max(0,xfade-0.05); break;
+    case 'ArrowRight': xfade=Math.min(1,xfade+0.05); break;
+    // Speed
+    case 'ArrowUp':    layers[0].speed=Math.min(7,layers[0].speed+0.3); break;
+    case 'ArrowDown':  layers[0].speed=Math.max(0.1,layers[0].speed-0.3); break;
+    case 'w': layers[1].speed=Math.min(7,layers[1].speed+0.3); break;
+    case 's': layers[1].speed=Math.max(0.1,layers[1].speed-0.3); break;
+    // Hue
+    case '1': layers[0].hue=(layers[0].hue-20+360)%360; break;
+    case '2': layers[0].hue=(layers[0].hue+20)%360; break;
+    case '3': layers[1].hue=(layers[1].hue-20+360)%360; break;
+    case '4': layers[1].hue=(layers[1].hue+20)%360; break;
+    // Global FX
+    case 'z': strobe=!strobe; break;
+    case 't': trailIdx=(trailIdx+1)%TRAIL_P.length; trails=TRAIL_P[trailIdx]; break;
+    case 'b': blackout=!blackout; break;
+    case 'f': layers[0].frozen=!layers[0].frozen; break;
+    case 'g': layers[1].frozen=!layers[1].frozen; break;
+    case 'c': invertOn=!invertOn; break;
+    case 'v': zoomPulse=!zoomPulse; break;
+    case 'n': beatFlashEnable=!beatFlashEnable; break;
+    // Audio
+    case 'm': initAudio(); break;
+    case 'p': audioSens=Math.min(4.0,audioSens+0.1); break;  // P = less sensitive (higher threshold)
+    case 'o': audioSens=Math.max(0.6,audioSens-0.1); break;  // O = more sensitive (lower threshold)
+    // Tap tempo
+    case 'Tab': e.preventDefault(); tapTempo(); break;
+    // UI
+    case 'h': hudEl.classList.toggle('hidden'); mapEl.classList.toggle('hidden'); break;
+    case ' ': e.preventDefault(); flashOp=1; break;
+    case '`': toggleLEARN(); break;
+    case 'Escape': closeLEARN(); break;
+  }
+});
+</script>
+</body>
+</html>

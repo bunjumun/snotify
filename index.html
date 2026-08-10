@@ -126,6 +126,46 @@
   .cmt:hover .del { opacity: 1; } .cmt .del:hover { color: #ff6b6b; }
   .cempty { color: var(--text-mute); font-size: 13px; padding: 6px 10px; }
 
+  /* Threads: replies, resolve/dismiss, inline edit */
+  .cthread { border-radius: 8px; }
+  .cthread.resolved > .cmt .body .txt { color: var(--text-mute); text-decoration: line-through; text-decoration-color: var(--line); }
+  .cmt .carried { color: var(--accent-2); font-weight: 600; }
+  .cmt .edited-tag { color: var(--text-mute); }
+  .creplies { margin-left: 52px; display: flex; flex-direction: column; gap: 2px; }
+  .creplies .cmt { padding: 6px 10px; }
+  .creplies .cmt .t { display: none; }
+  .cactions { display: flex; gap: 10px; margin-top: 3px; }
+  .cactions span { font-size: 11px; color: var(--text-mute); cursor: pointer; font-weight: 600; }
+  .cactions span:hover { color: var(--accent); }
+  .cactions span.on { color: var(--accent-2); }
+  .cedit { display: flex; gap: 6px; margin-top: 4px; }
+  .cedit input { flex: 1; background: var(--bg); border: 1px solid var(--accent); color: var(--text); border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 13px; outline: none; }
+  .cedit button { flex: none; background: none; border: none; color: var(--text-mute); font-size: 11px; font-weight: 600; cursor: pointer; }
+  .cedit button:hover { color: var(--accent); }
+  .cbadge { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-left: 6px; letter-spacing: .2px; }
+  .cbadge.resolved { background: rgba(155,107,231,.16); color: #b48cf0; }
+
+  /* To-do modal (per-song issues list, GitHub-style) */
+  .todo-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 4px 0 12px; }
+  .todo-tab { background: none; border: none; color: var(--text-mute); font: inherit; font-size: 13px; font-weight: 600; padding: 8px 12px; cursor: pointer; border-bottom: 2px solid transparent; }
+  .todo-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .todo-sort { margin-left: auto; align-self: center; }
+  .todo-sort select { background: var(--bg); border: 1px solid var(--line); color: var(--text-dim); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 12px; }
+  .todo-toolbar { display: flex; align-items: center; }
+  .todo-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; margin: 0 -6px; }
+  .todo-row { display: flex; gap: 10px; padding: 10px; border-radius: 8px; cursor: pointer; }
+  .todo-row:hover { background: var(--bg-hover); }
+  .todo-dot { flex: none; width: 15px; height: 15px; border-radius: 50%; margin-top: 2px; }
+  .todo-dot.open { background: rgba(46,204,113,.18); border: 2px solid #2ecc71; }
+  .todo-dot.resolved { background: rgba(155,107,231,.18); border: 2px solid #9b6be7; }
+  .todo-row .body { flex: 1; min-width: 0; }
+  .todo-row .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .todo-row .meta { color: var(--text-mute); font-size: 11.5px; margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .todo-row .replies { color: var(--text-mute); }
+  .chip { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 20px; background: var(--bg-row); border: 1px solid var(--line); color: var(--text-mute); }
+  .chip.origin { color: var(--accent); border-color: var(--accent); }
+  .chip.dismissed { text-decoration: line-through; opacity: .5; }
+
   /* Changelog drawer (git-style version history) */
   .vlog-list { display: flex; flex-direction: column; max-height: 32vh; overflow-y: auto; padding: 2px 0 2px 4px; }
   .vlog-entry { position: relative; padding: 8px 12px 10px 26px; border-left: 2px solid var(--line); margin-left: 8px; }
@@ -293,6 +333,7 @@
   /* Single-mix view (?b&s&v, no login): playback only — no comments, no
      library affordances. Band members log in for everything else. */
   body.singlemix #cToggle, body.singlemix #vlogToggle, body.singlemix #shareBtn,
+  body.singlemix #todoToggle,
   body.singlemix #addBtn, body.singlemix .song .scpy { display: none !important; }
   .mixhint { margin: 12px 4px 0; color: var(--text-mute); font-size: 12px; }
   .mixhint .linky { color: var(--accent); cursor: pointer; text-decoration: underline; }
@@ -568,6 +609,28 @@
     </div>
   </div>
 
+  <!-- To-do: every comment thread on a song, open + resolved -->
+  <div class="modal-back" id="todoModal">
+    <div class="modal" style="max-width:620px">
+      <h2>To-do <span id="todoHint" style="font-size:12px;font-weight:400;color:var(--text-mute)"></span></h2>
+      <div class="todo-toolbar">
+        <div class="todo-tabs">
+          <button class="todo-tab active" id="todoTabOpen" data-tab="open">Open</button>
+          <button class="todo-tab" id="todoTabClosed" data-tab="resolved">Resolved</button>
+        </div>
+        <div class="todo-sort">
+          <select id="todoSort">
+            <option value="new">Newest</option>
+            <option value="old">Oldest</option>
+            <option value="replies">Most replies</option>
+          </select>
+        </div>
+      </div>
+      <div class="todo-list" id="todoList"></div>
+      <div class="actions"><button class="btn ghost" id="todoClose">Close</button></div>
+    </div>
+  </div>
+
   <!-- Song picker (stack target) -->
   <div class="modal-back" id="pickModal">
     <div class="modal">
@@ -628,6 +691,10 @@
           <button class="cbtn" id="cToggle" title="Comments (c)" style="margin-left:0">
             <svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 012 2v9a2 2 0 01-2 2H8l-4 4V6a2 2 0 012-2z"/></svg>
             <span id="cCount">0</span>
+          </button>
+          <button class="cbtn" id="todoToggle" title="To-do — every open and resolved comment on this song" style="margin-left:0">
+            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            <span>To-do</span>
           </button>
         </div>
 
@@ -1102,11 +1169,17 @@ function normalize(data){
     let versions;
     if (Array.isArray(s.versions) && s.versions.length)
       versions = s.versions.map(v => ({
+        // id + created_at carry through from the server: comments pin to a
+        // version id, and "was this mix made after that note?" needs the date.
+        id: v.id || null, created_at: v.created_at || null,
         name: v.name || 'Version', src: publicUrl(v.src), date: v.date || '',
         changelog: v.changelog || '', changes: Array.isArray(v.changes) ? v.changes : null,
       }));
     else if (s.src)
-      versions = [{ name: s.name || 'Original', src: publicUrl(s.src), date: s.date || '',
+      // legacy flat shape (one src, no versions array) — no version row exists,
+      // so there's no version id to carry; comments there stay on the old path
+      versions = [{ id: null, created_at: null,
+                    name: s.name || 'Original', src: publicUrl(s.src), date: s.date || '',
                     changelog: s.changelog || '', changes: Array.isArray(s.changes) ? s.changes : null }];
     else return null;
     versions = versions.filter(v => v.src);
@@ -1688,16 +1761,39 @@ async function edgeFn(name, body){
 }
 
 let commentCache = {};   // song_id -> [comments], mirrors the shared table
+let cReplyTo = null, cEditId = null;   // which thread/comment has an inline compose box open
 const mapRow = (r) => ({ id: r.id, time: r.time_s, text: r.text, name: r.name || '',
-                         version: r.version || '', at: Date.parse(r.created_at) });
+                         version: r.version || '', versionId: r.version_id || null,
+                         parentId: r.parent_id || null, resolved: !!r.resolved,
+                         resolvedBy: r.resolved_by || '', editedAt: r.edited_at ? Date.parse(r.edited_at) : null,
+                         dismissedVersions: r.dismissed_versions || [],
+                         at: Date.parse(r.created_at) });
 function commentsFor(id){ return (commentCache[id] || []).slice().sort((a,b)=>a.time-b.time); }
-function countComments(id){ return (commentCache[id] || []).length; }
+function rootsFor(id){ return commentsFor(id).filter(c => !c.parentId); }
+function repliesFor(id, rootId){ return commentsFor(id).filter(c => c.parentId === rootId).sort((a,b)=>a.at-b.at); }
+function countComments(id){ return rootsFor(id).length; }
+// A root comment is "relevant" to a version once it's posted on it, and keeps
+// showing on every version made after that — until it's resolved, or marked
+// not-relevant to that one version on a whim. Replies just follow their root.
+function versionById(song, vid){ return (song.versions || []).find(v => v.id === vid) || null; }
+function commentRelevantTo(c, song, ver){
+  if (!ver) return false;
+  if (c.dismissedVersions.includes(ver.id)) return false;
+  if (c.versionId === ver.id) return true;
+  if (c.resolved) return false;
+  const origin = versionById(song, c.versionId);
+  // Origin unknown (posted on a since-renamed or deleted mix): show it
+  // everywhere rather than hiding it — losing a note is worse than repeating it.
+  if (!origin || !origin.created_at || !ver.created_at) return true;
+  return Date.parse(ver.created_at) >= Date.parse(origin.created_at);
+}
 // Comments are pinned to the mix version playing when they were left — a
-// note about a vocal level in v1 doesn't belong on v3's waveform.
+// note about a vocal level in v1 doesn't belong on v3's waveform, unless it's
+// still unresolved, in which case it carries forward (see commentRelevantTo).
 function commentsForActiveVersion(){
   if (!activeSong) return [];
-  const name = activeSong.versions[activeVer]?.name || '';
-  return commentsFor(activeSong.id).filter(c => (c.version || '') === name);
+  const ver = activeSong.versions[activeVer];
+  return rootsFor(activeSong.id).filter(c => commentRelevantTo(c, activeSong, ver));
 }
 
 // One call fetches the whole band's comments; the pool is small and this keeps
@@ -1715,55 +1811,187 @@ async function loadComments(){
 // Pick up bandmates' new comments whenever a song is opened.
 const refreshSongComments = () => loadComments();
 
-async function addComment(){
+async function addComment(text, parentId = null){
   if (!activeSong) return;
   if (!isAuthed(curBand)){ showGate(curBand, false); return; }
-  const text = $('cinput').value.trim();
+  text = (text ?? $('cinput').value).trim();
   if (!text) return;
   const w = curWS();
   const time = w ? w.getCurrentTime() : 0;
   const name = $('cname').value.trim();
-  const version = activeSong.versions[activeVer].name;
+  const ver = activeSong.versions[activeVer];
   try {
     const row = await libRpc('add_comment', { sid: activeSong.id, time_s: time,
-                                              txt: text, who: name, ver: version });
+      txt: text, who: name, ver: ver.name, vid: ver.id, parent_id: parentId });
     (commentCache[activeSong.id] ||= []).push(mapRow(row));
   } catch (err){ alert('Could not post the comment: ' + (err.message || err)); return; }
-  $('cinput').value = '';
+  if (!parentId) $('cinput').value = '';
   renderComments(); renderMarkers(); refreshListBadges();
 }
 async function deleteComment(cid){
   if (!activeSong || !isAuthed(curBand)) return;
   try { await libRpc('delete_comment', { cid }); }
   catch (err){ alert('Could not delete: ' + (err.message || err)); return; }
-  commentCache[activeSong.id] = (commentCache[activeSong.id]||[]).filter(c => c.id !== cid);
+  commentCache[activeSong.id] = (commentCache[activeSong.id]||[]).filter(c => c.id !== cid && c.parentId !== cid);
+  renderComments(); renderMarkers(); refreshListBadges();
+}
+// Honor system: the server lets any bandmate edit any comment (same trust
+// level delete already had) — the one check that matters happens here, before
+// the editor even opens, by comparing the poster's name to your own.
+function confirmEditingOthers(c){
+  const mine = $('cname').value.trim().toLowerCase();
+  if (!c.name || !mine || c.name.trim().toLowerCase() === mine) return true;
+  return confirm(`This comment was posted by "${c.name}" — are you sure you want to edit it?`);
+}
+async function editComment(cid, text){
+  text = text.trim();
+  if (!text || !activeSong) return;
+  const name = $('cname').value.trim();
+  try {
+    const row = await libRpc('edit_comment', { cid, txt: text, who: name });
+    const list = commentCache[activeSong.id] || [];
+    const i = list.findIndex(c => c.id === cid);
+    if (i !== -1) list[i] = { ...list[i], ...mapRow({ ...row, dismissed_versions: list[i].dismissedVersions }) };
+  } catch (err){ alert('Could not save the edit: ' + (err.message || err)); return; }
+  renderComments(); renderMarkers();
+}
+async function toggleResolve(cid, resolve){
+  if (!activeSong) return;
+  const name = $('cname').value.trim();
+  try {
+    const row = await libRpc('resolve_comment', { cid, is_resolved: resolve, who: name });
+    const list = commentCache[activeSong.id] || [];
+    const i = list.findIndex(c => c.id === cid);
+    if (i !== -1) list[i] = { ...list[i], ...mapRow({ ...row, dismissed_versions: list[i].dismissedVersions }) };
+  } catch (err){ alert('Could not update: ' + (err.message || err)); return; }
+  renderComments(); renderMarkers(); refreshListBadges();
+}
+async function toggleDismiss(cid, versionId, dismiss){
+  if (!activeSong) return;
+  try { await libRpc('set_comment_dismissed', { cid, target_version: versionId, is_dismissed: dismiss }); }
+  catch (err){ alert('Could not update: ' + (err.message || err)); return; }
+  const list = commentCache[activeSong.id] || [];
+  const c = list.find(x => x.id === cid);
+  if (c){
+    c.dismissedVersions = dismiss
+      ? [...new Set([...c.dismissedVersions, versionId])]
+      : c.dismissedVersions.filter(v => v !== versionId);
+  }
   renderComments(); renderMarkers(); refreshListBadges();
 }
 function seekTo(t){ const w=curWS(); if (w){ w.setTime(t); $('curTime').textContent=fmt(t); $('atTime').textContent=fmt(t); } }
 
 function renderComments(){
   const list = activeSong ? commentsForActiveVersion() : [];
-  const verName = activeSong ? (activeSong.versions[activeVer]?.name || '') : '';
+  const ver = activeSong ? activeSong.versions[activeVer] : null;
+  const verName = ver ? ver.name : '';
   $('cCount').textContent = list.length;
-  $('cdlBtn').disabled = !activeSong || !commentsFor(activeSong.id).length;
+  $('cdlBtn').disabled = !activeSong || !rootsFor(activeSong.id).length;
   $('cdrawerHint').textContent = activeSong ? `on “${activeSong.title}”${verName ? ` · ${verName}` : ''}` : '';
   if (!activeSong){ $('clist').innerHTML = `<div class="cempty">Play a song to leave comments.</div>`; return; }
-  if (!list.length){ $('clist').innerHTML = `<div class="cempty">No comments on this version yet — seek to a spot and add one.</div>`; return; }
-  $('clist').innerHTML = list.map(c => `
-    <div class="cmt" data-id="${c.id}" data-t="${c.time}">
-      <span class="t">${fmt(c.time)}</span>
-      <div class="body"><div class="txt">${esc(c.text)}</div><div class="who">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}${timeago(c.at)}</div></div>
+  if (!list.length){ $('clist').innerHTML = `<div class="cempty">No open comments on this version — seek to a spot and add one.</div>`; return; }
+
+  const replyRow = (r) => `
+    <div class="cmt" data-id="${r.id}">
+      <div class="body">
+        ${cEditId === r.id
+          ? `<div class="cedit"><input type="text" value="${esc(r.text)}" maxlength="280" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`
+          : `<div class="txt">${esc(r.text)}</div>`}
+        <div class="who">${r.name ? `<b>${esc(r.name)}</b> · ` : ''}${timeago(r.at)}${r.editedAt ? ' · <span class="edited-tag">edited</span>' : ''}</div>
+        <div class="cactions"><span class="act-edit">Edit</span></div>
+      </div>
       <span class="del" title="Delete">×</span>
-    </div>`).join('');
-  $('clist').querySelectorAll('.cmt').forEach(el => {
-    el.addEventListener('click', (e) => {
-      if (e.target.classList.contains('del')){ deleteComment(el.dataset.id); return; }
-      // Jump to the commented moment and play from there.
-      seekTo(parseFloat(el.dataset.t));
-      const w = curWS(); if (w && !w.isPlaying()) w.play();
-    });
-  });
+    </div>`;
+
+  $('clist').innerHTML = list.map(c => {
+    const dismissedHere = ver && c.dismissedVersions.includes(ver.id);
+    const origin = versionById(activeSong, c.versionId);
+    const carried = origin && ver && origin.id !== ver.id
+      ? `<span class="carried">· from ${esc(origin.name)}</span>` : '';
+    const replies = repliesFor(activeSong.id, c.id);
+    return `
+    <div class="cthread ${c.resolved ? 'resolved' : ''}" data-root="${c.id}">
+      <div class="cmt" data-id="${c.id}" data-t="${c.time}">
+        <span class="t">${fmt(c.time)}</span>
+        <div class="body">
+          ${cEditId === c.id
+            ? `<div class="cedit"><input type="text" value="${esc(c.text)}" maxlength="280" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`
+            : `<div class="txt">${esc(c.text)}</div>`}
+          <div class="who">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}${timeago(c.at)}${c.editedAt ? ' · <span class="edited-tag">edited</span>' : ''} ${carried}${c.resolved ? `<span class="cbadge resolved">✓ resolved</span>` : ''}</div>
+          <div class="cactions">
+            <span class="act-reply">Reply</span>
+            <span class="act-edit">Edit</span>
+            <span class="act-resolve ${c.resolved ? 'on' : ''}">${c.resolved ? 'Reopen' : 'Resolve'}</span>
+            <span class="act-dismiss ${dismissedHere ? 'on' : ''}">${dismissedHere ? 'Relevant here' : 'Not relevant here'}</span>
+          </div>
+        </div>
+        <span class="del" title="Delete">×</span>
+      </div>
+      <div class="creplies">
+        ${replies.map(replyRow).join('')}
+        ${cReplyTo === c.id ? `
+        <div class="cmt"><div class="body" style="flex:1">
+          <div class="cedit"><input type="text" placeholder="Reply…" maxlength="280" /><button class="save">Reply</button><button class="cancel">Cancel</button></div>
+        </div></div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  const openInput = $('clist').querySelector('.cedit input');
+  if (openInput) openInput.focus();
 }
+
+// Delegated once — #clist's innerHTML is fully replaced on every render, so
+// binding here (rather than per-row inside renderComments) avoids rebinding
+// listeners every keystroke's worth of re-render.
+function handleClistClick(e){
+  if (!activeSong) return;
+  const threadEl = e.target.closest('.cthread');
+  if (!threadEl) return;
+  const rootId = threadEl.dataset.root;
+  const cmtEl = e.target.closest('.cmt');
+  const cid = cmtEl?.dataset.id || null;
+
+  if (e.target.classList.contains('del')){ deleteComment(cid); return; }
+  if (e.target.classList.contains('act-reply')){
+    cReplyTo = (cReplyTo === rootId ? null : rootId); cEditId = null; renderComments(); return;
+  }
+  if (e.target.classList.contains('act-edit')){
+    const c = commentsFor(activeSong.id).find(x => x.id === cid);
+    if (c && !confirmEditingOthers(c)) return;
+    cEditId = (cEditId === cid ? null : cid); cReplyTo = null; renderComments(); return;
+  }
+  if (e.target.classList.contains('act-resolve')){
+    toggleResolve(rootId, !threadEl.classList.contains('resolved')); return;
+  }
+  if (e.target.classList.contains('act-dismiss')){
+    const ver = activeSong.versions[activeVer];
+    const c = commentsFor(activeSong.id).find(x => x.id === rootId);
+    toggleDismiss(rootId, ver.id, !(c && c.dismissedVersions.includes(ver.id))); return;
+  }
+  if (e.target.classList.contains('save')){
+    const input = e.target.parentElement.querySelector('input');
+    const val = input.value.trim();
+    if (!val) return;
+    if (cReplyTo){ const pid = cReplyTo; cReplyTo = null; addComment(val, pid); }
+    else if (cEditId){ const eid = cEditId; cEditId = null; editComment(eid, val); }
+    return;
+  }
+  if (e.target.classList.contains('cancel')){ cReplyTo = null; cEditId = null; renderComments(); return; }
+  if (e.target.closest('.cactions, .cedit')) return;
+  // Otherwise: clicking the root row jumps to the commented moment.
+  if (cmtEl && cmtEl.dataset.t !== undefined){
+    seekTo(parseFloat(cmtEl.dataset.t));
+    const w = curWS(); if (w && !w.isPlaying()) w.play();
+  }
+}
+$('clist').addEventListener('click', handleClistClick);
+$('clist').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.closest('.cedit')){
+    e.preventDefault();
+    e.target.closest('.cedit').querySelector('.save').click();
+  }
+});
 
 // Mix notes are most useful next to the DAW, not in a browser tab — so the
 // drawer can spill the open song's comments into a plain-text list, grouped by
@@ -1783,14 +2011,20 @@ function commentsText(song, list){
     cs.sort((a, b) => a.time - b.time).forEach(c => {
       const who = [c.name, c.at ? new Date(c.at).toLocaleDateString() : '']
                     .filter(Boolean).join(', ');
-      out.push(`  ${fmt(c.time)}  ${c.text}${who ? `  — ${who}` : ''}`);
+      out.push(`  ${c.resolved ? '[x]' : '[ ]'} ${fmt(c.time)}  ${c.text}${who ? `  — ${who}` : ''}`);
+      // replies sit under their thread, indented, so the export reads like the drawer
+      repliesFor(song.id, c.id).forEach(r => {
+        const rwho = [r.name, r.at ? new Date(r.at).toLocaleDateString() : '']
+                       .filter(Boolean).join(', ');
+        out.push(`         ↳ ${r.text}${rwho ? `  — ${rwho}` : ''}`);
+      });
     });
   }
   return out.join('\n') + '\n';
 }
 function downloadComments(){
   if (!activeSong) return;
-  const list = commentsFor(activeSong.id);
+  const list = rootsFor(activeSong.id);
   if (!list.length) return;
   const url = URL.createObjectURL(
     new Blob([commentsText(activeSong, list)], { type: 'text/plain;charset=utf-8' }));
@@ -1807,11 +2041,16 @@ function renderMarkers(){
   if (!activeSong || singleMix) return;
   const w = curWS(); const dur = w ? w.getDuration() : 0;
   if (!dur) return;
+  const ver = activeSong.versions[activeVer];
   commentsForActiveVersion().forEach(c => {
     const el = document.createElement('div');
     el.className = 'mk';
     el.style.left = Math.min(100, Math.max(0, (c.time/dur)*100)) + '%';
-    el.innerHTML = `<div class="tip">${fmt(c.time)} — ${esc(c.text)}</div>`;
+    // A carried-forward note says which mix it came from — otherwise it looks
+    // like someone commented on a mix that didn't exist yet.
+    const origin = versionById(activeSong, c.versionId);
+    const from = origin && ver && origin.id !== ver.id ? ` (from ${esc(origin.name)})` : '';
+    el.innerHTML = `<div class="tip">${fmt(c.time)} — ${esc(c.text)}${from}</div>`;
     el.addEventListener('click', (e) => {
       e.stopPropagation(); seekTo(c.time); openDrawer(true);
       const w = curWS(); if (w && !w.isPlaying()) w.play();
@@ -1836,6 +2075,79 @@ function timeago(ts){
   const d=Math.floor(h/24); if (d<30) return d+'d ago';
   return new Date(ts).toLocaleDateString();
 }
+
+// ---------- To-do (every thread on this song, GitHub-issues style) ----------
+let todoTab = 'open';
+function renderTodo(){
+  if (!activeSong){ $('todoList').innerHTML = `<div class="cempty">Play a song to see its to-do list.</div>`; return; }
+  const all = rootsFor(activeSong.id);
+  const open = all.filter(c => !c.resolved), done = all.filter(c => c.resolved);
+  $('todoHint').textContent = `on “${activeSong.title}”`;
+  $('todoTabOpen').textContent = `Open (${open.length})`;
+  $('todoTabClosed').textContent = `Resolved (${done.length})`;
+  $('todoTabOpen').classList.toggle('active', todoTab === 'open');
+  $('todoTabClosed').classList.toggle('active', todoTab === 'resolved');
+
+  let rows = todoTab === 'open' ? open : done;
+  const sort = $('todoSort').value;
+  rows = rows.slice().sort((a, b) =>
+    sort === 'old'     ? a.at - b.at :
+    sort === 'replies' ? repliesFor(activeSong.id, b.id).length - repliesFor(activeSong.id, a.id).length
+                       : b.at - a.at);
+
+  if (!rows.length){
+    $('todoList').innerHTML = `<div class="cempty">${todoTab === 'open'
+      ? 'Nothing open — every comment on this song is resolved.'
+      : 'Nothing resolved yet.'}</div>`;
+    return;
+  }
+  $('todoList').innerHTML = rows.map(c => {
+    const nReplies = repliesFor(activeSong.id, c.id).length;
+    // Which mixes this note applies to — origin highlighted, dismissed struck.
+    const chips = activeSong.versions.map(v => {
+      if (v.id === c.versionId) return `<span class="chip origin">${esc(v.name)}</span>`;
+      if (c.dismissedVersions.includes(v.id)) return `<span class="chip dismissed">${esc(v.name)}</span>`;
+      return commentRelevantTo(c, activeSong, v) ? `<span class="chip">${esc(v.name)}</span>` : '';
+    }).filter(Boolean).join('');
+    return `
+    <div class="todo-row" data-id="${c.id}" data-vid="${c.versionId || ''}" data-t="${c.time}">
+      <span class="todo-dot ${c.resolved ? 'resolved' : 'open'}"></span>
+      <div class="body">
+        <div class="txt">${esc(c.text)}</div>
+        <div class="meta">
+          <span>${fmt(c.time)}</span>
+          <span>${c.name ? `${esc(c.name)} · ` : ''}${timeago(c.at)}</span>
+          ${nReplies ? `<span class="replies">💬 ${nReplies}</span>` : ''}
+          ${c.resolved && c.resolvedBy ? `<span>resolved by ${esc(c.resolvedBy)}</span>` : ''}
+          ${chips}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+// Clicking a row takes you to where the note was made: its origin mix, that
+// spot in the song, comments drawer open.
+$('todoList').addEventListener('click', (e) => {
+  const row = e.target.closest('.todo-row');
+  if (!row || !activeSong) return;
+  const vi = activeSong.versions.findIndex(v => v.id === row.dataset.vid);
+  if (vi !== -1 && vi !== activeVer) switchVersion(vi);
+  closeTodo();
+  openDrawer(true);
+  seekTo(parseFloat(row.dataset.t));
+});
+function openTodo(){
+  if (!activeSong || singleMix) return;
+  $('todoModal').classList.add('open');
+  renderTodo();
+}
+function closeTodo(){ $('todoModal').classList.remove('open'); }
+$('todoToggle').onclick = openTodo;
+$('todoClose').onclick = closeTodo;
+$('todoModal').addEventListener('click', (e) => { if (e.target === $('todoModal')) closeTodo(); });
+$('todoSort').onchange = renderTodo;
+$('todoTabOpen').onclick    = () => { todoTab = 'open';     renderTodo(); };
+$('todoTabClosed').onclick  = () => { todoTab = 'resolved'; renderTodo(); };
 
 function openDrawer(open){
   if (singleMix) return;   // comments are band-only; the shared-mix view has none
@@ -1881,7 +2193,7 @@ function openVlog(open){
 }
 $('vlogToggle').onclick = () => openVlog(!$('vlogDrawer').classList.contains('open'));
 $('nowLog').onclick = () => openVlog(true);
-$('caddBtn').onclick = addComment;
+$('caddBtn').onclick = () => addComment();   // no args — reads #cinput, posts a root comment
 $('cinput').addEventListener('keydown', (e) => { if (e.key==='Enter'){ e.preventDefault(); addComment(); } });
 // Commenter name — remembered on this device.
 $('cname').value = localStorage.getItem('mp_name') || '';

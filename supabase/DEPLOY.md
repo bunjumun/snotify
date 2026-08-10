@@ -100,6 +100,17 @@ policies changes — they all authenticate through `band_pass_ok`, so the fix
 is entirely server-side. Do this once; safe to re-run (already-hashed rows
 are skipped) and safe to run before or after `schema-v4.sql`.
 
+## 9. Threaded, resolvable comments
+
+Run `schema-v6.sql` any time (idempotent, order-independent of the steps
+above) to add replies, resolve/reopen, per-version dismiss, and editing to
+comments. Editing is honor-system — any bandmate can edit any comment
+server-side, same trust level `delete_comment` already had — the client just
+warns before opening the editor if the comment wasn't posted under your own
+remembered name. Nothing needs re-running after this except a normal
+`index.html` deploy — the new UI (Reply, Resolve, "not relevant here", Edit,
+and the To-do button) ships in the same commit as this schema file.
+
 ## The studio-Mac bridge
 
 `daw assistant/bridge/` is dormant. Nothing on the site depends on it, and its

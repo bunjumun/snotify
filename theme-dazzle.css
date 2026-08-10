@@ -149,6 +149,20 @@ body[data-theme="dazzle"] #boat svg { width: 100%; height: 100%; display: block;
 /* A little roll, so it looks afloat rather than pinned. */
 @keyframes boat-roll { 0%,100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
 body[data-theme="dazzle"] #boat svg { animation: boat-roll 2.6s ease-in-out infinite; transform-origin: 50% 90%; }
+
+/* Its opposite number under the waterline: a small amphibious horse that dives
+   as the trough deepens. Lakehorse, literally. Decoration only. */
+#horse { display: none; }
+body[data-theme="dazzle"] #horse {
+  display: block; position: absolute; left: 0; top: 50%;
+  width: 26px; height: 18px; margin-left: -13px; margin-top: -1px;
+  opacity: 0; pointer-events: none; z-index: 3;
+  transition: top .12s ease-out, opacity .2s;
+  filter: drop-shadow(0 -1px 2px rgba(0,0,0,.9));
+}
+body[data-theme="dazzle"] #horse svg { width: 100%; height: 100%; display: block; }
+@keyframes horse-swim { 0%,100% { transform: rotate(3deg) translateY(0); } 50% { transform: rotate(-3deg) translateY(1px); } }
+body[data-theme="dazzle"] #horse svg { animation: horse-swim 2.2s ease-in-out infinite; transform-origin: 50% 10%; }
 body[data-theme="dazzle"] button.play { background: #fff; color: #08080a; }
 body[data-theme="dazzle"] .verbtn, body[data-theme="dazzle"] .rev {
   border-radius: 2px; text-transform: uppercase; letter-spacing: .06em; font-size: 12px;

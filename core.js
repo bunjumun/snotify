@@ -721,24 +721,80 @@ function safeHref(u){
   if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return '';        // any other scheme
   return v;
 }
-function parseTools(raw){
+
+// ---------- What the admin has changed ----------
+// The saved value is a set of OVERRIDES, never a replacement list. That is the
+// whole point: a tool added to the shipped set in code appears by itself,
+// because nothing in the saved state says otherwise, while an admin's
+// hiding, renaming and ordering survive every deploy.
+//
+//   { hidden: [key…], order: [key…], edits: {key: {label,hint,href}}, added: [tool…] }
+//
+// A tool's key is its id for the built-in panel, or its href otherwise.
+const toolKey = (t) => t.id || t.href || '';
+const EMPTY_OVERRIDES = { hidden: [], order: [], edits: {}, added: [] };
+
+function parseOverrides(raw){
   if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    return parsed
-      .filter(t => t && (t.id === 'dazzle' || safeHref(t.href)))
-      .map(t => ({ id: t.id, href: t.href, label: String(t.label || '').slice(0, 80),
-                   hint: String(t.hint || '').slice(0, 140) }));
-  } catch { return null; }
+  let v;
+  try { v = JSON.parse(raw); } catch { return null; }
+
+  // The first version of this feature saved a plain array — the whole menu.
+  // Read it as an ordering (plus any renames and additions it carried) and
+  // hide nothing, so tools that have shipped since then are not lost.
+  if (Array.isArray(v)){
+    const o = { hidden: [], order: [], edits: {}, added: [] };
+    v.forEach(t => {
+      const k = toolKey(t);
+      if (!k) return;
+      o.order.push(k);
+      if (t.label || t.hint) o.edits[k] = { label: t.label, hint: t.hint };
+      if (t.href) o.edits[k].href = t.href;
+    });
+    return o;
+  }
+  if (typeof v !== 'object') return null;
+  return {
+    hidden: Array.isArray(v.hidden) ? v.hidden.map(String) : [],
+    order:  Array.isArray(v.order)  ? v.order.map(String)  : [],
+    edits:  (v.edits && typeof v.edits === 'object') ? v.edits : {},
+    added:  Array.isArray(v.added)
+      ? v.added.filter(t => t && safeHref(t.href))
+               .map(t => ({ href: t.href, label: String(t.label || '').slice(0, 80),
+                            hint: String(t.hint || '').slice(0, 140) }))
+      : [],
+  };
 }
-// Most specific wins: this band's saved menu, then this band's shipped menu,
-// then a saved menu for everyone, then the shipped one.
+function shippedFor(band){
+  const b = bandSlugOf(band || '');
+  return (BAND_TOOLS[b] || BUILTIN_TOOLS).map(t => ({ ...t }));
+}
+// Shipped set, plus anything added, with the admin's edits applied, the hidden
+// ones dropped and the rest in the saved order. Tools the saved order has
+// never seen keep their shipped position at the end.
+function resolveTools(band, ov, includeHidden){
+  const o = ov || EMPTY_OVERRIDES;
+  const all = shippedFor(band).concat(o.added.map(t => ({ ...t })));
+  const out = all.map(t => {
+    const k = toolKey(t);
+    const e = o.edits[k] || {};
+    return {
+      ...t,
+      label: e.label !== undefined ? e.label : t.label,
+      hint:  e.hint  !== undefined ? e.hint  : t.hint,
+      href:  (t.id ? t.href : (e.href !== undefined ? e.href : t.href)),
+      hidden: o.hidden.includes(k),
+    };
+  });
+  const rank = (t) => {
+    const i = o.order.indexOf(toolKey(t));
+    return i === -1 ? 1e6 + all.findIndex(x => toolKey(x) === toolKey(t)) : i;
+  };
+  out.sort((a, b) => rank(a) - rank(b));
+  return includeHidden ? out : out.filter(t => !t.hidden);
+}
 function loadToolList(){
-  toolList = parseTools(siteText['tools.' + toolBand])
-          || (BAND_TOOLS[toolBand] ? BAND_TOOLS[toolBand].map(t => ({ ...t })) : null)
-          || parseTools(siteText['tools.custom'])
-          || BUILTIN_TOOLS.slice();
+  toolList = resolveTools(toolBand, parseOverrides(siteText['tools.' + toolBand]), false);
 }
 // Called whenever the band becomes known, so the menu follows the login.
 function setToolBand(band){
@@ -816,7 +872,7 @@ document.body.insertAdjacentHTML('beforeend', `
       </div>
       <div class="status" id="toolAdminStatus"></div>
       <div class="actions">
-        <button class="btn ghost" id="toolRestore">Restore built-ins</button>
+        <button class="btn ghost" id="toolRestore">Show all</button>
         <button class="btn ghost" id="toolAdminClose">Close</button>
         <button class="btn primary" id="toolAdminSave">Save menu</button>
       </div>
@@ -824,31 +880,46 @@ document.body.insertAdjacentHTML('beforeend', `
   </div>`);
 
 // --- the tools manager ---
-let toolDraft = [];
+// The draft is the resolved list WITH the hidden ones still in it, so the
+// panel shows everything that exists and lets you turn each on or off.
+let toolDraft = [], toolEditing = -1, toolAdded = [];
+
 function renderToolRows(){
-  $('toolRows').innerHTML = toolDraft.map((t, i) => `
-    <div class="tool-row" data-i="${i}">
+  $('toolRows').innerHTML = toolDraft.map((t, i) => i === toolEditing ? `
+    <div class="tool-row editing" data-i="${i}">
+      <div class="tool-edit">
+        <input type="text" class="te-label" value="${esc(t.label)}" maxlength="80" placeholder="Name" />
+        ${t.id ? `<div class="hint">Built in — opens in a panel here, so it has no link to change.</div>`
+               : `<input type="text" class="te-href" value="${esc(t.href || '')}" maxlength="400" placeholder="tools/my-tool.html  or  https://…" />`}
+        <input type="text" class="te-hint" value="${esc(t.hint || '')}" maxlength="140" placeholder="One line about what it does" />
+        <div class="tool-editbtns">
+          <button class="btn ghost" data-cancel="${i}">Cancel</button>
+          <button class="btn primary" data-done="${i}">Done</button>
+        </div>
+      </div>
+    </div>` : `
+    <div class="tool-row ${t.hidden ? 'off' : ''}" data-i="${i}">
       <div class="tool-move">
         <span class="ec ${i === 0 ? 'disabled' : ''}" data-move="up" title="Move up">▲</span>
         <span class="ec ${i === toolDraft.length - 1 ? 'disabled' : ''}" data-move="down" title="Move down">▼</span>
       </div>
       <div class="tool-what">
         <b>${esc(t.label)}</b>
-        <span>${t.href ? esc(t.href) : 'built in — opens here'}</span>
+        <span>${t.hint ? esc(t.hint) + ' · ' : ''}${t.href ? esc(t.href) : 'built in — opens here'}</span>
       </div>
-      <span class="ec danger" data-del="${i}" title="Remove from the menu">✕</span>
-    </div>`).join('') || `<div class="hint">The menu is empty.</div>`;
+      <span class="ec" data-eye="${i}" title="${t.hidden ? 'Show in the menu' : 'Hide from the menu'}">${t.hidden ? '◌' : '◉'}</span>
+      <span class="ec" data-edit="${i}" title="Rename or re-describe">✎</span>
+    </div>`).join('') || `<div class="hint">No tools yet.</div>`;
 }
-// Which key the manager is editing: this band's menu, or the one every band
-// without its own falls back to.
+
 function toolScopeKey(){ return $('toolScope').value; }
 function syncToolScope(){
   const key = toolScopeKey();
-  const band = key.slice('tools.'.length);
-  toolDraft = parseTools(siteText[key])
-           || (key === 'tools.custom'
-                 ? (BUILTIN_TOOLS.map(t => ({ ...t })))
-                 : (BAND_TOOLS[band] ? BAND_TOOLS[band].map(t => ({ ...t })) : []));
+  const band = key === 'tools.custom' ? '' : key.slice('tools.'.length);
+  toolEditing = -1;
+  const ov = parseOverrides(siteText[key]);
+  toolAdded = ov ? ov.added.map(t => ({ ...t })) : [];
+  toolDraft = resolveTools(band, ov, true);
   $('toolScopeHint').textContent = key === 'tools.custom'
     ? 'Every band that has no menu of its own.'
     : `Only ${curBandTitle || band}. Other bands keep the site-wide menu.`;
@@ -860,14 +931,41 @@ function openToolAdmin(){
   if (toolBand) opts.push(`<option value="tools.${esc(toolBand)}">${esc(curBandTitle || toolBand)} only</option>`);
   opts.push(`<option value="tools.custom">All bands (site-wide)</option>`);
   $('toolScope').innerHTML = opts.join('');
-  $('toolAdminStatus').textContent = '';
+  $('toolAdminStatus').textContent = ''; $('toolAdminStatus').className = 'status';
   syncToolScope();
   $('toolAdminModal').classList.add('open');
 }
 on('toolScope', 'change', syncToolScope);
+
 on('toolRows', 'click', (e) => {
-  const del = e.target.closest('[data-del]');
-  if (del){ toolDraft.splice(+del.dataset.del, 1); renderToolRows(); return; }
+  // Hiding, not removing: a tool you turn off stays in this panel so you can
+  // turn it back on, and nothing about it is thrown away.
+  const eye = e.target.closest('[data-eye]');
+  if (eye){ const i = +eye.dataset.eye; toolDraft[i].hidden = !toolDraft[i].hidden; renderToolRows(); return; }
+  const ed = e.target.closest('[data-edit]');
+  if (ed){ toolEditing = +ed.dataset.edit; renderToolRows(); return; }
+  const cancel = e.target.closest('[data-cancel]');
+  if (cancel){ toolEditing = -1; renderToolRows(); return; }
+  const done = e.target.closest('[data-done]');
+  if (done){
+    const row = done.closest('.tool-row.editing'), i = +done.dataset.done;
+    const label = row.querySelector('.te-label').value.trim();
+    const hrefEl = row.querySelector('.te-href');
+    const href = hrefEl ? safeHref(hrefEl.value) : undefined;
+    if (!label || (hrefEl && !href)){
+      $('toolAdminStatus').className = 'status err';
+      $('toolAdminStatus').textContent = label
+        ? 'That link is not usable — use a path in this site or an http(s) address.'
+        : 'Give the tool a name.';
+      return;
+    }
+    toolDraft[i] = { ...toolDraft[i], label, hint: row.querySelector('.te-hint').value.trim() };
+    if (hrefEl) toolDraft[i].href = href;
+    toolEditing = -1;
+    $('toolAdminStatus').className = 'status'; $('toolAdminStatus').textContent = '';
+    renderToolRows();
+    return;
+  }
   const mv = e.target.closest('[data-move]');
   if (!mv || mv.classList.contains('disabled')) return;
   const i = +mv.closest('.tool-row').dataset.i;
@@ -875,124 +973,69 @@ on('toolRows', 'click', (e) => {
   [toolDraft[i], toolDraft[j]] = [toolDraft[j], toolDraft[i]];
   renderToolRows();
 });
+
 on('toolAdd', 'click', () => {
   const label = $('toolNewLabel').value.trim();
   const href = safeHref($('toolNewHref').value);
   if (!label || !href){
+    $('toolAdminStatus').className = 'status err';
     $('toolAdminStatus').textContent = href
       ? 'Give the tool a name.'
       : 'That link is not usable — use a path in this site or an http(s) address.';
-    $('toolAdminStatus').className = 'status err';
     return;
   }
-  toolDraft.push({ label, href, hint: $('toolNewHint').value.trim() });
+  const t = { label, href, hint: $('toolNewHint').value.trim(), hidden: false };
+  toolAdded.push({ label: t.label, href: t.href, hint: t.hint });
+  toolDraft.push(t);
   $('toolNewLabel').value = $('toolNewHref').value = $('toolNewHint').value = '';
-  $('toolAdminStatus').textContent = ''; $('toolAdminStatus').className = 'status';
+  $('toolAdminStatus').className = 'status'; $('toolAdminStatus').textContent = '';
   renderToolRows();
 });
-on('toolRestore', 'click', () => {
-  const band = toolScopeKey().slice('tools.'.length);
-  const shipped = band !== 'custom' && BAND_TOOLS[band] ? BAND_TOOLS[band] : BUILTIN_TOOLS;
-  toolDraft = shipped.map(t => ({ ...t }));
-  renderToolRows();
-});
+
+// "Show everything" rather than "restore": ordering and names are kept, only
+// the hidden flags are cleared.
+on('toolRestore', 'click', () => { toolDraft.forEach(t => t.hidden = false); renderToolRows(); });
 on('toolAdminClose', 'click', () => $('toolAdminModal').classList.remove('open'));
 on('toolAdminModal', 'click', (e) => { if (e.target === $('toolAdminModal')) $('toolAdminModal').classList.remove('open'); });
+
 on('toolAdminSave', 'click', async () => {
+  const key = toolScopeKey();
+  const band = key === 'tools.custom' ? '' : key.slice('tools.'.length);
+  // Save only the differences from what ships, so a tool added in code later
+  // arrives on its own instead of waiting for someone to press a button.
+  const shipped = shippedFor(band);
+  const overrides = { hidden: [], order: [], edits: {}, added: toolAdded };
+  toolDraft.forEach(t => {
+    const k = toolKey(t);
+    if (!k) return;
+    overrides.order.push(k);
+    if (t.hidden) overrides.hidden.push(k);
+    const base = shipped.find(x => toolKey(x) === k) || toolAdded.find(x => toolKey(x) === k) || {};
+    const e = {};
+    if (t.label !== base.label) e.label = t.label;
+    if ((t.hint || '') !== (base.hint || '')) e.hint = t.hint;
+    if (!t.id && t.href !== base.href) e.href = t.href;
+    if (Object.keys(e).length) overrides.edits[k] = e;
+  });
+
   $('toolAdminSave').disabled = true;
   $('toolAdminStatus').className = 'status';
   $('toolAdminStatus').textContent = 'Saving…';
   try {
-    const key = toolScopeKey();
     siteText = await rpc('set_site_text', {
       admin_password: adminPass(),
-      entries: { [key]: JSON.stringify(toolDraft) },
+      entries: { [key]: JSON.stringify(overrides) },
     }) || siteText;
     loadToolList(); renderToolMenu();
-    $('toolAdminStatus').textContent = key === 'tools.custom'
+    const off = overrides.hidden.length;
+    $('toolAdminStatus').textContent = (key === 'tools.custom'
       ? 'Saved — live for every band without its own menu.'
-      : `Saved — live for ${curBandTitle || key.slice(6)}.`;
-    setTimeout(() => $('toolAdminModal').classList.remove('open'), 700);
+      : `Saved — live for ${curBandTitle || band}.`) + (off ? ` ${off} hidden.` : '');
+    setTimeout(() => $('toolAdminModal').classList.remove('open'), 900);
   } catch (e) {
     $('toolAdminStatus').className = 'status err';
     $('toolAdminStatus').textContent = e.message || 'Could not save.';
   } finally { $('toolAdminSave').disabled = false; }
-});
-
-function toolMenuOpen(open){
-  const m = $('toolMenu'), b = $('toolsBtn');
-  if (!m || !b) return;
-  if (open){
-    const r = b.getBoundingClientRect();
-    m.style.top = (r.bottom + 6) + 'px';
-    m.style.left = Math.max(8, Math.min(r.left, innerWidth - 300)) + 'px';
-  }
-  m.classList.toggle('open', open);
-  b.classList.toggle('on', open);
-}
-on('toolsBtn', 'click', (e) => { e.stopPropagation(); toolMenuOpen(!$('toolMenu').classList.contains('open')); });
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('#toolMenu') && !e.target.closest('#toolsBtn')) toolMenuOpen(false);
-});
-on('toolMenu', 'click', (e) => {
-  if (e.target.closest('a.toolitem')){ toolMenuOpen(false); return; }   // opens its own tab
-  const b = e.target.closest('[data-tool]');
-  if (!b) return;
-  toolMenuOpen(false);
-  if (b.dataset.tool === 'dazzle') openDazzleTool();
-});
-
-// --- the dazzle workshop ---
-const dzOpts = () => ({
-  w: +$('dzW').value, h: +$('dzH').value, seed: +$('dzSeed').value,
-  cuts: +$('dzCuts').value, scale: +$('dzScale').value / 10,
-  ink:    $('dzInvert').checked ? '#08080a' : '#ffffff',
-  ground: $('dzInvert').checked ? '#ffffff' : '#08080a',
-  stretch: false,
-});
-function dzRender(){
-  $('dzCutsVal').textContent  = $('dzCuts').value;
-  $('dzScaleVal').textContent = (+$('dzScale').value / 10).toFixed(1);
-  $('dzWVal').textContent     = $('dzW').value;
-  $('dzHVal').textContent     = $('dzH').value;
-  $('dzSeedVal').textContent  = $('dzSeed').value;
-  $('dzPreview').innerHTML = dazzleSVG(dzOpts());
-}
-function openDazzleTool(){
-  $('dazzleModal').classList.add('open');
-  dzRender();
-}
-['dzCuts','dzScale','dzW','dzH','dzSeed','dzInvert'].forEach(id => on(id, 'input', dzRender));
-on('dzRandom', 'click', () => {
-  $('dzSeed').value = 1 + Math.floor(Math.random() * 9999);
-  $('dzCuts').value = 4 + Math.floor(Math.random() * 12);
-  $('dzScale').value = 5 + Math.floor(Math.random() * 30);
-  dzRender();
-});
-on('dzClose', 'click', () => $('dazzleModal').classList.remove('open'));
-on('dazzleModal', 'click', (e) => { if (e.target === $('dazzleModal')) $('dazzleModal').classList.remove('open'); });
-
-function saveBlob(blob, name){
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = name;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-const dzName = (ext) => `dazzle-${$('dzSeed').value}-${$('dzCuts').value}p.${ext}`;
-on('dzSvg', 'click', () => saveBlob(new Blob([dazzleSVG(dzOpts())], { type: 'image/svg+xml' }), dzName('svg')));
-// PNG goes through a canvas at the scheme's own pixel size — what you see in
-// the preview is what lands in the file.
-on('dzPng', 'click', () => {
-  const o = dzOpts();
-  const img = new Image();
-  img.onload = () => {
-    const cv = document.createElement('canvas');
-    cv.width = o.w; cv.height = o.h;
-    cv.getContext('2d').drawImage(img, 0, 0, o.w, o.h);
-    cv.toBlob(b => b && saveBlob(b, dzName('png')), 'image/png');
-  };
-  img.src = 'data:image/svg+xml,' + encodeURIComponent(dazzleSVG(o));
 });
 
 // Log out of the current band → back to the home page (band-name entry).

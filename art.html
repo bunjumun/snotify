@@ -7,9 +7,9 @@
 <meta name="description" content="Sn'art — versioned artwork with comments pinned to a region of the image." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with index.html -->
-<link rel="stylesheet" href="core.css?v=11" />
+<link rel="stylesheet" href="core.css?v=12" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=11" />
+<link rel="stylesheet" href="theme-dazzle.css?v=12" />
 <style>
   /* Art-only surface: the piece grid, the image stage, and the region boxes.
      Everything shared with S'notify lives in core.css. */
@@ -113,7 +113,22 @@
     border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; outline: none;
   }
   .linkrow select:focus { border-color: var(--accent); }
-  body.singlemix .linkrow { display: none; }
+  body.singlemix .linkrow, body.singlemix .linkplay { display: none !important; }
+  .linkplay { display: flex; align-items: center; gap: 12px; margin-top: 10px;
+    padding: 10px 12px; background: var(--bg-row); border: 1px solid var(--line); border-radius: var(--radius); }
+  .linkplay .playbtn {
+    flex: none; width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+    background: var(--text); color: var(--bg); border: none; font-size: 13px; line-height: 1;
+  }
+  .linkplay .playbtn:hover { filter: brightness(1.1); }
+  .lp-what { min-width: 0; }
+  .lp-what b { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lp-what span { display: block; color: var(--text-mute); font-size: 11px; }
+  .linkplay input[type=range] { flex: 1; min-width: 80px; -webkit-appearance: none; appearance: none;
+    height: 4px; border-radius: 4px; background: var(--line); outline: none; cursor: pointer; }
+  .linkplay input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--text); cursor: pointer; }
+  .lp-time { color: var(--text-mute); font-size: 11px; font-variant-numeric: tabular-nums; }
   .piece .plink { color: var(--text-mute); }
 
   /* Pin number in the comment list, where the player puts a timestamp */
@@ -253,6 +268,17 @@
         <select id="linkSel"></select>
         <a class="linky" id="linkGo" style="display:none">Open in the player →</a>
       </div>
+      <!-- The song this artwork belongs to, playable without leaving the piece. -->
+      <div class="linkplay" id="linkPlay" style="display:none">
+        <button class="playbtn" id="linkPlayBtn" title="Play the linked song (space)">▶</button>
+        <div class="lp-what">
+          <b id="lpTitle"></b>
+          <span id="lpMix"></span>
+        </div>
+        <input type="range" id="lpSeek" min="0" max="1000" value="0" title="Seek" />
+        <span class="lp-time" id="lpTime">0:00</span>
+        <audio id="lpAudio" preload="none"></audio>
+      </div>
       <div class="hint drawhint" data-txt="art.drawhint">Drag a box on the image to comment on that part of it — or just type to comment on the whole thing. Use ✎ Draft to scribble a suggested edit over the picture.</div>
     </div>
 
@@ -362,7 +388,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=11"></script>
+<script src="core.js?v=12"></script>
 <script type="module">
 // core.js owns the gate, the route and every Supabase call — these are the
 // three moments it has to hand control back to this page.
@@ -471,8 +497,10 @@ async function init(){
   // is not worth blocking the page over — the picker just comes up empty.
   try {
     const music = await libRpc('get_library', {});
-    bandSongs = ((music && music.songs) || [])
-      .map(s => ({ folder: s.folder, title: s.title })).filter(s => s.folder);
+    bandSongs = ((music && music.songs) || []).map(s => {
+      const v = (s.versions || [])[0] || {};        // newest mix
+      return { folder: s.folder, title: s.title, mix: v.name || '', src: publicUrl(v.src) };
+    }).filter(s => s.folder);
   } catch { bandSongs = []; }
   renderList();
   applyDeepLink();
@@ -547,6 +575,7 @@ function openPiece(i){
 }
 function closeStage(){
   if (skMode) endSketch(false);
+  const a = $('lpAudio'); if (a && !a.paused) a.pause();
   activePiece = null; pendingRegion = null; pendingSketch = null; activeBoxId = null;
   $('stage').style.display = 'none';
   $('artbar').style.display = 'none';
@@ -853,7 +882,47 @@ function renderLinkRow(){
     go.textContent = `Open “${songTitleOf(activePiece.link)}” in the player →`;
     go.href = 'music.html?b=' + encodeURIComponent(curBand) + '&s=' + encodeURIComponent(activePiece.link);
   } else go.style.display = 'none';
+  syncLinkPlayer();
 }
+
+// ---------- The linked song, played here ----------
+// Artwork usually belongs to a track; if it does, you should be able to hear
+// the track while you look at the picture rather than opening the player in
+// another tab. A plain <audio> is enough — this is listening, not mixing.
+function syncLinkPlayer(){
+  const row = $('linkPlay'), a = $('lpAudio');
+  const song = activePiece && activePiece.link
+    ? bandSongs.find(s => s.folder === activePiece.link) : null;
+  if (!song || !song.src || singleShare){
+    row.style.display = 'none';
+    if (!a.paused){ a.pause(); }
+    a.removeAttribute('src');
+    return;
+  }
+  row.style.display = 'flex';
+  $('lpTitle').textContent = song.title;
+  $('lpMix').textContent = song.mix ? song.mix : '';
+  if (a.getAttribute('src') !== song.src){
+    a.pause(); a.src = song.src; a.load();
+    $('lpSeek').value = 0; $('lpTime').textContent = '0:00'; $('linkPlayBtn').textContent = '▶';
+  }
+}
+$('linkPlayBtn').onclick = () => {
+  const a = $('lpAudio');
+  if (a.paused) a.play().catch(() => {}); else a.pause();
+};
+$('lpAudio').addEventListener('play',  () => { $('linkPlayBtn').textContent = '❚❚'; });
+$('lpAudio').addEventListener('pause', () => { $('linkPlayBtn').textContent = '▶'; });
+$('lpAudio').addEventListener('timeupdate', () => {
+  const a = $('lpAudio');
+  if (!a.duration) return;
+  $('lpSeek').value = Math.round((a.currentTime / a.duration) * 1000);
+  $('lpTime').textContent = fmt(a.currentTime);
+});
+$('lpSeek').addEventListener('input', () => {
+  const a = $('lpAudio');
+  if (a.duration) a.currentTime = ($('lpSeek').value / 1000) * a.duration;
+});
 $('linkSel').addEventListener('change', async (e) => {
   if (!activePiece) return;
   const target = e.target.value || null;
@@ -1386,6 +1455,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'c'){ e.preventDefault(); openDrawer(!$('drawer').classList.contains('open')); }
   if (e.key === 't'){ e.preventDefault(); openTodo(); }
   if (e.key === 'd'){ e.preventDefault(); startSketch(pendingSketch, null); }
+  if (e.key === ' ' && $('linkPlay').style.display !== 'none'){ e.preventDefault(); $('linkPlayBtn').click(); }
   // 1–9 jump between revisions, same as the player's version shortcuts.
   if (/^[1-9]$/.test(e.key) && activePiece.versions[+e.key - 1]) showRevision(+e.key - 1);
 });

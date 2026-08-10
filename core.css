@@ -302,4 +302,16 @@ body.texting .dock { display: none; }
 .tool-add input#toolNewHint { grid-column: 1 / 3; }
 .tool-add .btn { grid-row: 1 / 3; align-self: stretch; }
 #toolAdminModal code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; }
+.tool-row.editing { display: block; padding: 10px 6px; }
+.tool-edit { display: flex; flex-direction: column; gap: 7px; }
+.tool-edit input {
+  width: 100%; background: var(--field); border: 1px solid var(--line); color: var(--text);
+  border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px; outline: none;
+}
+.tool-edit input:focus { border-color: var(--accent); background: var(--field-on); }
+.tool-edit .btn { padding: 6px 14px; font-size: 12px; }
+.tool-editbtns { display: flex; gap: 8px; justify-content: flex-end; }
+/* A hidden tool stays in the panel, greyed, so it can be brought back. */
+.tool-row.off .tool-what { opacity: .42; }
+.tool-row.off .tool-what b { text-decoration: line-through; text-decoration-color: var(--text-mute); }
 

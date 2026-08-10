@@ -7,9 +7,9 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=11" />
+<link rel="stylesheet" href="core.css?v=12" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=11" />
+<link rel="stylesheet" href="theme-dazzle.css?v=12" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -18,7 +18,7 @@
   .songlist { display: flex; flex-direction: column; gap: 6px; }
   .song {
     position: relative;
-    display: grid; grid-template-columns: 30px 1fr auto auto auto; align-items: center; gap: 14px;
+    display: grid; grid-template-columns: 30px auto 1fr auto auto auto; align-items: center; gap: 14px;
     padding: 12px 14px; border-radius: 10px; background: var(--bg-row);
     border: 1px solid transparent; cursor: pointer;
     transition: background .12s, border-color .12s; user-select: none;
@@ -35,6 +35,8 @@
   .song.stacked::after  { bottom: -8px; left: 14px; right: 14px; opacity: .4; }
 
   .song .idx { color: var(--text-mute); font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
+  /* Artwork linked to a track, standing in as its cover */
+  .song .sart { width: 34px; height: 34px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: block; }
   .song.active .idx, .song:hover .idx { color: var(--accent); }
   .song .idx .bars { display: none; gap: 2px; height: 14px; align-items: flex-end; justify-content: center; }
   .song .idx .bars span { width: 3px; background: var(--accent); border-radius: 2px; height: 40%; animation: eq .9s ease-in-out infinite; }
@@ -180,7 +182,7 @@
     display: none; color: var(--text-mute); font-size: 14px;
     padding: 2px 7px; border-radius: 6px; cursor: pointer;
   }
-  body.authed:not(.shared):not(.singlemix) .song { grid-template-columns: 30px 1fr auto auto auto auto; }
+  body.authed:not(.shared):not(.singlemix) .song { grid-template-columns: 30px auto 1fr auto auto auto auto; }
   /* Per-song share link (the whole stack) — hover on desktop, dimmed-visible on touch */
   .song .scpy, .song .sopen {
     opacity: 0; color: var(--text-mute); font-size: 13px;
@@ -538,7 +540,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=11"></script>
+<script src="core.js?v=12"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -793,6 +795,7 @@ async function init() {
     document.body.classList.add('authed');
     unlockView();
     loadComments();                  // in the background — badges fill in
+    loadLinkedArt();                 // likewise: covers appear as they resolve
     if (!songs.length) return showEmpty();
     renderList();
     applyDeepLink();
@@ -895,6 +898,7 @@ function renderList() {
     return `
     <div class="song ${n>1?'stacked':''}" data-i="${i}">
       <div class="idx"><span class="num">${i+1}</span><span class="bars"><span></span><span></span><span></span></span></div>
+      ${(() => { const a = artOf(s); return a ? `<img class="sart" src="${esc(a.src)}" alt="" loading="lazy" title="${esc(a.title)}" />` : ''; })()}
       <div class="meta">
         <div class="title">${esc(s.title)}</div>
         <div class="sub">
@@ -1344,13 +1348,45 @@ function verBullets(ver){
     .filter(Boolean);
 }
 
+// folder of a song → newest revision of the artwork pointed at it. The link
+// lives on the ART row, so this is built from the art library; a song knows
+// nothing about the picture that claims it.
+let artFor = {};
+async function loadLinkedArt(){
+  artFor = {};
+  if (!curBand || !isAuthed(curBand)) return;
+  try {
+    const art = await libRpc('get_library', { k: 'art' });
+    ((art && art.songs) || []).forEach(a => {
+      const v = (a.versions || [])[0];
+      if (a.link && v && v.src) artFor[a.link] = { src: publicUrl(v.src), title: a.title, folder: a.folder };
+    });
+  } catch { /* no art schema, or nothing linked — tracks simply have no cover */ }
+  if (songs.length) renderList();
+  if (activeSong) updateNow();
+}
+const artOf = (song) => (song && song.folder) ? artFor[song.folder] : null;
+
 function updateNow(){
   if (!activeSong) return;
   const ver = activeSong.versions[activeVer];
   $('nowTitle').textContent = activeSong.title;
   $('nowArtist').textContent = [activeSong.artist, ver.name].filter(Boolean).join(' · ');
   const cover = $('nowCover');
-  if (activeSong.cover){ cover.src = activeSong.cover; cover.style.display='block'; } else cover.style.display='none';
+  // Linked artwork IS this track's cover. Anything set on the song row itself
+  // still wins, since that was chosen deliberately.
+  const art = artOf(activeSong);
+  const src = activeSong.cover || (art && art.src);
+  if (src){
+    cover.src = src;
+    cover.style.display = 'block';
+    const own = !!activeSong.cover;
+    cover.title = own ? '' : `Artwork: ${art.title} — open in Sn'art`;
+    cover.style.cursor = own ? '' : 'pointer';
+    cover.onclick = own ? null : () => {
+      location.href = 'art.html?b=' + encodeURIComponent(curBand) + '&s=' + encodeURIComponent(art.folder || '');
+    };
+  } else cover.style.display = 'none';
   const bullets = verBullets(ver);
   const log = $('nowLog');
   if (bullets.length){ log.textContent = '📝 ' + bullets.join(' · '); log.style.display = 'block'; }

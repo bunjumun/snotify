@@ -110,6 +110,7 @@ const BAND_THEME = {
   lakehorse: 'dazzle',       // WWI ship dazzle camo — theme-dazzle.css
 };
 function applyTheme(band){
+  setToolBand(band);
   const t = BAND_THEME[bandSlugOf(band || '')] || '';
   if (t) document.body.dataset.theme = t;
   else delete document.body.dataset.theme;
@@ -682,21 +683,34 @@ on('textSave', 'click', saveTextEdit);
 // This is only the STARTING list. The live one is whatever the site admin has
 // saved (see the tools manager below), stored as JSON in the same site_text
 // table the editable page copy uses — so adding a tool needs no deploy.
+// The site-wide set: just the generator, which belongs to the site rather
+// than to anyone's practice.
 const BUILTIN_TOOLS = [
   { id: 'dazzle', label: '▨  Dazzle camouflage generator',
     hint: 'Panels, stripe angles, seed — save as SVG or PNG' },
-  { href: 'tools/moire-maker.html', label: '◎  Moiré pattern toy',
-    hint: 'Two line fields, live interference, gamepad mapping' },
-  { href: 'tools/moire-zip.html', label: '⧉  Moiré colour separation',
-    hint: 'Split an image per channel and export the set as a ZIP' },
-  { href: 'tools/line-displacer.html', label: '≋  Image line displacer',
-    hint: 'Redraw a photograph as displaced lines' },
-  { href: 'tools/pen-separator.html', label: '✎  Highlighter plotter separator',
-    hint: 'Mk2 — split artwork into pen layers for a plotter' },
-  { href: 'tools/vj-mixer.html', label: '◐  VJ mixer',
-    hint: 'Two live generators, crossfade, mic reactive, gamepad or MIDI' },
 ];
+
+// Per-band sets, same idea as BAND_THEME. These graphic tools are Lakehorse's
+// own workshop — another band signing in gets the site-wide set, not this one.
+const BAND_TOOLS = {
+  lakehorse: [
+    { id: 'dazzle', label: '▨  Dazzle camouflage generator',
+      hint: 'Panels, stripe angles, seed — save as SVG or PNG' },
+    { href: 'tools/moire-maker.html', label: '◎  Moiré pattern toy',
+      hint: 'Two line fields, live interference, gamepad mapping' },
+    { href: 'tools/moire-zip.html', label: '⧉  Moiré colour separation',
+      hint: 'Split an image per channel and export the set as a ZIP' },
+    { href: 'tools/line-displacer.html', label: '≋  Image line displacer',
+      hint: 'Redraw a photograph as displaced lines' },
+    { href: 'tools/pen-separator.html', label: '✎  Highlighter plotter separator',
+      hint: 'Mk2 — split artwork into pen layers for a plotter' },
+    { href: 'tools/vj-mixer.html', label: '◐  VJ mixer',
+      hint: 'Two live generators, crossfade, mic reactive, gamepad or MIDI' },
+  ],
+};
+
 let toolList = BUILTIN_TOOLS.slice();
+let toolBand = '';                      // whose menu is on screen
 
 // A link in this menu is whatever an admin typed, so it is checked before it
 // is ever put in an href: same-origin relative paths and plain http(s) only,
@@ -708,20 +722,31 @@ function safeHref(u){
   if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return '';        // any other scheme
   return v;
 }
-function loadToolList(){
-  const raw = siteText['tools.custom'];
-  if (!raw){ toolList = BUILTIN_TOOLS.slice(); return; }
+function parseTools(raw){
+  if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)){
-      toolList = parsed
-        .filter(t => t && (t.id === 'dazzle' || safeHref(t.href)))
-        .map(t => ({ id: t.id, href: t.href, label: String(t.label || '').slice(0, 80),
-                     hint: String(t.hint || '').slice(0, 140) }));
-      return;
-    }
-  } catch {}
-  toolList = BUILTIN_TOOLS.slice();
+    if (!Array.isArray(parsed)) return null;
+    return parsed
+      .filter(t => t && (t.id === 'dazzle' || safeHref(t.href)))
+      .map(t => ({ id: t.id, href: t.href, label: String(t.label || '').slice(0, 80),
+                   hint: String(t.hint || '').slice(0, 140) }));
+  } catch { return null; }
+}
+// Most specific wins: this band's saved menu, then this band's shipped menu,
+// then a saved menu for everyone, then the shipped one.
+function loadToolList(){
+  toolList = parseTools(siteText['tools.' + toolBand])
+          || (BAND_TOOLS[toolBand] ? BAND_TOOLS[toolBand].map(t => ({ ...t })) : null)
+          || parseTools(siteText['tools.custom'])
+          || BUILTIN_TOOLS.slice();
+}
+// Called whenever the band becomes known, so the menu follows the login.
+function setToolBand(band){
+  const b = bandSlugOf(band || '');
+  if (b === toolBand) return;
+  toolBand = b;
+  loadToolList(); renderToolMenu();
 }
 function renderToolMenu(){
   const m = $('toolMenu');
@@ -774,9 +799,12 @@ document.body.insertAdjacentHTML('beforeend', `
   <div class="modal-back" id="toolAdminModal">
     <div class="modal" style="max-width:640px">
       <h2>Tools menu</h2>
-      <div class="hint" style="margin-bottom:12px">What appears under ▨ Tools on
-        every page. A link can be a page in this site (<code>tools/thing.html</code>)
-        or anywhere on the web. Removing the generator only hides it from the menu.</div>
+      <div class="hint" style="margin-bottom:10px">What appears under ▨ Tools. A
+        link can be a page in this site (<code>tools/thing.html</code>) or anywhere
+        on the web. Removing the generator only hides it from the menu.</div>
+      <label>These tools are for</label>
+      <select id="toolScope"></select>
+      <div class="hint" id="toolScopeHint" style="margin-bottom:12px"></div>
       <div id="toolRows"></div>
       <div class="tool-add">
         <input type="text" id="toolNewLabel" placeholder="Name" maxlength="80" />
@@ -809,13 +837,32 @@ function renderToolRows(){
       <span class="ec danger" data-del="${i}" title="Remove from the menu">✕</span>
     </div>`).join('') || `<div class="hint">The menu is empty.</div>`;
 }
+// Which key the manager is editing: this band's menu, or the one every band
+// without its own falls back to.
+function toolScopeKey(){ return $('toolScope').value; }
+function syncToolScope(){
+  const key = toolScopeKey();
+  const band = key.slice('tools.'.length);
+  toolDraft = parseTools(siteText[key])
+           || (key === 'tools.custom'
+                 ? (BUILTIN_TOOLS.map(t => ({ ...t })))
+                 : (BAND_TOOLS[band] ? BAND_TOOLS[band].map(t => ({ ...t })) : []));
+  $('toolScopeHint').textContent = key === 'tools.custom'
+    ? 'Every band that has no menu of its own.'
+    : `Only ${curBandTitle || band}. Other bands keep the site-wide menu.`;
+  renderToolRows();
+}
 function openToolAdmin(){
   closeAdmin();
-  toolDraft = toolList.map(t => ({ ...t }));
+  const opts = [];
+  if (toolBand) opts.push(`<option value="tools.${esc(toolBand)}">${esc(curBandTitle || toolBand)} only</option>`);
+  opts.push(`<option value="tools.custom">All bands (site-wide)</option>`);
+  $('toolScope').innerHTML = opts.join('');
   $('toolAdminStatus').textContent = '';
-  renderToolRows();
+  syncToolScope();
   $('toolAdminModal').classList.add('open');
 }
+on('toolScope', 'change', syncToolScope);
 on('toolRows', 'click', (e) => {
   const del = e.target.closest('[data-del]');
   if (del){ toolDraft.splice(+del.dataset.del, 1); renderToolRows(); return; }
@@ -841,7 +888,12 @@ on('toolAdd', 'click', () => {
   $('toolAdminStatus').textContent = ''; $('toolAdminStatus').className = 'status';
   renderToolRows();
 });
-on('toolRestore', 'click', () => { toolDraft = BUILTIN_TOOLS.map(t => ({ ...t })); renderToolRows(); });
+on('toolRestore', 'click', () => {
+  const band = toolScopeKey().slice('tools.'.length);
+  const shipped = band !== 'custom' && BAND_TOOLS[band] ? BAND_TOOLS[band] : BUILTIN_TOOLS;
+  toolDraft = shipped.map(t => ({ ...t }));
+  renderToolRows();
+});
 on('toolAdminClose', 'click', () => $('toolAdminModal').classList.remove('open'));
 on('toolAdminModal', 'click', (e) => { if (e.target === $('toolAdminModal')) $('toolAdminModal').classList.remove('open'); });
 on('toolAdminSave', 'click', async () => {
@@ -849,12 +901,15 @@ on('toolAdminSave', 'click', async () => {
   $('toolAdminStatus').className = 'status';
   $('toolAdminStatus').textContent = 'Saving…';
   try {
+    const key = toolScopeKey();
     siteText = await rpc('set_site_text', {
       admin_password: adminPass(),
-      entries: { 'tools.custom': JSON.stringify(toolDraft) },
+      entries: { [key]: JSON.stringify(toolDraft) },
     }) || siteText;
     loadToolList(); renderToolMenu();
-    $('toolAdminStatus').textContent = 'Saved — the menu is live on every page.';
+    $('toolAdminStatus').textContent = key === 'tools.custom'
+      ? 'Saved — live for every band without its own menu.'
+      : `Saved — live for ${curBandTitle || key.slice(6)}.`;
     setTimeout(() => $('toolAdminModal').classList.remove('open'), 700);
   } catch (e) {
     $('toolAdminStatus').className = 'status err';

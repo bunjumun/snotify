@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Super Advanced Interactive Moiré Pattern Toy (Gamepad Mapping)</title>
+    <title>Moiré pattern toy — Sn'Album</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -220,14 +220,58 @@
             background-color: #e0a800;
         }
     </style>
+
+<!-- Shared tool chrome: the bar across the top and one look for every control -->
+<link rel="stylesheet" href="tool.css?v=2" />
+<script src="tool.js?v=2" defer></script>
+
+<style>
+  /* Layout: the canvas holds the room, the controls sit in one column beside
+     it. The old sheet spread 23 controls across the full width of the screen. */
+  .moire-page { display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 18px; align-items: start; }
+  .moire-stage { position: sticky; top: 68px; }
+  .moire-stage canvas {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--t-edge); border-radius: var(--t-radius); background: #000;
+  }
+  .moire-status { margin: 8px 0 0; color: var(--t-mute); font-size: 11.5px; }
+  .moire-controls { display: flex; flex-direction: column; gap: 10px; }
+  .moire-controls .control-group { display: block; margin: 0 0 9px; }
+  .moire-controls .control-group:last-child { margin-bottom: 0; }
+  .moire-controls .control-group label { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; }
+  .moire-controls .control-group span { color: var(--t-text); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .moire-controls .control-group input[type=range] { width: 100%; margin-top: 6px; }
+  .moire-controls .control-group select,
+  .moire-controls .control-group input[type=text] { width: 100%; margin-top: 5px; }
+  .moire-controls .tool-row .control-group { flex: 1; margin: 0; }
+  .moire-controls .tool-row .control-group input[type=color] { width: 100%; margin-top: 5px; }
+  .moire-more summary {
+    cursor: pointer; color: var(--t-mute); font-size: 11px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .1em; list-style: none;
+  }
+  .moire-more summary::-webkit-details-marker { display: none; }
+  .moire-more summary::before { content: "▸ "; }
+  .moire-more[open] summary::before { content: "▾ "; }
+  .moire-more[open] summary { margin-bottom: 10px; }
+  .moire-more .control-group { margin-bottom: 9px; }
+  #mapModeStatus { color: var(--t-mute); font-size: 11px; margin-bottom: 8px; }
+  @media (max-width: 820px) {
+    .moire-page { grid-template-columns: 1fr; }
+    .moire-stage { position: static; }
+  }
+</style>
 </head>
 <body>
-    <h1>Super Advanced Interactive Moiré Pattern Toy (Gamepad Mapping)</h1>
 
-    <div id="controls">
-        <div id="mapModeStatus" class="active">
-            Gamepad Status: No gamepad connected.
-        </div>
+    <div class="tool-page moire-page">
+      <div class="moire-stage">
+        <canvas id="moireCanvas" width="500" height="500"></canvas>
+        <p id="gamepadStatus" class="moire-status">No gamepad connected.</p>
+      </div>
+
+      <div id="controls" class="moire-controls">
+        <div class="tool-panel">
+          <h3>Field</h3>
         <div class="control-group">
             <label for="lineType">Line Type:</label>
             <select id="lineType">
@@ -236,6 +280,64 @@
             </select>
         </div>
         <div class="control-group">
+            <label for="lineThickness">Line Thickness: <span id="lineThicknessValue">1</span>px</label>
+            <input type="range" id="lineThickness" min="0.5" max="5" value="1" step="0.1">
+        </div>
+        </div>
+
+        <div class="tool-panel">
+          <h3>Pattern 1</h3>
+        <div class="control-group">
+            <label for="rotation1">Pattern 1 Rotation: <span id="rotation1Value">0</span>°</label>
+            <input type="range" id="rotation1" min="0" max="360" value="0" step="0.1">
+        </div>
+        <div class="control-group">
+            <label for="density1">Pattern 1 Density/Count: <span id="density1Value">20</span></label>
+            <input type="range" id="density1" min="5" max="100" value="20">
+        </div>
+        <div class="control-group">
+            <label for="scale1">Pattern 1 Scale: <span id="scale1Value">1.0</span></label>
+            <input type="range" id="scale1" min="0.1" max="3.0" value="1.0" step="0.01">
+        </div>
+        </div>
+
+        <div class="tool-panel">
+          <h3>Pattern 2</h3>
+        <div class="control-group">
+            <label for="rotation2">Pattern 2 Rotation: <span id="rotation2Value">4</span>°</label>
+            <input type="range" id="rotation2" min="0" max="360" value="4" step="0.1">
+        </div>
+        <div class="control-group">
+            <label for="density2">Pattern 2 Density/Count: <span id="density2Value">23</span></label>
+            <input type="range" id="density2" min="5" max="100" value="23">
+        </div>
+        <div class="control-group">
+            <label for="scale2">Pattern 2 Scale: <span id="scale2Value">1.0</span></label>
+            <input type="range" id="scale2" min="0.1" max="3.0" value="1.0" step="0.01">
+        </div>
+        </div>
+
+        <div class="tool-panel">
+          <h3>Colour</h3>
+          <div class="tool-row">
+        <div class="control-group">
+            <label for="lineColor1">Pattern 1 Line Color:</label>
+            <input type="color" id="lineColor1" value="#000000">
+        </div>
+        <div class="control-group">
+            <label for="lineColor2">Pattern 2 Line Color:</label>
+            <input type="color" id="lineColor2" value="#000000">
+        </div>
+        <div class="control-group">
+            <label for="backgroundColor">Background Color:</label>
+            <input type="color" id="backgroundColor" value="#FFFFFF">
+        </div>
+          </div>
+        </div>
+
+        <details class="tool-panel moire-more">
+          <summary>More</summary>
+          <div class="control-group">
             <label for="globalCompositeOperation">Blend Mode:</label>
             <select id="globalCompositeOperation">
                 <option value="source-over">Normal</option>
@@ -256,104 +358,62 @@
                 <option value="luminosity">Luminosity</option>
             </select>
         </div>
-
-        <div class="control-group">
+          <div class="control-group">
             <label for="canvasWidth">Canvas Width: <span id="canvasWidthValue">500</span>px</label>
             <input type="range" id="canvasWidth" min="200" max="800" value="500">
         </div>
-        <div class="control-group">
+          <div class="control-group">
             <label for="canvasHeight">Canvas Height: <span id="canvasHeightValue">500</span>px</label>
             <input type="range" id="canvasHeight" min="200" max="800" value="500">
         </div>
-
-        <div class="control-group">
-            <label for="rotation1">Pattern 1 Rotation: <span id="rotation1Value">0</span>°</label>
-            <input type="range" id="rotation1" min="0" max="360" value="0" step="0.1">
-        </div>
-        <div class="control-group">
-            <label for="density1">Pattern 1 Density/Count: <span id="density1Value">20</span></label>
-            <input type="range" id="density1" min="5" max="100" value="20">
-        </div>
-        <div class="control-group">
-            <label for="scale1">Pattern 1 Scale: <span id="scale1Value">1.0</span></label>
-            <input type="range" id="scale1" min="0.1" max="3.0" value="1.0" step="0.01">
-        </div>
-        <div class="control-group">
+          <div class="control-group">
             <label for="dashPattern1">Pattern 1 Dash (e.g., 5 5): <span id="dashPattern1Value">No Dash</span></label>
             <input type="text" id="dashPattern1" value="" placeholder="e.g., 5 5">
         </div>
-        <div class="control-group">
+          <div class="control-group">
             <label for="offsetX1">Pattern 1 Offset X: <span id="offsetX1Value">0</span>px</label>
             <input type="range" id="offsetX1" min="-100" max="100" value="0">
         </div>
-        <div class="control-group">
+          <div class="control-group">
             <label for="offsetY1">Pattern 1 Offset Y: <span id="offsetY1Value">0</span>px</label>
             <input type="range" id="offsetY1" min="-100" max="100" value="0">
         </div>
-        <div class="control-group">
-            <label for="lineColor1">Pattern 1 Line Color:</label>
-            <input type="color" id="lineColor1" value="#000000">
-        </div>
-        <div class="control-group">
+          <div class="control-group">
             <label for="opacity1">Pattern 1 Opacity: <span id="opacity1Value">1.0</span></label>
             <input type="range" id="opacity1" min="0" max="1" value="1" step="0.01">
         </div>
-
-        <div class="control-group">
-            <label for="rotation2">Pattern 2 Rotation: <span id="rotation2Value">0</span>°</label>
-            <input type="range" id="rotation2" min="0" max="360" value="0" step="0.1">
-        </div>
-        <div class="control-group">
-            <label for="density2">Pattern 2 Density/Count: <span id="density2Value">20</span></label>
-            <input type="range" id="density2" min="5" max="100" value="20">
-        </div>
-        <div class="control-group">
-            <label for="scale2">Pattern 2 Scale: <span id="scale2Value">1.0</span></label>
-            <input type="range" id="scale2" min="0.1" max="3.0" value="1.0" step="0.01">
-        </div>
-        <div class="control-group">
+          <div class="control-group">
             <label for="dashPattern2">Pattern 2 Dash (e.g., 5 5): <span id="dashPattern2Value">No Dash</span></label>
             <input type="text" id="dashPattern2" value="" placeholder="e.g., 5 5">
         </div>
-        <div class="control-group">
+          <div class="control-group">
             <label for="offsetX2">Pattern 2 Offset X: <span id="offsetX2Value">0</span>px</label>
             <input type="range" id="offsetX2" min="-100" max="100" value="0">
         </div>
-        <div class="control-group">
+          <div class="control-group">
             <label for="offsetY2">Pattern 2 Offset Y: <span id="offsetY2Value">0</span>px</label>
             <input type="range" id="offsetY2" min="-100" max="100" value="0">
         </div>
-        <div class="control-group">
-            <label for="lineColor2">Pattern 2 Line Color:</label>
-            <input type="color" id="lineColor2" value="#000000">
-        </div>
-        <div class="control-group">
+          <div class="control-group">
             <label for="opacity2">Pattern 2 Opacity: <span id="opacity2Value">1.0</span></label>
             <input type="range" id="opacity2" min="0" max="1" value="1" step="0.01">
         </div>
-
-        <div class="control-group">
-            <label for="lineThickness">Line Thickness: <span id="lineThicknessValue">1</span>px</label>
-            <input type="range" id="lineThickness" min="0.5" max="5" value="1" step="0.1">
-        </div>
-        <div class="control-group">
-            <label for="backgroundColor">Background Color:</label>
-            <input type="color" id="backgroundColor" value="#FFFFFF">
-        </div>
-         <div class="control-group">
+          <div class="control-group">
             <label for="animationSpeed">Animation Speed: <span id="animationSpeedValue">0.0</span>°/frame</label>
             <input type="range" id="animationSpeed" min="-1.0" max="1.0" value="0.0" step="0.01">
         </div>
-        <div class="button-group">
-            <button id="enableMapModeButton" class="map-control-button">Enable Map Mode</button>
-            <button id="clearMappingsButton" class="map-control-button">Clear Mappings</button>
-            <button id="freezeAnimationButton" class="control-button">Freeze Animation</button>
-            <button id="resetButton">Reset All Controls</button>
-        </div>
-        <p id="gamepadStatus">No gamepad connected.</p>
-    </div>
+        </details>
 
-    <canvas id="moireCanvas" width="500" height="500"></canvas>
+        <div class="tool-panel">
+          <div class="tool-row">
+        <button id="freezeAnimationButton" class="control-button">Freeze Animation</button>
+        <button id="resetButton">Reset All Controls</button>
+        <button id="enableMapModeButton" class="map-control-button">Enable Map Mode</button>
+        <button id="clearMappingsButton" class="map-control-button">Clear Mappings</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <script>
         // Get references to HTML elements

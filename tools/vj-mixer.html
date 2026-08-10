@@ -75,8 +75,12 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 #learn-close { margin-top: 8px; cursor: pointer; color: #080; font-size: 10px; }
 #learn-close:hover { color: #0f0; }
 </style>
+
+<!-- Shared tool chrome: the bar across the top and one look for every control -->
+<link rel="stylesheet" href="tool.css?v=2" />
+<script src="tool.js?v=2" defer></script>
 </head>
-<body>
+<body class="tool-fullbleed">
 <canvas id="c"></canvas>
 
 <div id="hud">

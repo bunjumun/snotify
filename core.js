@@ -683,21 +683,20 @@ on('textSave', 'click', saveTextEdit);
 // This is only the STARTING list. The live one is whatever the site admin has
 // saved (see the tools manager below), stored as JSON in the same site_text
 // table the editable page copy uses — so adding a tool needs no deploy.
-// The site-wide set: just the generator, which belongs to the site rather
-// than to anyone's practice.
-const BUILTIN_TOOLS = [
-  { id: 'dazzle', label: '▨  Dazzle camouflage generator',
-    hint: 'Panels, stripe angles, seed — save as SVG or PNG' },
-];
+// Nothing ships site-wide. Every one of these is Lakehorse's own workshop —
+// their graphic tools, their generator, their visualiser — so a band with no
+// set of its own gets no Tools menu at all rather than someone else's kit.
+const BUILTIN_TOOLS = [];
 
-// Per-band sets, same idea as BAND_THEME. These graphic tools are Lakehorse's
-// own workshop — another band signing in gets the site-wide set, not this one.
+// Per-band sets, same idea as BAND_THEME.
 const BAND_TOOLS = {
   lakehorse: [
     { id: 'dazzle', label: '▨  Dazzle camouflage generator',
       hint: 'Panels, stripe angles, seed — save as SVG or PNG' },
+    { href: 'tools/visualizer.html', label: '◉  Visualizer',
+      hint: 'Live audio-reactive visuals, gamepad or MIDI driven' },
     { href: 'tools/moire-maker.html', label: '◎  Moiré pattern toy',
-      hint: 'Two line fields, live interference, gamepad mapping' },
+      hint: 'Two line fields, live interference' },
     { href: 'tools/moire-zip.html', label: '⧉  Moiré colour separation',
       hint: 'Split an image per channel and export the set as a ZIP' },
     { href: 'tools/line-displacer.html', label: '≋  Image line displacer',
@@ -751,6 +750,9 @@ function setToolBand(band){
 function renderToolMenu(){
   const m = $('toolMenu');
   if (!m) return;
+  // A band with no tools shouldn't carry a button that opens nothing.
+  const btn = $('toolsBtn');
+  if (btn) btn.style.display = toolList.length ? '' : 'none';
   m.innerHTML = toolList.map(t => t.href
     ? `<a class="toolitem" href="${esc(safeHref(t.href))}" target="_blank" rel="noopener">
          <b>${esc(t.label)}</b><span>${esc(t.hint)}</span></a>`

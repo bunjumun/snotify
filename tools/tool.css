@@ -1,0 +1,118 @@
+/* tool.css — one look for every tool.
+ *
+ * These pages arrived from six different afternoons and looked like it: some
+ * centred, some full-bleed, controls scattered wherever they landed. Rather
+ * than rewrite each one, this is loaded LAST on every tool page and takes over
+ * the parts they all have in common — the page frame, the bar across the top,
+ * and every control. Each tool keeps its own canvas and its own logic.
+ *
+ * The palette is Sn'Album's dazzle theme, so a tool opened from the menu
+ * looks like it came from the same place. */
+
+:root {
+  --t-bg:     #08080a;
+  --t-panel:  #101014;
+  --t-row:    #16161b;
+  --t-line:   #34353c;
+  --t-edge:   #ffffff;
+  --t-text:   #ffffff;
+  --t-dim:    #a8a9b2;
+  --t-mute:   #6c6e78;
+  --t-field:  linear-gradient(180deg, #212228 0%, #0d0d11 100%);
+  --t-radius: 3px;
+}
+
+html, body {
+  background: var(--t-bg) !important;
+  color: var(--t-text) !important;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+body { padding: 0 0 40px !important; }
+
+/* ---------- The bar every tool wears ---------- */
+/* Injected by tool.js so no tool has to carry the markup. */
+#toolbar {
+  position: sticky; top: 0; z-index: 500;
+  /* Several tools set body{display:flex;align-items:center}, which shrinks a
+     child to its content — the bar has to insist on the full width. */
+  width: 100%; box-sizing: border-box; align-self: stretch; flex: none;
+  display: flex; align-items: center; gap: 14px;
+  padding: 11px 18px;
+  background: rgba(8,8,10,.96); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--t-edge);
+}
+#toolbar .tb-mark { width: 26px; height: 26px; flex: none; border: 1px solid var(--t-edge); border-radius: 2px; }
+#toolbar h1 {
+  margin: 0; font-size: 13px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .12em; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+#toolbar .tb-spacer { flex: 1; }
+#toolbar a.tb-back {
+  flex: none; text-decoration: none; color: var(--t-dim);
+  border: 1px solid var(--t-line); border-radius: 2px; padding: 6px 12px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+  transition: background .12s, color .12s, border-color .12s;
+}
+#toolbar a.tb-back:hover { background: var(--t-text); color: #08080a; border-color: var(--t-edge); }
+
+/* Tools whose whole surface is one canvas keep the bar out of the way. */
+body.tool-fullbleed #toolbar { position: fixed; left: 0; right: 0; background: rgba(8,8,10,.6); border-bottom-color: var(--t-line); }
+body.tool-fullbleed #toolbar:hover { background: rgba(8,8,10,.96); border-bottom-color: var(--t-edge); }
+
+/* ---------- Shared page frame ---------- */
+.tool-page { max-width: 1180px; margin: 0 auto; padding: 22px 18px 0; }
+
+/* ---------- Controls, everywhere ---------- */
+label { color: var(--t-dim); font-size: 12px; }
+input[type=range] {
+  -webkit-appearance: none; appearance: none; height: 4px; border-radius: 4px;
+  background: var(--t-line); outline: none; cursor: pointer; max-width: 100%;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+  background: var(--t-text); cursor: pointer; border: none;
+}
+input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border: none; border-radius: 50%; background: var(--t-text); }
+input[type=text], input[type=number], input[type=password], select, textarea {
+  background: var(--t-field); border: 1px solid var(--t-line); color: var(--t-text);
+  border-radius: var(--t-radius); padding: 7px 10px; font: inherit; font-size: 13px; outline: none;
+}
+input[type=text]:focus, input[type=number]:focus, select:focus, textarea:focus { border-color: var(--t-edge); }
+input[type=color] {
+  width: 34px; height: 26px; padding: 0; background: none;
+  border: 1px solid var(--t-line); border-radius: var(--t-radius); cursor: pointer;
+}
+input[type=file] { color: var(--t-dim); font-size: 12px; }
+input[type=checkbox] { accent-color: #fff; }
+button, .btn {
+  background: transparent; color: var(--t-dim);
+  border: 1px solid var(--t-line); border-radius: var(--t-radius);
+  padding: 7px 14px; font: inherit; font-size: 11.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .07em; cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+button:hover, .btn:hover { background: var(--t-text); color: #08080a; border-color: var(--t-edge); }
+button:disabled { opacity: .4; cursor: default; }
+button.primary, .btn.primary { background: var(--t-text); color: #08080a; border-color: var(--t-edge); }
+button.primary:hover { background: #d6d7dd; }
+
+/* ---------- The panel a tool's controls live in ---------- */
+.tool-panel {
+  background: var(--t-panel); border: 1px solid var(--t-line);
+  border-radius: var(--t-radius); padding: 14px 16px;
+}
+.tool-panel h2, .tool-panel h3 {
+  margin: 0 0 10px; font-size: 11px; font-weight: 800; color: var(--t-mute);
+  text-transform: uppercase; letter-spacing: .1em;
+}
+.tool-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 16px; }
+.tool-field { display: block; }
+.tool-field > span { display: flex; justify-content: space-between; font-size: 11px; color: var(--t-dim); }
+.tool-field > span b { color: var(--t-text); font-variant-numeric: tabular-nums; font-weight: 700; }
+.tool-field input[type=range] { width: 100%; margin-top: 7px; }
+.tool-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+canvas { max-width: 100%; }

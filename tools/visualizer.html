@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visualizer — Midwest Psych Fest</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #000;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      font-family: 'Courier New', monospace;
+      color: #fff;
+    }
+
+    canvas { display: block; width: 100vw; height: 100vh; }
+
+    /* ── HUD ── */
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: rgba(0,0,0,0.55);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 40px;
+      padding: 8px 20px;
+      backdrop-filter: blur(8px);
+      transition: opacity 0.6s;
+      user-select: none;
+      pointer-events: none;
+      z-index: 10;
+      white-space: nowrap;
+    }
+    #hud.hidden { opacity: 0; }
+    .hud-mode {
+      font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+    }
+    .hud-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #ff3cac; box-shadow: 0 0 8px #ff3cac; flex-shrink: 0;
+    }
+    .hud-sub { font-size: 0.65rem; color: rgba(255,255,255,0.45); letter-spacing: 0.06em; }
+
+    /* ── Top-right buttons ── */
+    .top-btns {
+      position: fixed; top: 20px; right: 20px;
+      display: flex; gap: 10px; z-index: 30;
+    }
+    .icon-btn {
+      background: rgba(0,0,0,0.5);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: rgba(255,255,255,0.5);
+      border-radius: 50%;
+      width: 40px; height: 40px;
+      font-size: 1.05rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+      backdrop-filter: blur(8px);
+    }
+    .icon-btn:hover { border-color: #ff3cac; color: #ff3cac; }
+    .icon-btn.active {
+      border-color: #4fffb0; color: #4fffb0;
+      background: rgba(79,255,176,0.15);
+      box-shadow: 0 0 16px rgba(79,255,176,0.35);
+    }
+
+    #back {
+      position: fixed; top: 20px; left: 20px;
+      font-size: 0.72rem; color: rgba(255,255,255,0.25);
+      text-decoration: none; letter-spacing: 0.1em;
+      z-index: 30; transition: color 0.2s;
+    }
+    #back:hover { color: rgba(255,255,255,0.7); }
+
+    /* ── Hint ── */
+    #pad-hint {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center; color: rgba(255,255,255,0.2);
+      font-size: 0.82rem; letter-spacing: 0.08em; line-height: 2;
+      pointer-events: none; transition: opacity 1s; z-index: 5;
+    }
+    #pad-hint.hidden { opacity: 0; }
+
+    /* ── Link status (is the pad still reaching us?) ── */
+    #link-pill {
+      position: fixed; bottom: 20px; left: 20px;
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 13px;
+      background: rgba(0,0,0,0.5);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 999px;
+      font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: rgba(255,255,255,0.55);
+      pointer-events: none; z-index: 30;
+      backdrop-filter: blur(8px);
+      opacity: 0; transition: opacity 0.35s;
+    }
+    #link-pill.show { opacity: 1; }
+    #link-pill::before {
+      content: ''; width: 7px; height: 7px; border-radius: 50%;
+      background: currentColor; box-shadow: 0 0 8px currentColor;
+    }
+    #link-pill.bg    { color: #4fffb0; border-color: rgba(79,255,176,0.4); }
+    #link-pill.stale { color: #ffcc4f; border-color: rgba(255,204,79,0.4); }
+
+    /* ══ SETTINGS PANEL ══ */
+    #panel {
+      position: fixed; top: 0; right: 0;
+      width: 400px; max-width: 100vw; height: 100vh;
+      background: rgba(10,0,16,0.94);
+      border-left: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(20px);
+      z-index: 40;
+      transform: translateX(100%);
+      transition: transform 0.28s ease;
+      display: flex; flex-direction: column;
+    }
+    #panel.open { transform: translateX(0); }
+
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      flex-shrink: 0;
+    }
+    .panel-head h2 {
+      font-size: 0.85rem; letter-spacing: 0.14em;
+      text-transform: uppercase; color: #ff3cac; font-weight: 700;
+    }
+    .panel-close {
+      background: none; border: none; color: rgba(255,255,255,0.4);
+      font-size: 1.3rem; cursor: pointer; line-height: 1;
+    }
+    .panel-close:hover { color: #fff; }
+
+    .panel-body { overflow-y: auto; padding: 18px 20px 40px; flex: 1; }
+
+    .sect { margin-bottom: 26px; }
+    .sect-title {
+      font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: rgba(255,255,255,0.4); margin-bottom: 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .sect-title::after {
+      content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.1);
+    }
+
+    label.fld { display: block; margin-bottom: 12px; }
+    label.fld > span {
+      display: block; font-size: 0.68rem; color: rgba(255,255,255,0.5);
+      margin-bottom: 5px; letter-spacing: 0.05em;
+    }
+
+    select, input[type=number] {
+      width: 100%;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #fff;
+      border-radius: 6px;
+      padding: 7px 9px;
+      font-family: inherit;
+      font-size: 0.76rem;
+    }
+    select:focus, input:focus { outline: none; border-color: #ff3cac; }
+    select option { background: #16001f; color: #fff; }
+
+    input[type=range] {
+      width: 100%; accent-color: #ff3cac; height: 18px; cursor: pointer;
+    }
+
+    .btn {
+      background: rgba(255,60,172,0.15);
+      border: 1px solid rgba(255,60,172,0.5);
+      color: #ff8dd0;
+      border-radius: 6px; padding: 8px 14px;
+      font-family: inherit; font-size: 0.74rem;
+      letter-spacing: 0.06em; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn:hover { background: rgba(255,60,172,0.3); color: #fff; }
+    .btn.ghost {
+      background: rgba(255,255,255,0.04);
+      border-color: rgba(255,255,255,0.18);
+      color: rgba(255,255,255,0.6);
+    }
+    .btn.ghost:hover { border-color: #fff; color: #fff; background: rgba(255,255,255,0.1); }
+    .btn.wide { width: 100%; }
+    .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+
+    .note {
+      font-size: 0.66rem; color: rgba(255,255,255,0.35);
+      line-height: 1.7; margin-top: 8px;
+    }
+    .note strong { color: rgba(255,255,255,0.6); font-weight: 700; }
+
+    .status {
+      font-size: 0.7rem; padding: 8px 10px; border-radius: 6px;
+      margin-bottom: 12px; line-height: 1.6;
+    }
+    .status.ok  { background: rgba(79,255,176,0.1);  border: 1px solid rgba(79,255,176,0.3);  color: #7dffc8; }
+    .status.off { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.45); }
+    .status.err { background: rgba(255,80,80,0.1);   border: 1px solid rgba(255,80,80,0.35);  color: #ff9b9b; }
+
+    /* ── Channel meters ── */
+    .ch-strip { display: flex; flex-direction: column; gap: 4px; }
+    .ch-row { display: flex; align-items: center; gap: 8px; }
+    .ch-name {
+      font-size: 0.64rem; color: rgba(255,255,255,0.45);
+      width: 34px; flex-shrink: 0;
+    }
+    .meter {
+      flex: 1; height: 7px; border-radius: 4px;
+      background: rgba(255,255,255,0.07); overflow: hidden;
+    }
+    .meter-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, #4fffb0, #ffc83c 70%, #ff3cac);
+      transition: width 0.05s linear;
+    }
+
+    /* ── Routes ── */
+    .route {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 8px;
+    }
+    .route-top { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+    .route-top select { flex: 1; font-size: 0.7rem; padding: 5px 6px; }
+    .route-del {
+      background: none; border: none; color: rgba(255,255,255,0.3);
+      cursor: pointer; font-size: 1rem; padding: 0 2px; line-height: 1;
+    }
+    .route-del:hover { color: #ff6b6b; }
+    .route-depth { display: flex; align-items: center; gap: 8px; }
+    .route-depth span { font-size: 0.62rem; color: rgba(255,255,255,0.4); width: 46px; }
+    .route-meter { height: 4px; border-radius: 3px; background: rgba(255,255,255,0.07); overflow: hidden; margin-top: 7px; }
+    .route-meter > div { height: 100%; width: 0%; background: #ff3cac; transition: width 0.05s linear; }
+
+    .empty-note {
+      font-size: 0.68rem; color: rgba(255,255,255,0.3);
+      text-align: center; padding: 14px; line-height: 1.7;
+      border: 1px dashed rgba(255,255,255,0.12); border-radius: 8px;
+    }
+
+    @media (max-width: 460px) {
+      #panel { width: 100vw; }
+    }
+  </style>
+
+<!-- Shared tool chrome: the bar across the top and one look for every control -->
+<link rel="stylesheet" href="tool.css?v=2" />
+<script src="tool.js?v=2" defer></script>
+</head>
+<body class="tool-fullbleed">
+
+<div class="top-btns">
+  <button class="icon-btn" id="top-btn"   title="Float on top of other apps (always visible)" hidden>📌</button>
+  <button class="icon-btn" id="full-btn"  title="Fullscreen">⛶</button>
+  <button class="icon-btn" id="audio-btn" title="Toggle audio reactivity">🎤</button>
+  <button class="icon-btn" id="gear-btn"  title="Settings">⚙</button>
+</div>
+
+<div id="hud">
+  <div class="hud-dot"></div>
+  <div class="hud-mode" id="hud-mode">COSMIC WAVE</div>
+  <div class="hud-sub"  id="hud-sub">no input</div>
+</div>
+
+<div id="link-pill"><span id="link-text">pad live</span></div>
+
+<div id="pad-hint">
+  <div style="font-size:2rem;margin-bottom:8px;">🎛</div>
+  It rests quiet until you drive it<br>
+  <span style="font-size:0.7rem;opacity:0.65">
+    WASD left stick · Arrows right stick · Q/E triggers<br>
+    Z X C V face buttons · 1–5 mode · [ ] cycle<br>
+    ⚙ to route DAW audio channels<br>
+    keep this window uncovered and the pad keeps driving from the background
+  </span>
+</div>
+
+<canvas id="c"></canvas>
+
+<!-- ══ SETTINGS ══ -->
+<div id="panel">
+  <div class="panel-head">
+    <h2>Visualizer Settings</h2>
+    <button class="panel-close" id="panel-close">×</button>
+  </div>
+  <div class="panel-body">
+
+    <div class="sect">
+      <div class="sect-title">Audio Input</div>
+      <div class="status off" id="audio-status">Not connected.</div>
+
+      <label class="fld">
+        <span>Input device</span>
+        <select id="device-sel"><option value="">Default input</option></select>
+      </label>
+
+      <label class="fld">
+        <span>Request channels <em id="ch-req-val" style="color:#ff8dd0;font-style:normal">2</em></span>
+        <input type="range" id="ch-req" min="1" max="16" step="1" value="2" />
+      </label>
+
+      <div class="btn-row">
+        <button class="btn wide" id="connect-btn">Connect</button>
+        <button class="btn ghost" id="disconnect-btn">Stop</button>
+      </div>
+
+      <div class="note">
+        Device names stay hidden until you grant mic access once — hit
+        <strong>Connect</strong>, allow, then pick your real device and connect again.
+        Route a DAW bus in through <strong>BlackHole</strong>, <strong>Loopback</strong>,
+        or any virtual audio device to drive this per channel.
+      </div>
+    </div>
+
+    <div class="sect" id="ch-sect" style="display:none">
+      <div class="sect-title">Live Channels</div>
+      <div class="ch-strip" id="ch-strip"></div>
+      <div class="note">Solo a track in your DAW to find which channel it lands on.</div>
+    </div>
+
+    <div class="sect">
+      <div class="sect-title">Modulation Routing</div>
+      <div id="routes"></div>
+      <button class="btn ghost wide" id="add-route" style="margin-top:6px;">+ Add route</button>
+      <div class="note">
+        Each route adds its channel's level onto a global parameter.
+        Stack several routes on one parameter to layer sources.
+      </div>
+    </div>
+
+    <div class="sect">
+      <div class="sect-title">Response</div>
+      <label class="fld">
+        <span>Input gain <em id="gain-val" style="color:#ff8dd0;font-style:normal">1.0×</em></span>
+        <input type="range" id="gain" min="0.1" max="8" step="0.1" value="1.6" />
+      </label>
+      <label class="fld">
+        <span>Smoothing <em id="smooth-val" style="color:#ff8dd0;font-style:normal">0.65</em></span>
+        <input type="range" id="smooth" min="0" max="0.95" step="0.05" value="0.65" />
+      </label>
+      <label class="fld">
+        <span>Idle motion <em id="idle-val" style="color:#ff8dd0;font-style:normal">0.35</em></span>
+        <input type="range" id="idle" min="0" max="1.5" step="0.05" value="0.35" />
+      </label>
+      <div class="note">
+        <strong>Idle motion</strong> sets how alive it is with no input at all.
+        Turn it down so your gestures and audio read as the whole show.
+      </div>
+    </div>
+
+    <div class="sect">
+      <div class="sect-title">Config</div>
+      <div class="btn-row">
+        <button class="btn ghost wide" id="reset-btn">Reset to defaults</button>
+      </div>
+      <div class="note">Settings save to this browser automatically.</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ══════════════════════════════════════════
+     CANVAS
+  ══════════════════════════════════════════ */
+  const canvas = document.getElementById('c');
+  const ctx    = canvas.getContext('2d');
+  // `host` is the window currently showing the canvas — this one normally, or
+  // the floating picture-in-picture window when that's open. Everything driven
+  // by the compositor (rAF, size) and the focus-gated Gamepad API has to come
+  // from whichever window is actually on screen, or it stalls.
+  let host = window;
+  function resize() { canvas.width = host.innerWidth; canvas.height = host.innerHeight; }
+  addEventListener('resize', resize);
+  resize();
+
+  /* ══════════════════════════════════════════
+     MODULATION TARGETS
+
+     Every visual parameter resolves as:
+        rest + idleGain*idle  +  gamepad  +  audio routes
+     Rest values are deliberately low so an untouched screen stays
+     quiet and any input reads as a deliberate gesture.
+  ══════════════════════════════════════════ */
+  const TARGETS = {
+    amplitude:  { label: 'Amplitude',   rest: 0.18, idleGain: 0.25, max: 4.0 },
+    speed:      { label: 'Speed',       rest: 0.10, idleGain: 0.35, max: 4.0 },
+    complexity: { label: 'Complexity',  rest: 0.05, idleGain: 0.20, max: 3.5 },
+    colorSpeed: { label: 'Color speed', rest: 0.05, idleGain: 0.30, max: 5.0 },
+    glow:       { label: 'Glow',        rest: 0.08, idleGain: 0.15, max: 1.0 },
+    zoom:       { label: 'Zoom',        rest: 0.55, idleGain: 0.00, max: 2.2 },
+    spin:       { label: 'Spin',        rest: 0.00, idleGain: 0.00, max: 1.0 },
+    scatter:    { label: 'Scatter',     rest: 0.00, idleGain: 0.00, max: 1.0 },
+  };
+
+  // Live resolved values + gamepad-only spatial values
+  const P = {
+    amplitude: 0, speed: 0, complexity: 0, colorSpeed: 0,
+    glow: 0, zoom: 0, spin: 0, scatter: 0,
+    xShift: 0, yShift: 0, twist: 0, pitch: 0,
+    ltrigger: 0, rtrigger: 0,
+  };
+
+  const MODE_NAMES = ['COSMIC WAVE', 'KALEIDOSCOPE', 'PARTICLE STORM', 'LISSAJOUS', 'TUNNEL RUSH'];
+  let mode = 0, t = 0, hue = 0;
+
+  /* ══════════════════════════════════════════
+     CONFIG (persisted)
+  ══════════════════════════════════════════ */
+  const CONFIG_KEY = 'mpf_viz_config';
+  const DEFAULTS = {
+    deviceId: '', channels: 2,
+    gain: 1.6, smoothing: 0.65, idle: 0.35,
+    routes: [],
+  };
+  let CONFIG = load();
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(CONFIG_KEY);
+      if (raw) return Object.assign({}, DEFAULTS, JSON.parse(raw));
+    } catch (e) {}
+    return JSON.parse(JSON.stringify(DEFAULTS));
+  }
+  function save() {
+    try { localStorage.setItem(CONFIG_KEY, JSON.stringify(CONFIG)); } catch (e) {}
+  }
+
+  /* ══════════════════════════════════════════
+     AUDIO ENGINE
+
+     One analyser per hardware channel, fed by a ChannelSplitter, so a
+     16-channel virtual bus lands as 16 independently routable sources.
+  ══════════════════════════════════════════ */
+  const Audio = {
+    ctx: null, stream: null, splitter: null,
+    analysers: [], timeBuf: null, freqBuf: null,
+    levels: [], bands: [],       // bands[i] = {low, mid, high}
+    channels: 0, connected: false, error: '',
+  };
+
+  const BANDS = { full: null, low: [20, 250], mid: [250, 2000], high: [2000, 9000] };
+
+  async function connectAudio(deviceId, wantChannels) {
+    disconnectAudio();
+    try {
+      const constraints = {
+        audio: {
+          channelCount: { ideal: wantChannels },
+          // These processors force a mono downmix — fatal for multichannel routing.
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl:  false,
+        },
+      };
+      if (deviceId) constraints.audio.deviceId = { exact: deviceId };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const track  = stream.getAudioTracks()[0];
+      const actual = track.getSettings().channelCount || wantChannels || 2;
+
+      const ac  = new (window.AudioContext || window.webkitAudioContext)();
+      if (ac.state === 'suspended') await ac.resume();
+      const src = ac.createMediaStreamSource(stream);
+      const splitter = ac.createChannelSplitter(actual);
+      src.connect(splitter);
+
+      const analysers = [];
+      for (let i = 0; i < actual; i++) {
+        const a = ac.createAnalyser();
+        a.fftSize = 512;
+        a.smoothingTimeConstant = 0.5;
+        splitter.connect(a, i);
+        analysers.push(a);
+      }
+
+      Audio.ctx = ac; Audio.stream = stream; Audio.splitter = splitter;
+      Audio.analysers = analysers;
+      Audio.timeBuf = new Uint8Array(analysers[0].fftSize);
+      Audio.freqBuf = new Uint8Array(analysers[0].frequencyBinCount);
+      Audio.levels  = new Array(actual).fill(0);
+      Audio.bands   = Array.from({ length: actual }, () => ({ low: 0, mid: 0, high: 0 }));
+      Audio.channels = actual;
+      Audio.connected = true;
+      Audio.error = '';
+
+      // First connection with no routing yet gets a sensible starting patch.
+      if (!CONFIG.routes.length) {
+        CONFIG.routes.push({ ch: 0, target: 'amplitude', band: 'low',  depth: 0.8 });
+        if (actual > 1) CONFIG.routes.push({ ch: 1, target: 'glow', band: 'high', depth: 0.6 });
+        save();
+      }
+    } catch (e) {
+      Audio.error = e.message || String(e);
+      Audio.connected = false;
+    }
+    refreshDevices();
+    renderPanel();
+    updateAudioBtn();
+  }
+
+  function disconnectAudio() {
+    if (Audio.stream) Audio.stream.getTracks().forEach(t => t.stop());
+    if (Audio.ctx)    Audio.ctx.close().catch(() => {});
+    Audio.ctx = Audio.stream = Audio.splitter = null;
+    Audio.analysers = []; Audio.levels = []; Audio.bands = [];
+    Audio.channels = 0; Audio.connected = false;
+    updateAudioBtn();
+  }
+
+  function bandEnergy(analyser, range) {
+    analyser.getByteFrequencyData(Audio.freqBuf);
+    const nyquist = (Audio.ctx ? Audio.ctx.sampleRate : 48000) / 2;
+    const perBin  = nyquist / Audio.freqBuf.length;
+    const lo = Math.max(0, Math.floor(range[0] / perBin));
+    const hi = Math.min(Audio.freqBuf.length - 1, Math.ceil(range[1] / perBin));
+    let sum = 0, n = 0;
+    for (let i = lo; i <= hi; i++) { sum += Audio.freqBuf[i]; n++; }
+    return n ? (sum / n) / 255 : 0;
+  }
+
+  function readAudio() {
+    if (!Audio.connected) return;
+    const k = CONFIG.smoothing;
+    for (let i = 0; i < Audio.analysers.length; i++) {
+      const a = Audio.analysers[i];
+
+      // Full-band level from the waveform (true RMS beats summing FFT bins)
+      a.getByteTimeDomainData(Audio.timeBuf);
+      let sum = 0;
+      for (let j = 0; j < Audio.timeBuf.length; j++) {
+        const v = (Audio.timeBuf[j] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / Audio.timeBuf.length);
+      Audio.levels[i] = Audio.levels[i] * k + rms * (1 - k);
+
+      const b = Audio.bands[i];
+      b.low  = b.low  * k + bandEnergy(a, BANDS.low)  * (1 - k);
+      b.mid  = b.mid  * k + bandEnergy(a, BANDS.mid)  * (1 - k);
+      b.high = b.high * k + bandEnergy(a, BANDS.high) * (1 - k);
+    }
+  }
+
+  function channelValue(ch, band) {
+    if (!Audio.connected || ch >= Audio.channels) return 0;
+    const raw = (!band || band === 'full') ? Audio.levels[ch] : Audio.bands[ch][band];
+    return Math.min(1, raw * CONFIG.gain);
+  }
+
+  /* ══════════════════════════════════════════
+     GAMEPAD + VIRTUAL PAD
+  ══════════════════════════════════════════ */
+  const VPAD = {
+    axes: [0, 0, 0, 0],
+    buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
+    active: false,
+  };
+  const btnPrev = new Array(20).fill(false);
+  let padConnected = false;
+
+  const padHint = document.getElementById('pad-hint');
+  const hudSub  = document.getElementById('hud-sub');
+  const hudMode = document.getElementById('hud-mode');
+  const hud     = document.getElementById('hud');
+
+  addEventListener('gamepadconnected', e => {
+    padConnected = true;
+    padHint.classList.add('hidden');
+    showHud();
+  });
+  addEventListener('gamepaddisconnected', () => { padConnected = false; });
+
+  function deadzone(v, dz = 0.12) {
+    if (Math.abs(v) < dz) return 0;
+    return (v - Math.sign(v) * dz) / (1 - dz);
+  }
+
+  /* ── Link state ──
+     Chrome gates the Gamepad API on page VISIBILITY, not focus: an uncovered
+     window keeps sampling the pad while another app is frontmost, which is what
+     lets an audience member drive visuals while the DAW has the keyboard. The
+     moment this window is occluded or minimised, macOS reports it hidden, Chrome
+     marks the page hidden, and both rAF and gamepad sampling stop dead.
+     Nothing in-page can re-open that — so instead we detect it, hold the last
+     pose rather than snapping to centre, and say so on screen. */
+  const LINK = { padTs: -1, lastAdvance: 0, stale: false, state: 'none' };
+
+  function decayInputs(k) {
+    P.xShift *= k; P.yShift *= k; P.twist *= k;
+    P.pitch  *= k; P.ltrigger *= k; P.rtrigger *= k;
+  }
+
+  function pollGamepad() {
+    const nowMs = performance.now();
+    const nav = host.navigator;
+    const pads = nav.getGamepads ? nav.getGamepads() : [];
+    let pad = null;
+    for (const p of pads) { if (p) { pad = p; break; } }
+    if (!pad && VPAD.active) pad = VPAD;
+    if (!pad) {
+      LINK.state = 'none';
+      // Glide to centre over ~1s. A hard zero reads as a crash on the wall when
+      // a wireless pad drops a single frame.
+      decayInputs(0.93);
+      return;
+    }
+
+    if (pad !== VPAD) {
+      if (pad.timestamp !== LINK.padTs) { LINK.padTs = pad.timestamp; LINK.lastAdvance = nowMs; }
+      // A perfectly still stick also stops advancing the timestamp, so holding
+      // the pose here is a no-op in that case and a graceful freeze otherwise.
+      LINK.stale = nowMs - LINK.lastAdvance > 700;
+      if (LINK.stale) { LINK.state = 'stale'; return; }
+    }
+    LINK.state = host.document.hasFocus() ? 'live' : 'bg';
+
+    P.xShift   = deadzone(pad.axes[0] || 0);
+    P.yShift   = deadzone(pad.axes[1] || 0);
+    P.twist    = deadzone(pad.axes[2] || 0);
+    P.pitch    = deadzone(pad.axes[3] || 0);
+    P.ltrigger = (pad.buttons[6] && pad.buttons[6].value) || 0;
+    P.rtrigger = (pad.buttons[7] && pad.buttons[7].value) || 0;
+
+    for (let i = 0; i < 4; i++) {
+      const now = !!(pad.buttons[i] && pad.buttons[i].pressed);
+      if (now && !btnPrev[i]) {
+        if (i === 0) nextMode();
+        if (i === 1) prevMode();
+        if (i === 2) hue += 60;
+      }
+      btnPrev[i] = now;
+    }
+    const dpUp   = !!(pad.buttons[12] && pad.buttons[12].pressed);
+    const dpDown = !!(pad.buttons[13] && pad.buttons[13].pressed);
+    if (dpUp   && !btnPrev[12]) nextMode();
+    if (dpDown && !btnPrev[13]) prevMode();
+    btnPrev[12] = dpUp; btnPrev[13] = dpDown;
+  }
+
+  // Gamepad contribution to each modulation target
+  function padMod() {
+    return {
+      amplitude:  P.rtrigger * 2.6 + Math.abs(P.yShift) * 0.5,
+      speed:      Math.abs(P.yShift) * 2.6,
+      complexity: Math.abs(P.xShift) * 2.6,
+      colorSpeed: Math.abs(P.twist)  * 3.5,
+      glow:       P.rtrigger * 0.55 + P.ltrigger * 0.3,
+      zoom:       P.rtrigger * 0.85 - P.ltrigger * 0.3,
+      spin:       P.twist,
+      scatter:    P.ltrigger,
+    };
+  }
+
+  function audioMod() {
+    const m = {};
+    if (!Audio.connected) return m;
+    for (const r of CONFIG.routes) {
+      const tgt = TARGETS[r.target];
+      if (!tgt) continue;
+      m[r.target] = (m[r.target] || 0) + channelValue(r.ch, r.band) * r.depth * tgt.max;
+    }
+    return m;
+  }
+
+  function resolveParams() {
+    const pm = padMod(), am = audioMod();
+    for (const key in TARGETS) {
+      const tg = TARGETS[key];
+      const v  = tg.rest + tg.idleGain * CONFIG.idle + (pm[key] || 0) + (am[key] || 0);
+      P[key] = Math.max(0, Math.min(tg.max, v));
+    }
+  }
+
+  /* ── Modes ── */
+  function nextMode() { setMode((mode + 1) % MODE_NAMES.length); }
+  function prevMode() { setMode((mode + MODE_NAMES.length - 1) % MODE_NAMES.length); }
+  function setMode(m) {
+    mode = m;
+    // Modes only fade the previous frame; without a hard clear the old mode
+    // ghosts for seconds because alpha compositing never quite reaches black.
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    particles.length = 0;
+    hudMode.textContent = MODE_NAMES[mode];
+    showHud();
+  }
+
+  /* ── Keyboard → virtual pad ── */
+  const AXIS_KEYS = {
+    KeyA: [0, -1], KeyD: [0, 1], KeyW: [1, -1], KeyS: [1, 1],
+    ArrowLeft: [2, -1], ArrowRight: [2, 1], ArrowUp: [3, -1], ArrowDown: [3, 1],
+  };
+  const BTN_KEYS = { KeyZ: 0, KeyX: 1, KeyC: 2, KeyV: 3, KeyQ: 6, KeyE: 7 };
+
+  function activateVirtual() {
+    if (VPAD.active) return;
+    VPAD.active = true;
+    padHint.classList.add('hidden');
+    showHud();
+  }
+
+  addEventListener('keydown', e => {
+    if (e.repeat || e.target.matches('input, select')) return;
+    if (AXIS_KEYS[e.code]) {
+      const [ax, dir] = AXIS_KEYS[e.code];
+      VPAD.axes[ax] = dir; activateVirtual(); e.preventDefault(); return;
+    }
+    if (BTN_KEYS[e.code] !== undefined) {
+      const b = VPAD.buttons[BTN_KEYS[e.code]];
+      b.pressed = true; b.value = 1; activateVirtual(); return;
+    }
+    if (e.code === 'BracketRight') nextMode();
+    if (e.code === 'BracketLeft')  prevMode();
+    if (/^Digit[1-5]$/.test(e.code)) setMode(+e.code.slice(5) - 1);
+    if (e.code === 'Escape') closePanel();
+  });
+
+  addEventListener('keyup', e => {
+    if (AXIS_KEYS[e.code]) {
+      const [ax, dir] = AXIS_KEYS[e.code];
+      // Only clear if this key still owns the axis (opposite key may hold it)
+      if (VPAD.axes[ax] === dir) VPAD.axes[ax] = 0;
+      return;
+    }
+    if (BTN_KEYS[e.code] !== undefined) {
+      const b = VPAD.buttons[BTN_KEYS[e.code]];
+      b.pressed = false; b.value = 0;
+    }
+  });
+
+  /* ── HUD ── */
+  let hudTimer = null;
+  function showHud() {
+    hud.classList.remove('hidden');
+    clearTimeout(hudTimer);
+    hudTimer = setTimeout(() => hud.classList.add('hidden'), 3000);
+  }
+  function updateHudSub() {
+    const bits = [];
+    if (Audio.connected) bits.push(Audio.channels + 'ch audio');
+    if (padConnected) bits.push('gamepad');
+    else if (VPAD.active) bits.push('keyboard');
+    hudSub.textContent = bits.length ? bits.join(' · ') : 'no input';
+  }
+  showHud();
+  setTimeout(() => padHint.classList.add('hidden'), 8000);
+
+  /* ══════════════════════════════════════════
+     DRAW HELPERS
+  ══════════════════════════════════════════ */
+  const hsla = (h, s, l, a) => `hsla(${h % 360},${s}%,${l}%,${a})`;
+  const blur = () => P.glow * 34;
+  // More glow = longer trails; quiet scenes clear themselves faster.
+  const fade = () => 0.16 - P.glow * 0.11;
+
+  /* ── MODE 0 — COSMIC WAVE ── */
+  function drawCosmicWave() {
+    const W = canvas.width, H = canvas.height;
+    const cy = H / 2 + P.yShift * H * 0.25;
+
+    ctx.fillStyle = `rgba(0,0,0,${fade()})`;
+    ctx.fillRect(0, 0, W, H);
+
+    const layers = Math.max(1, Math.round(1 + P.complexity * 4));
+    for (let l = 0; l < layers; l++) {
+      const freq  = 1 + l * 0.7 + P.complexity;
+      const phase = t * (0.4 + l * 0.15) * P.speed + l * Math.PI * 0.4;
+      const amp   = (H * 0.13 + l * 9) * P.amplitude;
+      const h     = hue + l * (360 / layers) + P.twist * 180;
+      const alpha = Math.min(0.85, 0.22 + P.glow * 0.7) - l * 0.03;
+
+      ctx.beginPath();
+      ctx.strokeStyle = hsla(h, 100, 62, Math.max(0.05, alpha));
+      ctx.lineWidth   = 1.2 + P.glow * 1.8;
+      ctx.shadowColor = hsla(h, 100, 70, 0.8);
+      ctx.shadowBlur  = blur();
+
+      for (let x = 0; x <= W; x += 2) {
+        const nx = x / W;
+        const y  = cy
+          + Math.sin(nx * freq * Math.PI * 2 + phase) * amp
+          + Math.sin(nx * freq * 3.7 * Math.PI + phase * 1.3) * amp * 0.3
+          + P.pitch * H * 0.2;
+        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  /* ── MODE 1 — KALEIDOSCOPE ── */
+  function drawKaleidoscope() {
+    const W = canvas.width, H = canvas.height;
+
+    ctx.fillStyle = `rgba(0,0,0,${fade()})`;
+    ctx.fillRect(0, 0, W, H);
+
+    const slices    = Math.round(4 + P.complexity * 8);
+    const halfAngle = Math.PI / slices;
+    const R         = Math.min(W, H) * 0.42 * P.zoom;
+    const speed     = t * P.speed;
+
+    // Build one wedge, then mirror + rotate it into every slice. Angles stay
+    // inside ±halfAngle so no point strays outside its own wedge.
+    const pts  = Math.round(5 + P.complexity * 8);
+    const seed = [];
+    for (let i = 0; i < pts; i++) {
+      const fi = (i + 0.5) / pts;
+      const r  = R * (0.12 + fi * 0.88);
+      const th = Math.sin(speed * (0.5 + fi * 1.2) + fi * Math.PI * 4 + P.pitch * Math.PI)
+                 * halfAngle * 0.85;
+      seed.push({ x: Math.cos(th) * r, y: Math.sin(th) * r, size: (3 + fi * 16) * P.amplitude, fi });
+    }
+
+    ctx.save();
+    ctx.translate(W / 2 + P.xShift * 80, H / 2 + P.yShift * 80);
+    ctx.rotate(P.spin * Math.PI + t * 0.15 * P.speed);
+
+    for (let s = 0; s < slices; s++) {
+      ctx.save();
+      ctx.rotate((s / slices) * Math.PI * 2);
+      if (s % 2) ctx.scale(1, -1);   // mirrored slices are what sell the kaleidoscope
+
+      for (const p of seed) {
+        const h = hue + p.fi * 180 + s * (360 / slices);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(0.5, p.size), 0, Math.PI * 2);
+        ctx.fillStyle   = hsla(h, 100, 60, Math.min(0.8, 0.25 + P.glow * 0.6));
+        ctx.shadowColor = hsla(h, 100, 75, 0.9);
+        ctx.shadowBlur  = blur();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+    ctx.shadowBlur = 0;
+  }
+
+  /* ── MODE 2 — PARTICLE STORM ── */
+  const particles = [];
+  const MAX_PARTICLES = 1400;
+
+  // This mode used to set ctx.shadowBlur per particle, which costs a full
+  // gaussian pass *each* — up to 1400 of them a frame, plus two hsla() strings
+  // per particle for the GC to chew on. That is what made it stutter while the
+  // other modes stayed smooth. Instead: bake the glow into a small sprite atlas
+  // once, then additively blit it. Same bloom, one drawImage per particle.
+  const GLOW_HUES = 24;
+  const GLOW_SIZE = 64;
+  const glowSprites = [];
+  for (let i = 0; i < GLOW_HUES; i++) {
+    const s = document.createElement('canvas');
+    s.width = s.height = GLOW_SIZE;
+    const g = s.getContext('2d');
+    const r = GLOW_SIZE / 2;
+    const h = (i / GLOW_HUES) * 360;
+    const grad = g.createRadialGradient(r, r, 0, r, r, r);
+    grad.addColorStop(0,    `hsla(${h},100%,82%,0.85)`);
+    grad.addColorStop(0.22, `hsla(${h},100%,62%,0.42)`);
+    grad.addColorStop(1,    `hsla(${h},100%,55%,0)`);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, GLOW_SIZE, GLOW_SIZE);
+    glowSprites.push(s);
+  }
+
+  function spawnParticle() {
+    const W = canvas.width, H = canvas.height;
+    const cx = W / 2 + P.xShift * W * 0.3;
+    const cy = H / 2 + P.yShift * H * 0.3;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = (1 + Math.random() * 5) * (0.4 + P.amplitude);
+    particles.push({
+      x: cx + (Math.random() - 0.5) * 60,
+      y: cy + (Math.random() - 0.5) * 60,
+      vx: Math.cos(angle) * speed + P.twist * 5 + (Math.random() - 0.5) * P.scatter * 8,
+      vy: Math.sin(angle) * speed + P.pitch * 5 + (Math.random() - 0.5) * P.scatter * 8,
+      life: 1, decay: 0.004 + Math.random() * 0.008,
+      size: 1.5 + Math.random() * 5 * (0.4 + P.amplitude),
+      hue: hue + Math.random() * 300,
+    });
+  }
+
+  function drawParticleStorm() {
+    const W = canvas.width, H = canvas.height;
+    ctx.fillStyle = `rgba(0,0,0,${fade()})`;
+    ctx.fillRect(0, 0, W, H);
+
+    const spawn = Math.round(1 + P.complexity * 8 + P.amplitude * 2);
+    for (let i = 0; i < spawn && particles.length < MAX_PARTICLES; i++) spawnParticle();
+
+    ctx.globalCompositeOperation = 'lighter';
+    // Glow rides the same param the old shadowBlur did, so the right trigger
+    // still swells the bloom the way it always has.
+    const spread = 1.5 + P.glow * 1.5;
+    const hueShift = t * 30 * P.colorSpeed;
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx * P.speed; p.y += p.vy * P.speed;
+      p.vy += 0.04;
+      p.life -= p.decay;
+      if (p.life <= 0 || p.x < -60 || p.x > W + 60 || p.y > H + 120) {
+        // Draw order doesn't matter here, so swap-pop rather than splice —
+        // splice memmoves the tail on every death, which at 1400 particles
+        // turned particle churn into its own hotspot.
+        particles[i] = particles[particles.length - 1];
+        particles.pop();
+        continue;
+      }
+      const r = Math.max(0.4, p.size * p.life) * spread;
+      let idx = ((p.hue + hueShift) / 360 * GLOW_HUES | 0) % GLOW_HUES;
+      if (idx < 0) idx += GLOW_HUES;
+      // Additive blending accumulates where the old source-over fills did not,
+      // so this rides far lower than the 0.35–0.95 the shadowBlur version used
+      // — overlapping particles supply the brightness instead of each one.
+      ctx.globalAlpha = p.life * (0.022 + P.glow * 0.045);
+      ctx.drawImage(glowSprites[idx], p.x - r, p.y - r, r * 2, r * 2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ── MODE 3 — LISSAJOUS ── */
+  function drawLissajous() {
+    const W = canvas.width, H = canvas.height;
+    ctx.fillStyle = `rgba(0,0,0,${fade()})`;
+    ctx.fillRect(0, 0, W, H);
+
+    const a = 2 + Math.floor(P.complexity * 3 + Math.abs(P.xShift) * 3);
+    const b = 1 + Math.floor(P.complexity * 3 + Math.abs(P.yShift) * 3);
+    const d = t * P.speed * 0.4;
+    const scl = Math.min(W, H) * 0.42 * P.zoom;
+    const cx  = W / 2 + P.twist * W * 0.15;
+    const cy  = H / 2 + P.pitch * H * 0.15;
+    const amp = 0.35 + P.amplitude * 0.6;
+
+    const steps = 600;
+    let px = 0, py = 0;
+    for (let i = 0; i <= steps; i++) {
+      const th = (i / steps) * Math.PI * 2;
+      const x  = cx + Math.sin(a * th + d) * scl * amp;
+      const y  = cy + Math.sin(b * th) * scl * amp;
+      if (i) {
+        const h = hue + (i / steps) * 240 * P.colorSpeed;
+        ctx.beginPath();
+        ctx.moveTo(px, py); ctx.lineTo(x, y);
+        ctx.strokeStyle = hsla(h, 100, 65, Math.min(0.9, 0.3 + P.glow * 0.7));
+        ctx.lineWidth   = 1 + P.glow * 2.5;
+        ctx.shadowColor = hsla(h, 100, 75, 0.6);
+        ctx.shadowBlur  = blur();
+        ctx.stroke();
+      }
+      px = x; py = y;
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  /* ── MODE 4 — TUNNEL RUSH ── */
+  function drawTunnel() {
+    const W = canvas.width, H = canvas.height;
+    const cx = W / 2 + P.xShift * 80, cy = H / 2 + P.yShift * 80;
+
+    ctx.fillStyle = `rgba(0,0,0,${fade() + 0.04})`;
+    ctx.fillRect(0, 0, W, H);
+
+    const rings  = Math.round(8 + P.complexity * 8);
+    const offset = (t * P.speed * 0.6) % 1;
+
+    for (let r = rings; r >= 0; r--) {
+      const fi    = ((r / rings) + offset) % 1;
+      const size  = Math.pow(fi, 1.8) * Math.min(W, H) * 0.6 * P.zoom;
+      const h     = hue + fi * 360 * P.colorSpeed + P.twist * 180;
+      const sides = Math.round(4 + P.complexity * 4);
+      const rot   = fi * Math.PI * 2 * (0.5 + P.pitch * 0.5) + t * 0.1 + P.spin;
+
+      ctx.beginPath();
+      for (let i = 0; i <= sides; i++) {
+        const ang = (i / sides) * Math.PI * 2 + rot;
+        const s   = size * (0.4 + P.amplitude * 0.6);
+        const x = cx + Math.cos(ang) * s, y = cy + Math.sin(ang) * s;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = hsla(h, 100, 60, Math.min(0.9, (0.25 + P.glow * 0.65) - fi * 0.25));
+      ctx.lineWidth   = (1 - fi) * 2.5 + 0.4 + P.glow * 2;
+      ctx.shadowColor = hsla(h, 100, 75, 0.8);
+      ctx.shadowBlur  = blur();
+      ctx.stroke();
+
+      // Inner rings only — filling the screen-sized outer rings stacks up
+      // faster than the trail fade can clear and washes the scene grey.
+      if (r % 3 === 0 && size > 10 && fi < 0.5) {
+        ctx.fillStyle = hsla(h, 100, 50, 0.03 + P.glow * 0.05);
+        ctx.fill();
+      }
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  /* ══════════════════════════════════════════
+     SETTINGS PANEL
+  ══════════════════════════════════════════ */
+  const $ = id => document.getElementById(id);
+  const panel = $('panel');
+
+  function openPanel()  { panel.classList.add('open'); refreshDevices(); renderPanel(); }
+  function closePanel() { panel.classList.remove('open'); }
+
+  $('gear-btn').onclick    = () => panel.classList.contains('open') ? closePanel() : openPanel();
+  $('panel-close').onclick = closePanel;
+
+  /* ── Fullscreen ── */
+  const fullBtn = $('full-btn');
+  fullBtn.onclick = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(() => {});
+  };
+  addEventListener('fullscreenchange', () => {
+    fullBtn.classList.toggle('active', !!document.fullscreenElement);
+    resize();
+  });
+
+  /* ── Float on top ──
+     The web has exactly one way to sit above other applications: a document
+     picture-in-picture window. It is always-on-top and never reports itself
+     hidden, so the pad keeps being sampled no matter what Ableton does with
+     its own windows — including true fullscreen, which otherwise parks the DAW
+     on a separate Space and blacks this out entirely. Chrome 116+ only, so the
+     button stays hidden where the API doesn't exist. */
+  const topBtn = $('top-btn');
+  if ('documentPictureInPicture' in window) {
+    topBtn.hidden = false;
+    topBtn.onclick = async () => {
+      if (window.documentPictureInPicture.window) { window.documentPictureInPicture.window.close(); return; }
+      let pip;
+      try {
+        pip = await window.documentPictureInPicture.requestWindow({ width: 640, height: 360 });
+      } catch { return; }   // user dismissed, or no transient activation
+
+      // The floating window is a fresh document — it inherits no stylesheets.
+      const css = document.createElement('style');
+      css.textContent = [...document.styleSheets[0].cssRules].map(r => r.cssText).join('\n');
+      pip.document.head.append(css);
+      pip.document.body.style.background = '#000';
+      pip.document.body.append(canvas);
+
+      host = pip;
+      resize();
+      pip.addEventListener('resize', resize);
+      topBtn.classList.add('active');
+      restartLoop();
+
+      pip.addEventListener('pagehide', () => {
+        document.body.prepend(canvas);
+        host = window;
+        resize();
+        topBtn.classList.remove('active');
+        restartLoop();
+      });
+    };
+  }
+
+  $('audio-btn').onclick = () => {
+    if (Audio.connected) disconnectAudio();
+    else connectAudio(CONFIG.deviceId, CONFIG.channels);
+  };
+
+  function updateAudioBtn() {
+    $('audio-btn').classList.toggle('active', Audio.connected);
+    updateHudSub();
+  }
+
+  async function refreshDevices() {
+    const sel = $('device-sel');
+    try {
+      const devs = (await navigator.mediaDevices.enumerateDevices())
+        .filter(d => d.kind === 'audioinput');
+      sel.innerHTML = '<option value="">Default input</option>';
+      devs.forEach(d => {
+        const o = document.createElement('option');
+        o.value = d.deviceId;
+        o.textContent = d.label || `Input ${sel.options.length}`;
+        sel.appendChild(o);
+      });
+      sel.value = CONFIG.deviceId || '';
+    } catch (e) {}
+  }
+
+  function renderStatus() {
+    const el = $('audio-status');
+    if (Audio.error) {
+      el.className = 'status err';
+      el.textContent = 'Could not open device: ' + Audio.error;
+    } else if (Audio.connected) {
+      el.className = 'status ok';
+      el.textContent = `Connected · ${Audio.channels} channel${Audio.channels > 1 ? 's' : ''} @ ${Math.round(Audio.ctx.sampleRate / 1000)}kHz`;
+    } else {
+      el.className = 'status off';
+      el.textContent = 'Not connected.';
+    }
+  }
+
+  function renderChannels() {
+    const sect = $('ch-sect'), strip = $('ch-strip');
+    if (!Audio.connected) { sect.style.display = 'none'; return; }
+    sect.style.display = '';
+    if (strip.children.length !== Audio.channels) {
+      strip.innerHTML = '';
+      for (let i = 0; i < Audio.channels; i++) {
+        const row = document.createElement('div');
+        row.className = 'ch-row';
+        row.innerHTML = `<div class="ch-name">${i + 1}</div>
+                         <div class="meter"><div class="meter-fill"></div></div>`;
+        strip.appendChild(row);
+      }
+    }
+  }
+
+  function renderRoutes() {
+    const wrap = $('routes');
+    wrap.innerHTML = '';
+    if (!CONFIG.routes.length) {
+      wrap.innerHTML = '<div class="empty-note">No routes yet.<br>Connect audio and add one to map a channel onto a parameter.</div>';
+      return;
+    }
+    const chCount = Math.max(Audio.channels, CONFIG.channels, 1);
+
+    CONFIG.routes.forEach((r, idx) => {
+      const div = document.createElement('div');
+      div.className = 'route';
+
+      const chOpts = Array.from({ length: chCount },
+        (_, i) => `<option value="${i}" ${r.ch === i ? 'selected' : ''}>Ch ${i + 1}</option>`).join('');
+      const tgOpts = Object.entries(TARGETS)
+        .map(([k, v]) => `<option value="${k}" ${r.target === k ? 'selected' : ''}>${v.label}</option>`).join('');
+      const bdOpts = Object.keys(BANDS)
+        .map(b => `<option value="${b}" ${r.band === b ? 'selected' : ''}>${b}</option>`).join('');
+
+      div.innerHTML = `
+        <div class="route-top">
+          <select data-k="ch">${chOpts}</select>
+          <span style="color:rgba(255,255,255,.3);font-size:.7rem">→</span>
+          <select data-k="target">${tgOpts}</select>
+          <select data-k="band" style="max-width:74px">${bdOpts}</select>
+          <button class="route-del" title="Remove">×</button>
+        </div>
+        <div class="route-depth">
+          <span>${Math.round(r.depth * 100)}%</span>
+          <input type="range" min="0" max="1" step="0.05" value="${r.depth}" data-k="depth" />
+        </div>
+        <div class="route-meter"><div></div></div>`;
+
+      div.querySelectorAll('select,input').forEach(inp => {
+        inp.oninput = () => {
+          const k = inp.dataset.k;
+          r[k] = (k === 'ch') ? +inp.value : (k === 'depth') ? +inp.value : inp.value;
+          if (k === 'depth') div.querySelector('.route-depth span').textContent = Math.round(r.depth * 100) + '%';
+          save();
+        };
+      });
+      div.querySelector('.route-del').onclick = () => {
+        CONFIG.routes.splice(idx, 1); save(); renderRoutes();
+      };
+      wrap.appendChild(div);
+    });
+  }
+
+  function renderPanel() { renderStatus(); renderChannels(); renderRoutes(); }
+
+  $('add-route').onclick = () => {
+    CONFIG.routes.push({ ch: 0, target: 'amplitude', band: 'full', depth: 0.7 });
+    save(); renderRoutes();
+  };
+
+  $('connect-btn').onclick = () => {
+    CONFIG.deviceId = $('device-sel').value;
+    CONFIG.channels = +$('ch-req').value;
+    save();
+    connectAudio(CONFIG.deviceId, CONFIG.channels);
+  };
+  $('disconnect-btn').onclick = () => { disconnectAudio(); renderPanel(); };
+
+  // Sliders
+  function bindSlider(id, key, fmt) {
+    const el = $(id), out = $(id + '-val') || $(key + '-val');
+    el.value = CONFIG[key];
+    if (out) out.textContent = fmt(CONFIG[key]);
+    el.oninput = () => {
+      CONFIG[key] = +el.value;
+      if (out) out.textContent = fmt(CONFIG[key]);
+      save();
+    };
+  }
+  bindSlider('gain',   'gain',      v => v.toFixed(1) + '×');
+  bindSlider('smooth', 'smoothing', v => v.toFixed(2));
+  bindSlider('idle',   'idle',      v => v.toFixed(2));
+
+  $('ch-req').value = CONFIG.channels;
+  $('ch-req-val').textContent = CONFIG.channels;
+  $('ch-req').oninput = () => {
+    CONFIG.channels = +$('ch-req').value;
+    $('ch-req-val').textContent = CONFIG.channels;
+    save();
+  };
+
+  $('reset-btn').onclick = () => {
+    CONFIG = JSON.parse(JSON.stringify(DEFAULTS));
+    save();
+    ['gain', 'smooth', 'idle'].forEach(id => {
+      const key = id === 'smooth' ? 'smoothing' : id;
+      $(id).value = CONFIG[key];
+    });
+    $('gain-val').textContent   = CONFIG.gain.toFixed(1) + '×';
+    $('smooth-val').textContent = CONFIG.smoothing.toFixed(2);
+    $('idle-val').textContent   = CONFIG.idle.toFixed(2);
+    $('ch-req').value = CONFIG.channels;
+    $('ch-req-val').textContent = CONFIG.channels;
+    renderPanel();
+  };
+
+  // Live meters while the panel is open
+  function updateMeters() {
+    if (!panel.classList.contains('open') || !Audio.connected) return;
+    const fills = $('ch-strip').querySelectorAll('.meter-fill');
+    for (let i = 0; i < fills.length; i++) {
+      fills[i].style.width = Math.min(100, channelValue(i, 'full') * 100) + '%';
+    }
+    const rms = $('routes').querySelectorAll('.route-meter > div');
+    CONFIG.routes.forEach((r, i) => {
+      if (rms[i]) rms[i].style.width = Math.min(100, channelValue(r.ch, r.band) * r.depth * 100) + '%';
+    });
+  }
+
+  navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
+  refreshDevices();
+  renderPanel();
+
+  /* ── Link pill ── */
+  const linkPill = document.getElementById('link-pill');
+  const linkText = document.getElementById('link-text');
+  let linkShown = null;
+
+  function updateLinkPill() {
+    // Only surface the pill when the answer isn't the boring one (this window
+    // focused and reading fine), so the wall stays clean during a set.
+    let cls = '', msg = '';
+    if (LINK.state === 'bg')         { cls = 'bg';    msg = 'pad live · background'; }
+    else if (LINK.state === 'stale') { cls = 'stale'; msg = 'input frozen · uncover this window'; }
+    if (cls === linkShown) return;
+    linkShown = cls;
+    if (cls) linkText.textContent = msg;
+    linkPill.className = cls ? cls + ' show' : '';
+  }
+
+  // By the time this fires for 'hidden' rAF is already stopped, so the useful
+  // half is clearing the stale flag on the way back rather than inheriting a
+  // frozen reading from before the window was covered.
+  addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    LINK.lastAdvance = performance.now();
+    LINK.stale = false;
+    showHud();
+  });
+
+  /* ══════════════════════════════════════════
+     MAIN LOOP
+  ══════════════════════════════════════════ */
+  const drawFns = [drawCosmicWave, drawKaleidoscope, drawParticleStorm, drawLissajous, drawTunnel];
+  let meterTick = 0;
+
+  function tick() {
+    pollGamepad();
+    updateLinkPill();
+    readAudio();
+    resolveParams();
+
+    t   += 0.016 * P.speed;
+    hue += 0.4   * P.colorSpeed;
+
+    drawFns[mode]();
+
+    if (++meterTick % 3 === 0) updateMeters();
+  }
+
+  // Split from tick() so a covered window — where rAF is suspended — can still
+  // be driven one frame at a time from MPFVIZ.step() for testing.
+  // `loopGen` invalidates the in-flight rAF when the canvas moves between
+  // windows, so handing off to picture-in-picture and back can't leave two
+  // loops running against the same context.
+  let loopGen = 0;
+  function frame(gen) {
+    if (gen !== loopGen) return;
+    tick();
+    host.requestAnimationFrame(() => frame(gen));
+  }
+  function restartLoop() { loopGen++; host.requestAnimationFrame(() => frame(loopGen)); }
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  updateHudSub();
+  restartLoop();
+
+  /* ── Scripted control hook (testing / demos) ── */
+  window.MPFVIZ = {
+    params: P, pad: VPAD, config: CONFIG, audio: Audio, targets: TARGETS,
+    setMode, link: LINK, step: tick,
+    axis(i, v) { VPAD.axes[i] = v; activateVirtual(); },
+    button(i, v) { const b = VPAD.buttons[i]; b.pressed = !!v; b.value = v ? 1 : 0; activateVirtual(); },
+    reset() { VPAD.axes = [0, 0, 0, 0]; VPAD.buttons.forEach(b => { b.pressed = false; b.value = 0; }); },
+    openPanel, closePanel,
+  };
+})();
+</script>
+</body>
+</html>

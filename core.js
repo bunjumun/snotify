@@ -113,6 +113,136 @@ function applyTheme(band){
   const t = BAND_THEME[bandSlugOf(band || '')] || '';
   if (t) document.body.dataset.theme = t;
   else delete document.body.dataset.theme;
+  if (t === 'dazzle') paintDazzle();
+}
+
+// ---------- Dazzle generator ----------
+// Real dazzle camouflage is not a barcode. A hull was divided into irregular
+// panels by straight cuts at conflicting angles, and each panel was painted
+// either flat black/white or striped at ITS OWN angle with bands of uneven
+// width — the point being that no two adjacent panels agree about which way
+// the ship is facing. Repeating a single stripe pattern gets none of that, so
+// the pattern is generated instead of written by hand.
+//
+// Everything is seeded, so a given surface paints the same way on every load
+// (a page that reshuffles its camouflage on each render is a nightmare), while
+// different surfaces get genuinely different schemes.
+
+// mulberry32 — small, fast, and identical across browsers for a given seed.
+function rng(seed){
+  let a = seed >>> 0;
+  return () => {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// Cut a convex polygon with a line, keeping the side the normal points away
+// from (Sutherland–Hodgman against a single edge).
+function clipHalf(poly, nx, ny, d){
+  const out = [];
+  const dist = (pt) => nx * pt[0] + ny * pt[1] - d;
+  for (let i = 0; i < poly.length; i++){
+    const cur = poly[i], nxt = poly[(i + 1) % poly.length];
+    const dc = dist(cur), dn = dist(nxt);
+    if (dc <= 0) out.push(cur);
+    if ((dc < 0 && dn > 0) || (dc > 0 && dn < 0)){
+      const t = dc / (dc - dn);
+      out.push([cur[0] + (nxt[0] - cur[0]) * t, cur[1] + (nxt[1] - cur[1]) * t]);
+    }
+  }
+  return out;
+}
+const polyArea = (p) => Math.abs(p.reduce((s, cur, i) => {
+  const n = p[(i + 1) % p.length];
+  return s + (cur[0] * n[1] - n[0] * cur[1]);
+}, 0)) / 2;
+
+// Split the canvas into irregular panels by repeated cuts. Each cut runs
+// through a point inside the panel it divides, at an angle picked from a set
+// that deliberately conflicts.
+function dazzlePanels(w, h, n, rand){
+  let panels = [[[0,0],[w,0],[w,h],[0,h]]];
+  const angles = [18, 62, 108, 143, 74, 127, 35, 158];
+  for (let i = 0; i < n; i++){
+    // bias towards cutting the biggest panel, so nothing stays a huge slab
+    panels.sort((a, b) => polyArea(b) - polyArea(a));
+    const idx = Math.floor(rand() * Math.min(3, panels.length));
+    const poly = panels[idx];
+    const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
+    const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
+    // jitter the pivot so cuts don't all pass through panel centres
+    const px = cx + (rand() - 0.5) * w * 0.35;
+    const py = cy + (rand() - 0.5) * h * 0.35;
+    const th = angles[Math.floor(rand() * angles.length)] * Math.PI / 180;
+    const nx = Math.cos(th), ny = Math.sin(th);
+    const d = nx * px + ny * py;
+    const a = clipHalf(poly, nx, ny, d);
+    const b = clipHalf(poly, -nx, -ny, -d);
+    if (a.length >= 3 && b.length >= 3 && polyArea(a) > 60 && polyArea(b) > 60){
+      panels.splice(idx, 1, a, b);
+    }
+  }
+  return panels;
+}
+
+// One panel's paint: flat, or stripes at this panel's own angle with widths
+// that never settle into a rhythm.
+function dazzlePanelSVG(poly, i, rand, ink, ground, scale){
+  const pts = poly.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const span = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  const flip = rand() < 0.22;                       // a few panels stay flat
+  const base = flip && rand() < 0.5 ? ink : ground;
+  let out = `<g clip-path="url(#dp${i})"><rect x="${(cx - span).toFixed(1)}" y="${(cy - span).toFixed(1)}" `
+          + `width="${(span * 2).toFixed(1)}" height="${(span * 2).toFixed(1)}" fill="${base}"/>`;
+  if (!flip){
+    const ang = (rand() * 360).toFixed(1);
+    out += `<g transform="rotate(${ang} ${cx.toFixed(1)} ${cy.toFixed(1)})">`;
+    let x = cx - span;
+    let guard = 0;
+    while (x < cx + span && guard++ < 90){
+      // uneven bands: a wide one, a hairline, a medium — never the same twice
+      const bar = (2 + rand() * 9) * scale;
+      const gap = (2 + rand() * 11) * scale;
+      out += `<rect x="${x.toFixed(1)}" y="${(cy - span).toFixed(1)}" `
+           + `width="${bar.toFixed(1)}" height="${(span * 2).toFixed(1)}" fill="${ink}"/>`;
+      x += bar + gap;
+    }
+    out += `</g>`;
+  }
+  return { defs: `<clipPath id="dp${i}"><polygon points="${pts}"/></clipPath>`, body: out + `</g>` };
+}
+
+// A whole scheme, as an SVG data URI ready for background-image.
+function dazzleURL({ w = 1200, h = 120, seed = 1, cuts = 7, ink = '#ffffff',
+                     ground = '#08080a', scale = 1 } = {}){
+  const rand = rng(seed);
+  const panels = dazzlePanels(w, h, cuts, rand);
+  let defs = '', body = '';
+  panels.forEach((poly, i) => {
+    const part = dazzlePanelSVG(poly, i, rand, ink, ground, scale);
+    defs += part.defs; body += part.body;
+  });
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" `
+            + `viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">`
+            + `<defs>${defs}</defs><rect width="${w}" height="${h}" fill="${ground}"/>${body}</svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, '%27')}")`;
+}
+
+// Paint the theme's surfaces. The CSS keeps using var(--dazzle) and friends —
+// only what those variables contain changes.
+function paintDazzle(){
+  const b = document.body.style;
+  b.setProperty('--dazzle',     dazzleURL({ w: 1400, h: 140, seed: 20260810, cuts: 8, scale: 1.1 }));
+  b.setProperty('--dazzle-2',   dazzleURL({ w: 1400, h: 120, seed: 771903,   cuts: 9, scale: 0.72 }));
+  b.setProperty('--dazzle-narrow', dazzleURL({ w: 120, h: 900, seed: 40412,  cuts: 7, scale: 0.9 }));
+  b.setProperty('--dazzle-bg',  dazzleURL({ w: 1600, h: 1000, seed: 5150,    cuts: 11, scale: 2.2,
+                                            ink: 'rgba(255,255,255,.055)', ground: 'rgba(0,0,0,0)' }));
 }
 
 // ---------- Deep-link routing ----------

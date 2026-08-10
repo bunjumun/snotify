@@ -40,23 +40,30 @@ body[data-theme="dazzle"] {
   --wave-caps:  1;
   --field:     linear-gradient(180deg, #212228 0%, #0d0d11 100%);
   --field-on:  linear-gradient(180deg, #2b2c34 0%, #121218 100%);
-  /* The motif: two angles that fight each other, as on the hulls. */
-  --dazzle:    repeating-linear-gradient(115deg, #fff 0 9px, #08080a 9px 18px);
-  --dazzle-2:  repeating-linear-gradient(-64deg, #fff 0 6px, #08080a 6px 12px);
+  /* The motif is GENERATED, not written: paintDazzle() in core.js fills these
+     four variables with SVG schemes built from irregular panels and per-panel
+     stripe angles (see the dazzle generator there). The values below are only
+     the fallback for a page that runs without JavaScript. */
+  --dazzle:        repeating-linear-gradient(112deg, #fff 0 7px, #08080a 7px 15px);
+  --dazzle-2:      repeating-linear-gradient(-51deg, #fff 0 4px, #08080a 4px 9px);
+  --dazzle-narrow: repeating-linear-gradient(27deg, #fff 0 5px, #08080a 5px 11px);
+  --dazzle-bg:     none;
 
-  background: var(--bg);
+  background: var(--dazzle-bg), var(--bg);
+  background-size: cover, auto;
+  background-attachment: fixed;
 }
 
 /* The hull band across the top of every page. */
 body[data-theme="dazzle"]::before {
-  content: ""; position: fixed; top: 0; left: 0; right: 0; height: 10px; z-index: 60;
-  background: var(--dazzle); border-bottom: 1px solid var(--edge);
+  content: ""; position: fixed; top: 0; left: 0; right: 0; height: 14px; z-index: 60;
+  background: var(--dazzle) center/100% 100% no-repeat; border-bottom: 1px solid var(--edge);
 }
-body[data-theme="dazzle"] .wrap { padding-top: 42px; }
+body[data-theme="dazzle"] .wrap { padding-top: 46px; }
 
 /* ---------- Chrome ---------- */
 body[data-theme="dazzle"] header.app .logo {
-  background: var(--dazzle); border: 1px solid var(--edge);
+  background: var(--dazzle-narrow) center/100% 100% no-repeat; border: 1px solid var(--edge);
   border-radius: var(--radius); box-shadow: none;
 }
 body[data-theme="dazzle"] header.app h1 {
@@ -82,8 +89,8 @@ body[data-theme="dazzle"] .modal {
 }
 /* Every panel capped with a stripe band, like a painted bow. */
 body[data-theme="dazzle"] .modal::before {
-  content: ""; display: block; height: 8px; margin: 0 -20px 16px;
-  background: var(--dazzle-2); border-bottom: 1px solid var(--edge);
+  content: ""; display: block; height: 12px; margin: 0 -20px 16px;
+  background: var(--dazzle-2) center/100% 100% no-repeat; border-bottom: 1px solid var(--edge);
 }
 body[data-theme="dazzle"] .modal h2 {
   font-size: 15px; text-transform: uppercase; letter-spacing: .09em; font-weight: 800;
@@ -217,8 +224,14 @@ body[data-theme="dazzle"] #markers .mk .tip {
   bottom: calc(100% + 12px); background: #08080a;
   border: 1px solid var(--edge); border-radius: 2px;
   font-size: 11px; font-weight: 700; letter-spacing: .03em;
-  padding: 4px 8px; max-width: 260px;
+  padding: 5px 9px;
+  /* Say the whole thing: the box takes the width of its text and wraps rather
+     than trailing off in an ellipsis. */
+  width: max-content; max-width: min(52vw, 460px);
+  white-space: normal; overflow: visible; text-overflow: clip;
+  line-height: 1.35; text-align: left;
 }
+
 body[data-theme="dazzle"] #markers .mk.calling .tip,
 body[data-theme="dazzle"] #markers .mk:hover .tip {
   opacity: 1; transform: translate(-50%, 0);
@@ -227,30 +240,24 @@ body[data-theme="dazzle"] #markers .mk.calling .buoy { animation-duration: 1.1s;
 
 /* ---------- More dazzle ---------- */
 /* The pattern should be the loudest thing in the room, not an accent. */
-body[data-theme="dazzle"] { background-attachment: fixed; }
-/* A ghost of the camouflage across the whole page, so nothing sits on flat black. */
-body[data-theme="dazzle"] .wrap::before {
-  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  background: var(--dazzle); opacity: .035;
-}
 /* Painted waterline under the masthead. */
 body[data-theme="dazzle"] header.app {
   border-bottom: 1px solid var(--edge); padding-bottom: 16px; position: relative;
 }
 body[data-theme="dazzle"] header.app::after {
   content: ""; position: absolute; left: 0; right: 0; bottom: -7px;
-  height: 6px; background: var(--dazzle-2); border-bottom: 1px solid var(--edge);
+  height: 10px; background: var(--dazzle-2) center/100% 100% no-repeat; border-bottom: 1px solid var(--edge);
 }
 body[data-theme="dazzle"] header.app h1 { font-size: 22px; letter-spacing: .14em; }
 
 /* Every row is a hull plate: striped bow on the left, hard edge all round. */
 body[data-theme="dazzle"] .song {
   border: 1px solid var(--line); border-radius: var(--radius);
-  padding-left: 22px; overflow: hidden;
+  padding-left: 26px; overflow: hidden;
 }
 body[data-theme="dazzle"] .song::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 12px;
-  background: var(--dazzle-2); border-right: 1px solid var(--edge);
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 16px;
+  background: var(--dazzle-narrow) center/100% 100% no-repeat; border-right: 1px solid var(--edge);
   opacity: .55; transition: opacity .12s, width .12s;
   z-index: 0;
 }
@@ -266,10 +273,10 @@ body[data-theme="dazzle"] .song .title { letter-spacing: .02em; }
 /* Transport and drawer are decks: stripe bands where they meet the page. */
 body[data-theme="dazzle"] .transport { border-top: none; position: relative; }
 body[data-theme="dazzle"] .transport::before {
-  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 7px;
-  background: var(--dazzle); border-bottom: 1px solid var(--edge);
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 12px;
+  background: var(--dazzle) center/100% 100% no-repeat; border-bottom: 1px solid var(--edge);
 }
-body[data-theme="dazzle"] .transport .pad { padding-top: 16px; }
+body[data-theme="dazzle"] .transport .pad { padding-top: 20px; }
 body[data-theme="dazzle"] .drawer .pad { position: relative; }
 body[data-theme="dazzle"] .drawer h3 {
   border-bottom: 1px solid var(--line); padding-bottom: 8px;
@@ -277,7 +284,7 @@ body[data-theme="dazzle"] .drawer h3 {
 
 /* The play button: a striped life ring with a solid centre for the glyph. */
 body[data-theme="dazzle"] button.play {
-  background: var(--dazzle); border: 1px solid var(--edge); position: relative;
+  background: var(--dazzle-narrow) center/cover no-repeat; border: 1px solid var(--edge); position: relative;
 }
 body[data-theme="dazzle"] button.play::before {
   content: ""; position: absolute; inset: 7px; border-radius: 50%;
@@ -293,8 +300,8 @@ body[data-theme="dazzle"] .empty {
   position: relative; overflow: hidden;
 }
 body[data-theme="dazzle"] .empty::before {
-  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 8px;
-  background: var(--dazzle-2); border-bottom: 1px solid var(--edge);
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 12px;
+  background: var(--dazzle-2) center/100% 100% no-repeat; border-bottom: 1px solid var(--edge);
 }
 body[data-theme="dazzle"] .edithint, body[data-theme="dazzle"] .mixhint,
 body[data-theme="dazzle"] .drawhint {
@@ -307,10 +314,10 @@ body[data-theme="dazzle"] .piece:hover { border-color: var(--edge); }
 body[data-theme="dazzle"] .piece .pmeta { border-top: 1px solid var(--line); }
 body[data-theme="dazzle"] .door { position: relative; overflow: hidden; }
 body[data-theme="dazzle"] .door::before {
-  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 9px;
-  background: var(--dazzle); border-bottom: 1px solid var(--edge);
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 13px;
+  background: var(--dazzle) center/100% 100% no-repeat; border-bottom: 1px solid var(--edge);
 }
-body[data-theme="dazzle"] .door { padding-top: 38px; }
+body[data-theme="dazzle"] .door { padding-top: 42px; }
 body[data-theme="dazzle"] .door:hover { border-color: var(--edge); }
 
 /* The admin's text-editing bar, in uniform. */
@@ -318,10 +325,10 @@ body[data-theme="dazzle"] #textBar {
   border-top: none; position: fixed;
 }
 body[data-theme="dazzle"] #textBar::before {
-  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 7px;
-  background: var(--dazzle-2); border-bottom: 1px solid var(--edge);
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 11px;
+  background: var(--dazzle-2) center/100% 100% no-repeat; border-bottom: 1px solid var(--edge);
 }
-body[data-theme="dazzle"] #textBar { padding-top: 18px; }
+body[data-theme="dazzle"] #textBar { padding-top: 22px; }
 body[data-theme="dazzle"] #textBar .btn {
   border-radius: 2px; text-transform: uppercase; letter-spacing: .08em;
   font-weight: 800; font-size: 11.5px;

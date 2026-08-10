@@ -197,6 +197,9 @@ body[data-theme="dazzle"] .imgwrap img { border-radius: var(--radius); border-co
 /* ---------- Buoys ---------- */
 /* A comment is a buoy moored at its own second, floating at the height of the
    swell there. The plain tick and its hover tooltip stay for every other band. */
+/* The wave layers are appended after #markers, so without a stacking order of
+   its own the whole buoy field paints UNDER the water and vanishes. */
+body[data-theme="dazzle"] #markers { z-index: 4; }
 body[data-theme="dazzle"] #markers .mk {
   width: 16px; margin-left: -8px; background: none;
   /* the base rule stretches the marker top-to-bottom; a buoy hangs from a
@@ -336,4 +339,11 @@ body[data-theme="dazzle"] #textBar .btn {
 body[data-theme="dazzle"] #textBar .btn.primary { background: #fff; color: #08080a; }
 body[data-theme="dazzle"] #textBar .btn.ghost { background: transparent; border-color: var(--line); }
 body[data-theme="dazzle"] body.texting [data-txt] { outline-color: #fff; }
+
+/* The tools wear the uniform too. */
+body[data-theme="dazzle"] #toolMenu { border-color: var(--edge); border-radius: var(--radius); }
+body[data-theme="dazzle"] .toolitem { border-radius: 2px; }
+body[data-theme="dazzle"] .toolitem b { text-transform: uppercase; letter-spacing: .05em; font-size: 12.5px; }
+body[data-theme="dazzle"] .dz-preview { border-color: var(--edge); border-radius: var(--radius); }
+body[data-theme="dazzle"] .dz-grid label { text-transform: uppercase; letter-spacing: .06em; font-weight: 700; font-size: 11px; }
 

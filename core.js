@@ -1,6 +1,6 @@
 // core.js — the layer every page of this site shares.
 //
-// S'notify (index.html) and S'nart (art.html) are two views of the same thing:
+// S'notify (index.html) and Sn'art (art.html) are two views of the same thing:
 // a band's versioned library, gated by one band password, with threaded
 // comments hanging off whatever the version happens to be. That common half
 // lives here — Supabase access, the band gate, the route parser, and the small
@@ -218,9 +218,9 @@ function dazzlePanelSVG(poly, i, rand, ink, ground, scale){
   return { defs: `<clipPath id="dp${i}"><polygon points="${pts}"/></clipPath>`, body: out + `</g>` };
 }
 
-// A whole scheme, as an SVG data URI ready for background-image.
-function dazzleURL({ w = 1200, h = 120, seed = 1, cuts = 7, ink = '#ffffff',
-                     ground = '#08080a', scale = 1 } = {}){
+// A whole scheme, as standalone SVG markup.
+function dazzleSVG({ w = 1200, h = 120, seed = 1, cuts = 7, ink = '#ffffff',
+                     ground = '#08080a', scale = 1, stretch = true } = {}){
   const rand = rng(seed);
   const panels = dazzlePanels(w, h, cuts, rand);
   let defs = '', body = '';
@@ -228,11 +228,13 @@ function dazzleURL({ w = 1200, h = 120, seed = 1, cuts = 7, ink = '#ffffff',
     const part = dazzlePanelSVG(poly, i, rand, ink, ground, scale);
     defs += part.defs; body += part.body;
   });
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" `
-            + `viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">`
-            + `<defs>${defs}</defs><rect width="${w}" height="${h}" fill="${ground}"/>${body}</svg>`;
-  return `url("data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, '%27')}")`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" `
+       + `viewBox="0 0 ${w} ${h}"${stretch ? ' preserveAspectRatio="none"' : ''}>`
+       + `<defs>${defs}</defs><rect width="${w}" height="${h}" fill="${ground}"/>${body}</svg>`;
 }
+// …and the same thing ready to drop into background-image.
+const dazzleURL = (opts) =>
+  `url("data:image/svg+xml,${encodeURIComponent(dazzleSVG(opts)).replace(/'/g, '%27')}")`;
 
 // Paint the theme's surfaces. The CSS keeps using var(--dazzle) and friends —
 // only what those variables contain changes.
@@ -277,7 +279,7 @@ window.addEventListener('hashchange', () => { route = parseRoute(); App.init(); 
 // password itself is what we keep — not a "logged in" flag. (v1 stored a bare
 // 1; those entries read as logged-out and ask for the password once.)
 // One entry per band, shared by every page on this origin: logging into
-// S'notify logs you into S'nart too.
+// S'notify logs you into Sn'art too.
 const AUTH_KEY = 'mp_auth_v1';
 const bandSlugOf = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
 function auths(){ try { return JSON.parse(localStorage.getItem(AUTH_KEY) || '{}'); } catch { return {}; } }
@@ -662,6 +664,130 @@ document.body.insertAdjacentHTML('beforeend', `
   </div>`);
 on('textCancel', 'click', () => stopTextEdit(true));
 on('textSave', 'click', saveTextEdit);
+
+// ---------- Tools ----------
+// A drawer of small graphic tools that belong to the site rather than to any
+// one band's library — hence a menu in the header of every page rather than a
+// feature of the player or the art board. The first is the dazzle generator
+// the theme itself uses; anything made here saves to your own machine.
+const TOOLS = [
+  { id: 'dazzle', label: '▨  Dazzle camouflage generator',
+    hint: 'Generate a scheme and save it as SVG or PNG' },
+];
+
+document.body.insertAdjacentHTML('beforeend', `
+  <div id="toolMenu">
+    ${TOOLS.map(t => `<button class="toolitem" data-tool="${t.id}">
+        <b>${t.label}</b><span>${t.hint}</span></button>`).join('')}
+  </div>
+
+  <div class="modal-back" id="dazzleModal">
+    <div class="modal" style="max-width:760px">
+      <h2>Dazzle camouflage generator</h2>
+      <div class="hint" style="margin-bottom:12px">Straight cuts at conflicting
+        angles divide the canvas into panels; each panel is painted flat or
+        striped at its own angle, with bands of uneven width. Same idea the
+        Admiralty used to make a ship's heading hard to read.</div>
+
+      <div class="dz-preview"><div id="dzPreview"></div></div>
+
+      <div class="dz-grid">
+        <label>Panels <span class="dz-val" id="dzCutsVal">8</span>
+          <input type="range" id="dzCuts" min="1" max="18" value="8" /></label>
+        <label>Stripe scale <span class="dz-val" id="dzScaleVal">1.0</span>
+          <input type="range" id="dzScale" min="3" max="45" value="10" /></label>
+        <label>Width <span class="dz-val" id="dzWVal">1200</span>
+          <input type="range" id="dzW" min="200" max="2400" step="20" value="1200" /></label>
+        <label>Height <span class="dz-val" id="dzHVal">600</span>
+          <input type="range" id="dzH" min="120" max="2400" step="20" value="600" /></label>
+        <label>Seed <span class="dz-val" id="dzSeedVal">1</span>
+          <input type="range" id="dzSeed" min="1" max="9999" value="1" /></label>
+        <label class="check"><input type="checkbox" id="dzInvert" /> Invert (black on white)</label>
+      </div>
+
+      <div class="actions">
+        <button class="btn ghost" id="dzClose">Close</button>
+        <button class="btn ghost" id="dzRandom">Randomise</button>
+        <button class="btn ghost" id="dzSvg">Save SVG</button>
+        <button class="btn primary" id="dzPng">Save PNG</button>
+      </div>
+    </div>
+  </div>`);
+
+function toolMenuOpen(open){
+  const m = $('toolMenu'), b = $('toolsBtn');
+  if (!m || !b) return;
+  if (open){
+    const r = b.getBoundingClientRect();
+    m.style.top = (r.bottom + 6) + 'px';
+    m.style.left = Math.max(8, Math.min(r.left, innerWidth - 300)) + 'px';
+  }
+  m.classList.toggle('open', open);
+  b.classList.toggle('on', open);
+}
+on('toolsBtn', 'click', (e) => { e.stopPropagation(); toolMenuOpen(!$('toolMenu').classList.contains('open')); });
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#toolMenu') && !e.target.closest('#toolsBtn')) toolMenuOpen(false);
+});
+on('toolMenu', 'click', (e) => {
+  const b = e.target.closest('[data-tool]');
+  if (!b) return;
+  toolMenuOpen(false);
+  if (b.dataset.tool === 'dazzle') openDazzleTool();
+});
+
+// --- the dazzle workshop ---
+const dzOpts = () => ({
+  w: +$('dzW').value, h: +$('dzH').value, seed: +$('dzSeed').value,
+  cuts: +$('dzCuts').value, scale: +$('dzScale').value / 10,
+  ink:    $('dzInvert').checked ? '#08080a' : '#ffffff',
+  ground: $('dzInvert').checked ? '#ffffff' : '#08080a',
+  stretch: false,
+});
+function dzRender(){
+  $('dzCutsVal').textContent  = $('dzCuts').value;
+  $('dzScaleVal').textContent = (+$('dzScale').value / 10).toFixed(1);
+  $('dzWVal').textContent     = $('dzW').value;
+  $('dzHVal').textContent     = $('dzH').value;
+  $('dzSeedVal').textContent  = $('dzSeed').value;
+  $('dzPreview').innerHTML = dazzleSVG(dzOpts());
+}
+function openDazzleTool(){
+  $('dazzleModal').classList.add('open');
+  dzRender();
+}
+['dzCuts','dzScale','dzW','dzH','dzSeed','dzInvert'].forEach(id => on(id, 'input', dzRender));
+on('dzRandom', 'click', () => {
+  $('dzSeed').value = 1 + Math.floor(Math.random() * 9999);
+  $('dzCuts').value = 4 + Math.floor(Math.random() * 12);
+  $('dzScale').value = 5 + Math.floor(Math.random() * 30);
+  dzRender();
+});
+on('dzClose', 'click', () => $('dazzleModal').classList.remove('open'));
+on('dazzleModal', 'click', (e) => { if (e.target === $('dazzleModal')) $('dazzleModal').classList.remove('open'); });
+
+function saveBlob(blob, name){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const dzName = (ext) => `dazzle-${$('dzSeed').value}-${$('dzCuts').value}p.${ext}`;
+on('dzSvg', 'click', () => saveBlob(new Blob([dazzleSVG(dzOpts())], { type: 'image/svg+xml' }), dzName('svg')));
+// PNG goes through a canvas at the scheme's own pixel size — what you see in
+// the preview is what lands in the file.
+on('dzPng', 'click', () => {
+  const o = dzOpts();
+  const img = new Image();
+  img.onload = () => {
+    const cv = document.createElement('canvas');
+    cv.width = o.w; cv.height = o.h;
+    cv.getContext('2d').drawImage(img, 0, 0, o.w, o.h);
+    cv.toBlob(b => b && saveBlob(b, dzName('png')), 'image/png');
+  };
+  img.src = 'data:image/svg+xml,' + encodeURIComponent(dazzleSVG(o));
+});
 
 // Log out of the current band → back to the home page (band-name entry).
 function logout(){

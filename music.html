@@ -7,18 +7,18 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=5" />
+<link rel="stylesheet" href="core.css?v=6" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=5" />
+<link rel="stylesheet" href="theme-dazzle.css?v=6" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
-     and the transport. Everything this page shares with S'nart is in core.css. */
+     and the transport. Everything this page shares with Sn'art is in core.css. */
 
   /* Song list */
   .songlist { display: flex; flex-direction: column; gap: 6px; }
   .song {
     position: relative;
-    display: grid; grid-template-columns: 30px 1fr auto auto; align-items: center; gap: 14px;
+    display: grid; grid-template-columns: 30px 1fr auto auto auto; align-items: center; gap: 14px;
     padding: 12px 14px; border-radius: 10px; background: var(--bg-row);
     border: 1px solid transparent; cursor: pointer;
     transition: background .12s, border-color .12s; user-select: none;
@@ -168,7 +168,7 @@
   #artBtn, #homeBtn { display: none; }
   body.authed #artBtn, body.authed #homeBtn { display: inline-flex; }
   body.singlemix #artBtn, body.singlemix #homeBtn, body.singlemix #adminBtn,
-  body.shared #adminBtn { display: none !important; }
+  body.singlemix #toolsBtn, body.shared #adminBtn { display: none !important; }
 
   /* Authoring affordances light up for any logged-in band member */
   #addBtn, #projBtn { display: none; }
@@ -180,13 +180,15 @@
     display: none; color: var(--text-mute); font-size: 14px;
     padding: 2px 7px; border-radius: 6px; cursor: pointer;
   }
-  body.authed:not(.shared):not(.singlemix) .song { grid-template-columns: 30px 1fr auto auto auto; }
+  body.authed:not(.shared):not(.singlemix) .song { grid-template-columns: 30px 1fr auto auto auto auto; }
   /* Per-song share link (the whole stack) — hover on desktop, dimmed-visible on touch */
-  .song .scpy {
+  .song .scpy, .song .sopen {
     opacity: 0; color: var(--text-mute); font-size: 13px;
     padding: 2px 6px; border-radius: 6px; cursor: pointer; transition: opacity .12s;
   }
-  .song:hover .scpy { opacity: 1; }
+  .song:hover .scpy, .song:hover .sopen { opacity: 1; }
+  .song .sopen:hover { color: var(--text); background: var(--bg-soft); }
+  @media (hover: none) { .song .sopen { opacity: .55; } }
   .song .scpy:hover { color: var(--text); background: var(--bg-soft); }
   @media (hover: none) { .song .scpy { opacity: .55; } }
   body.authed:not(.shared):not(.singlemix) .song .sdel { display: block; opacity: 0; transition: opacity .12s; }
@@ -304,12 +306,13 @@
       </button>
       <button class="addbtn" id="shareBtn" title="Copy a share link to everything in this view — the project, or the whole library">🔗</button>
       <button class="addbtn" id="projBtn" title="Make a share link for a hand-picked set of songs">🎞</button>
-      <a class="addbtn" id="artBtn" href="art.html" title="S'nart — this band's artwork, with comments pinned to the picture">🎨 Art</a>
+      <a class="addbtn" id="artBtn" href="art.html" title="Sn'art — this band's artwork, with comments pinned to the picture">🎨 Art</a>
       <a class="addbtn" id="homeBtn" href="index.html" title="Sn'Album — the band's home">💿</a>
       <button class="addbtn" id="editBtn" title="Edit — reorder, rename, stack, unstack, trash">✏️</button>
       <button class="addbtn" id="trashBtn" title="Trash — deleted songs are archived here until you confirm permanent deletion">
         🗑<span id="trashCount"></span>
       </button>
+      <button class="addbtn" id="toolsBtn" title="Graphic tools">▨ Tools ▾</button>
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
       <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
     </header>
@@ -527,7 +530,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=5"></script>
+<script src="core.js?v=6"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -878,6 +881,7 @@ function renderList() {
         <span class="ec danger" data-act="trash" title="Move “${esc(s.title)}” to the trash">🗑</span>
       </div>`
     : `<div class="right" data-dur="${i}"></div>
+      <div class="sopen" title="Open “${esc(s.title)}” without playing — waveform, versions and comments">▤</div>
       <div class="scpy" title="Copy share link to “${esc(s.title)}” — the whole stack">🔗</div>
       ${s.folder ? `<div class="sdel" title="Move “${esc(s.title)}” to the trash">🗑</div>` : ''}`;
     return `
@@ -908,6 +912,9 @@ function renderList() {
       if (e.target.closest('.sdel')) return;
       const cp = e.target.closest('.scpy');
       if (cp){ copyText(shareUrl(songs[i]), cp); return; }
+      // ▤ opens the song silently: the stack, the waveform and the comments,
+      // with nothing playing. Anywhere else on the row still plays it.
+      if (e.target.closest('.sopen')){ buildOrder(i); openSong(i, false); return; }
       playSong(i);
     });
     const del = el.querySelector('.sdel');

@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>S'nart</title>
-<meta name="description" content="S'nart — versioned artwork with comments pinned to a region of the image." />
+<title>Sn'art</title>
+<meta name="description" content="Sn'art — versioned artwork with comments pinned to a region of the image." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with index.html -->
-<link rel="stylesheet" href="core.css?v=5" />
+<link rel="stylesheet" href="core.css?v=6" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=5" />
+<link rel="stylesheet" href="theme-dazzle.css?v=6" />
 <style>
   /* Art-only surface: the piece grid, the image stage, and the region boxes.
      Everything shared with S'notify lives in core.css. */
@@ -140,7 +140,8 @@
   body.authed #addBtn { display: inline-flex; }
   #musicBtn, #homeBtn { display: none; }
   body.authed #musicBtn, body.authed #homeBtn { display: inline-flex; }
-  body.singlemix #musicBtn, body.singlemix #homeBtn, body.singlemix #adminBtn { display: none !important; }
+  body.singlemix #musicBtn, body.singlemix #homeBtn, body.singlemix #adminBtn,
+  body.singlemix #toolsBtn { display: none !important; }
   body.singlemix #addBtn, body.singlemix #shareBtn, body.singlemix #cToggle,
   body.singlemix #todoToggle, body.singlemix .drawhint, body.singlemix .piece .pcpy { display: none !important; }
 
@@ -158,7 +159,7 @@
        the logic behind it lives once, in core.js. -->
   <div class="modal-back" id="gateModal">
     <div class="modal" style="max-width:360px">
-      <h2 data-txt="art.gate.title">🎨 S'nart</h2>
+      <h2 data-txt="art.gate.title">🎨 Sn'art</h2>
 
       <div id="gateStep1">
         <div class="hint" style="margin-bottom:6px">Enter your band to continue.</div>
@@ -190,7 +191,7 @@
     <header class="app">
       <div class="logo">🎨</div>
       <div>
-        <h1 id="collectionTitle">S'nart</h1>
+        <h1 id="collectionTitle">Sn'art</h1>
         <p data-txt="art.tagline">Versioned artwork · stack revisions, comment on a region</p>
       </div>
       <div class="count" id="artCount"></div>
@@ -201,6 +202,7 @@
       <button class="addbtn" id="shareBtn" title="Copy a share link to this band's artwork">🔗</button>
       <a class="addbtn" id="musicBtn" href="music.html" title="The band's music library">🎵 Music</a>
       <a class="addbtn" id="homeBtn" href="index.html" title="Sn'Album — the band's home">💿</a>
+      <button class="addbtn" id="toolsBtn" title="Graphic tools">▨ Tools ▾</button>
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
       <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
     </header>
@@ -360,7 +362,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=5"></script>
+<script src="core.js?v=6"></script>
 <script type="module">
 // core.js owns the gate, the route and every Supabase call — these are the
 // three moments it has to hand control back to this page.
@@ -432,7 +434,7 @@ async function init(){
     pieces = normalize({ songs: [sv.song] });
     commentCache = {};
     $('collectionTitle').textContent = pieces[0].title;
-    document.title = pieces[0].title + ' · S’nart';
+    document.title = pieces[0].title + ' · Sn’art';
     unlockView();
     renderList();
     $('mixHint').style.display = 'block';
@@ -460,7 +462,7 @@ async function init(){
   curBandTitle = payload.title || curBand;
   pieces = normalize(payload);
   $('collectionTitle').textContent = curBandTitle;
-  document.title = curBandTitle + ' · S’nart';
+  document.title = curBandTitle + ' · Sn’art';
   document.body.classList.add('authed');
   unlockView();
 

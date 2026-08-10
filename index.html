@@ -7,9 +7,9 @@
 <meta name="description" content="Sn'Album — a band's music and artwork, in one place." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💿</text></svg>" />
 <!-- Palette, page frame, modals, gate — shared with music.html and art.html -->
-<link rel="stylesheet" href="core.css?v=5" />
+<link rel="stylesheet" href="core.css?v=6" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=5" />
+<link rel="stylesheet" href="theme-dazzle.css?v=6" />
 <style>
   /* Landing-only surface: the two doors. */
   .doors { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-top: 8px; }
@@ -80,7 +80,8 @@
       </div>
       <div class="count" id="bandCount"></div>
       <a class="addbtn" id="musicBtn" href="music.html" title="S'notify — the band's music">🎵 Music</a>
-      <a class="addbtn" id="artBtn" href="art.html" title="S'nart — the band's artwork">🎨 Art</a>
+      <a class="addbtn" id="artBtn" href="art.html" title="Sn'art — the band's artwork">🎨 Art</a>
+      <button class="addbtn" id="toolsBtn" title="Graphic tools">▨ Tools ▾</button>
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
       <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
     </header>
@@ -98,7 +99,7 @@
 
       <a class="door art" id="doorArt" href="art.html">
         <div class="glyph">🎨</div>
-        <h2 data-txt="door.art.title">S'nart</h2>
+        <h2 data-txt="door.art.title">Sn'art</h2>
         <p data-txt="door.art.blurb">Artwork, stacked by revision. Comment on a part of the picture by
            boxing it — or draft the edit you mean by drawing over it.</p>
         <div class="tally" id="tallyArt">&nbsp;</div>
@@ -108,7 +109,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=5"></script>
+<script src="core.js?v=6"></script>
 <script type="module">
 // This page is the front door, so it inherits every link ever shared before it
 // existed — back when index.html WAS the player. Anything carrying a song, a

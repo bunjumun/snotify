@@ -1,0 +1,174 @@
+/* theme-dazzle.css — Lakehorse.
+ *
+ * WWI ship dazzle camouflage: hard-edged black-and-white stripe bands set at
+ * conflicting angles. No soft light, no rounded pills, no colour in the chrome.
+ *
+ * Scoped entirely to body[data-theme="dazzle"], which core.js sets from
+ * BAND_THEME once it knows whose library this is — so every other band keeps
+ * the original look untouched.
+ *
+ * Two rules the pattern lives by here:
+ *   1. Chrome is monochrome. The only colour left is error red and the sketch
+ *      palette, both of which are content, not decoration.
+ *   2. Gradients are reserved for the surfaces you act on — text fields and
+ *      the waveform. On a flat painted hull, the soft things are the controls.
+ */
+
+body[data-theme="dazzle"] {
+  --bg:        #08080a;
+  --bg-soft:   #101014;
+  --bg-row:    #141418;
+  --bg-hover:  #1e1e24;
+  --line:      #34353c;
+  --edge:      #ffffff;
+  --text:      #ffffff;
+  --text-dim:  #a8a9b2;
+  --text-mute: #6c6e78;
+  --accent:    #ffffff;
+  --accent-2:  #c9cad2;
+  --warn:      #ffffff;
+  --err:       #ff5c5c;
+  --wave:      #52545e;
+  --wave-prog: #ffffff;
+  --shadow:    0 10px 40px rgba(0,0,0,.75);
+  --radius:    3px;
+  /* Fat, round-crested bars with foam on the loud peaks — the waveform reads
+     as swell rather than spectrum. See waveFill() in music.html. */
+  --bar-w:      7;
+  --bar-gap:    3;
+  --bar-radius: 7;
+  --wave-caps:  1;
+  --field:     linear-gradient(180deg, #212228 0%, #0d0d11 100%);
+  --field-on:  linear-gradient(180deg, #2b2c34 0%, #121218 100%);
+  /* The motif: two angles that fight each other, as on the hulls. */
+  --dazzle:    repeating-linear-gradient(115deg, #fff 0 9px, #08080a 9px 18px);
+  --dazzle-2:  repeating-linear-gradient(-64deg, #fff 0 6px, #08080a 6px 12px);
+
+  background: var(--bg);
+}
+
+/* The hull band across the top of every page. */
+body[data-theme="dazzle"]::before {
+  content: ""; position: fixed; top: 0; left: 0; right: 0; height: 10px; z-index: 60;
+  background: var(--dazzle); border-bottom: 1px solid var(--edge);
+}
+body[data-theme="dazzle"] .wrap { padding-top: 42px; }
+
+/* ---------- Chrome ---------- */
+body[data-theme="dazzle"] header.app .logo {
+  background: var(--dazzle); border: 1px solid var(--edge);
+  border-radius: var(--radius); box-shadow: none;
+}
+body[data-theme="dazzle"] header.app h1 {
+  text-transform: uppercase; letter-spacing: .08em; font-weight: 800;
+}
+body[data-theme="dazzle"] header.app .count {
+  text-transform: uppercase; letter-spacing: .08em; font-weight: 700; font-size: 11.5px;
+}
+body[data-theme="dazzle"] .addbtn {
+  background: transparent; border-radius: 2px; padding: 6px 13px;
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+}
+body[data-theme="dazzle"] .addbtn:hover { background: var(--text); color: #08080a; border-color: var(--edge); }
+body[data-theme="dazzle"] .badge {
+  border-radius: 2px; background: transparent; border-color: var(--edge); color: var(--text);
+  text-transform: uppercase; letter-spacing: .06em; font-weight: 800; font-size: 10.5px;
+}
+body[data-theme="dazzle"] .badge.dim { border-color: var(--line); color: var(--text-mute); }
+
+/* ---------- Panels ---------- */
+body[data-theme="dazzle"] .modal {
+  border-color: var(--edge); border-radius: var(--radius); padding: 0 20px 20px;
+}
+/* Every panel capped with a stripe band, like a painted bow. */
+body[data-theme="dazzle"] .modal::before {
+  content: ""; display: block; height: 8px; margin: 0 -20px 16px;
+  background: var(--dazzle-2); border-bottom: 1px solid var(--edge);
+}
+body[data-theme="dazzle"] .modal h2 {
+  font-size: 15px; text-transform: uppercase; letter-spacing: .09em; font-weight: 800;
+}
+body[data-theme="dazzle"] .modal .btn {
+  border-radius: 2px; font-size: 12px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .08em;
+}
+body[data-theme="dazzle"] .modal .btn.primary { background: var(--text); color: #08080a; border: 1px solid var(--edge); }
+body[data-theme="dazzle"] .modal .btn.primary:hover { background: #d6d7dd; filter: none; }
+body[data-theme="dazzle"] .modal .btn.ghost { background: transparent; }
+body[data-theme="dazzle"] .modal .btn.ghost:hover { border-color: var(--edge); }
+body[data-theme="dazzle"] .modal input[type=text],
+body[data-theme="dazzle"] .modal input[type=password],
+body[data-theme="dazzle"] .modal select,
+body[data-theme="dazzle"] .modal textarea { border-radius: var(--radius); }
+body[data-theme="dazzle"] .modal .status.ok { color: var(--text); font-weight: 700; }
+
+/* ---------- Drawer + comments ---------- */
+body[data-theme="dazzle"] .drawer { background: rgba(8,8,10,.97); }
+body[data-theme="dazzle"] .drawer h3 { letter-spacing: .09em; }
+body[data-theme="dazzle"] .composer button {
+  background: var(--text); color: #08080a; border-radius: 2px;
+  text-transform: uppercase; letter-spacing: .07em; font-weight: 800; font-size: 12px;
+}
+body[data-theme="dazzle"] .composer button:hover { background: #d6d7dd; filter: none; }
+body[data-theme="dazzle"] .composer .at {
+  background: transparent; border: 1px solid var(--edge); color: var(--text); border-radius: 2px;
+}
+body[data-theme="dazzle"] .cbadge.resolved { background: transparent; border: 1px solid var(--edge); color: var(--text); border-radius: 2px; }
+body[data-theme="dazzle"] .chip { border-radius: 2px; }
+body[data-theme="dazzle"] .chip.origin { border-color: var(--edge); color: var(--text); }
+body[data-theme="dazzle"] .todo-dot.open { background: transparent; border: 2px solid #fff; }
+body[data-theme="dazzle"] .todo-dot.resolved { background: #fff; border: 2px solid #fff; }
+
+/* ---------- The wave ---------- */
+/* Bar geometry comes from --bar-* above; this is the water it sits in: a
+   vertical gradient for depth and a hard waterline through the middle. */
+body[data-theme="dazzle"] .wavewrap {
+  background: linear-gradient(180deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.02) 45%, rgba(0,0,0,.35) 100%);
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  padding: 0 2px;
+  /* deliberately NOT overflow:hidden — the boat rides above the waterline and
+     must be free to sit proud of the box on a loud peak */
+}
+body[data-theme="dazzle"] .wavewrap::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%;
+  border-top: 1px solid rgba(255,255,255,.28); pointer-events: none;
+}
+body[data-theme="dazzle"] .transport { background: rgba(8,8,10,.95); }
+
+/* The boat. Hidden everywhere else — only this band sails. */
+#boat { display: none; }
+body[data-theme="dazzle"] #boat {
+  display: block; position: absolute; left: 0; top: 50%;
+  width: 24px; height: 17px; margin-left: -12px; margin-top: -15px;
+  opacity: 0; pointer-events: none; z-index: 3;
+  transition: top .12s ease-out, opacity .2s;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.9));
+}
+body[data-theme="dazzle"] #boat svg { width: 100%; height: 100%; display: block; }
+/* A little roll, so it looks afloat rather than pinned. */
+@keyframes boat-roll { 0%,100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+body[data-theme="dazzle"] #boat svg { animation: boat-roll 2.6s ease-in-out infinite; transform-origin: 50% 90%; }
+body[data-theme="dazzle"] button.play { background: #fff; color: #08080a; }
+body[data-theme="dazzle"] .verbtn, body[data-theme="dazzle"] .rev {
+  border-radius: 2px; text-transform: uppercase; letter-spacing: .06em; font-size: 12px;
+}
+body[data-theme="dazzle"] .vermenu { border-radius: var(--radius); border-color: var(--edge); }
+
+/* ---------- Art page ---------- */
+/* A region box has to stay legible on top of an arbitrary picture, so it keeps
+   a hard white edge with a black halo rather than a tinted fill. */
+body[data-theme="dazzle"] .rbox { border-color: #fff; background: rgba(255,255,255,.10); box-shadow: 0 0 0 1px #000; }
+body[data-theme="dazzle"] .rbox .num { background: #fff; color: #08080a; }
+body[data-theme="dazzle"] .rbox:hover, body[data-theme="dazzle"] .rbox.active {
+  border-color: #fff; background: rgba(255,255,255,.28);
+}
+body[data-theme="dazzle"] .piece, body[data-theme="dazzle"] .door { border-radius: var(--radius); }
+body[data-theme="dazzle"] .piece .thumb { border-radius: 0; }
+body[data-theme="dazzle"] .door .glyph {
+  background: var(--dazzle); border: 1px solid var(--edge);
+  border-radius: var(--radius); box-shadow: none;
+}
+body[data-theme="dazzle"] .door h2 { text-transform: uppercase; letter-spacing: .08em; font-weight: 800; font-size: 18px; }
+body[data-theme="dazzle"] .sktools { border-color: var(--edge); border-radius: var(--radius); }
+body[data-theme="dazzle"] .imgwrap img { border-radius: var(--radius); border-color: var(--edge); }

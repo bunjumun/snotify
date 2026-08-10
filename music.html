@@ -1,0 +1,2096 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>S'notify</title>
+<meta name="description" content="S'notify — a personal music player with version stacking and comments." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
+<!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
+<link rel="stylesheet" href="core.css?v=1" />
+<!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
+<link rel="stylesheet" href="theme-dazzle.css?v=1" />
+<style>
+  /* Player-only surface: the song list, the version menu, the waveform dock
+     and the transport. Everything this page shares with S'nart is in core.css. */
+
+  /* Song list */
+  .songlist { display: flex; flex-direction: column; gap: 6px; }
+  .song {
+    position: relative;
+    display: grid; grid-template-columns: 30px 1fr auto auto; align-items: center; gap: 14px;
+    padding: 12px 14px; border-radius: 10px; background: var(--bg-row);
+    border: 1px solid transparent; cursor: pointer;
+    transition: background .12s, border-color .12s; user-select: none;
+  }
+  .song:hover { background: var(--bg-hover); }
+  .song.active { background: var(--bg-hover); border-color: var(--accent); }
+  /* stacked-paper look for multi-version songs */
+  .song.stacked::before, .song.stacked::after {
+    content: ""; position: absolute; left: 8px; right: 8px; height: 10px;
+    border-radius: 10px; background: var(--bg-row); border: 1px solid var(--line);
+    z-index: -1;
+  }
+  .song.stacked::before { bottom: -4px; opacity: .7; }
+  .song.stacked::after  { bottom: -8px; left: 14px; right: 14px; opacity: .4; }
+
+  .song .idx { color: var(--text-mute); font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
+  .song.active .idx, .song:hover .idx { color: var(--accent); }
+  .song .idx .bars { display: none; gap: 2px; height: 14px; align-items: flex-end; justify-content: center; }
+  .song .idx .bars span { width: 3px; background: var(--accent); border-radius: 2px; height: 40%; animation: eq .9s ease-in-out infinite; }
+  .song .idx .bars span:nth-child(2){ animation-delay:.25s } .song .idx .bars span:nth-child(3){ animation-delay:.5s }
+  @keyframes eq { 0%,100%{height:30%} 50%{height:100%} }
+  .song.playing .idx .num { display: none; } .song.playing .idx .bars { display: inline-flex; }
+
+  .song .meta { min-width: 0; }
+  .song .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .song .sub { color: var(--text-dim); font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  .song .right { color: var(--text-mute); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+
+
+  /* Changelog drawer (git-style version history) */
+  .vlog-list { display: flex; flex-direction: column; max-height: 32vh; overflow-y: auto; padding: 2px 0 2px 4px; }
+  .vlog-entry { position: relative; padding: 8px 12px 10px 26px; border-left: 2px solid var(--line); margin-left: 8px; }
+  .vlog-entry:last-child { border-left-color: transparent; }
+  .vlog-entry::before {
+    content: ""; position: absolute; left: -7px; top: 13px; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--bg-hover); border: 2px solid var(--text-mute);
+  }
+  .vlog-entry.current::before { background: var(--accent); border-color: var(--accent); }
+  .vlog-head { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+  .vlog-head:hover .vlog-name { color: var(--accent); }
+  .vlog-name { font-weight: 600; font-size: 14px; transition: color .12s; }
+  .vlog-date { color: var(--text-mute); font-size: 11px; }
+  .vlog-latest { font-size: 10px; font-weight: 700; color: var(--accent-2); }
+  .vlog-bullets { margin: 5px 0 0; padding-left: 16px; color: var(--text-dim); font-size: 13px; }
+  .vlog-bullets li { margin: 2px 0; }
+  .vlog-none { margin: 5px 0 0; color: var(--text-mute); font-size: 12px; font-style: italic; }
+
+  /* Inline changelog line in now-playing */
+  .nowlog {
+    display: none; color: var(--text-mute); font-size: 12px; margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  }
+  .nowlog:hover { color: var(--text-dim); }
+
+  /* Transport */
+  .transport { background: rgba(18,20,27,.94); backdrop-filter: blur(14px); border-top: 1px solid var(--line); box-shadow: var(--shadow); }
+  .transport .pad { max-width: 1000px; margin: 0 auto; padding: 10px 20px 14px; }
+
+  /* Version dropdown */
+  .verdrop { position: relative; flex: none; margin-left: auto; min-width: 0; }
+  .verbtn {
+    display: inline-flex; align-items: center; gap: 8px; max-width: 250px;
+    background: var(--bg-row); border: 1px solid var(--line); color: var(--text);
+    padding: 6px 12px; border-radius: 20px; cursor: pointer; font: inherit;
+    font-size: 13px; font-weight: 600; transition: all .12s;
+  }
+  .verbtn:hover { background: var(--bg-hover); border-color: var(--accent); }
+  .verbtn .vname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .verbtn .caret { flex: none; width: 10px; height: 6px; fill: var(--text-dim); transition: transform .15s; }
+  .verdrop.open .verbtn .caret { transform: rotate(180deg); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+  .dot.loading { background: var(--warn); animation: pulse 1s infinite; }
+  .dot.failed { background: #ff6b6b; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .latest { font-size: 10px; font-weight: 700; color: var(--accent-2); flex: none; }
+  .vdate { color: var(--text-mute); font-size: 11px; flex: none; }
+  .vermenu {
+    display: none; position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 45;
+    min-width: 280px; max-width: 340px; max-height: 40vh; overflow-y: auto;
+    background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 6px;
+  }
+  .verdrop.open .vermenu { display: block; }
+  .veritem {
+    display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 8px;
+    cursor: pointer; font-size: 13.5px;
+  }
+  .veritem:hover { background: var(--bg-hover); }
+  .veritem.active { background: rgba(108,92,231,.14); }
+  .veritem .vname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  .veritem .dl {
+    flex: none; color: var(--text-mute); text-decoration: none; font-size: 14px;
+    padding: 2px 6px; border-radius: 6px;
+  }
+  .veritem .dl:hover { color: var(--text); background: var(--bg-row); }
+
+  .now { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; min-height: 22px; }
+  .now .cover { width: 40px; height: 40px; border-radius: 8px; flex: none; object-fit: cover; background: linear-gradient(135deg, var(--accent), var(--accent-2)); display: none; }
+  .now .nowtitle { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .now .nowartist { color: var(--text-dim); font-size: 13px; } .now .sep { color: var(--text-mute); }
+  .now .cbtn { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; background: var(--bg-row); border: 1px solid var(--line); color: var(--text-dim); padding: 6px 12px; border-radius: 20px; cursor: pointer; font-size: 13px; }
+  .now .cbtn:hover { background: var(--bg-hover); color: var(--text); }
+  .now .cbtn.active { color: var(--accent); border-color: var(--accent); }
+  .now .cbtn svg { width: 15px; height: 15px; fill: currentColor; }
+
+  .controls { display: flex; align-items: center; gap: 16px; }
+  .btns { display: flex; align-items: center; gap: 6px; }
+  button.ctrl { background: none; border: none; color: var(--text); cursor: pointer; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; transition: background .12s, color .12s; }
+  button.ctrl:hover { background: var(--bg-hover); } button.ctrl.active { color: var(--accent); }
+  button.ctrl svg { width: 20px; height: 20px; fill: currentColor; }
+  button.play { background: var(--text); color: #0d0e12; width: 46px; height: 46px; }
+  button.play:hover { background: #fff; transform: scale(1.04); } button.play svg { width: 22px; height: 22px; }
+
+  .timeline { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .time { color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; width: 42px; }
+  .time.cur { text-align: right; }
+  .wavewrap { position: relative; flex: 1; min-width: 0; }
+  .wave-layer { width: 100%; cursor: pointer; }
+  .wave-layer:not(.show) { display: none; }
+  #markers { position: absolute; inset: 0; pointer-events: none; }
+  #markers .mk { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--warn); transform: translateX(-1px); pointer-events: auto; cursor: pointer; }
+  #markers .mk::after { content: "💬"; position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 11px; line-height: 1; filter: saturate(.9); }
+  #markers .mk:hover { background: #fff; }
+  #markers .mk .tip { display: none; position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); background: #000; border: 1px solid var(--line); color: var(--text); font-size: 12px; padding: 5px 9px; border-radius: 7px; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; z-index: 5; }
+  #markers .mk:hover .tip { display: block; }
+
+  .vol { display: flex; align-items: center; gap: 8px; }
+  .vol svg { width: 18px; height: 18px; fill: var(--text-dim); }
+  .vol input[type=range] { -webkit-appearance: none; appearance: none; width: 90px; height: 4px; border-radius: 4px; background: var(--wave); outline: none; cursor: pointer; }
+  .vol input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--text); cursor: pointer; }
+  .vol input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border: none; border-radius: 50%; background: var(--text); cursor: pointer; }
+
+
+  /* Single-mix view (?b&s&v, no login): playback only — no comments, no
+     library affordances. Band members log in for everything else. */
+  body.singlemix #cToggle, body.singlemix #vlogToggle, body.singlemix #shareBtn,
+  body.singlemix #todoToggle,
+  body.singlemix #addBtn, body.singlemix .song .scpy { display: none !important; }
+
+  /* Shared (project-link) view: listening surface — no library editing,
+     but logged-in bandmates can still add mixes and copy the link */
+  body.shared .addbtn { display: none; }
+  body.shared #addBtn, body.shared #shareBtn { display: inline-flex; }
+
+  /* Cross-page buttons + admin: band members only, and never on a shared mix */
+  #artBtn, #homeBtn { display: none; }
+  body.authed #artBtn, body.authed #homeBtn { display: inline-flex; }
+  body.singlemix #artBtn, body.singlemix #homeBtn, body.singlemix #adminBtn,
+  body.shared #adminBtn { display: none !important; }
+
+  /* Authoring affordances light up for any logged-in band member */
+  #addBtn, #projBtn { display: none; }
+  body.authed #addBtn { display: inline-flex; }
+  body.authed:not(.shared):not(.singlemix) #projBtn { display: inline-flex; }
+  #trashBtn { display: none; }
+  body.authed:not(.shared):not(.singlemix) #trashBtn { display: inline-flex; }
+  .song .sdel {
+    display: none; color: var(--text-mute); font-size: 14px;
+    padding: 2px 7px; border-radius: 6px; cursor: pointer;
+  }
+  body.authed:not(.shared):not(.singlemix) .song { grid-template-columns: 30px 1fr auto auto auto; }
+  /* Per-song share link (the whole stack) — hover on desktop, dimmed-visible on touch */
+  .song .scpy {
+    opacity: 0; color: var(--text-mute); font-size: 13px;
+    padding: 2px 6px; border-radius: 6px; cursor: pointer; transition: opacity .12s;
+  }
+  .song:hover .scpy { opacity: 1; }
+  .song .scpy:hover { color: var(--text); background: var(--bg-soft); }
+  @media (hover: none) { .song .scpy { opacity: .55; } }
+  body.authed:not(.shared):not(.singlemix) .song .sdel { display: block; opacity: 0; transition: opacity .12s; }
+  body.authed:not(.shared):not(.singlemix) .song:hover .sdel { opacity: 1; }
+  .song .sdel:hover { color: #ff6b6b; background: var(--bg-soft); }
+  .trash-item {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 9px 10px; border-radius: 8px;
+  }
+  .trash-item:hover { background: var(--bg-hover); }
+  .trash-item .tname { flex: 1 1 auto; min-width: 130px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .trash-item .tmeta { flex: none; color: var(--text-mute); font-size: 12px; }
+  .trash-item .btn { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
+  .trash-item .btn.danger { background: transparent; color: #ff6b6b; border: 1px solid rgba(255,107,107,.4); }
+  .trash-item .btn.danger:hover { background: rgba(255,107,107,.12); }
+  .trash-item .btn.danger.armed { background: #ff6b6b; color: #fff; border-color: #ff6b6b; }
+
+  /* Edit mode (pencil) — reorder / rename / stack / unstack / trash */
+  #editBtn { display: none; }
+  body.authed:not(.shared):not(.singlemix) #editBtn { display: inline-flex; }
+  #editBtn.active { color: var(--accent); border-color: var(--accent); }
+  .editctl { display: flex; gap: 2px; align-items: center; flex: none; }
+  .ec {
+    color: var(--text-dim); cursor: pointer; padding: 4px 7px; border-radius: 6px;
+    font-size: 13px; line-height: 1.2; user-select: none;
+  }
+  .ec:hover { background: var(--bg-soft); color: var(--text); }
+  .ec.danger:hover { color: #ff6b6b; }
+  .ec.disabled { opacity: .25; pointer-events: none; }
+  body.editing .song { cursor: default; }
+  body.editing .song .title, body.editing .veritem .vname {
+    cursor: text; text-decoration: underline dotted var(--text-mute);
+    text-underline-offset: 3px;
+  }
+  body.editing .song .sdel { display: none !important; }
+  .inline-edit {
+    background: var(--bg); border: 1px solid var(--accent); color: var(--text);
+    border-radius: 6px; padding: 2px 8px; font: inherit; font-size: 14px;
+    width: 100%; min-width: 110px; outline: none;
+  }
+  .vmhead {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 4px 10px 7px; margin-bottom: 4px; border-bottom: 1px solid var(--line);
+    color: var(--text-mute); font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .edithint { display: none; margin: 12px 4px 0; color: var(--text-mute); font-size: 12px; }
+  body.editing .edithint { display: block; }
+
+  .veritem .cpy, .vlog-copy {
+    flex: none; color: var(--text-mute); font-size: 13px; cursor: pointer;
+    padding: 2px 6px; border-radius: 6px; text-decoration: none;
+  }
+  .veritem .cpy:hover, .vlog-copy:hover { color: var(--text); background: var(--bg-row); }
+
+  @media (max-width: 660px) {
+    /* The version menu anchors to a mid-row button — pin it to the viewport
+       instead so version names and edit controls aren't clipped off-screen. */
+    .vermenu { position: fixed; left: 10px; right: 10px; bottom: 132px; min-width: 0; max-width: none; }
+    .now .nowartist, .now .sep { display: none; }
+    .vol { display: none; }
+    .timeline .time.dur { display: none; }
+    .controls { gap: 10px; }
+    .wrap { padding-bottom: 260px; }
+    header.app .count { display: none; }
+  }
+</style>
+</head>
+<body class="locked">
+  <!-- Band gate — two-step front door: name, then password. -->
+  <div class="modal-back" id="gateModal">
+    <div class="modal" style="max-width:360px">
+      <h2>🎵 S'notify</h2>
+
+      <!-- Step 1: which band? -->
+      <div id="gateStep1">
+        <div class="hint" style="margin-bottom:6px">Enter your band to continue.</div>
+        <label>Band name</label>
+        <input type="text" id="gateName" autocomplete="off" autocapitalize="none" />
+        <div class="status err" id="gateErr1"></div>
+        <div id="gateSuggest" style="display:none"></div>
+        <div class="actions"><button class="btn primary" id="gateNext">Continue</button></div>
+      </div>
+
+      <!-- Step 2: password for the resolved band -->
+      <div id="gateStep2" style="display:none">
+        <div class="hint" style="margin-bottom:6px">Password for <b id="gateBandLabel"></b>.</div>
+        <label>Band password</label>
+        <input type="password" id="gatePass" autocomplete="off" />
+        <div class="status err" id="gateErr2"></div>
+        <div class="actions">
+          <button class="btn ghost" id="gateBack">Back</button>
+          <button class="btn primary" id="gateGo">Enter</button>
+        </div>
+      </div>
+
+      <div class="hint" style="margin-top:14px;text-align:center">
+        <span class="linky" id="adminOpenLink">Site admin</span>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="wrap">
+    <header class="app">
+      <div class="logo">🎵</div>
+      <div>
+        <h1 id="collectionTitle">S'notify</h1>
+        <p>Versioned player · stack mixes, comment, compare</p>
+      </div>
+      <div class="count" id="trackCount"></div>
+      <button class="addbtn" id="addBtn" title="Add a song or a new version">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11 5h2v14h-2z"/><path d="M5 11h14v2H5z"/></svg>
+        Add
+      </button>
+      <button class="addbtn" id="shareBtn" title="Copy a share link to everything in this view — the project, or the whole library">🔗</button>
+      <button class="addbtn" id="projBtn" title="Make a share link for a hand-picked set of songs">🎞</button>
+      <a class="addbtn" id="artBtn" href="art.html" title="S'nart — this band's artwork, with comments pinned to the picture">🎨 Art</a>
+      <a class="addbtn" id="homeBtn" href="index.html" title="Sn'Album — the band's home">💿</a>
+      <button class="addbtn" id="editBtn" title="Edit — reorder, rename, stack, unstack, trash">✏️</button>
+      <button class="addbtn" id="trashBtn" title="Trash — deleted songs are archived here until you confirm permanent deletion">
+        🗑<span id="trashCount"></span>
+      </button>
+      <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
+      <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
+    </header>
+    <div id="list" class="loading">Loading…</div>
+    <div class="edithint">Edit mode — tap a title to rename · ▲▼ reorder · ⧉ stack into another song · 🗑 trash. Open a song's version menu to edit its stack.</div>
+    <div class="mixhint" id="mixHint" style="display:none">Shared mix · <span class="linky" id="mixLogin">band members log in</span> for the full library</div>
+  </div>
+
+  <!-- Add-music modal -->
+  <div class="modal-back" id="addModal">
+    <div class="modal">
+      <h2>Add music</h2>
+      <div class="mode" id="addMode">Preparing…</div>
+
+      <div id="addForm">
+        <label>Audio file(s)</label>
+        <input type="file" id="addFile" accept="audio/*,.wav,.aif,.aiff,.flac,.mp3,.m4a,.aac,.ogg,.opus" multiple />
+        <div class="hint" id="addFileHint"></div>
+        <label class="check"><input type="checkbox" id="addCompress" /> Compress WAV/AIFF/FLAC to MP3 before upload</label>
+
+        <label>Song</label>
+        <select id="addSongSel"></select>
+        <input type="text" id="addSongNew" placeholder="New song title…" style="display:none;margin-top:6px" maxlength="120" />
+
+        <div class="row" id="addVerRow">
+          <div>
+            <label>Version name</label>
+            <input type="text" id="addVerName" placeholder="e.g. Mix v3" maxlength="120" />
+          </div>
+        </div>
+
+        <label>Change notes (optional — becomes this version's changelog)</label>
+        <textarea id="addNote" placeholder="- Vocal +2 dB&#10;- New outro"></textarea>
+
+        <div class="hint">Uploads are imported straight away — the new version shows up
+          as soon as this finishes.</div>
+      </div>
+
+      <div class="status" id="addStatus"></div>
+      <div class="actions" id="addActions">
+        <button class="btn ghost" id="addClose">Close</button>
+        <button class="btn primary" id="addGo">Upload</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trash modal -->
+  <div class="modal-back" id="trashModal">
+    <div class="modal">
+      <h2>🗑 Trash</h2>
+      <div class="hint" style="margin-bottom:10px">
+        Deleted songs are archived on this Mac (never published) until you confirm.
+        <b>Restore</b> puts a song back in the library; <b>Delete forever</b> asks twice,
+        then the files are gone for good.
+      </div>
+      <div id="trashList"></div>
+      <div class="status" id="trashStatus"></div>
+      <div class="actions"><button class="btn ghost" id="trashClose">Close</button></div>
+    </div>
+  </div>
+
+  <!-- To-do: every comment thread on a song, open + resolved -->
+  <div class="modal-back" id="todoModal">
+    <div class="modal" style="max-width:620px">
+      <h2>To-do <span id="todoHint" style="font-size:12px;font-weight:400;color:var(--text-mute)"></span></h2>
+      <div class="todo-toolbar">
+        <div class="todo-tabs">
+          <button class="todo-tab active" id="todoTabOpen" data-tab="open">Open</button>
+          <button class="todo-tab" id="todoTabClosed" data-tab="resolved">Resolved</button>
+        </div>
+        <div class="todo-sort">
+          <select id="todoSort">
+            <option value="new">Newest</option>
+            <option value="old">Oldest</option>
+            <option value="replies">Most replies</option>
+          </select>
+        </div>
+      </div>
+      <div class="todo-list" id="todoList"></div>
+      <div class="actions"><button class="btn ghost" id="todoClose">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Song picker (stack target) -->
+  <div class="modal-back" id="pickModal">
+    <div class="modal">
+      <h2 id="pickTitle">Choose a song</h2>
+      <div class="hint" id="pickHint" style="margin-bottom:10px"></div>
+      <div id="pickList"></div>
+      <div class="actions"><button class="btn ghost" id="pickCancel">Cancel</button></div>
+    </div>
+  </div>
+
+  <!-- Dock: changelog drawer + comments drawer + transport -->
+  <div class="dock">
+    <div class="drawer" id="vlogDrawer">
+      <div class="pad">
+        <h3>Version history <span id="vlogHint" style="text-transform:none;font-weight:400"></span></h3>
+        <div class="vlog-list" id="vlogList"></div>
+      </div>
+    </div>
+
+    <div class="drawer" id="drawer">
+      <div class="pad">
+        <h3>Comments <span id="cdrawerHint" style="text-transform:none;font-weight:400"></span>
+          <button class="cdl" id="cdlBtn" title="Download these comments as a text file">↓ .txt</button>
+        </h3>
+        <div class="composer">
+          <span class="at" id="atTime" title="Comment is pinned to this timestamp — seek the waveform to move it">0:00</span>
+          <input id="cname" type="text" placeholder="Name" maxlength="40" style="flex:none;width:90px" title="Shown with your comments (remembered on this device)" />
+          <input id="cinput" type="text" placeholder="Leave a comment at this timestamp…" maxlength="280" />
+          <button id="caddBtn">Add</button>
+        </div>
+        <div class="clist" id="clist"></div>
+      </div>
+    </div>
+
+    <div class="transport">
+      <div class="pad">
+        <div class="now">
+          <img class="cover" id="nowCover" alt="" />
+          <div style="min-width:0">
+            <span class="nowtitle" id="nowTitle">Nothing playing</span>
+            <span class="sep">·</span>
+            <span class="nowartist" id="nowArtist"></span>
+            <div class="nowlog" id="nowLog" title="Open version history (v)"></div>
+          </div>
+          <div class="verdrop" id="verdrop" style="display:none">
+            <button class="verbtn" id="verBtn" title="Switch version — keeps the playback position (1–9)">
+              <span class="dot" id="verDot"></span>
+              <span class="vname" id="verName">—</span>
+              <span class="latest" id="verTag"></span>
+              <svg class="caret" viewBox="0 0 10 6"><path d="M0 0l5 6 5-6z"/></svg>
+            </button>
+            <div class="vermenu" id="verMenu"></div>
+          </div>
+          <button class="cbtn" id="vlogToggle" title="Version history / changelog (v)" style="margin-left:0">
+            <svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 00-9 9H1l3.9 3.9L8.8 12H6a7 7 0 117 7 7 7 0 01-4.9-2L6.7 18.4A9 9 0 1013 3zm-1 5v5l4.25 2.52.75-1.23-3.5-2.08V8H12z"/></svg>
+            <span>Log</span>
+          </button>
+          <button class="cbtn" id="cToggle" title="Comments (c)" style="margin-left:0">
+            <svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 012 2v9a2 2 0 01-2 2H8l-4 4V6a2 2 0 012-2z"/></svg>
+            <span id="cCount">0</span>
+          </button>
+          <button class="cbtn" id="todoToggle" title="To-do — every open and resolved comment on this song" style="margin-left:0">
+            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            <span>To-do</span>
+          </button>
+        </div>
+
+        <div class="controls">
+          <div class="btns">
+            <button class="ctrl" id="shuffleBtn" title="Shuffle (s)" aria-label="Shuffle"><svg viewBox="0 0 24 24"><path d="M16 3h5v5h-2V6.41l-3.29 3.3-1.42-1.42L17.59 5H16V3zM4 5h4.59l3 3-1.42 1.41L7.59 7H4V5zm0 12h3.59l9-9H21v2h-3.59l-9 9H4v-2zm12.29-1.71L17.59 17H16v2h5v-5h-2v1.59l-1.29-1.3-1.42 1.42z"/></svg></button>
+            <button class="ctrl" id="prevBtn" title="Previous (←)" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z"/></svg></button>
+            <button class="ctrl play" id="playBtn" title="Play / Pause (space)" aria-label="Play"><svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+            <button class="ctrl" id="nextBtn" title="Next (→)" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2V6zM6 18l8.5-6L6 6v12z"/></svg></button>
+            <button class="ctrl" id="repeatBtn" title="Repeat (r)" aria-label="Repeat"><svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg></button>
+          </div>
+          <div class="timeline">
+            <span class="time cur" id="curTime">0:00</span>
+            <div class="wavewrap" id="wavewrap">
+              <div id="markers"></div>
+              <!-- Lakehorse only (see theme-dazzle.css): a dazzle-painted boat
+                   riding the playhead, where the swell is breaking. -->
+              <div id="boat" aria-hidden="true">
+                <svg viewBox="0 0 24 17">
+                  <defs>
+                    <pattern id="dzl" width="4" height="4" patternTransform="rotate(115)" patternUnits="userSpaceOnUse">
+                      <rect width="4" height="4" fill="#fff"/><rect width="1.9" height="4" fill="#08080a"/>
+                    </pattern>
+                  </defs>
+                  <path d="M12 3.2 V11.4" stroke="#fff" stroke-width="1.1"/>
+                  <path d="M12.9 3.6 L17.6 8.2 L12.9 9.6 Z" fill="url(#dzl)" stroke="#fff" stroke-width=".5"/>
+                  <path d="M2.5 11.4 H21.5 L18.6 15.6 H5.4 Z" fill="url(#dzl)" stroke="#fff" stroke-width=".7"/>
+                </svg>
+              </div>
+            </div>
+            <span class="time dur" id="durTime">0:00</span>
+          </div>
+          <div class="vol">
+            <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 00-2.5-4.03v8.06A4.5 4.5 0 0016.5 12z"/></svg>
+            <input type="range" id="vol" min="0" max="1" step="0.01" value="0.9" aria-label="Volume" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
+     script, so everything it declares is in scope for the module below. -->
+<script src="core.js?v=1"></script>
+<script type="module">
+// Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
+let WaveSurfer = null;
+try {
+  ({ default: WaveSurfer } = await import('https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js'));
+} catch {
+  try {
+    ({ default: WaveSurfer } = await import('https://cdn.jsdelivr.net/npm/wavesurfer.js@7/dist/wavesurfer.esm.js'));
+  } catch {
+    document.getElementById('list').className = '';
+    document.getElementById('list').innerHTML =
+      '<div class="empty"><h2>Audio engine failed to load</h2>' +
+      '<p>Could not reach unpkg.com or jsdelivr.net for wavesurfer.js. ' +
+      'Check your connection and reload.</p></div>';
+  }
+}
+
+// core.js owns the gate, the route and every Supabase call — these are the
+// three moments it has to hand control back to this page.
+App.init     = () => init();
+App.onLock   = () => {          // hard gate went up: don't leave a library behind it
+  $('trackCount').textContent = '';
+  $('list').className = ''; $('list').innerHTML = '';
+};
+App.onLogout = () => {          // tear the player down before the band is forgotten
+  commentCache = {};
+  try { destroyPlayers(); } catch {}
+  activeSong = null; activeSongIndex = -1;
+};
+
+let songs = [];
+let curProject = null;             // project scoping the current view (via #/p/<slug>)
+let order = [], pos = -1;          // play order over songs
+let shuffle = false, repeat = 'off';
+let curVolume = parseFloat(localStorage.getItem('mp_vol') ?? '0.9');
+
+// active song players
+let activeSong = null, activeSongIndex = -1, activeVer = 0;
+let wsByVer = [];          // wavesurfer instance per version
+let layerByVer = [];       // container div per version
+let readyByVer = [];
+
+// Read fresh for every player rather than once at load: the band's theme isn't
+// known until after the gate, and a theme reshapes the wave through CSS
+// variables (Lakehorse's dazzle theme turns the bars into round-crested swell).
+const num = (v, dflt) => { const n = parseFloat(cssVar(v)); return isFinite(n) ? n : dflt; };
+const WAVE_H = 56;
+
+// Water, not spectrum. The fill is a vertical gradient rather than a flat
+// colour, so a bar only picks up the bands it is tall enough to reach: quiet
+// passages sit in the dark body of the swell, and only peaks near the limit
+// push into the pale band at the top and bottom — white caps, breaking exactly
+// where the audio is loudest. A theme opts in with --wave-caps: 1.
+function waveFill(cap, foam, body, trough){
+  const ctx = document.createElement('canvas').getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, WAVE_H);
+  g.addColorStop(0.00, cap);       // crest — only the loudest peaks reach here
+  g.addColorStop(0.08, cap);
+  g.addColorStop(0.13, foam);
+  g.addColorStop(0.40, body);
+  g.addColorStop(0.50, trough);    // the waterline
+  g.addColorStop(0.60, body);
+  g.addColorStop(0.87, foam);
+  g.addColorStop(0.92, cap);
+  g.addColorStop(1.00, cap);
+  return g;
+}
+const waveOpts = () => {
+  const caps = num('--wave-caps', 0) === 1;
+  return {
+    height: WAVE_H,
+    // Ahead of the playhead the water is flat and unlit; behind it the swell
+    // has broken, so that half gets the gradient and its white caps.
+    waveColor: caps ? '#454852' : cssVar('--wave'),
+    progressColor: caps
+      ? waveFill('#ffffff', '#dfe1e6', '#8f929c', '#63666f')
+      : cssVar('--wave-prog'),
+    cursorColor: '#ffffff', cursorWidth: 1,
+    barWidth: num('--bar-w', 2), barGap: num('--bar-gap', 2), barRadius: num('--bar-radius', 3),
+    normalize: true, dragToSeek: true,
+  };
+};
+
+$('vol').value = curVolume;
+
+
+
+
+// ---------- Load the library ----------
+// Everything comes from Supabase RPCs. Nothing is readable with the
+// publishable key on its own: the only passwordless calls are a single shared
+// mix version, the scrap of project metadata needed to show the right gate,
+// and band-name resolution. Library, projects, comments and every edit go
+// through functions that re-check the band password server-side.
+let singleMix = false;             // ungated one-mix view (?b&s&v, not logged in)
+
+async function init() {
+  if (!WaveSurfer) return; // engine failed to load; message already shown
+  curProject = null; curBand = null; singleMix = false;
+  document.body.classList.remove('shared', 'singlemix');
+  $('mixHint').style.display = 'none';
+  try {
+    let band = route.band && bandSlugOf(route.band);
+    let projMeta = null;
+
+    if (route.project){
+      // A bad slug must never fall back to a band library.
+      projMeta = await rpc('get_project_meta', { proj: route.project });
+      if (!projMeta) return showBadLink();
+      band = projMeta.band;
+    } else if (!band && route.song){
+      band = 'lakehorse';            // links from before the multi-band era
+    }
+
+    if (!band){
+      // Main URL always lands on the home page (band-name entry) — nobody
+      // ends up inside a band without asking for it by name. The name is
+      // pre-filled with your last band, so it's one click if you're known.
+      return showGate(null);
+    }
+
+    // A single mix (?b&s&v) plays without login; everything else is gated.
+    if (!route.project && route.song && route.version && !isAuthed(band)){
+      const sv = await rpc('get_shared_version', { b: band, s: route.song, v: route.version });
+      if (!sv) return showBadLink();
+      singleMix = true;
+      curBand = sv.band; curBandTitle = sv.band_title || sv.band;
+      songs = normalize({ songs: [sv.song] });
+      if (!songs.length) return showBadLink();
+      document.body.classList.add('singlemix', 'shared');
+      document.body.classList.remove('authed');
+      $('collectionTitle').textContent = songs[0].title;
+      document.title = songs[0].title;
+      $('mixHint').style.display = 'block';
+      commentCache = {};             // comments are for logged-in bandmates
+      unlockView(); renderList(); applyDeepLink();
+      return;
+    }
+
+    if (!isAuthed(band)) return showGate(band, true, projMeta && projMeta.band_title);
+
+    let payload;
+    try {
+      payload = route.project
+        ? await rpc('get_project', { proj: route.project, p: bandPass(band) })
+        : await rpc('get_library', { b: band, p: bandPass(band) });
+    } catch (err) {
+      // Cached password no longer works (changed, or a v1 flag) — ask again.
+      if (isAuthErr(err)){ clearAuth(band); return showGate(band, true, projMeta && projMeta.band_title); }
+      throw err;
+    }
+    if (!payload) return showBadLink();
+
+    curBand = payload.band || payload.slug || band;
+    curBandTitle = payload.band_title || payload.title || curBand;
+    applyTheme(curBand);
+    // Keep the cross-page buttons pointed at this same band.
+    $('artBtn').href  = 'art.html?b='   + encodeURIComponent(curBand);
+    $('homeBtn').href = 'index.html?b=' + encodeURIComponent(curBand);
+    songs = normalize(payload);
+
+    if (route.project){
+      curProject = { slug: payload.slug, name: payload.name, band: payload.band,
+                     songs: songs.map(s => s.folder || s.title) };
+      document.body.classList.add('shared');
+      $('collectionTitle').textContent = payload.name;
+      document.title = payload.name;
+      if (!songs.length) return showBadLink('Nothing here yet', 'No mixes have been published to this project so far — check back soon.');
+    } else {
+      $('collectionTitle').textContent = curBandTitle;
+      document.title = curBandTitle + ' · S’notify';
+    }
+
+    document.body.classList.add('authed');
+    unlockView();
+    loadComments();                  // in the background — badges fill in
+    if (!songs.length) return showEmpty();
+    renderList();
+    applyDeepLink();
+  } catch (e) { (route.project || route.band) ? showBadLink() : showEmpty(); }
+}
+
+function showBadLink(head, body){
+  $('trackCount').textContent = '';
+  $('list').className = '';
+  $('list').innerHTML = `
+    <div class="empty">
+      <h2>${esc(head || "This link isn't valid")}</h2>
+      <p>${esc(body || 'Double-check the link you were sent, or ask for a fresh one.')}</p>
+    </div>`;
+}
+
+function applyDeepLink(){
+  if (!route.song) return;
+  const i = songs.findIndex(s => (s.folder || s.title) === route.song || s.title === route.song);
+  if (i === -1) return;
+  let vi = 0;
+  if (route.version){
+    const found = songs[i].versions.findIndex(v => v.name === route.version);
+    if (found !== -1) vi = found;
+  }
+  buildOrder(i);
+  openSong(i, false, vi); // opened paused — browsers block autoplay on load anyway
+}
+
+
+function normalize(data){
+  const arr = data.songs || data.tracks || [];
+  return arr.map((s, i) => {
+    let versions;
+    if (Array.isArray(s.versions) && s.versions.length)
+      versions = s.versions.map(v => ({
+        // id + created_at carry through from the server: comments pin to a
+        // version id, and "was this mix made after that note?" needs the date.
+        id: v.id || null, created_at: v.created_at || null,
+        name: v.name || 'Version', src: publicUrl(v.src), date: v.date || '',
+        changelog: v.changelog || '', changes: Array.isArray(v.changes) ? v.changes : null,
+      }));
+    else if (s.src)
+      // legacy flat shape (one src, no versions array) — no version row exists,
+      // so there's no version id to carry; comments there stay on the old path
+      versions = [{ id: null, created_at: null,
+                    name: s.name || 'Original', src: publicUrl(s.src), date: s.date || '',
+                    changelog: s.changelog || '', changes: Array.isArray(s.changes) ? s.changes : null }];
+    else return null;
+    versions = versions.filter(v => v.src);
+    if (!versions.length) return null;
+    return {
+      folder: s.folder || null,   // stable key for project membership + deep links
+      // Stable id, band-scoped so songs in different bands never share a
+      // comment pool: <band>/<slug-of-title>.
+      id: curBand + '/' + (s.id || slug(s.title || filename(versions[0].src)) || 'song-' + i),
+      title: s.title || filename(versions[0].src),
+      artist: s.artist || '',
+      album: (s.album || '').trim() || null,   // grouping; falls back to band name
+      cover: publicUrl(s.cover),
+      versions,
+    };
+  }).filter(Boolean);
+}
+// Album layer: a song's album, defaulting to the band name when none is set.
+// The hierarchy is always band → album → song → version.
+const albumOf = (song) => (song && song.album) || curBandTitle || curBand || '';
+const albumSlugOf = (song) => slug(albumOf(song));
+
+function showEmpty() {
+  $('trackCount').textContent = '';
+  $('list').className = '';
+  $('list').innerHTML = `
+    <div class="empty">
+      <h2>No songs yet 🎧</h2>
+      <p>Hit <b>Add</b> and pick your mixes. Give the first upload a song title; every later
+      file you add under that title stacks on top as a new <em>version</em>.</p>
+      <p>WAV and AIFF upload as-is by default — check the compress box in the Add dialog
+      if you'd rather send a smaller MP3 instead.</p>
+    </div>`;
+}
+
+function renderList() {
+  $('list').className = 'songlist';
+  $('trackCount').textContent = `${songs.length} song${songs.length===1?'':'s'}`;
+  $('list').innerHTML = songs.map((s, i) => {
+    const n = s.versions.length;
+    const cc = countComments(s.id);
+    const tail = editing ? `
+      <div class="editctl">
+        <span class="ec ${i===0?'disabled':''}" data-act="up" title="Move up">▲</span>
+        <span class="ec ${i===songs.length-1?'disabled':''}" data-act="down" title="Move down">▼</span>
+        <span class="ec" data-act="stack" title="Stack “${esc(s.title)}” into another song as versions">⧉</span>
+        <span class="ec danger" data-act="trash" title="Move “${esc(s.title)}” to the trash">🗑</span>
+      </div>`
+    : `<div class="right" data-dur="${i}"></div>
+      <div class="scpy" title="Copy share link to “${esc(s.title)}” — the whole stack">🔗</div>
+      ${s.folder ? `<div class="sdel" title="Move “${esc(s.title)}” to the trash">🗑</div>` : ''}`;
+    return `
+    <div class="song ${n>1?'stacked':''}" data-i="${i}">
+      <div class="idx"><span class="num">${i+1}</span><span class="bars"><span></span><span></span><span></span></span></div>
+      <div class="meta">
+        <div class="title">${esc(s.title)}</div>
+        <div class="sub">
+          ${s.artist ? `<span>${esc(s.artist)}</span>` : ''}
+          ${n>1 ? `<span class="badge">⌥ ${n} versions</span>` : `<span class="badge dim">1 version</span>`}
+          ${cc ? `<span class="badge dim">💬 ${cc}</span>` : ''}
+        </div>
+      </div>
+      ${tail}
+    </div>`;
+  }).join('');
+  $('list').querySelectorAll('.song').forEach(el => {
+    el.addEventListener('click', (e) => {
+      const i = Number(el.dataset.i);
+      if (editing){
+        const ec = e.target.closest('.ec');
+        if (ec && !ec.classList.contains('disabled')) return songAct(ec.dataset.act, i);
+        const ttl = e.target.closest('.title');
+        if (ttl) inlineRename(ttl, songs[i].title, (v) =>
+          libRpc('rename_song', { f: songs[i].folder || songs[i].title, new_title: v }));
+        return;                         // edit mode: rows don't start playback
+      }
+      if (e.target.closest('.sdel')) return;
+      const cp = e.target.closest('.scpy');
+      if (cp){ copyText(shareUrl(songs[i]), cp); return; }
+      playSong(i);
+    });
+    const del = el.querySelector('.sdel');
+    if (del) del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      trashSong(songs[Number(el.dataset.i)]);
+    });
+  });
+}
+
+// ---------- Edit mode (pencil): reorder / rename / stack / unstack / trash ----------
+let editing = false;
+
+function setEditing(on){
+  editing = !!on;
+  document.body.classList.toggle('editing', editing);
+  $('editBtn').classList.toggle('active', editing);
+  renderList();
+  if (activeSongIndex !== -1) highlight(activeSongIndex);
+  renderVersions();
+  // renderList wiped the duration cells — restore the active one
+  const w = curWS();
+  if (!editing && w && readyByVer[activeVer] === true){
+    const cell = document.querySelector(`.right[data-dur="${activeSongIndex}"]`);
+    if (cell) cell.textContent = fmt(w.getDuration());
+  }
+}
+$('editBtn').onclick = () => setEditing(!editing);
+
+// Re-read the library after an edit and rebind the active song
+// (players are rebuilt only when its version files actually changed).
+async function refreshLibrary(){
+  const prev = activeSong;
+  const prevFolder = prev ? (prev.folder || prev.title) : null;
+  const prevSrcs = prev ? prev.versions.map(v => v.src).join('\n') : '';
+  const prevSrc = prev ? prev.versions[activeVer]?.src : null;
+  await init();
+  fillSongSelect();
+  if (document.body.classList.contains('authed')) refreshTrash();
+  if (!prev) return;
+  const i = songs.findIndex(s => (s.folder || s.title) === prevFolder);
+  if (i === -1){                        // active song was stacked away or trashed
+    destroyPlayers(); activeSong = null; activeSongIndex = -1;
+    $('nowTitle').textContent = 'Nothing playing'; $('nowArtist').textContent = '';
+    renderVersions(); renderVlog(); setPlayingUI(false);
+    return;
+  }
+  if (songs[i].versions.map(v => v.src).join('\n') === prevSrcs){
+    // Same audio files — just rebind (titles / names / song order changed).
+    activeSong = songs[i]; activeSongIndex = i;
+    updateNow(); renderVersions(); renderVlog(); highlight(i);
+  } else {
+    // The stack itself changed (reorder / unstack / trash): rebuild players.
+    const vi = songs[i].versions.findIndex(v => v.src === prevSrc);
+    openSong(i, false, Math.max(0, vi));
+  }
+}
+
+async function songAct(act, i){
+  const s = songs[i];
+  const key = s.folder || s.title;
+  try {
+    if (act === 'up' || act === 'down'){
+      const j = act === 'up' ? i - 1 : i + 1;
+      if (j < 0 || j >= songs.length) return;
+      const order = songs.map(x => x.folder || x.title);
+      [order[i], order[j]] = [order[j], order[i]];
+      await libRpc('reorder_songs', { folders: order });
+      await refreshLibrary();
+    } else if (act === 'stack'){
+      const into = await pickSong(`Stack “${s.title}” into…`,
+        `Its ${s.versions.length === 1 ? 'version becomes a version' : 'versions become versions'} of the song you pick, on top of that stack; “${s.title}” disappears as a separate song.`, key);
+      if (!into) return;
+      await libRpc('stack_songs', { from_f: key, into_f: into });
+      await refreshLibrary();
+    } else if (act === 'trash'){
+      await trashSong(s);               // existing flow: archives + republishes
+    }
+  } catch (err){ alert(String(err.message || err)); }
+}
+
+async function verAct(act, vi){
+  if (!activeSong) return;
+  const s = activeSong, key = s.folder || s.title;
+  const v = s.versions[vi];
+  try {
+    if (act === 'vup' || act === 'vdown'){
+      const j = act === 'vup' ? vi - 1 : vi + 1;
+      if (j < 0 || j >= s.versions.length) return;
+      const names = s.versions.map(x => x.name);
+      [names[vi], names[j]] = [names[j], names[vi]];
+      await libRpc('reorder_versions', { f: key, names });
+    } else if (act === 'unstack'){
+      const title = prompt(`Unstack “${v.name}” into its own song — title:`, v.name);
+      if (title === null || !title.trim()) return;
+      await libRpc('unstack_version', { f: key, ver_name: v.name, new_title: title.trim() });
+    } else if (act === 'vtrash'){
+      if (s.versions.length === 1) return songAct('trash', activeSongIndex); // last version = the song
+      await libRpc('trash_version', { f: key, ver_name: v.name });
+    }
+    await refreshLibrary();
+  } catch (err){ alert(String(err.message || err)); }
+}
+
+// Swap an element's contents for a text input; Enter/blur saves, Escape cancels.
+function inlineRename(container, value, save){
+  const input = document.createElement('input');
+  input.className = 'inline-edit'; input.type = 'text';
+  input.value = value; input.maxLength = 120;
+  container.replaceChildren(input);
+  input.focus(); input.select();
+  let done = false;
+  const finish = async (commit) => {
+    if (done) return; done = true;
+    const v = input.value.trim();
+    try { if (commit && v && v !== value) await save(v); }
+    catch (err){ alert(String(err.message || err)); }
+    await refreshLibrary();             // re-render restores the display either way
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('click', (e) => e.stopPropagation());
+}
+
+let pickCloser = null;
+function pickSong(title, hint, excludeKey){
+  return new Promise((resolve) => {
+    $('pickTitle').textContent = title;
+    $('pickHint').textContent = hint || '';
+    const opts = songs.filter(s => (s.folder || s.title) !== excludeKey);
+    $('pickList').innerHTML = opts.length ? opts.map(s => `
+      <div class="trash-item pick" data-key="${esc(s.folder || s.title)}" style="cursor:pointer">
+        <span class="tname">${esc(s.title)}</span>
+        <span class="tmeta">${s.versions.length} version${s.versions.length===1?'':'s'}</span>
+      </div>`).join('') : '<div class="cempty">No other songs to stack into.</div>';
+    const close = (val) => { $('pickModal').classList.remove('open'); pickCloser = null; resolve(val); };
+    pickCloser = close;
+    $('pickList').querySelectorAll('.pick').forEach(el => el.onclick = () => close(el.dataset.key));
+    $('pickCancel').onclick = () => close(null);
+    $('pickModal').onclick = (e) => { if (e.target === $('pickModal')) close(null); };
+    $('pickModal').classList.add('open');
+  });
+}
+
+// ---------- Play order ----------
+function buildOrder(start){
+  if (shuffle){
+    const rest = songs.map((_,i)=>i).filter(i=>i!==start);
+    for (let i=rest.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [rest[i],rest[j]]=[rest[j],rest[i]]; }
+    order=[start,...rest]; pos=0;
+  } else { order=songs.map((_,i)=>i); pos=start; }
+}
+function playSong(i){ buildOrder(i); openSong(order[pos], true); }
+
+// ---------- Open a song: build a wavesurfer per version ----------
+let objectUrls = [];
+let openGen = 0; // guards async version loads against song switches
+
+function destroyPlayers(){
+  wsByVer.forEach(w => { try { w.destroy(); } catch(e){} });
+  wsByVer = []; layerByVer = []; readyByVer = [];
+  objectUrls.forEach(u => URL.revokeObjectURL(u));
+  objectUrls = [];
+  $('wavewrap').querySelectorAll('.wave-layer').forEach(n => n.remove());
+}
+
+function openSong(songIndex, autoplay, startVer = 0){
+  const s = songs[songIndex];
+  if (!s) return;
+  destroyPlayers();
+  const gen = ++openGen;
+  activeSong = s; activeSongIndex = songIndex;
+  activeVer = Math.min(Math.max(0, startVer), s.versions.length - 1);
+
+  s.versions.forEach((v, vi) => {
+    const layer = document.createElement('div');
+    layer.className = 'wave-layer' + (vi===activeVer ? ' show' : '');
+    $('wavewrap').appendChild(layer);
+    layerByVer[vi] = layer;
+    readyByVer[vi] = false;
+
+    (async () => {
+      // Fetch each version ONCE as a blob: the same download feeds the
+      // waveform decode and playback, and blob URLs are always seekable.
+      // Plain URLs are unseekable on servers without HTTP Range support
+      // (python http.server, some static hosts) — seeks silently land at
+      // 0:00, which broke mid-play version switching on full-length songs.
+      let url = v.src;
+      try {
+        const resp = await fetch(v.src);
+        if (resp.ok){
+          const u = URL.createObjectURL(await resp.blob());
+          if (gen !== openGen){ URL.revokeObjectURL(u); return; }
+          objectUrls.push(u); url = u;
+        }
+      } catch {}
+      if (gen !== openGen) return;
+      const w = WaveSurfer.create({ container: layer, url, ...waveOpts() });
+      w.setVolume(curVolume);
+      wireVersion(w, vi);
+      wsByVer[vi] = w;
+      if (vi === activeVer && autoplay) w.once('ready', () => { if (gen === openGen) w.play(); });
+      renderVersions();
+    })();
+  });
+
+  renderVersions();
+  updateNow();
+  renderComments();
+  renderVlog();
+  highlight(songIndex);
+  setMediaSession();
+  refreshSongComments(s.id);   // pull bandmates' latest comments (sitewide mode)
+}
+
+function wireVersion(w, vi){
+  w.on('ready', () => {
+    readyByVer[vi] = true;
+    // A coarse copy of the waveform's own peaks, so the boat can ride the
+    // swell instead of sliding along a flat line. Normalised the same way the
+    // drawn bars are (normalize: true), so the hull sits on the crest.
+    try {
+      const raw = (w.exportPeaks({ maxLength: 1200 })[0] || []).map(Math.abs);
+      const top = Math.max(...raw) || 1;
+      w.__peaks = raw.map(v => v / top);
+    } catch { w.__peaks = null; }
+    if (vi === activeVer){
+      $('durTime').textContent = fmt(w.getDuration());
+      const cell = document.querySelector(`.right[data-dur="${activeSongIndex}"]`);
+      if (cell) cell.textContent = fmt(w.getDuration());
+      renderMarkers();
+    }
+    renderVersions();
+  });
+  w.on('timeupdate', (t) => { if (vi === activeVer){ $('curTime').textContent = fmt(t); $('atTime').textContent = fmt(t); moveBoat(w); } });
+  w.on('play',  () => { if (vi === activeVer) setPlayingUI(true);  });
+  w.on('pause', () => { if (vi === activeVer) setPlayingUI(false); });
+  w.on('finish',() => { if (vi === activeVer) next(true); });
+  w.on('error', () => {
+    readyByVer[vi] = 'failed';
+    if (vi === activeVer && activeSong){
+      $('durTime').textContent = '—';
+      const ver = activeSong.versions[vi];
+      $('nowArtist').textContent =
+        [activeSong.artist, ver?.name].filter(Boolean).join(' · ') + ' — failed to load';
+    }
+    renderVersions();
+  });
+}
+
+// ---------- Seamless version switching ----------
+function switchVersion(vi){
+  if (vi === activeVer || !wsByVer[vi]) return;
+  if (readyByVer[vi] === 'failed'){
+    // Clicking a failed chip retries the load.
+    readyByVer[vi] = false;
+    try { wsByVer[vi].load(activeSong.versions[vi].src).catch(() => {}); } catch {}
+    renderVersions();
+  }
+  const to = wsByVer[vi];
+
+  // The swap happens only once the target is READY — the current version
+  // keeps playing until then, so a slow (or broken) version never gaps or
+  // kills playback. Preloaded versions are ready, so the swap is instant.
+  const doSwap = () => {
+    if (!activeSong || wsByVer[vi] !== to || vi === activeVer) return; // song changed / already there
+    const from = wsByVer[activeVer];
+    const t = from.getCurrentTime();
+    const wasPlaying = from.isPlaying();
+    from.pause();
+    layerByVer[activeVer].classList.remove('show');
+    layerByVer[vi].classList.add('show');
+    activeVer = vi;
+    to.setVolume(curVolume);
+    const target = Math.min(t, to.getDuration() || t);
+    to.setTime(target);
+    if (wasPlaying) to.play();
+    // Long files: if the playback element still hasn't loaded (despite the
+    // preload hint), the seek above is silently dropped and audio starts at
+    // 0:00. Re-assert the position when the media actually becomes ready —
+    // guarded so an intentional user seek isn't fought.
+    if (target > 5){
+      const reassert = () => {
+        if (activeVer === vi && wsByVer[vi] === to && to.getCurrentTime() < 3)
+          to.setTime(target);
+      };
+      try {
+        const m = to.getMediaElement();
+        if (m && m.readyState < 1){
+          m.addEventListener('loadedmetadata', reassert, { once: true });
+          m.addEventListener('playing', reassert, { once: true });
+        }
+      } catch {}
+      [400, 1200, 3000].forEach(ms => setTimeout(reassert, ms));
+    }
+    $('durTime').textContent = fmt(to.getDuration());
+    $('curTime').textContent = fmt(to.getCurrentTime());
+    updateNow(); renderVersions(); renderMarkers(); renderVlog();
+    if ($('drawer').classList.contains('open')) renderComments();
+  };
+  if (readyByVer[vi] === true) doSwap();
+  else { renderVersions(); to.once('ready', doSwap); } // chip pulses until buffered
+}
+
+const extOf = (p) => { const m = String(p).match(/\.[^.]+$/); return m ? m[0] : ''; };
+const dotCls = (vi) => readyByVer[vi] === false ? 'dot loading' : readyByVer[vi] === 'failed' ? 'dot failed' : 'dot';
+
+// ---------- Share links ----------
+// Player deep link. Query form (not #hash): survives messaging apps and
+// link redirectors. A version link (?b&s&v) plays WITHOUT login; song and
+// band links require it.
+function shareUrl(song, ver){
+  const q = new URLSearchParams();
+  q.set('b', curBand);
+  q.set('s', song.folder || song.title);
+  if (ver) q.set('v', ver.name);
+  return pageBase() + '?' + q.toString();
+}
+// The raw audio file — already an absolute (encoded) storage URL.
+function audioUrl(ver){ return ver.src; }
+async function copyText(text, el){
+  try { await navigator.clipboard.writeText(text); }
+  catch { prompt('Copy this link:', text); return; }
+  if (el){ const old = el.textContent; el.textContent = '✓'; setTimeout(() => { el.textContent = old; }, 900); }
+}
+
+// Header 🔗: the whole view — this project (album) or the band's library.
+// Both are login-gated for whoever opens them.
+$('shareBtn').onclick = () => copyText(
+  curProject ? pageBase() + '?p=' + encodeURIComponent(curProject.slug)
+             : pageBase() + '?b=' + encodeURIComponent(curBand || ''),
+  $('shareBtn'));
+
+function renderVersions(){
+  const dd = $('verdrop');
+  if (!activeSong){ dd.style.display = 'none'; dd.classList.remove('open'); return; }
+  dd.style.display = '';
+  const ver = activeSong.versions[activeVer];
+  $('verDot').className = dotCls(activeVer);
+  $('verName').textContent = ver.name;
+  $('verTag').textContent = activeVer === 0 ? 'LATEST' : (ver.date || '');
+  $('verTag').className = activeVer === 0 ? 'latest' : 'vdate';
+  const owner = document.body.classList.contains('authed') && !document.body.classList.contains('shared');
+  const last = activeSong.versions.length - 1;
+  $('verMenu').innerHTML = `
+    <div class="vmhead"><span>Stack</span>
+      <span style="display:inline-flex;gap:2px">
+        <span class="ec" id="verShare" title="Copy share link to the whole stack — every version of “${esc(activeSong.title)}”">🔗</span>
+        ${owner ? `<span class="ec" id="verEditBtn" title="Edit the stack — reorder, rename, unstack, trash">✏️</span>` : ''}
+      </span>
+    </div>`
+  + activeSong.versions.map((v, vi) => `
+    <div class="veritem ${vi===activeVer?'active':''}" data-vi="${vi}"
+         title="${editing ? '' : readyByVer[vi]==='failed' ? esc(v.name)+' failed to load — click to retry' : 'Switch to '+esc(v.name)+' — keeps the playback position'}">
+      <span class="${dotCls(vi)}"></span>
+      <span class="vname">${esc(v.name)}</span>
+      ${editing ? `
+      <span class="ec ${vi===0?'disabled':''}" data-act="vup" title="Move up the stack">▲</span>
+      <span class="ec ${vi===last?'disabled':''}" data-act="vdown" title="Move down the stack">▼</span>
+      <span class="ec" data-act="unstack" title="Unstack “${esc(v.name)}” into its own song">⏏</span>
+      <span class="ec danger" data-act="vtrash" title="Move “${esc(v.name)}” to the trash">🗑</span>`
+      : `
+      ${vi===0 ? '<span class="latest">LATEST</span>' : (v.date ? `<span class="vdate">${esc(v.date)}</span>` : '')}
+      <span class="cpy" data-act="share" title="Copy share link to ${esc(v.name)} (opens the player)">🔗</span>
+      <span class="cpy" data-act="audio" title="Copy direct link to the audio file">🎵</span>
+      <a class="dl" href="${esc(v.src)}" download="${esc(activeSong.title)} — ${esc(v.name)}${esc(extOf(v.src))}" title="Download ${esc(v.name)}">⬇</a>`}
+    </div>`).join('');
+  const veb = $('verMenu').querySelector('#verEditBtn');
+  if (veb) veb.addEventListener('click', (e) => { e.stopPropagation(); setEditing(!editing); });
+  const vsh = $('verMenu').querySelector('#verShare');
+  if (vsh) vsh.addEventListener('click', (e) => { e.stopPropagation(); copyText(shareUrl(activeSong), vsh); });
+  $('verMenu').querySelectorAll('.veritem').forEach(el => {
+    el.querySelectorAll('.cpy').forEach(b => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const v = activeSong.versions[Number(el.dataset.vi)];
+      copyText(b.dataset.act === 'audio' ? audioUrl(v) : shareUrl(activeSong, v), b);
+    }));
+    el.addEventListener('click', (e) => {
+      const vi = Number(el.dataset.vi);
+      if (editing){
+        const ec = e.target.closest('.ec');
+        if (ec && !ec.classList.contains('disabled')) return verAct(ec.dataset.act, vi);
+        const nameEl = e.target.closest('.vname');
+        if (nameEl){
+          const v = activeSong.versions[vi];
+          inlineRename(nameEl, v.name, (nv) => libRpc('rename_version',
+            { f: activeSong.folder || activeSong.title, old_name: v.name, new_name: nv }));
+        }
+        return;                         // edit mode: rows don't switch versions
+      }
+      if (e.target.closest('a.dl, .cpy')) return;   // download/copy clicks don't switch
+      switchVersion(vi);
+      toggleVerMenu(false);
+    });
+  });
+}
+function toggleVerMenu(open){
+  const dd = $('verdrop');
+  dd.classList.toggle('open', open ?? !dd.classList.contains('open'));
+}
+$('verBtn').onclick = (e) => { e.stopPropagation(); toggleVerMenu(); };
+document.addEventListener('click', (e) => { if (!e.target.closest('#verdrop')) toggleVerMenu(false); });
+
+// A version's change notes as a bullet list: explicit `changes` array wins,
+// else each non-empty line of the changelog markdown (with -/* /# prefixes stripped).
+function verBullets(ver){
+  if (ver.changes && ver.changes.length) return ver.changes;
+  if (!ver.changelog) return [];
+  return ver.changelog.split('\n')
+    .map(l => l.trim().replace(/^[-*]\s+/, '').replace(/^#+\s+/, ''))
+    .filter(Boolean);
+}
+
+function updateNow(){
+  if (!activeSong) return;
+  const ver = activeSong.versions[activeVer];
+  $('nowTitle').textContent = activeSong.title;
+  $('nowArtist').textContent = [activeSong.artist, ver.name].filter(Boolean).join(' · ');
+  const cover = $('nowCover');
+  if (activeSong.cover){ cover.src = activeSong.cover; cover.style.display='block'; } else cover.style.display='none';
+  const bullets = verBullets(ver);
+  const log = $('nowLog');
+  if (bullets.length){ log.textContent = '📝 ' + bullets.join(' · '); log.style.display = 'block'; }
+  else log.style.display = 'none';
+}
+
+function highlight(i){
+  document.querySelectorAll('.song').forEach(el => el.classList.toggle('active', Number(el.dataset.i)===i));
+  const a = document.querySelector(`.song[data-i="${i}"]`);
+  if (a) a.scrollIntoView({ block:'nearest', behavior:'smooth' });
+}
+
+// ---------- Transport ----------
+function curWS(){ return wsByVer[activeVer] || null; }
+function togglePlay(){ if (activeSongIndex===-1){ if (songs.length) playSong(0); return; } const w=curWS(); if (w) w.playPause(); }
+function next(auto=false){
+  if (!order.length) return;
+  if (repeat==='one' && auto){ const w=curWS(); w.setTime(0); w.play(); return; }
+  if (pos < order.length-1){ pos++; openSong(order[pos], true); }
+  else if (repeat==='all'){ pos=0; openSong(order[pos], true); }
+  else if (!auto){ pos=0; openSong(order[pos], true); }
+  else { const w=curWS(); if (w){ w.setTime(0); } setPlayingUI(false); }
+}
+function prev(){
+  if (!order.length) return; const w=curWS();
+  if (w && w.getCurrentTime()>3){ w.setTime(0); return; }
+  if (pos>0){ pos--; openSong(order[pos], true); } else if (w){ w.setTime(0); }
+}
+function setPlayingUI(p){
+  $('playIcon').innerHTML = p ? '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>';
+  document.querySelectorAll('.song').forEach(el => el.classList.toggle('playing', el.classList.contains('active') && p));
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = p ? 'playing' : 'paused';
+}
+
+$('playBtn').onclick = togglePlay;
+$('nextBtn').onclick = () => next(false);
+$('prevBtn').onclick = prev;
+$('vol').oninput = (e) => { curVolume = parseFloat(e.target.value); wsByVer.forEach(w => w && w.setVolume(curVolume)); localStorage.setItem('mp_vol', curVolume); };
+$('shuffleBtn').onclick = () => { shuffle=!shuffle; $('shuffleBtn').classList.toggle('active', shuffle); if (pos!==-1) buildOrder(order[pos]); };
+$('repeatBtn').onclick = () => { repeat = repeat==='off'?'all':repeat==='all'?'one':'off'; $('repeatBtn').classList.toggle('active', repeat!=='off'); $('repeatBtn').title=`Repeat: ${repeat}`; $('repeatBtn').style.fontWeight = repeat==='one'?'700':'400'; };
+
+// ---------- Comments (timestamped, per song) ----------
+// Comments are SITEWIDE — everyone in the band sees the same pool. Like the
+// library itself they go through core.js's password-checked RPCs, so a shared
+// single-mix link can play the audio but never reads or writes the comments.
+
+let commentCache = {};   // song_id -> [comments], mirrors the shared table
+let cReplyTo = null, cEditId = null;   // which thread/comment has an inline compose box open
+const mapRow = (r) => ({ id: r.id, time: r.time_s, text: r.text, name: r.name || '',
+                         version: r.version || '', versionId: r.version_id || null,
+                         parentId: r.parent_id || null, resolved: !!r.resolved,
+                         resolvedBy: r.resolved_by || '', editedAt: r.edited_at ? Date.parse(r.edited_at) : null,
+                         dismissedVersions: r.dismissed_versions || [],
+                         at: Date.parse(r.created_at) });
+function commentsFor(id){ return (commentCache[id] || []).slice().sort((a,b)=>a.time-b.time); }
+function rootsFor(id){ return commentsFor(id).filter(c => !c.parentId); }
+function repliesFor(id, rootId){ return commentsFor(id).filter(c => c.parentId === rootId).sort((a,b)=>a.at-b.at); }
+function countComments(id){ return rootsFor(id).length; }
+// A root comment is "relevant" to a version once it's posted on it, and keeps
+// showing on every version made after that — until it's resolved, or marked
+// not-relevant to that one version on a whim. Replies just follow their root.
+function versionById(song, vid){ return (song.versions || []).find(v => v.id === vid) || null; }
+function commentRelevantTo(c, song, ver){
+  if (!ver) return false;
+  if (c.dismissedVersions.includes(ver.id)) return false;
+  if (c.versionId === ver.id) return true;
+  if (c.resolved) return false;
+  const origin = versionById(song, c.versionId);
+  // Origin unknown (posted on a since-renamed or deleted mix): show it
+  // everywhere rather than hiding it — losing a note is worse than repeating it.
+  if (!origin || !origin.created_at || !ver.created_at) return true;
+  return Date.parse(ver.created_at) >= Date.parse(origin.created_at);
+}
+// Comments are pinned to the mix version playing when they were left — a
+// note about a vocal level in v1 doesn't belong on v3's waveform, unless it's
+// still unresolved, in which case it carries forward (see commentRelevantTo).
+function commentsForActiveVersion(){
+  if (!activeSong) return [];
+  const ver = activeSong.versions[activeVer];
+  return rootsFor(activeSong.id).filter(c => commentRelevantTo(c, activeSong, ver));
+}
+
+// One call fetches the whole band's comments; the pool is small and this keeps
+// bandmates' latest remarks in sync after any edit.
+async function loadComments(){
+  if (!curBand || !isAuthed(curBand)){ commentCache = {}; return; }
+  try {
+    const rows = await libRpc('get_comments', {});
+    commentCache = {};
+    (rows || []).forEach(r => (commentCache[r.song_id] ||= []).push(mapRow(r)));
+  } catch { return; }   // offline / stale password — leave what we have
+  if (activeSong){ refreshListBadges(); renderComments(); renderMarkers(); }
+  else if (songs.length) refreshListBadges();
+}
+// Pick up bandmates' new comments whenever a song is opened.
+const refreshSongComments = () => loadComments();
+
+async function addComment(text, parentId = null){
+  if (!activeSong) return;
+  if (!isAuthed(curBand)){ showGate(curBand, false); return; }
+  text = (text ?? $('cinput').value).trim();
+  if (!text) return;
+  const w = curWS();
+  const time = w ? w.getCurrentTime() : 0;
+  const name = $('cname').value.trim();
+  const ver = activeSong.versions[activeVer];
+  try {
+    const row = await libRpc('add_comment', { sid: activeSong.id, time_s: time,
+      txt: text, who: name, ver: ver.name, vid: ver.id, parent_id: parentId });
+    (commentCache[activeSong.id] ||= []).push(mapRow(row));
+  } catch (err){ alert('Could not post the comment: ' + (err.message || err)); return; }
+  if (!parentId) $('cinput').value = '';
+  renderComments(); renderMarkers(); refreshListBadges();
+}
+async function deleteComment(cid){
+  if (!activeSong || !isAuthed(curBand)) return;
+  try { await libRpc('delete_comment', { cid }); }
+  catch (err){ alert('Could not delete: ' + (err.message || err)); return; }
+  commentCache[activeSong.id] = (commentCache[activeSong.id]||[]).filter(c => c.id !== cid && c.parentId !== cid);
+  renderComments(); renderMarkers(); refreshListBadges();
+}
+// Honor system: the server lets any bandmate edit any comment (same trust
+// level delete already had) — the one check that matters happens here, before
+// the editor even opens, by comparing the poster's name to your own.
+function confirmEditingOthers(c){
+  const mine = $('cname').value.trim().toLowerCase();
+  if (!c.name || !mine || c.name.trim().toLowerCase() === mine) return true;
+  return confirm(`This comment was posted by "${c.name}" — are you sure you want to edit it?`);
+}
+async function editComment(cid, text){
+  text = text.trim();
+  if (!text || !activeSong) return;
+  const name = $('cname').value.trim();
+  try {
+    const row = await libRpc('edit_comment', { cid, txt: text, who: name });
+    const list = commentCache[activeSong.id] || [];
+    const i = list.findIndex(c => c.id === cid);
+    if (i !== -1) list[i] = { ...list[i], ...mapRow({ ...row, dismissed_versions: list[i].dismissedVersions }) };
+  } catch (err){ alert('Could not save the edit: ' + (err.message || err)); return; }
+  renderComments(); renderMarkers();
+}
+async function toggleResolve(cid, resolve){
+  if (!activeSong) return;
+  const name = $('cname').value.trim();
+  try {
+    const row = await libRpc('resolve_comment', { cid, is_resolved: resolve, who: name });
+    const list = commentCache[activeSong.id] || [];
+    const i = list.findIndex(c => c.id === cid);
+    if (i !== -1) list[i] = { ...list[i], ...mapRow({ ...row, dismissed_versions: list[i].dismissedVersions }) };
+  } catch (err){ alert('Could not update: ' + (err.message || err)); return; }
+  renderComments(); renderMarkers(); refreshListBadges();
+}
+async function toggleDismiss(cid, versionId, dismiss){
+  if (!activeSong) return;
+  try { await libRpc('set_comment_dismissed', { cid, target_version: versionId, is_dismissed: dismiss }); }
+  catch (err){ alert('Could not update: ' + (err.message || err)); return; }
+  const list = commentCache[activeSong.id] || [];
+  const c = list.find(x => x.id === cid);
+  if (c){
+    c.dismissedVersions = dismiss
+      ? [...new Set([...c.dismissedVersions, versionId])]
+      : c.dismissedVersions.filter(v => v !== versionId);
+  }
+  renderComments(); renderMarkers(); refreshListBadges();
+}
+function seekTo(t){ const w=curWS(); if (w){ w.setTime(t); $('curTime').textContent=fmt(t); $('atTime').textContent=fmt(t); moveBoat(w); } }
+
+// The boat sails on the playhead. Themed pages show it; everyone else's CSS
+// keeps it hidden, so this is just a cheap style write on the others.
+function moveBoat(w){
+  const el = $('boat');
+  if (!el) return;
+  const dur = w ? w.getDuration() : 0;
+  if (!dur){ el.style.opacity = '0'; return; }
+  const prog = Math.min(1, Math.max(0, w.getCurrentTime() / dur));
+  el.style.opacity = '1';
+  el.style.left = prog * 100 + '%';
+  // Ride the crest: the waveform is drawn mirrored around the middle of a
+  // 56px band, so the top of the swell at this instant is half the peak above
+  // centre. A quiet passage sets the boat down near the waterline; a loud one
+  // lifts it to the top of the wave.
+  const peaks = w.__peaks;
+  const peak = peaks && peaks.length
+    ? peaks[Math.min(peaks.length - 1, Math.floor(prog * peaks.length))] : 0;
+  el.style.top = ((WAVE_H / 2) * (1 - peak)) + 'px';
+}
+
+function renderComments(){
+  const list = activeSong ? commentsForActiveVersion() : [];
+  const ver = activeSong ? activeSong.versions[activeVer] : null;
+  const verName = ver ? ver.name : '';
+  $('cCount').textContent = list.length;
+  $('cdlBtn').disabled = !activeSong || !rootsFor(activeSong.id).length;
+  $('cdrawerHint').textContent = activeSong ? `on “${activeSong.title}”${verName ? ` · ${verName}` : ''}` : '';
+  if (!activeSong){ $('clist').innerHTML = `<div class="cempty">Play a song to leave comments.</div>`; return; }
+  if (!list.length){ $('clist').innerHTML = `<div class="cempty">No open comments on this version — seek to a spot and add one.</div>`; return; }
+
+  const replyRow = (r) => `
+    <div class="cmt" data-id="${r.id}">
+      <div class="body">
+        ${cEditId === r.id
+          ? `<div class="cedit"><input type="text" value="${esc(r.text)}" maxlength="280" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`
+          : `<div class="txt">${esc(r.text)}</div>`}
+        <div class="who">${r.name ? `<b>${esc(r.name)}</b> · ` : ''}${timeago(r.at)}${r.editedAt ? ' · <span class="edited-tag">edited</span>' : ''}</div>
+        <div class="cactions"><span class="act-edit">Edit</span></div>
+      </div>
+      <span class="del" title="Delete">×</span>
+    </div>`;
+
+  $('clist').innerHTML = list.map(c => {
+    const dismissedHere = ver && c.dismissedVersions.includes(ver.id);
+    const origin = versionById(activeSong, c.versionId);
+    const carried = origin && ver && origin.id !== ver.id
+      ? `<span class="carried">· from ${esc(origin.name)}</span>` : '';
+    const replies = repliesFor(activeSong.id, c.id);
+    return `
+    <div class="cthread ${c.resolved ? 'resolved' : ''}" data-root="${c.id}">
+      <div class="cmt" data-id="${c.id}" data-t="${c.time}">
+        <span class="t">${fmt(c.time)}</span>
+        <div class="body">
+          ${cEditId === c.id
+            ? `<div class="cedit"><input type="text" value="${esc(c.text)}" maxlength="280" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`
+            : `<div class="txt">${esc(c.text)}</div>`}
+          <div class="who">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}${timeago(c.at)}${c.editedAt ? ' · <span class="edited-tag">edited</span>' : ''} ${carried}${c.resolved ? `<span class="cbadge resolved">✓ resolved</span>` : ''}</div>
+          <div class="cactions">
+            <span class="act-reply">Reply</span>
+            <span class="act-edit">Edit</span>
+            <span class="act-resolve ${c.resolved ? 'on' : ''}">${c.resolved ? 'Reopen' : 'Resolve'}</span>
+            <span class="act-dismiss ${dismissedHere ? 'on' : ''}">${dismissedHere ? 'Relevant here' : 'Not relevant here'}</span>
+          </div>
+        </div>
+        <span class="del" title="Delete">×</span>
+      </div>
+      <div class="creplies">
+        ${replies.map(replyRow).join('')}
+        ${cReplyTo === c.id ? `
+        <div class="cmt"><div class="body" style="flex:1">
+          <div class="cedit"><input type="text" placeholder="Reply…" maxlength="280" /><button class="save">Reply</button><button class="cancel">Cancel</button></div>
+        </div></div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  const openInput = $('clist').querySelector('.cedit input');
+  if (openInput) openInput.focus();
+}
+
+// Delegated once — #clist's innerHTML is fully replaced on every render, so
+// binding here (rather than per-row inside renderComments) avoids rebinding
+// listeners every keystroke's worth of re-render.
+function handleClistClick(e){
+  if (!activeSong) return;
+  const threadEl = e.target.closest('.cthread');
+  if (!threadEl) return;
+  const rootId = threadEl.dataset.root;
+  const cmtEl = e.target.closest('.cmt');
+  const cid = cmtEl?.dataset.id || null;
+
+  if (e.target.classList.contains('del')){ deleteComment(cid); return; }
+  if (e.target.classList.contains('act-reply')){
+    cReplyTo = (cReplyTo === rootId ? null : rootId); cEditId = null; renderComments(); return;
+  }
+  if (e.target.classList.contains('act-edit')){
+    const c = commentsFor(activeSong.id).find(x => x.id === cid);
+    if (c && !confirmEditingOthers(c)) return;
+    cEditId = (cEditId === cid ? null : cid); cReplyTo = null; renderComments(); return;
+  }
+  if (e.target.classList.contains('act-resolve')){
+    toggleResolve(rootId, !threadEl.classList.contains('resolved')); return;
+  }
+  if (e.target.classList.contains('act-dismiss')){
+    const ver = activeSong.versions[activeVer];
+    const c = commentsFor(activeSong.id).find(x => x.id === rootId);
+    toggleDismiss(rootId, ver.id, !(c && c.dismissedVersions.includes(ver.id))); return;
+  }
+  if (e.target.classList.contains('save')){
+    const input = e.target.parentElement.querySelector('input');
+    const val = input.value.trim();
+    if (!val) return;
+    if (cReplyTo){ const pid = cReplyTo; cReplyTo = null; addComment(val, pid); }
+    else if (cEditId){ const eid = cEditId; cEditId = null; editComment(eid, val); }
+    return;
+  }
+  if (e.target.classList.contains('cancel')){ cReplyTo = null; cEditId = null; renderComments(); return; }
+  if (e.target.closest('.cactions, .cedit')) return;
+  // Otherwise: clicking the root row jumps to the commented moment.
+  if (cmtEl && cmtEl.dataset.t !== undefined){
+    seekTo(parseFloat(cmtEl.dataset.t));
+    const w = curWS(); if (w && !w.isPlaying()) w.play();
+  }
+}
+$('clist').addEventListener('click', handleClistClick);
+$('clist').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.closest('.cedit')){
+    e.preventDefault();
+    e.target.closest('.cedit').querySelector('.save').click();
+  }
+});
+
+// Mix notes are most useful next to the DAW, not in a browser tab — so the
+// drawer can spill the open song's comments into a plain-text list, grouped by
+// mix and ordered by position in the song.
+function commentsText(song, list){
+  const out = [`${song.title} — comments`,
+               `Exported ${new Date().toLocaleString()}`];
+  const groups = new Map(song.versions.map(v => [v.name, []]));
+  list.forEach(c => {
+    const k = c.version || '';
+    if (!groups.has(k)) groups.set(k, []);   // comment on a since-renamed mix
+    groups.get(k).push(c);
+  });
+  for (const [name, cs] of groups){
+    if (!cs.length) continue;
+    out.push('', `[${name || 'unknown mix'}]`);
+    cs.sort((a, b) => a.time - b.time).forEach(c => {
+      const who = [c.name, c.at ? new Date(c.at).toLocaleDateString() : '']
+                    .filter(Boolean).join(', ');
+      out.push(`  ${c.resolved ? '[x]' : '[ ]'} ${fmt(c.time)}  ${c.text}${who ? `  — ${who}` : ''}`);
+      // replies sit under their thread, indented, so the export reads like the drawer
+      repliesFor(song.id, c.id).forEach(r => {
+        const rwho = [r.name, r.at ? new Date(r.at).toLocaleDateString() : '']
+                       .filter(Boolean).join(', ');
+        out.push(`         ↳ ${r.text}${rwho ? `  — ${rwho}` : ''}`);
+      });
+    });
+  }
+  return out.join('\n') + '\n';
+}
+function downloadComments(){
+  if (!activeSong) return;
+  const list = rootsFor(activeSong.id);
+  if (!list.length) return;
+  const url = URL.createObjectURL(
+    new Blob([commentsText(activeSong, list)], { type: 'text/plain;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = activeSong.title.replace(/[\/\\:*?"<>|]/g, '-') + ' comments.txt';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$('cdlBtn').onclick = downloadComments;
+
+function renderMarkers(){
+  const mk = $('markers'); mk.innerHTML = '';
+  if (!activeSong || singleMix) return;
+  const w = curWS(); const dur = w ? w.getDuration() : 0;
+  if (!dur) return;
+  const ver = activeSong.versions[activeVer];
+  commentsForActiveVersion().forEach(c => {
+    const el = document.createElement('div');
+    el.className = 'mk';
+    el.style.left = Math.min(100, Math.max(0, (c.time/dur)*100)) + '%';
+    // A carried-forward note says which mix it came from — otherwise it looks
+    // like someone commented on a mix that didn't exist yet.
+    const origin = versionById(activeSong, c.versionId);
+    const from = origin && ver && origin.id !== ver.id ? ` (from ${esc(origin.name)})` : '';
+    el.innerHTML = `<div class="tip">${fmt(c.time)} — ${esc(c.text)}${from}</div>`;
+    el.addEventListener('click', (e) => {
+      e.stopPropagation(); seekTo(c.time); openDrawer(true);
+      const w = curWS(); if (w && !w.isPlaying()) w.play();
+    });
+    mk.appendChild(el);
+  });
+}
+function refreshListBadges(){
+  if (!activeSong) return;
+  // simplest: re-render the whole list to keep badges accurate
+  // (renderList wires its own handlers — nothing extra to attach here)
+  const scrollY = window.scrollY; renderList(); highlight(activeSongIndex); window.scrollTo(0, scrollY);
+  // restore duration cells
+  wsByVer.forEach((w,vi)=>{ if (readyByVer[vi] && vi===activeVer){ const cell=document.querySelector(`.right[data-dur="${activeSongIndex}"]`); if (cell) cell.textContent=fmt(w.getDuration()); }});
+}
+
+
+// ---------- To-do (every thread on this song, GitHub-issues style) ----------
+let todoTab = 'open';
+function renderTodo(){
+  if (!activeSong){ $('todoList').innerHTML = `<div class="cempty">Play a song to see its to-do list.</div>`; return; }
+  const all = rootsFor(activeSong.id);
+  const open = all.filter(c => !c.resolved), done = all.filter(c => c.resolved);
+  $('todoHint').textContent = `on “${activeSong.title}”`;
+  $('todoTabOpen').textContent = `Open (${open.length})`;
+  $('todoTabClosed').textContent = `Resolved (${done.length})`;
+  $('todoTabOpen').classList.toggle('active', todoTab === 'open');
+  $('todoTabClosed').classList.toggle('active', todoTab === 'resolved');
+
+  let rows = todoTab === 'open' ? open : done;
+  const sort = $('todoSort').value;
+  rows = rows.slice().sort((a, b) =>
+    sort === 'old'     ? a.at - b.at :
+    sort === 'replies' ? repliesFor(activeSong.id, b.id).length - repliesFor(activeSong.id, a.id).length
+                       : b.at - a.at);
+
+  if (!rows.length){
+    $('todoList').innerHTML = `<div class="cempty">${todoTab === 'open'
+      ? 'Nothing open — every comment on this song is resolved.'
+      : 'Nothing resolved yet.'}</div>`;
+    return;
+  }
+  $('todoList').innerHTML = rows.map(c => {
+    const nReplies = repliesFor(activeSong.id, c.id).length;
+    // Which mixes this note applies to — origin highlighted, dismissed struck.
+    const chips = activeSong.versions.map(v => {
+      if (v.id === c.versionId) return `<span class="chip origin">${esc(v.name)}</span>`;
+      if (c.dismissedVersions.includes(v.id)) return `<span class="chip dismissed">${esc(v.name)}</span>`;
+      return commentRelevantTo(c, activeSong, v) ? `<span class="chip">${esc(v.name)}</span>` : '';
+    }).filter(Boolean).join('');
+    return `
+    <div class="todo-row" data-id="${c.id}" data-vid="${c.versionId || ''}" data-t="${c.time}">
+      <span class="todo-dot ${c.resolved ? 'resolved' : 'open'}"></span>
+      <div class="body">
+        <div class="txt">${esc(c.text)}</div>
+        <div class="meta">
+          <span>${fmt(c.time)}</span>
+          <span>${c.name ? `${esc(c.name)} · ` : ''}${timeago(c.at)}</span>
+          ${nReplies ? `<span class="replies">💬 ${nReplies}</span>` : ''}
+          ${c.resolved && c.resolvedBy ? `<span>resolved by ${esc(c.resolvedBy)}</span>` : ''}
+          ${chips}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+// Clicking a row takes you to where the note was made: its origin mix, that
+// spot in the song, comments drawer open.
+$('todoList').addEventListener('click', (e) => {
+  const row = e.target.closest('.todo-row');
+  if (!row || !activeSong) return;
+  const vi = activeSong.versions.findIndex(v => v.id === row.dataset.vid);
+  if (vi !== -1 && vi !== activeVer) switchVersion(vi);
+  closeTodo();
+  openDrawer(true);
+  seekTo(parseFloat(row.dataset.t));
+});
+function openTodo(){
+  if (!activeSong || singleMix) return;
+  $('todoModal').classList.add('open');
+  renderTodo();
+}
+function closeTodo(){ $('todoModal').classList.remove('open'); }
+$('todoToggle').onclick = openTodo;
+$('todoClose').onclick = closeTodo;
+$('todoModal').addEventListener('click', (e) => { if (e.target === $('todoModal')) closeTodo(); });
+$('todoSort').onchange = renderTodo;
+$('todoTabOpen').onclick    = () => { todoTab = 'open';     renderTodo(); };
+$('todoTabClosed').onclick  = () => { todoTab = 'resolved'; renderTodo(); };
+
+function openDrawer(open){
+  if (singleMix) return;   // comments are band-only; the shared-mix view has none
+  if (open){ $('vlogDrawer').classList.remove('open'); $('vlogToggle').classList.remove('active'); }
+  $('drawer').classList.toggle('open', open); $('cToggle').classList.toggle('active', open);
+  if (open) renderComments();
+}
+$('cToggle').onclick = () => openDrawer(!$('drawer').classList.contains('open'));
+
+// ---------- Changelog drawer (git-style version history) ----------
+function renderVlog(){
+  $('vlogHint').textContent = activeSong ? `of “${activeSong.title}”` : '';
+  if (!activeSong){ $('vlogList').innerHTML = `<div class="cempty">Play a song to see its version history.</div>`; return; }
+  $('vlogList').innerHTML = activeSong.versions.map((ver, vi) => {
+    const bullets = verBullets(ver);
+    return `
+    <div class="vlog-entry ${vi===activeVer?'current':''}" data-vi="${vi}">
+      <div class="vlog-head" title="Switch to ${esc(ver.name)} — keeps the same playback position">
+        <span class="vlog-name">${esc(ver.name)}</span>
+        ${vi===0 ? '<span class="vlog-latest">LATEST</span>' : ''}
+        ${ver.date ? `<span class="vlog-date">${esc(ver.date)}</span>` : ''}
+      </div>
+      <span class="vlog-copy" data-vi="${vi}" title="Copy share link to ${esc(ver.name)}">🔗</span>
+      ${bullets.length
+        ? `<ul class="vlog-bullets">${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>`
+        : `<div class="vlog-none">No changelog for this version.</div>`}
+    </div>`;
+  }).join('');
+  $('vlogList').querySelectorAll('.vlog-entry').forEach(el => {
+    el.querySelector('.vlog-head').addEventListener('click', () => switchVersion(Number(el.dataset.vi)));
+    el.querySelector('.vlog-copy').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const ver = activeSong.versions[Number(el.dataset.vi)];
+      copyText(shareUrl(activeSong, ver), e.target);
+    });
+  });
+}
+
+function openVlog(open){
+  if (open){ $('drawer').classList.remove('open'); $('cToggle').classList.remove('active'); }
+  $('vlogDrawer').classList.toggle('open', open); $('vlogToggle').classList.toggle('active', open);
+  if (open) renderVlog();
+}
+$('vlogToggle').onclick = () => openVlog(!$('vlogDrawer').classList.contains('open'));
+$('nowLog').onclick = () => openVlog(true);
+$('caddBtn').onclick = () => addComment();   // no args — reads #cinput, posts a root comment
+$('cinput').addEventListener('keydown', (e) => { if (e.key==='Enter'){ e.preventDefault(); addComment(); } });
+// Commenter name — remembered on this device.
+$('cname').value = localStorage.getItem('mp_name') || '';
+$('cname').addEventListener('input', () => localStorage.setItem('mp_name', $('cname').value.trim()));
+$('atTime').onclick = () => { const w=curWS(); if (w) seekTo(w.getCurrentTime()); $('cinput').focus(); };
+
+// ---------- Add music (upload) ----------
+// One transport, from any device: files go into the band inbox bucket (the
+// path carries the band password, which is what the storage policy checks),
+// then an Edge Function moves them into the permanent bucket and writes the
+// song/version rows. Nothing here depends on the studio Mac being awake.
+const INBOX_MAX = 50 * 1024 * 1024;    // Supabase free-tier per-file ceiling (fixed, not adjustable)
+const LOSSLESS_RE = /\.(wav|aif|aiff|flac)$/i;
+
+// ---- Browser-side compression ---------------------------------------------
+// A raw WAV master would blow past the size ceiling, so we decode it with the
+// Web Audio API and re-encode to MP3 (lamejs, lazy-loaded) right in the page:
+// a full-length WAV lands as a ~6–8 MB file and the master stays on your disk.
+let _lame = null;
+async function loadLame(){
+  if (_lame) return _lame;
+  for (const url of ['https://cdn.jsdelivr.net/npm/@breezystack/lamejs@1.2.7/+esm',
+                     'https://esm.sh/@breezystack/lamejs@1.2.7']){
+    try { _lame = (await import(url)).default || (await import(url)); if (_lame?.Mp3Encoder) return _lame; }
+    catch {}
+  }
+  throw new Error('Could not load the audio compressor — check your connection.');
+}
+const _f2i16 = (f) => { const o = new Int16Array(f.length);
+  for (let i = 0; i < f.length; i++){ const s = Math.max(-1, Math.min(1, f[i])); o[i] = s < 0 ? s*0x8000 : s*0x7fff; }
+  return o; };
+async function compressToMp3(file, setStatus){
+  const lame = await loadLame();
+  setStatus?.(`Reading ${file.name}…`);
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ac = new AC();
+  let audio;
+  try { audio = await ac.decodeAudioData(await file.arrayBuffer()); }
+  finally { try { ac.close(); } catch {} }
+  // MP3 tops out at 48 kHz — resample anything higher (e.g. 88.2/96k masters).
+  const rate = audio.sampleRate > 48000 ? 44100 : audio.sampleRate;
+  if (rate !== audio.sampleRate){
+    const off = new OfflineAudioContext(audio.numberOfChannels,
+      Math.ceil(audio.duration * rate), rate);
+    const src = off.createBufferSource(); src.buffer = audio;
+    src.connect(off.destination); src.start();
+    audio = await off.startRendering();
+  }
+  const ch = Math.min(2, audio.numberOfChannels);
+  const left = _f2i16(audio.getChannelData(0));
+  const right = ch > 1 ? _f2i16(audio.getChannelData(1)) : null;
+  const enc = new lame.Mp3Encoder(ch, rate, 224);
+  const N = 1152, out = [];
+  for (let i = 0; i < left.length; i += N){
+    const l = left.subarray(i, i + N);
+    const buf = ch > 1 ? enc.encodeBuffer(l, right.subarray(i, i + N)) : enc.encodeBuffer(l);
+    if (buf.length) out.push(buf);
+    if (i % (N * 400) === 0){
+      setStatus?.(`Compressing ${file.name}… ${Math.round(i / left.length * 100)}%`);
+      await new Promise(r => setTimeout(r));   // keep the UI responsive
+    }
+  }
+  const tail = enc.flush(); if (tail.length) out.push(tail);
+  const blob = new Blob(out, { type: 'audio/mpeg' });
+  return new File([blob], file.name.replace(/\.[^.]+$/, '.mp3'), { type: 'audio/mpeg' });
+}
+// Compress lossless files only when asked to, or when one is too big for the
+// inbox ceiling to accept raw — otherwise the master goes up untouched.
+async function prepareForUpload(files, setStatus, wantCompress){
+  const out = [];
+  for (const f of files){
+    const lossless = LOSSLESS_RE.test(f.name);
+    if (lossless && (wantCompress || f.size > INBOX_MAX)){
+      const mp3 = await compressToMp3(f, setStatus);
+      setStatus?.(`Compressed ${f.name} → ${(mp3.size/1048576).toFixed(1)} MB`);
+      out.push(mp3);
+    } else out.push(f);
+  }
+  return out;
+}
+
+// --- Modal ---
+function setAddStatus(msg, cls){ const el = $('addStatus'); el.textContent = msg || ''; el.className = 'status' + (cls ? ' ' + cls : ''); }
+
+function fillSongSelect(){
+  const sel = $('addSongSel');
+  sel.innerHTML = songs.map(s => `<option value="${esc(s.title)}">${esc(s.title)}</option>`).join('')
+    + `<option value="__new__">➕ New song…</option>`;
+  if (!songs.length) sel.value = '__new__';
+  syncSongNew();
+}
+function syncSongNew(){ $('addSongNew').style.display = $('addSongSel').value === '__new__' ? 'block' : 'none'; }
+$('addSongSel').addEventListener('change', syncSongNew);
+
+function syncFileUI(){
+  const files = $('addFile').files;
+  const multi = files && files.length > 1;
+  $('addVerRow').style.display = multi ? 'none' : 'flex';
+  $('addNote').disabled = !!multi;
+  if (files && files.length === 1 && !$('addVerName').value)
+    $('addVerName').value = files[0].name.replace(/\.[^.]+$/, '');
+  let hint = '';
+  if (multi) hint = `${files.length} files — each becomes a version named after its filename.`;
+  if (files && files.length && [...files].some(f => LOSSLESS_RE.test(f.name))){
+    const over = [...files].some(f => LOSSLESS_RE.test(f.name) && f.size > INBOX_MAX);
+    hint += over
+      ? ` A WAV/AIFF here is over ${(INBOX_MAX/1048576)|0} MB, so it'll be compressed to MP3 regardless of the checkbox.`
+      : ' Check the box above to compress WAV/AIFF/FLAC to MP3 in your browser before upload — otherwise the master uploads as-is.';
+  }
+  $('addFileHint').textContent = hint;
+}
+$('addFile').addEventListener('change', syncFileUI);
+
+// Reaching this dialog at all means you're logged in — Add is hidden in the
+// ungated single-mix view — so the band password comes from the session and is
+// never asked for a second time.
+function openAdd(){
+  if (!curBand || !isAuthed(curBand)) return showGate(curBand, false);
+  $('addModal').classList.add('open');
+  setAddStatus('');
+  fillSongSelect();
+  const modeEl = $('addMode');
+  modeEl.className = 'mode github';
+  modeEl.textContent = `● Uploading to ${curBandTitle || curBand}.`;
+  $('addForm').style.display = 'block';
+  $('addActions').style.display = 'flex';
+  $('addCompress').checked = false;
+  syncFileUI();
+}
+function closeAdd(){ $('addModal').classList.remove('open'); }
+$('addBtn').onclick = openAdd;
+$('addClose').onclick = closeAdd;
+$('addModal').addEventListener('click', (e) => { if (e.target === $('addModal')) closeAdd(); });
+
+function chosenSongTitle(){
+  const sel = $('addSongSel').value;
+  return sel === '__new__' ? $('addSongNew').value.trim() : sel;
+}
+
+async function doUpload(){
+  let files = [...($('addFile').files || [])];
+  const song = chosenSongTitle();
+  if (!files.length){ setAddStatus('Choose at least one audio file.', 'err'); return; }
+  if (!song){ setAddStatus('Give the song a title.', 'err'); return; }
+  const multi = files.length > 1;
+  const note = multi ? '' : $('addNote').value.trim();
+  const btn = $('addGo');
+  btn.disabled = true;
+  try {
+    // The inbox storage policy reads the password out of the object path, so
+    // uploads still carry it — but it comes from the session, not the user.
+    const pass = bandPass(curBand);
+    if (!pass){ closeAdd(); showGate(curBand, false); return; }
+
+    files = await prepareForUpload(files, setAddStatus, $('addCompress').checked);
+    const big = files.find(f => f.size > INBOX_MAX);
+    if (big) throw new Error(`${big.name} is ${(big.size/1048576).toFixed(0)} MB — over the ${(INBOX_MAX/1048576)|0} MB limit even after compression.`);
+
+    // The inbox storage policy checks the password embedded in the path, so a
+    // wrong one is rejected here before a single byte is stored.
+    const put = async (path, body, type) => {
+      const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${path}`, {
+        method: 'POST',
+        headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+                   'Content-Type': type, 'x-upsert': 'true' },
+        body });
+      if (r.ok) return;
+      // Storage answers 400 for a whole family of problems, so report what it
+      // actually said rather than guessing "wrong password" every time.
+      let detail = '';
+      try { const j = await r.json(); detail = j.message || j.error || ''; } catch {}
+      throw new Error(`Upload of ${decodeURIComponent(path.split('/').pop())} failed `
+                    + `(${r.status}${detail ? ': ' + detail : ''})`);
+    };
+    const enc = (...seg) => seg.map(encodeURIComponent).join('/');
+    let firstBase = null;
+    for (const [i, f] of files.entries()){
+      setAddStatus(`Uploading ${i+1}/${files.length}: ${f.name}…`);
+      const ext = (f.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+      const verName = (multi || !$('addVerName').value.trim())
+        ? f.name.replace(/\.[^.]+$/, '') : $('addVerName').value.trim();
+      firstBase ??= verName;
+      await put(enc(curBand, pass, song, verName + ext), f, f.type || 'application/octet-stream');
+    }
+    if (note && firstBase)
+      await put(enc(curBand, pass, song, firstBase + '.changelog.md'), note + '\n', 'text/markdown');
+
+    // Import right away rather than waiting on a poller somewhere.
+    setAddStatus('Importing…');
+    const res = await edgeFn('import-inbox', { band: curBand, pass, song });
+    setAddStatus(`Done ✓ — ${res.imported} mix${res.imported === 1 ? '' : 'es'} added to “${song}”.`, 'ok');
+    await init();
+    fillSongSelect();
+    $('addFile').value = ''; $('addVerName').value = ''; $('addNote').value = '';
+    syncFileUI();
+  } catch (err) {
+    setAddStatus(String(err.message || err), 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+$('addGo').onclick = doUpload;
+
+// ---------- Trash (soft-deleted songs and versions; confirm to remove forever) ----------
+// Trashing only sets a timestamp, so nothing leaves storage until someone
+// confirms. Permanent deletion has to remove the audio objects as well, which
+// needs the service role — hence the library-admin Edge Function.
+function setTrashStatus(msg, cls){ const el = $('trashStatus'); el.textContent = msg || ''; el.className = 'status' + (cls ? ' ' + cls : ''); }
+function trashBadge(n){ $('trashCount').textContent = n ? ` ${n}` : ''; }
+
+async function refreshTrash(){
+  if (!curBand || !isAuthed(curBand)) return { songs: [], versions: [] };
+  try {
+    const t = await libRpc('get_trash', {});
+    trashBadge((t.songs || []).length + (t.versions || []).length);
+    return t;
+  } catch { return { songs: [], versions: [] }; }
+}
+
+async function trashSong(song){
+  if (!song || !song.folder) return;
+  try {
+    await libRpc('trash_song', { f: song.folder });
+    if (activeSongIndex !== -1 && songs[activeSongIndex] === song){
+      destroyPlayers(); activeSong = null; activeSongIndex = -1;
+      $('nowTitle').textContent = 'Nothing playing'; $('nowArtist').textContent = '';
+      renderVersions(); setPlayingUI(false);
+    }
+    await init();
+    fillSongSelect();
+    refreshTrash();
+  } catch (err) { alert('Could not move to trash: ' + (err.message || err)); }
+}
+
+function renderTrash(t){
+  const songRows = t.songs || [], verRows = t.versions || [];
+  trashBadge(songRows.length + verRows.length);
+  if (!songRows.length && !verRows.length){
+    $('trashList').innerHTML = '<div class="cempty">Trash is empty.</div>';
+    return;
+  }
+  $('trashList').innerHTML =
+    songRows.map(s => `
+    <div class="trash-item" data-kind="song" data-folder="${esc(s.folder)}" data-label="${esc(s.title)}">
+      <span class="tname">${esc(s.title)}</span>
+      <span class="tmeta">${s.versions} version${s.versions===1?'':'s'}</span>
+      <button class="btn ghost restore">Restore</button>
+      <button class="btn danger">Delete forever</button>
+    </div>`).join('') +
+    verRows.map(v => `
+    <div class="trash-item" data-kind="version" data-folder="${esc(v.folder)}" data-name="${esc(v.name)}" data-label="${esc(v.name)}">
+      <span class="tname"><span style="color:var(--text-mute)">${esc(v.song)} · </span>${esc(v.name)}</span>
+      <span class="tmeta">version</span>
+      <button class="btn ghost restore">Restore</button>
+      <button class="btn danger">Delete forever</button>
+    </div>`).join('');
+
+  $('trashList').querySelectorAll('.trash-item').forEach(el => {
+    const { kind, folder, name, label } = el.dataset;
+    el.querySelector('.restore').addEventListener('click', async () => {
+      try {
+        setTrashStatus(`Restoring “${label}”…`);
+        await (kind === 'song' ? libRpc('restore_song', { f: folder })
+                               : libRpc('restore_version', { f: folder, ver_name: name }));
+        renderTrash(await refreshTrash());
+        setTrashStatus(`Restored “${label}” ✓`, 'ok');
+        await init(); fillSongSelect();
+      } catch (err) { setTrashStatus(String(err.message || err), 'err'); }
+    });
+    const del = el.querySelector('.danger');
+    del.addEventListener('click', async () => {
+      if (!del.classList.contains('armed')){
+        // First click arms; the second within 4 s confirms.
+        del.classList.add('armed'); del.textContent = 'Click again to confirm';
+        setTimeout(() => { del.classList.remove('armed'); del.textContent = 'Delete forever'; }, 4000);
+        return;
+      }
+      try {
+        setTrashStatus(`Deleting “${label}” forever…`);
+        await edgeFn('library-admin', {
+          band: curBand, pass: bandPass(curBand),
+          action: kind === 'song' ? 'delete_song_forever' : 'delete_version_forever',
+          song: folder, name });
+        renderTrash(await refreshTrash());
+        setTrashStatus(`“${label}” permanently deleted.`, 'ok');
+      } catch (err) { setTrashStatus(String(err.message || err), 'err'); }
+    });
+  });
+}
+
+async function openTrash(){
+  $('trashModal').classList.add('open');
+  setTrashStatus('');
+  $('trashList').innerHTML = '<div class="cempty">Loading…</div>';
+  renderTrash(await refreshTrash());
+}
+function closeTrash(){ $('trashModal').classList.remove('open'); }
+$('trashBtn').onclick = openTrash;
+$('trashClose').onclick = closeTrash;
+$('trashModal').addEventListener('click', (e) => { if (e.target === $('trashModal')) closeTrash(); });
+
+// ---------- Share a hand-picked set of songs as a project ----------
+// A project is an ordered list of songs behind an unguessable slug. Opening
+// one still asks for the band password — the slug decides *what* you see, not
+// *whether* you may see it.
+const projSlug = () => {
+  const a = new Uint8Array(8); crypto.getRandomValues(a);
+  const cs = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  return [...a].map(n => cs[n % cs.length]).join('');
+};
+$('projBtn').onclick = async () => {
+  if (!curBand || !isAuthed(curBand)) return;
+  const name = prompt('Name this share link (e.g. “Album rough mixes”):',
+                      curBandTitle + ' mixes');
+  if (name === null || !name.trim()) return;
+  const all = confirm(`Include all ${songs.length} songs in this view?\n\nOK = all · Cancel = choose them one at a time`);
+  const picked = [];
+  for (const s of songs){
+    const key = s.folder || s.title;
+    if (all || confirm(`Include “${s.title}”?`)) picked.push(key);
+  }
+  if (!picked.length) return alert('Pick at least one song.');
+  const slug = projSlug();
+  try {
+    await libRpc('upsert_project', { proj: slug, proj_name: name.trim(), folders: picked });
+    await copyText(pageBase() + '?p=' + encodeURIComponent(slug), $('projBtn'));
+    alert(`“${name.trim()}” created — the link is on your clipboard.`);
+  } catch (err){ alert('Could not create the link: ' + (err.message || err)); }
+};
+
+// ---------- Keyboard ----------
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape'){
+    closeAdd(); closeTrash();
+    if (!document.body.classList.contains('locked')) $('gateModal').classList.remove('open');
+    if (pickCloser) pickCloser(null);
+    else if (editing) setEditing(false);
+    return;
+  }
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  switch (e.key) {
+    case ' ': e.preventDefault(); togglePlay(); break;
+    case 'ArrowRight': next(false); break;
+    case 'ArrowLeft': prev(); break;
+    case 'ArrowUp': e.preventDefault(); nudgeVol(.05); break;
+    case 'ArrowDown': e.preventDefault(); nudgeVol(-.05); break;
+    case 's': $('shuffleBtn').click(); break;
+    case 'r': $('repeatBtn').click(); break;
+    case 'c': openDrawer(!$('drawer').classList.contains('open')); break;
+    case 'v': openVlog(!$('vlogDrawer').classList.contains('open')); break;
+    default:
+      // number keys 1-9 switch versions
+      if (/^[1-9]$/.test(e.key) && activeSong){ const vi=parseInt(e.key,10)-1; if (vi<activeSong.versions.length) switchVersion(vi); }
+  }
+});
+function nudgeVol(d){ const v=Math.min(1,Math.max(0,parseFloat($('vol').value)+d)); $('vol').value=v; curVolume=v; wsByVer.forEach(w=>w&&w.setVolume(v)); localStorage.setItem('mp_vol', v); }
+
+// ---------- OS media keys ----------
+function setMediaSession(){
+  if (!('mediaSession' in navigator) || !activeSong) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: activeSong.title, artist: activeSong.artist || '', album: $('collectionTitle').textContent,
+    artwork: activeSong.cover ? [{ src: activeSong.cover, sizes:'512x512' }] : [],
+  });
+  navigator.mediaSession.setActionHandler('play', () => { const w=curWS(); if (w) w.play(); });
+  navigator.mediaSession.setActionHandler('pause', () => { const w=curWS(); if (w) w.pause(); });
+  navigator.mediaSession.setActionHandler('previoustrack', prev);
+  navigator.mediaSession.setActionHandler('nexttrack', () => next(false));
+}
+
+window.addEventListener('resize', renderMarkers);
+init();
+</script>
+</body>
+</html>

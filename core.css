@@ -8,22 +8,35 @@
  *
  * Link it with a cache-busting query (core.css?v=N) — Pages caches hard. */
 
+/* The default look. Per-band themes override from theme-*.css, scoped to
+ * body[data-theme=…] — see BAND_THEME in core.js. A band with no theme gets
+ * exactly what the site has always looked like. */
 :root {
   --bg:        #0d0e12;
   --bg-soft:   #15171e;
   --bg-row:    #181a22;
   --bg-hover:  #1f222c;
   --line:      #262936;
+  --edge:      #262936;                  /* the "hard line"; only themes make it hard */
   --text:      #e7e9ee;
   --text-dim:  #8b90a0;
   --text-mute: #5b6072;
   --accent:    #6c5ce7;
   --accent-2:  #00d0a4;
   --warn:      #ffb454;
+  --err:       #ff6b6b;
   --wave:      #3a3f52;
   --wave-prog: #6c5ce7;
   --shadow:    0 8px 40px rgba(0,0,0,.5);
   --radius:    12px;
+  /* Waveform bar geometry, so a theme can reshape the wave without touching
+     the player's JavaScript. */
+  --bar-w:     2;
+  --bar-gap:   2;
+  --bar-radius: 3;
+  /* Surfaces you type into. Flat by default; themed pages make them gradients. */
+  --field:     var(--bg);
+  --field-on:  var(--bg);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -80,8 +93,8 @@ header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px;
 .cdl[disabled] { opacity: .35; cursor: default; }
 .composer { display: flex; gap: 8px; margin-bottom: 12px; }
 .composer .at { flex: none; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 8px; background: rgba(108,92,231,.15); color: var(--accent); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; }
-.composer input { flex: 1; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; outline: none; }
-.composer input:focus { border-color: var(--accent); }
+.composer input { flex: 1; background: var(--field); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; outline: none; }
+.composer input:focus { border-color: var(--accent); background: var(--field-on); }
 .composer button { flex: none; background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 0 16px; font: inherit; font-weight: 600; cursor: pointer; }
 .composer button:hover { filter: brightness(1.08); }
 .clist { display: flex; flex-direction: column; gap: 2px; max-height: 26vh; overflow-y: auto; margin: 0 -6px; }
@@ -108,7 +121,7 @@ header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px;
 .cactions span:hover { color: var(--accent); }
 .cactions span.on { color: var(--accent-2); }
 .cedit { display: flex; gap: 6px; margin-top: 4px; }
-.cedit input { flex: 1; background: var(--bg); border: 1px solid var(--accent); color: var(--text); border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 13px; outline: none; }
+.cedit input { flex: 1; background: var(--field); border: 1px solid var(--accent); color: var(--text); border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 13px; outline: none; }
 .cedit button { flex: none; background: none; border: none; color: var(--text-mute); font-size: 11px; font-weight: 600; cursor: pointer; }
 .cedit button:hover { color: var(--accent); }
 .cbadge { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-left: 6px; letter-spacing: .2px; }
@@ -143,8 +156,10 @@ header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px;
   transition: all .12s;
 }
 .addbtn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--accent); }
-/* The cross-page links (🎨 Art / 🎵 Music) are anchors wearing the same chip. */
+/* The cross-page links (🎨 Art / 🎵 Music / 💿 Sn'Album) wear the same chip. */
 a.addbtn { text-decoration: none; }
+/* Admin sits at the top of every page, deliberately quiet until you want it. */
+#adminBtn { padding: 6px 10px; }
 .modal-back {
   display: none; position: fixed; inset: 0; z-index: 50;
   background: rgba(6,7,10,.72); backdrop-filter: blur(4px);
@@ -164,10 +179,10 @@ a.addbtn { text-decoration: none; }
 .modal .mode.none { color: var(--warn); }
 .modal label { display: block; font-size: 12px; color: var(--text-dim); margin: 10px 0 4px; }
 .modal input[type=text], .modal input[type=password], .modal select, .modal textarea {
-  width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--text);
+  width: 100%; background: var(--field); border: 1px solid var(--line); color: var(--text);
   border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; outline: none;
 }
-.modal input:focus, .modal select:focus, .modal textarea:focus { border-color: var(--accent); }
+.modal input:focus, .modal select:focus, .modal textarea:focus { border-color: var(--accent); background: var(--field-on); }
 .modal textarea { resize: vertical; min-height: 60px; }
 .modal input[type=file] { width: 100%; color: var(--text-dim); font-size: 13px; padding: 8px 0; }
 .modal label.check { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-dim); margin: 6px 0 0; cursor: pointer; }
@@ -185,7 +200,7 @@ a.addbtn { text-decoration: none; }
 .modal .btn.ghost { background: var(--bg-row); color: var(--text-dim); border: 1px solid var(--line); }
 .modal .btn.ghost:hover { color: var(--text); }
 .modal .status { font-size: 12.5px; color: var(--text-dim); min-height: 18px; margin-top: 10px; white-space: pre-wrap; }
-.modal .status.err { color: #ff6b6b; }
+.modal .status.err { color: var(--err); }
 .modal .status.ok { color: var(--accent-2); }
 .modal .hint { font-size: 11.5px; color: var(--text-mute); margin-top: 4px; line-height: 1.45; }
 .modal .linky { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 12px; }

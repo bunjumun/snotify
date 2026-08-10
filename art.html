@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>S'nart</title>
+<meta name="description" content="S'nart — versioned artwork with comments pinned to a region of the image." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>" />
+<!-- Palette, page frame, modals, gate, comment drawer — shared with index.html -->
+<link rel="stylesheet" href="core.css?v=1" />
+<!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
+<link rel="stylesheet" href="theme-dazzle.css?v=1" />
+<style>
+  /* Art-only surface: the piece grid, the image stage, and the region boxes.
+     Everything shared with S'notify lives in core.css. */
+
+  /* ---------- Library grid ---------- */
+  .artgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+  .piece {
+    position: relative; background: var(--bg-row); border: 1px solid transparent;
+    border-radius: 10px; overflow: hidden; cursor: pointer; transition: border-color .12s, background .12s;
+  }
+  .piece:hover { background: var(--bg-hover); border-color: var(--accent); }
+  .piece .thumb {
+    display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+    background: #0a0b0f; border-bottom: 1px solid var(--line);
+  }
+  .piece .pmeta { padding: 10px 12px 12px; }
+  .piece .ptitle { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .piece .psub { color: var(--text-dim); font-size: 12.5px; margin-top: 3px; display: flex; gap: 8px; align-items: center; }
+  /* Per-piece share link — hover on desktop, dimmed-visible on touch */
+  .piece .pcpy {
+    position: absolute; top: 8px; right: 8px; opacity: 0; transition: opacity .12s;
+    background: rgba(6,7,10,.7); backdrop-filter: blur(4px); color: var(--text-dim);
+    font-size: 13px; padding: 3px 8px; border-radius: 6px; cursor: pointer;
+  }
+  .piece:hover .pcpy { opacity: 1; }
+  .piece .pcpy:hover { color: var(--text); }
+  @media (hover: none) { .piece .pcpy { opacity: .6; } }
+
+  /* ---------- Stage ---------- */
+  .stagehead { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .stagehead .sttitle { font-weight: 600; font-size: 17px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stagewrap { display: flex; justify-content: center; }
+  /* Shrink-wraps the image so region boxes, positioned in %, land on the
+     picture itself and not on the letterboxing around it. */
+  .imgwrap { position: relative; display: inline-block; line-height: 0; max-width: 100%; touch-action: none; }
+  .imgwrap img {
+    display: block; max-width: 100%; max-height: 58vh; border-radius: 10px;
+    border: 1px solid var(--line); background: #0a0b0f; cursor: crosshair;
+    -webkit-user-select: none; user-select: none; -webkit-user-drag: none;
+  }
+  .regions { position: absolute; inset: 0; }
+  .rbox {
+    position: absolute; border: 2px solid var(--warn); border-radius: 4px;
+    background: rgba(255,180,84,.10); cursor: pointer; transition: background .12s, border-color .12s;
+  }
+  .rbox:hover, .rbox.active { border-color: var(--accent-2); background: rgba(0,208,164,.16); }
+  .rbox .num {
+    position: absolute; top: -11px; left: -11px; min-width: 21px; height: 21px; padding: 0 5px;
+    border-radius: 11px; background: var(--warn); color: #16171d;
+    font-size: 11px; font-weight: 800; line-height: 21px; text-align: center;
+  }
+  .rbox:hover .num, .rbox.active .num { background: var(--accent-2); }
+  .rbox.pending { border-style: dashed; border-color: var(--accent); background: rgba(108,92,231,.14); }
+  .rubber { position: absolute; border: 2px dashed var(--accent); background: rgba(108,92,231,.14); border-radius: 4px; pointer-events: none; }
+
+  /* ---------- Draft edit suggestions (scribble over the image) ---------- */
+  #skView { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #skPad  { position: absolute; inset: 0; width: 100%; height: 100%; display: none; cursor: crosshair; touch-action: none; }
+  body.sketching #skPad { display: block; }
+  body.sketching .regions { pointer-events: none; opacity: .45; }
+  body.sketching .imgwrap img { cursor: crosshair; }
+  .sktools {
+    display: none; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px;
+    padding: 10px 12px; background: var(--bg-soft); border: 1px solid var(--accent);
+    border-radius: 10px;
+  }
+  body.sketching .sktools { display: flex; }
+  .sktools .lbl { color: var(--text-mute); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+  .swatch { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+  .swatch.on { border-color: var(--text); transform: scale(1.12); }
+  .nib { width: 22px; height: 22px; border-radius: 50%; background: var(--bg-row); border: 1px solid var(--line); cursor: pointer; display: grid; place-items: center; }
+  .nib.on { border-color: var(--text); }
+  .nib i { display: block; background: var(--text-dim); border-radius: 50%; }
+  .nib.on i { background: var(--text); }
+  .sktools .sk-sep { width: 1px; align-self: stretch; background: var(--line); }
+  .sktools .btn { padding: 6px 12px; font-size: 13px; }
+  .sktools .grow { margin-left: auto; display: flex; gap: 8px; }
+  /* A comment carrying a drawing says so in the list */
+  .cmt .skflag { color: var(--accent-2); font-weight: 700; }
+
+  .stfoot { display: flex; align-items: flex-start; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
+  .revs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .rev {
+    display: inline-flex; align-items: center; gap: 7px; background: var(--bg-row);
+    border: 1px solid var(--line); color: var(--text-dim); padding: 6px 12px;
+    border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all .12s;
+  }
+  .rev:hover { background: var(--bg-hover); color: var(--text); }
+  .rev.active { color: var(--text); border-color: var(--accent); background: rgba(108,92,231,.14); }
+  .rev .rdate { color: var(--text-mute); font-size: 11px; font-weight: 400; }
+  .rev .rcpy { color: var(--text-mute); text-decoration: none; }
+  .rev .rcpy:hover { color: var(--text); }
+  .rev .latest { font-size: 10px; font-weight: 700; color: var(--accent-2); }
+  .stlog { flex: 1; min-width: 180px; color: var(--text-dim); font-size: 13px; }
+  .stlog ul { margin: 0; padding-left: 16px; } .stlog li { margin: 2px 0; }
+  .drawhint { margin-top: 12px; }
+  .linkrow { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  .linkrow label { color: var(--text-mute); font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .linkrow select {
+    background: var(--field); border: 1px solid var(--line); color: var(--text);
+    border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; outline: none;
+  }
+  .linkrow select:focus { border-color: var(--accent); }
+  body.singlemix .linkrow { display: none; }
+  .piece .plink { color: var(--text-mute); }
+
+  /* Pin number in the comment list, where the player puts a timestamp */
+  .cmt .t.pin { color: var(--warn); }
+  .cmt .t.whole { color: var(--text-mute); font-weight: 600; }
+
+  /* ---------- Bottom bar (the stage's equivalent of the transport) ---------- */
+  .artbar { background: rgba(18,20,27,.94); backdrop-filter: blur(14px); border-top: 1px solid var(--line); box-shadow: var(--shadow); }
+  .artbar .pad { max-width: 1000px; margin: 0 auto; padding: 10px 20px 12px; display: flex; align-items: center; gap: 12px; }
+  .artbar .bartitle { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .artbar .barsub { color: var(--text-dim); font-size: 13px; white-space: nowrap; }
+  .cbtn {
+    flex: none; display: inline-flex; align-items: center; gap: 6px; background: var(--bg-row);
+    border: 1px solid var(--line); color: var(--text-dim); padding: 6px 12px;
+    border-radius: 20px; cursor: pointer; font-size: 13px;
+  }
+  .cbtn:hover { background: var(--bg-hover); color: var(--text); }
+  .cbtn.active { color: var(--accent); border-color: var(--accent); }
+  .cbtn svg { width: 15px; height: 15px; fill: currentColor; }
+  .artbar .spacer { margin-left: auto; }
+
+  /* Authoring affordances light up for any logged-in band member */
+  #addBtn { display: none; }
+  body.authed #addBtn { display: inline-flex; }
+  #musicBtn, #homeBtn { display: none; }
+  body.authed #musicBtn, body.authed #homeBtn { display: inline-flex; }
+  body.singlemix #musicBtn, body.singlemix #homeBtn, body.singlemix #adminBtn { display: none !important; }
+  body.singlemix #addBtn, body.singlemix #shareBtn, body.singlemix #cToggle,
+  body.singlemix #todoToggle, body.singlemix .drawhint, body.singlemix .piece .pcpy { display: none !important; }
+
+  @media (max-width: 660px) {
+    .wrap { padding-bottom: 200px; }
+    .imgwrap img { max-height: 42vh; }
+    header.app .count { display: none; }
+  }
+</style>
+</head>
+<body class="locked">
+
+  <!-- Band gate — same two-step front door as the player, same localStorage
+       entry, so one band password opens both pages. The markup is duplicated;
+       the logic behind it lives once, in core.js. -->
+  <div class="modal-back" id="gateModal">
+    <div class="modal" style="max-width:360px">
+      <h2>🎨 S'nart</h2>
+
+      <div id="gateStep1">
+        <div class="hint" style="margin-bottom:6px">Enter your band to continue.</div>
+        <label>Band name</label>
+        <input type="text" id="gateName" autocomplete="off" autocapitalize="none" />
+        <div class="status err" id="gateErr1"></div>
+        <div id="gateSuggest" style="display:none"></div>
+        <div class="actions"><button class="btn primary" id="gateNext">Continue</button></div>
+      </div>
+
+      <div id="gateStep2" style="display:none">
+        <div class="hint" style="margin-bottom:6px">Password for <b id="gateBandLabel"></b>.</div>
+        <label>Band password</label>
+        <input type="password" id="gatePass" autocomplete="off" />
+        <div class="status err" id="gateErr2"></div>
+        <div class="actions">
+          <button class="btn ghost" id="gateBack">Back</button>
+          <button class="btn primary" id="gateGo">Enter</button>
+        </div>
+      </div>
+
+      <div class="hint" style="margin-top:14px;text-align:center">
+        <span class="linky" id="adminOpenLink">Site admin</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <header class="app">
+      <div class="logo">🎨</div>
+      <div>
+        <h1 id="collectionTitle">S'nart</h1>
+        <p>Versioned artwork · stack revisions, comment on a region</p>
+      </div>
+      <div class="count" id="artCount"></div>
+      <button class="addbtn" id="addBtn" title="Add a piece of art or a new revision">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11 5h2v14h-2z"/><path d="M5 11h14v2H5z"/></svg>
+        Add
+      </button>
+      <button class="addbtn" id="shareBtn" title="Copy a share link to this band's artwork">🔗</button>
+      <a class="addbtn" id="musicBtn" href="music.html" title="The band's music library">🎵 Music</a>
+      <a class="addbtn" id="homeBtn" href="index.html" title="Sn'Album — the band's home">💿</a>
+      <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
+      <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
+    </header>
+
+    <div id="list" class="loading">Loading…</div>
+
+    <div id="stage" style="display:none">
+      <div class="stagehead">
+        <button class="addbtn" id="backBtn">← All artwork</button>
+        <div class="sttitle" id="stTitle"></div>
+      </div>
+      <div class="stagewrap">
+        <div class="imgwrap" id="imgwrap">
+          <img id="artImg" alt="" />
+          <canvas id="skView"></canvas>
+          <canvas id="skPad"></canvas>
+          <div class="regions" id="regions"></div>
+        </div>
+      </div>
+
+      <!-- Draft-edit toolbar: only visible while sketching -->
+      <div class="sktools" id="skTools">
+        <span class="lbl">Draft</span>
+        <span class="swatch on" data-color="#ff5c5c" style="background:#ff5c5c" title="Red"></span>
+        <span class="swatch" data-color="#ffb454" style="background:#ffb454" title="Amber"></span>
+        <span class="swatch" data-color="#00d0a4" style="background:#00d0a4" title="Green"></span>
+        <span class="swatch" data-color="#6c5ce7" style="background:#6c5ce7" title="Purple"></span>
+        <span class="swatch" data-color="#e7e9ee" style="background:#e7e9ee" title="White"></span>
+        <span class="sk-sep"></span>
+        <span class="nib on" data-w="0.003" title="Fine"><i style="width:4px;height:4px"></i></span>
+        <span class="nib" data-w="0.006" title="Medium"><i style="width:8px;height:8px"></i></span>
+        <span class="nib" data-w="0.012" title="Thick"><i style="width:13px;height:13px"></i></span>
+        <span class="sk-sep"></span>
+        <button class="btn ghost" id="skUndo" title="Undo the last stroke">↶ Undo</button>
+        <button class="btn ghost" id="skClear">Clear</button>
+        <div class="grow">
+          <button class="btn ghost" id="skCancel">Cancel</button>
+          <button class="btn primary" id="skDone">Done</button>
+        </div>
+      </div>
+
+      <div class="stfoot">
+        <div class="revs" id="revs"></div>
+        <div class="stlog" id="stLog"></div>
+      </div>
+      <div class="linkrow" id="linkRow">
+        <label for="linkSel">Linked song</label>
+        <select id="linkSel"></select>
+        <a class="linky" id="linkGo" style="display:none">Open in the player →</a>
+      </div>
+      <div class="hint drawhint">Drag a box on the image to comment on that part of it — or just type to comment on the whole thing. Use <b>✎ Draft</b> to scribble a suggested edit over the picture.</div>
+    </div>
+
+    <div class="mixhint" id="mixHint" style="display:none">Shared revision ·
+      <span class="linky" id="mixLogin">band members log in</span> for the full library</div>
+  </div>
+
+  <!-- Add-art modal -->
+  <div class="modal-back" id="addModal">
+    <div class="modal">
+      <h2>Add artwork</h2>
+      <div class="mode" id="addMode">Preparing…</div>
+
+      <div id="addForm">
+        <label>Image file(s)</label>
+        <input type="file" id="addFile" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.avif,.tif,.tiff,.heic" multiple />
+        <div class="hint" id="addFileHint"></div>
+
+        <label>Piece</label>
+        <select id="addSongSel"></select>
+        <input type="text" id="addSongNew" placeholder="New piece title…" style="display:none;margin-top:6px" maxlength="120" />
+
+        <div class="row" id="addVerRow">
+          <div>
+            <label>Revision name</label>
+            <input type="text" id="addVerName" placeholder="e.g. Rev 3" maxlength="120" />
+          </div>
+        </div>
+
+        <label>Link to a song (optional)</label>
+        <select id="addLinkSel"></select>
+        <div class="hint">Cover art, a lyric sheet, a poster — tie this piece to something in the music library.</div>
+
+        <label>Change notes (optional — becomes this revision's changelog)</label>
+        <textarea id="addNote" placeholder="- Warmer background&#10;- Reworked the hands"></textarea>
+
+        <div class="hint">Uploads are imported straight away — the new revision shows up
+          as soon as this finishes.</div>
+      </div>
+
+      <div class="status" id="addStatus"></div>
+      <div class="actions" id="addActions">
+        <button class="btn ghost" id="addClose">Close</button>
+        <button class="btn primary" id="addGo">Upload</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- To-do: every comment thread on a piece, open + resolved -->
+  <div class="modal-back" id="todoModal">
+    <div class="modal" style="max-width:620px">
+      <h2>To-do <span id="todoHint" style="font-size:12px;font-weight:400;color:var(--text-mute)"></span></h2>
+      <div class="todo-toolbar">
+        <div class="todo-tabs">
+          <button class="todo-tab active" id="todoTabOpen" data-tab="open">Open</button>
+          <button class="todo-tab" id="todoTabClosed" data-tab="resolved">Resolved</button>
+        </div>
+        <div class="todo-sort">
+          <select id="todoSort">
+            <option value="new">Newest</option>
+            <option value="old">Oldest</option>
+            <option value="replies">Most replies</option>
+          </select>
+        </div>
+      </div>
+      <div class="todo-list" id="todoList"></div>
+      <div class="actions"><button class="btn ghost" id="todoClose">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Dock: comments drawer + the stage's bottom bar -->
+  <div class="dock">
+    <div class="drawer" id="drawer">
+      <div class="pad">
+        <h3>Comments <span id="cdrawerHint" style="text-transform:none;font-weight:400"></span>
+          <button class="cdl" id="cdlBtn" title="Download these comments as a text file">↓ .txt</button>
+        </h3>
+        <div class="composer">
+          <span class="at" id="atTime" title="What this comment is about — drag a box on the image to pin it, click to clear">Whole image</span>
+          <span class="at" id="skBtn" title="Draft an edit suggestion — draw over the image">✎ Draft</span>
+          <input id="cname" type="text" placeholder="Name" maxlength="40" style="flex:none;width:90px" title="Shown with your comments (remembered on this device)" />
+          <input id="cinput" type="text" placeholder="Leave a comment…" maxlength="280" />
+          <button id="caddBtn">Add</button>
+        </div>
+        <div class="clist" id="clist"></div>
+      </div>
+    </div>
+
+    <div class="artbar" id="artbar" style="display:none">
+      <div class="pad">
+        <div style="min-width:0">
+          <div class="bartitle" id="barTitle">—</div>
+          <div class="barsub" id="barSub"></div>
+        </div>
+        <span class="spacer"></span>
+        <button class="cbtn" id="cToggle" title="Comments (c)">
+          <svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 012 2v9a2 2 0 01-2 2H8l-4 4V6a2 2 0 012-2z"/></svg>
+          <span id="cCount">0</span>
+        </button>
+        <button class="cbtn" id="todoToggle" title="To-do — every open and resolved comment on this piece">
+          <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+          <span>To-do</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+<!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
+     script, so everything it declares is in scope for the module below. -->
+<script src="core.js?v=1"></script>
+<script type="module">
+// core.js owns the gate, the route and every Supabase call — these are the
+// three moments it has to hand control back to this page.
+App.init     = () => init();
+App.onLock   = () => {
+  $('artCount').textContent = '';
+  $('list').className = ''; $('list').innerHTML = '';
+  closeStage();
+};
+App.onLogout = () => { commentCache = {}; pieces = []; activePiece = null; };
+
+let pieces = [];                   // the band's artwork, newest revision first in each stack
+let bandSongs = [];                // the band's MUSIC, so a piece can be tied to one
+let activePiece = null, activeRev = 0;
+let singleShare = false;           // ungated one-revision view (?b&s&v, not logged in)
+
+// A piece's comments key. The band's comments all live in one pool keyed by an
+// opaque subject id; art takes the 'art/' prefix so the player and this page
+// never surface each other's notes even though both read the same table.
+const subjectId = (p) => curBand + '/art/' + p.id;
+
+// ---------- Load the library ----------
+function normalize(data){
+  return (data.songs || []).map((s, i) => {
+    const versions = (s.versions || []).map(v => ({
+      id: v.id || null, created_at: v.created_at || null,
+      name: v.name || 'Revision', src: publicUrl(v.src), date: v.date || '',
+      changelog: v.changelog || '', changes: Array.isArray(v.changes) ? v.changes : null,
+    })).filter(v => v.src);
+    if (!versions.length) return null;
+    return {
+      folder: s.folder || null,
+      id: s.id || slug(s.title || filename(versions[0].src)) || 'piece-' + i,
+      title: s.title || filename(versions[0].src),
+      link: s.link || null,          // folder of the song this art belongs to
+      versions,
+    };
+  }).filter(Boolean);
+}
+
+async function init(){
+  curBand = null; singleShare = false;
+  document.body.classList.remove('shared', 'singlemix');
+  $('mixHint').style.display = 'none';
+
+  const band = route.band && bandSlugOf(route.band);
+  if (!band){ showGate(null, true); return; }
+
+  // A single-revision link opens without a password: exactly one image, no
+  // comments, nothing else about the band exposed. Same deal as a shared mix.
+  if (route.song && route.version && !isAuthed(band)){
+    let sv = null;
+    try { sv = await rpc('get_shared_version', { b: band, s: route.song, v: route.version }); }
+    catch { return showBadLink(); }
+    if (!sv) return showBadLink();
+    if (sv.kind !== 'art'){
+      // Someone opened a mix link on the art page — say so instead of failing.
+      document.body.classList.remove('locked');
+      $('gateModal').classList.remove('open');
+      $('list').className = '';
+      $('list').innerHTML = `<div class="empty"><h2>That link is a mix, not a picture</h2>` +
+        `<p>Open it in the player: <a href="index.html${location.search}">S'notify</a>.</p></div>`;
+      return;
+    }
+    curBand = sv.band; curBandTitle = sv.band_title || sv.band;
+    applyTheme(curBand);
+    singleShare = true;
+    document.body.classList.add('singlemix');
+    pieces = normalize({ songs: [sv.song] });
+    commentCache = {};
+    $('collectionTitle').textContent = pieces[0].title;
+    document.title = pieces[0].title + ' · S’nart';
+    unlockView();
+    renderList();
+    $('mixHint').style.display = 'block';
+    openPiece(0);
+    return;
+  }
+
+  if (!isAuthed(band)){ showGate(band, true); return; }
+
+  curBand = band;
+  applyTheme(curBand);
+  let payload;
+  try {
+    payload = await libRpc('get_library', { k: 'art' });
+  } catch (err){
+    if (isAuthErr(err)){ clearAuth(band); return showGate(band, true); }
+    // Show the reason rather than a blank locked page.
+    unlockView();
+    $('list').className = '';
+    $('list').innerHTML = `<div class="empty"><h2>Could not load the artwork</h2><p>${esc(err.message || err)}</p></div>`;
+    return;
+  }
+  if (!payload) return showGate(band, true);
+
+  curBandTitle = payload.title || curBand;
+  pieces = normalize(payload);
+  $('collectionTitle').textContent = curBandTitle;
+  document.title = curBandTitle + ' · S’nart';
+  document.body.classList.add('authed');
+  unlockView();
+
+  await loadComments();
+  // The music library, purely so art can be linked to a song. A failure here
+  // is not worth blocking the page over — the picker just comes up empty.
+  try {
+    const music = await libRpc('get_library', {});
+    bandSongs = ((music && music.songs) || [])
+      .map(s => ({ folder: s.folder, title: s.title })).filter(s => s.folder);
+  } catch { bandSongs = []; }
+  renderList();
+  applyDeepLink();
+}
+
+function showBadLink(){
+  document.body.classList.remove('locked');
+  $('gateModal').classList.remove('open');
+  $('list').className = '';
+  $('list').innerHTML = `<div class="empty"><h2>That link doesn’t point anywhere</h2>` +
+    `<p>The piece or revision may have been renamed or removed. Ask whoever sent it for a fresh link.</p></div>`;
+}
+
+// ?b&s → open that piece; &v → on that revision.
+function applyDeepLink(){
+  if (!route.song) return;
+  const i = pieces.findIndex(p => p.folder === route.song || p.title === route.song);
+  if (i === -1) return;
+  openPiece(i);
+  if (route.version){
+    const vi = pieces[i].versions.findIndex(v => v.name === route.version);
+    if (vi !== -1) showRevision(vi);
+  }
+}
+
+// ---------- Library grid ----------
+function renderList(){
+  $('artCount').textContent = pieces.length
+    ? `${pieces.length} piece${pieces.length === 1 ? '' : 's'}` : '';
+  $('list').className = '';
+  if (!pieces.length){
+    $('list').innerHTML = `<div class="empty"><h2>No artwork yet</h2>` +
+      `<p>Hit <b>Add</b> to upload the first piece. Every new version of it stacks on top, ` +
+      `the way mixes stack in the player.</p></div>`;
+    return;
+  }
+  $('list').innerHTML = `<div class="artgrid">` + pieces.map((p, i) => {
+    const n = p.versions.length;
+    const open = rootsFor(subjectId(p)).filter(c => !c.resolved).length;
+    return `
+    <div class="piece" data-i="${i}">
+      <img class="thumb" src="${esc(p.versions[0].src)}" alt="${esc(p.title)}" loading="lazy" />
+      <span class="pcpy" data-cpy="${i}" title="Copy a share link to “${esc(p.title)}”">🔗</span>
+      <div class="pmeta">
+        <div class="ptitle">${esc(p.title)}</div>
+        <div class="psub">
+          <span class="badge ${n > 1 ? '' : 'dim'}">${n} revision${n === 1 ? '' : 's'}</span>
+          ${open ? `<span class="badge dim">💬 ${open}</span>` : ''}
+          ${p.link ? `<span class="plink" title="Linked to a song">🎵 ${esc(songTitleOf(p.link))}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('') + `</div>`;
+}
+$('list').addEventListener('click', (e) => {
+  const cpy = e.target.closest('[data-cpy]');
+  if (cpy){ e.stopPropagation(); copyLink(shareUrl(pieces[+cpy.dataset.cpy]), 'Link to this piece copied'); return; }
+  const card = e.target.closest('.piece');
+  if (card) openPiece(+card.dataset.i);
+});
+
+// ---------- Stage: one piece, one revision at a time ----------
+function openPiece(i){
+  activePiece = pieces[i] || null;
+  if (!activePiece) return;
+  $('list').style.display = 'none';
+  $('stage').style.display = 'block';
+  $('artbar').style.display = singleShare ? 'none' : 'block';
+  $('stTitle').textContent = activePiece.title;
+  showRevision(0);
+  if (!singleShare) history.replaceState(null, '', shareUrl(activePiece));
+}
+function closeStage(){
+  if (skMode) endSketch(false);
+  activePiece = null; pendingRegion = null; pendingSketch = null; activeBoxId = null;
+  $('stage').style.display = 'none';
+  $('artbar').style.display = 'none';
+  $('list').style.display = '';
+  openDrawer(false);
+  if (curBand && !singleShare) history.replaceState(null, '', pageBase() + '?b=' + encodeURIComponent(curBand));
+}
+$('backBtn').onclick = closeStage;
+
+function showRevision(vi){
+  if (!activePiece) return;
+  activeRev = Math.max(0, Math.min(vi, activePiece.versions.length - 1));
+  const v = activePiece.versions[activeRev];
+  // A box and a drawing belong to the revision they were made on — switching
+  // revisions abandons anything not yet posted.
+  if (skMode) endSketch(false);
+  pendingRegion = null; pendingSketch = null; activeBoxId = null;
+  $('artImg').src = v.src;
+  $('artImg').alt = `${activePiece.title} — ${v.name}`;
+  $('barTitle').textContent = activePiece.title;
+  $('barSub').textContent = v.name + (v.date ? ` · ${v.date}` : '');
+
+  $('revs').innerHTML = activePiece.versions.map((r, i) => `
+    <span class="rev ${i === activeRev ? 'active' : ''}" data-rev="${i}">
+      <span>${esc(r.name)}</span>
+      ${i === 0 ? `<span class="latest">LATEST</span>` : ''}
+      ${r.date ? `<span class="rdate">${esc(r.date)}</span>` : ''}
+      ${singleShare ? '' : `<span class="rcpy" data-revcpy="${i}" title="Copy a link to this revision">🔗</span>`}
+    </span>`).join('');
+
+  const bullets = Array.isArray(v.changes) && v.changes.length
+    ? v.changes
+    : (v.changelog || '').split('\n').map(l => l.replace(/^\s*[-*]\s*/, '').trim()).filter(Boolean);
+  $('stLog').innerHTML = bullets.length
+    ? `<ul>${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>`
+    : `<span style="color:var(--text-mute)">No change notes for this revision.</span>`;
+
+  syncComposer(); renderComments(); renderRegions(); renderSketchView(); renderLinkRow();
+}
+// The overlays are sized from the image's rendered rect, which isn't known
+// until the file has actually loaded.
+$('artImg').addEventListener('load', () => { renderRegions(); renderSketchView(); });
+$('revs').addEventListener('click', (e) => {
+  const cpy = e.target.closest('[data-revcpy]');
+  if (cpy){
+    e.stopPropagation();
+    copyLink(shareUrl(activePiece, activePiece.versions[+cpy.dataset.revcpy]), 'Link to this revision copied');
+    return;
+  }
+  const chip = e.target.closest('[data-rev]');
+  if (chip) showRevision(+chip.dataset.rev);
+});
+
+// ---------- Region boxes ----------
+// A box is stored as fractions of the image (0–1), never pixels, so it lands
+// in the same place on a phone, on a 5K display, and on a revision that was
+// exported at different dimensions.
+let pendingRegion = null;     // the box just drawn, waiting for its comment
+let activeBoxId = null;       // box highlighted because its comment is selected
+
+function boxesFor(){
+  if (!activePiece) return [];
+  const ver = activePiece.versions[activeRev];
+  return rootsFor(subjectId(activePiece))
+    .filter(c => commentRelevantTo(c, activePiece, ver));
+}
+// Pin numbers follow the order comments appear in the drawer, so "box 3" and
+// the third note in the list are always the same thing.
+function pinOf(c){ return boxesFor().filter(x => x.region).findIndex(x => x.id === c.id) + 1; }
+
+function renderRegions(){
+  const el = $('regions');
+  el.innerHTML = boxesFor().filter(c => c.region).map(c => {
+    const r = c.region;
+    return `<div class="rbox ${activeBoxId === c.id ? 'active' : ''}" data-id="${c.id}"
+      style="left:${r.x*100}%;top:${r.y*100}%;width:${r.w*100}%;height:${r.h*100}%"
+      title="${esc(c.text)}"><span class="num">${pinOf(c)}</span></div>`;
+  }).join('') + (pendingRegion
+    ? `<div class="rbox pending" style="left:${pendingRegion.x*100}%;top:${pendingRegion.y*100}%;width:${pendingRegion.w*100}%;height:${pendingRegion.h*100}%"><span class="num">+</span></div>`
+    : '');
+}
+$('regions').addEventListener('click', (e) => {
+  const box = e.target.closest('.rbox');
+  if (!box || !box.dataset.id) return;
+  activeBoxId = box.dataset.id;
+  openDrawer(true);
+  renderRegions(); renderComments();
+  const row = $('clist').querySelector(`.cthread[data-root="${activeBoxId}"]`);
+  if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+});
+
+// Drag on the image to draw the box. Pointer events rather than mouse events,
+// so a finger on an iPad draws one the same way a trackpad does.
+// Pointer position as a fraction of the image — the one place pixels become
+// the 0–1 coordinates that both boxes and sketch strokes are stored in.
+function frac(e){
+  const b = $('artImg').getBoundingClientRect();
+  return { x: Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)),
+           y: Math.min(1, Math.max(0, (e.clientY - b.top) / b.height)) };
+}
+(() => {
+  const wrap = $('imgwrap');
+  let start = null, rubber = null;
+  wrap.addEventListener('pointerdown', (e) => {
+    if (singleShare || !activePiece || skMode) return;
+    if (e.target.closest('.rbox')) return;         // clicking an existing box selects it
+    start = frac(e);
+    wrap.setPointerCapture(e.pointerId);
+    rubber = document.createElement('div');
+    rubber.className = 'rubber';
+    $('regions').appendChild(rubber);
+    e.preventDefault();
+  });
+  wrap.addEventListener('pointermove', (e) => {
+    if (!start || !rubber) return;
+    const p = frac(e);
+    const r = { x: Math.min(start.x, p.x), y: Math.min(start.y, p.y),
+                w: Math.abs(p.x - start.x), h: Math.abs(p.y - start.y) };
+    Object.assign(rubber.style, { left: r.x*100+'%', top: r.y*100+'%',
+                                  width: r.w*100+'%', height: r.h*100+'%' });
+  });
+  const finish = (e) => {
+    if (!start) return;
+    const p = frac(e);
+    const r = { x: +Math.min(start.x, p.x).toFixed(4), y: +Math.min(start.y, p.y).toFixed(4),
+                w: +Math.abs(p.x - start.x).toFixed(4), h: +Math.abs(p.y - start.y).toFixed(4) };
+    start = null;
+    if (rubber){ rubber.remove(); rubber = null; }
+    // A click, not a drag: treat it as "clear the box", not as a 1-pixel region.
+    pendingRegion = (r.w > 0.01 && r.h > 0.01) ? r : null;
+    syncComposer();
+    renderRegions();
+    if (pendingRegion){ openDrawer(true); $('cinput').focus(); }
+  };
+  wrap.addEventListener('pointerup', finish);
+  wrap.addEventListener('pointercancel', () => { start = null; if (rubber){ rubber.remove(); rubber = null; } });
+})();
+
+// ---------- Draft edit suggestions ----------
+// Sometimes the note is "move this up and crop the left" and a sentence is the
+// long way round — so a comment can carry a drawing over the image.
+//
+// A suggestion is kept as STROKES in 0–1 image coordinates (see schema-v7),
+// not as a flattened PNG: it scales to any screen, it lands in the same place
+// on a revision exported at other dimensions, it rides along in the comment
+// row instead of needing an upload, and it can be redrawn later.
+const SK_MAX_STROKES = 200, SK_MAX_POINTS = 4000;
+let skMode = false;            // the drawing pad is live and owns the picture
+let skStrokes = [];            // the drawing in progress
+let skColor = '#ff5c5c', skWidth = 0.003;
+let pendingSketch = null;      // finished drawing waiting for its comment
+let skEditingId = null;        // set when redrawing an existing comment's suggestion
+
+// Both canvases overlay the image exactly, so they are sized from the image's
+// own rect (× dpr, or the strokes come out soft on a retina display).
+function paint(cv, strokes){
+  const b = $('artImg').getBoundingClientRect();
+  if (!b.width || !b.height) return;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(b.width * dpr); cv.height = Math.round(b.height * dpr);
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, b.width, b.height);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  (strokes || []).forEach(s => {
+    if (!s.p || !s.p.length) return;
+    ctx.strokeStyle = s.c || skColor;
+    ctx.lineWidth = Math.max(1, (s.w || skWidth) * b.width);
+    ctx.beginPath();
+    s.p.forEach(([x, y], i) => i ? ctx.lineTo(x * b.width, y * b.height)
+                                 : ctx.moveTo(x * b.width, y * b.height));
+    if (s.p.length === 1) ctx.lineTo(s.p[0][0] * b.width + .01, s.p[0][1] * b.height + .01);  // a tap is a dot
+    ctx.stroke();
+  });
+}
+// What's shown over the picture when not drawing: the suggestion you're about
+// to attach, or the one on the comment you've selected.
+function renderSketchView(){
+  if (skMode) return;                        // the pad is on top and owns the picture
+  let strokes = pendingSketch;
+  if (!strokes && activePiece && activeBoxId){
+    const sel = commentsFor(subjectId(activePiece)).find(c => c.id === activeBoxId);
+    strokes = sel && sel.sketch;
+  }
+  paint($('skView'), strokes || []);
+}
+
+function startSketch(existing, cid){
+  if (!activePiece || singleShare) return;
+  if (!isAuthed(curBand)) return showGate(curBand, false);
+  skMode = true; skEditingId = cid || null;
+  skStrokes = existing ? JSON.parse(JSON.stringify(existing)) : [];
+  document.body.classList.add('sketching');
+  $('skDone').textContent = cid ? 'Save' : 'Done';
+  paint($('skView'), []);
+  paint($('skPad'), skStrokes);
+  openDrawer(true);
+  $('imgwrap').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function endSketch(keep){
+  const out = (skStrokes || []).filter(s => s.p && s.p.length);
+  const cid = skEditingId;
+  skMode = false; skEditingId = null; skStrokes = [];
+  document.body.classList.remove('sketching');
+  if (keep && cid) saveSketch(cid, out.length ? out : null);
+  else if (keep) pendingSketch = out.length ? out : null;
+  syncComposer(); renderSketchView(); renderComments();
+  if (keep && !cid && pendingSketch) $('cinput').focus();
+}
+async function saveSketch(cid, strokes){
+  try { patchLocal(cid, await libRpc('set_comment_sketch', { cid, sk: strokes })); }
+  catch (err){ alert('Could not save the drawing: ' + (err.message || err)); }
+  renderComments(); renderSketchView();
+}
+
+// The pad itself.
+(() => {
+  const pad = $('skPad');
+  let cur = null;
+  const points = () => skStrokes.reduce((n, s) => n + s.p.length, 0);
+  pad.addEventListener('pointerdown', (e) => {
+    if (!skMode) return;
+    if (skStrokes.length >= SK_MAX_STROKES || points() >= SK_MAX_POINTS) return;
+    const p = frac(e);
+    cur = { c: skColor, w: skWidth, p: [[+p.x.toFixed(4), +p.y.toFixed(4)]] };
+    skStrokes.push(cur);
+    pad.setPointerCapture(e.pointerId);
+    paint(pad, skStrokes);
+    e.preventDefault();
+  });
+  pad.addEventListener('pointermove', (e) => {
+    if (!cur) return;
+    const p = frac(e), last = cur.p[cur.p.length - 1];
+    // Thin the trail: a point every ~0.4% of the image is plenty for a
+    // scribble and keeps the stored row small.
+    if (Math.hypot(p.x - last[0], p.y - last[1]) < 0.004) return;
+    if (cur.p.length >= SK_MAX_POINTS) return;
+    cur.p.push([+p.x.toFixed(4), +p.y.toFixed(4)]);
+    paint(pad, skStrokes);
+  });
+  const stop = () => { cur = null; };
+  pad.addEventListener('pointerup', stop);
+  pad.addEventListener('pointercancel', stop);
+})();
+
+$('skTools').addEventListener('click', (e) => {
+  const sw = e.target.closest('.swatch');
+  if (sw){
+    skColor = sw.dataset.color;
+    $('skTools').querySelectorAll('.swatch').forEach(s => s.classList.toggle('on', s === sw));
+    return;
+  }
+  const nib = e.target.closest('.nib');
+  if (nib){
+    skWidth = parseFloat(nib.dataset.w);
+    $('skTools').querySelectorAll('.nib').forEach(n => n.classList.toggle('on', n === nib));
+  }
+});
+$('skUndo').onclick  = () => { skStrokes.pop(); paint($('skPad'), skStrokes); };
+$('skClear').onclick = () => { skStrokes = []; paint($('skPad'), skStrokes); };
+$('skDone').onclick   = () => endSketch(true);
+$('skCancel').onclick = () => endSketch(false);
+$('skBtn').onclick = () => {
+  if (skMode) return endSketch(true);
+  startSketch(pendingSketch, null);
+};
+// The canvases are sized from the image's rendered rect, so both have to be
+// repainted whenever that rect changes.
+window.addEventListener('resize', () => { if (skMode) paint($('skPad'), skStrokes); else renderSketchView(); });
+
+// The composer chip says what the next comment will be attached to, and
+// clicking it throws the box away.
+function syncComposer(){
+  const chip = $('atTime');
+  chip.textContent = pendingRegion ? '▭ Boxed area' : 'Whole image';
+  chip.style.opacity = pendingRegion ? '1' : '.65';
+  const sk = $('skBtn');
+  sk.textContent = pendingSketch ? `✎ Draft (${pendingSketch.length})` : '✎ Draft';
+  sk.style.opacity = pendingSketch ? '1' : '.65';
+  $('cinput').placeholder = pendingSketch
+    ? 'Say what the drawing suggests… (optional)'
+    : pendingRegion ? 'Comment on this area…' : 'Leave a comment on the whole image…';
+}
+$('atTime').onclick = () => { pendingRegion = null; syncComposer(); renderRegions(); };
+
+// ---------- Linking a piece to a song ----------
+// Artwork usually belongs to something: a cover for a mix, a poster for the
+// single. The tie is stored as the song's folder on the art row, so renaming
+// or trashing either side just quietly drops the link rather than breaking.
+const songTitleOf = (folder) => (bandSongs.find(s => s.folder === folder) || {}).title || folder;
+
+function fillLinkSelect(sel, current){
+  sel.innerHTML = `<option value="">— none —</option>` +
+    bandSongs.map(s => `<option value="${esc(s.folder)}"${s.folder === current ? ' selected' : ''}>${esc(s.title)}</option>`).join('');
+  sel.disabled = !bandSongs.length;
+}
+function renderLinkRow(){
+  if (!activePiece || singleShare){ $('linkRow').style.display = 'none'; return; }
+  $('linkRow').style.display = 'flex';
+  fillLinkSelect($('linkSel'), activePiece.link || '');
+  const go = $('linkGo');
+  if (activePiece.link){
+    go.style.display = '';
+    go.textContent = `Open “${songTitleOf(activePiece.link)}” in the player →`;
+    go.href = 'music.html?b=' + encodeURIComponent(curBand) + '&s=' + encodeURIComponent(activePiece.link);
+  } else go.style.display = 'none';
+}
+$('linkSel').addEventListener('change', async (e) => {
+  if (!activePiece) return;
+  const target = e.target.value || null;
+  try { await libRpc('set_song_link', { f: activePiece.folder, target }); }
+  catch (err){ alert('Could not link that: ' + (err.message || err)); renderLinkRow(); return; }
+  activePiece.link = target;
+  renderLinkRow();
+});
+
+// ---------- Comments ----------
+// The data layer is S'notify's, unchanged: same table, same RPCs, same
+// threading, same carry-forward rule. Only the thing a comment points at
+// differs — a box instead of a timestamp.
+let commentCache = {};
+let cReplyTo = null, cEditId = null;
+const mapRow = (r) => ({ id: r.id, time: r.time_s, text: r.text, name: r.name || '',
+                         version: r.version || '', versionId: r.version_id || null,
+                         parentId: r.parent_id || null, resolved: !!r.resolved,
+                         resolvedBy: r.resolved_by || '', editedAt: r.edited_at ? Date.parse(r.edited_at) : null,
+                         dismissedVersions: r.dismissed_versions || [],
+                         region: r.region || null, sketch: r.sketch || null,
+                         at: Date.parse(r.created_at) });
+function commentsFor(id){ return (commentCache[id] || []).slice().sort((a,b)=>a.at-b.at); }
+function rootsFor(id){ return commentsFor(id).filter(c => !c.parentId); }
+function repliesFor(id, rootId){ return commentsFor(id).filter(c => c.parentId === rootId).sort((a,b)=>a.at-b.at); }
+function versionById(piece, vid){ return (piece.versions || []).find(v => v.id === vid) || null; }
+// An unresolved note carries forward onto every revision made after the one it
+// was posted on, until it's resolved or waved off for that one revision.
+function commentRelevantTo(c, piece, ver){
+  if (!ver) return false;
+  if (c.dismissedVersions.includes(ver.id)) return false;
+  if (c.versionId === ver.id) return true;
+  if (c.resolved) return false;
+  const origin = versionById(piece, c.versionId);
+  if (!origin || !origin.created_at || !ver.created_at) return true;
+  return Date.parse(ver.created_at) >= Date.parse(origin.created_at);
+}
+
+async function loadComments(){
+  if (!curBand || !isAuthed(curBand)){ commentCache = {}; return; }
+  try {
+    const rows = await libRpc('get_comments', {});
+    commentCache = {};
+    // One call returns the band's whole pool — mixes included. Keep the art.
+    (rows || []).filter(r => String(r.song_id).startsWith(curBand + '/art/'))
+                .forEach(r => (commentCache[r.song_id] ||= []).push(mapRow(r)));
+  } catch { return; }
+}
+
+async function addComment(text, parentId = null){
+  if (!activePiece) return;
+  if (!isAuthed(curBand)){ showGate(curBand, false); return; }
+  text = (text ?? $('cinput').value).trim();
+  // A drafted edit can speak for itself — text is only required without one.
+  if (!text && !(pendingSketch && !parentId)) return;
+  const ver = activePiece.versions[activeRev];
+  const sid = subjectId(activePiece);
+  try {
+    const row = await libRpc('add_comment', { sid, time_s: 0, txt: text,
+      who: $('cname').value.trim(), ver: ver.name, vid: ver.id,
+      parent_id: parentId, reg: parentId ? null : pendingRegion,
+      sk: parentId ? null : pendingSketch });
+    (commentCache[sid] ||= []).push(mapRow(row));
+  } catch (err){ alert('Could not post the comment: ' + (err.message || err)); return; }
+  if (!parentId){
+    $('cinput').value = '';
+    pendingRegion = null; pendingSketch = null;
+    syncComposer();
+  }
+  renderComments(); renderRegions(); renderSketchView(); renderListBadgeSoon();
+}
+async function deleteComment(cid){
+  if (!activePiece || !isAuthed(curBand)) return;
+  const sid = subjectId(activePiece);
+  try { await libRpc('delete_comment', { cid }); }
+  catch (err){ alert('Could not delete: ' + (err.message || err)); return; }
+  commentCache[sid] = (commentCache[sid]||[]).filter(c => c.id !== cid && c.parentId !== cid);
+  renderComments(); renderRegions(); renderListBadgeSoon();
+}
+// Honor system, same as the player: the server lets any bandmate edit any
+// comment; the one check that matters happens here, before the editor opens.
+function confirmEditingOthers(c){
+  const mine = $('cname').value.trim().toLowerCase();
+  if (!c.name || !mine || c.name.trim().toLowerCase() === mine) return true;
+  return confirm(`This comment was posted by "${c.name}" — are you sure you want to edit it?`);
+}
+function patchLocal(cid, row){
+  const sid = subjectId(activePiece);
+  const list = commentCache[sid] || [];
+  const i = list.findIndex(c => c.id === cid);
+  if (i !== -1) list[i] = { ...list[i], ...mapRow({ ...row, dismissed_versions: list[i].dismissedVersions }) };
+}
+async function editComment(cid, text){
+  text = text.trim();
+  if (!text || !activePiece) return;
+  try { patchLocal(cid, await libRpc('edit_comment', { cid, txt: text, who: $('cname').value.trim() })); }
+  catch (err){ alert('Could not save the edit: ' + (err.message || err)); return; }
+  renderComments(); renderRegions();
+}
+async function toggleResolve(cid, resolve){
+  if (!activePiece) return;
+  try { patchLocal(cid, await libRpc('resolve_comment', { cid, is_resolved: resolve, who: $('cname').value.trim() })); }
+  catch (err){ alert('Could not update: ' + (err.message || err)); return; }
+  renderComments(); renderRegions(); renderListBadgeSoon();
+}
+async function toggleDismiss(cid, versionId, dismiss){
+  if (!activePiece) return;
+  try { await libRpc('set_comment_dismissed', { cid, target_version: versionId, is_dismissed: dismiss }); }
+  catch (err){ alert('Could not update: ' + (err.message || err)); return; }
+  const c = (commentCache[subjectId(activePiece)] || []).find(x => x.id === cid);
+  if (c){
+    c.dismissedVersions = dismiss
+      ? [...new Set([...c.dismissedVersions, versionId])]
+      : c.dismissedVersions.filter(v => v !== versionId);
+  }
+  renderComments(); renderRegions();
+}
+// The grid behind the stage carries an open-comment count; refresh it lazily
+// so it's right the moment you go back.
+function renderListBadgeSoon(){ if ($('stage').style.display === 'none') renderList(); }
+
+function renderComments(){
+  const list = activePiece ? boxesFor() : [];
+  const ver = activePiece ? activePiece.versions[activeRev] : null;
+  $('cCount').textContent = list.length;
+  $('cdlBtn').disabled = !activePiece || !rootsFor(subjectId(activePiece)).length;
+  $('cdrawerHint').textContent = activePiece
+    ? `on “${activePiece.title}”${ver ? ` · ${ver.name}` : ''}` : '';
+  if (!activePiece){ $('clist').innerHTML = `<div class="cempty">Open a piece to leave comments.</div>`; return; }
+  if (!list.length){ $('clist').innerHTML = `<div class="cempty">No open comments on this revision — drag a box on the image to add one.</div>`; return; }
+
+  const replyRow = (r) => `
+    <div class="cmt" data-id="${r.id}">
+      <div class="body">
+        ${cEditId === r.id
+          ? `<div class="cedit"><input type="text" value="${esc(r.text)}" maxlength="280" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`
+          : `<div class="txt">${esc(r.text)}</div>`}
+        <div class="who">${r.name ? `<b>${esc(r.name)}</b> · ` : ''}${timeago(r.at)}${r.editedAt ? ' · <span class="edited-tag">edited</span>' : ''}</div>
+        <div class="cactions"><span class="act-edit">Edit</span></div>
+      </div>
+      <span class="del" title="Delete">×</span>
+    </div>`;
+
+  const sid = subjectId(activePiece);
+  $('clist').innerHTML = list.map(c => {
+    const dismissedHere = ver && c.dismissedVersions.includes(ver.id);
+    const origin = versionById(activePiece, c.versionId);
+    const carried = origin && ver && origin.id !== ver.id
+      ? `<span class="carried">· from ${esc(origin.name)}</span>` : '';
+    const replies = repliesFor(sid, c.id);
+    const pin = c.region
+      ? `<span class="t pin">${pinOf(c)}</span>`
+      : `<span class="t whole" title="About the whole image">◻︎</span>`;
+    return `
+    <div class="cthread ${c.resolved ? 'resolved' : ''} ${activeBoxId === c.id ? 'sel' : ''}" data-root="${c.id}">
+      <div class="cmt" data-id="${c.id}">
+        ${pin}
+        <div class="body">
+          ${cEditId === c.id
+            ? `<div class="cedit"><input type="text" value="${esc(c.text)}" maxlength="280" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`
+            : `<div class="txt">${esc(c.text)}</div>`}
+          <div class="who">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}${timeago(c.at)}${c.editedAt ? ' · <span class="edited-tag">edited</span>' : ''} ${carried}${c.sketch ? ` · <span class="skflag">✎ drafted edit</span>` : ''}${c.resolved ? `<span class="cbadge resolved">✓ resolved</span>` : ''}</div>
+          <div class="cactions">
+            <span class="act-reply">Reply</span>
+            <span class="act-edit">Edit</span>
+            <span class="act-draft">${c.sketch ? 'Redraw' : 'Draft edit'}</span>
+            ${c.sketch ? `<span class="act-undraft">Remove drawing</span>` : ''}
+            <span class="act-resolve ${c.resolved ? 'on' : ''}">${c.resolved ? 'Reopen' : 'Resolve'}</span>
+            <span class="act-dismiss ${dismissedHere ? 'on' : ''}">${dismissedHere ? 'Relevant here' : 'Not relevant here'}</span>
+          </div>
+        </div>
+        <span class="del" title="Delete">×</span>
+      </div>
+      <div class="creplies">
+        ${replies.map(replyRow).join('')}
+        ${cReplyTo === c.id ? `
+        <div class="cmt"><div class="body" style="flex:1">
+          <div class="cedit"><input type="text" placeholder="Reply…" maxlength="280" /><button class="save">Reply</button><button class="cancel">Cancel</button></div>
+        </div></div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  const openInput = $('clist').querySelector('.cedit input');
+  if (openInput) openInput.focus();
+}
+
+// Delegated once — #clist's innerHTML is fully replaced on every render.
+$('clist').addEventListener('click', (e) => {
+  if (!activePiece) return;
+  const threadEl = e.target.closest('.cthread');
+  if (!threadEl) return;
+  const rootId = threadEl.dataset.root;
+  const cid = e.target.closest('.cmt')?.dataset.id || null;
+  const sid = subjectId(activePiece);
+
+  if (e.target.classList.contains('del')){ deleteComment(cid); return; }
+  if (e.target.classList.contains('act-reply')){
+    cReplyTo = (cReplyTo === rootId ? null : rootId); cEditId = null; renderComments(); return;
+  }
+  if (e.target.classList.contains('act-edit')){
+    const c = commentsFor(sid).find(x => x.id === cid);
+    if (c && !confirmEditingOthers(c)) return;
+    cEditId = (cEditId === cid ? null : cid); cReplyTo = null; renderComments(); return;
+  }
+  if (e.target.classList.contains('act-draft')){
+    const c = commentsFor(sid).find(x => x.id === rootId);
+    if (c && c.sketch && !confirmEditingOthers(c)) return;
+    activeBoxId = rootId;
+    startSketch(c && c.sketch, rootId);
+    return;
+  }
+  if (e.target.classList.contains('act-undraft')){
+    const c = commentsFor(sid).find(x => x.id === rootId);
+    if (c && !confirmEditingOthers(c)) return;
+    if (confirm('Remove the drawing from this comment?')) saveSketch(rootId, null);
+    return;
+  }
+  if (e.target.classList.contains('act-resolve')){
+    toggleResolve(rootId, !threadEl.classList.contains('resolved')); return;
+  }
+  if (e.target.classList.contains('act-dismiss')){
+    const c = commentsFor(sid).find(x => x.id === rootId);
+    toggleDismiss(rootId, activePiece.versions[activeRev].id,
+                  !(c && c.dismissedVersions.includes(activePiece.versions[activeRev].id)));
+    return;
+  }
+  if (e.target.classList.contains('save')){
+    const input = e.target.parentElement.querySelector('input');
+    const val = input.value.trim();
+    if (!val) return;
+    if (cReplyTo){ const pid = cReplyTo; cReplyTo = null; addComment(val, pid); }
+    else if (cEditId){ const eid = cEditId; cEditId = null; editComment(eid, val); }
+    return;
+  }
+  if (e.target.classList.contains('cancel')){ cReplyTo = null; cEditId = null; renderComments(); return; }
+  if (e.target.closest('.cactions, .cedit')) return;
+  // Otherwise: selecting a comment highlights the part of the image it's
+  // about, and shows the edit its author drafted over the picture.
+  activeBoxId = (activeBoxId === rootId ? null : rootId);
+  renderRegions(); renderComments(); renderSketchView();
+});
+$('clist').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.closest('.cedit')){
+    e.preventDefault();
+    e.target.closest('.cedit').querySelector('.save').click();
+  }
+});
+
+$('caddBtn').onclick = () => addComment();
+$('cinput').addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); addComment(); } });
+$('cname').value = localStorage.getItem('mp_name') || '';
+$('cname').addEventListener('change', () => localStorage.setItem('mp_name', $('cname').value.trim()));
+
+function openDrawer(open){
+  if (singleShare) return;   // comments are band-only; the shared view has none
+  $('drawer').classList.toggle('open', !!open);
+  $('cToggle').classList.toggle('active', !!open);
+}
+$('cToggle').onclick = () => openDrawer(!$('drawer').classList.contains('open'));
+
+// Notes are most useful next to the canvas, not in a browser tab — so the
+// drawer can spill a piece's comments into a plain-text list, grouped by
+// revision.
+function commentsText(piece, list){
+  const sid = subjectId(piece);
+  const out = [`${piece.title} — comments`, `Exported ${new Date().toLocaleString()}`];
+  const groups = new Map(piece.versions.map(v => [v.name, []]));
+  list.forEach(c => {
+    const k = c.version || '';
+    if (!groups.has(k)) groups.set(k, []);   // posted on a since-renamed revision
+    groups.get(k).push(c);
+  });
+  for (const [name, cs] of groups){
+    if (!cs.length) continue;
+    out.push('', `[${name || 'unknown revision'}]`);
+    cs.sort((a, b) => a.at - b.at).forEach(c => {
+      const where = c.region
+        ? `box ${Math.round(c.region.x*100)},${Math.round(c.region.y*100)}` +
+          ` ${Math.round(c.region.w*100)}×${Math.round(c.region.h*100)}%`
+        : 'whole image';
+      const who = [c.name, c.at ? new Date(c.at).toLocaleDateString() : ''].filter(Boolean).join(', ');
+      const drawn = c.sketch ? ' [drafted edit — see the page]' : '';
+      out.push(`  ${c.resolved ? '[x]' : '[ ]'} (${where})  ${c.text}${drawn}${who ? `  — ${who}` : ''}`);
+      repliesFor(sid, c.id).forEach(r => {
+        const rwho = [r.name, r.at ? new Date(r.at).toLocaleDateString() : ''].filter(Boolean).join(', ');
+        out.push(`         ↳ ${r.text}${rwho ? `  — ${rwho}` : ''}`);
+      });
+    });
+  }
+  return out.join('\n') + '\n';
+}
+$('cdlBtn').onclick = () => {
+  if (!activePiece) return;
+  const list = rootsFor(subjectId(activePiece));
+  if (!list.length) return;
+  const url = URL.createObjectURL(
+    new Blob([commentsText(activePiece, list)], { type: 'text/plain;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = activePiece.title.replace(/[\/\\:*?"<>|]/g, '-') + ' comments.txt';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+// ---------- To-do (every thread on this piece, GitHub-issues style) ----------
+let todoTab = 'open';
+function renderTodo(){
+  if (!activePiece){ $('todoList').innerHTML = `<div class="cempty">Open a piece to see its to-do list.</div>`; return; }
+  const sid = subjectId(activePiece);
+  const all = rootsFor(sid);
+  const open = all.filter(c => !c.resolved), done = all.filter(c => c.resolved);
+  $('todoHint').textContent = `on “${activePiece.title}”`;
+  $('todoTabOpen').textContent = `Open (${open.length})`;
+  $('todoTabClosed').textContent = `Resolved (${done.length})`;
+  $('todoTabOpen').classList.toggle('active', todoTab === 'open');
+  $('todoTabClosed').classList.toggle('active', todoTab === 'resolved');
+
+  let rows = todoTab === 'open' ? open : done;
+  const sort = $('todoSort').value;
+  rows = rows.slice().sort((a, b) =>
+    sort === 'old'     ? a.at - b.at :
+    sort === 'replies' ? repliesFor(sid, b.id).length - repliesFor(sid, a.id).length
+                       : b.at - a.at);
+
+  if (!rows.length){
+    $('todoList').innerHTML = `<div class="cempty">${todoTab === 'open'
+      ? 'Nothing open — every comment on this piece is resolved.'
+      : 'Nothing resolved yet.'}</div>`;
+    return;
+  }
+  $('todoList').innerHTML = rows.map(c => {
+    const nReplies = repliesFor(sid, c.id).length;
+    // Which revisions this note applies to — origin highlighted, waved-off struck.
+    const chips = activePiece.versions.map(v => {
+      if (v.id === c.versionId) return `<span class="chip origin">${esc(v.name)}</span>`;
+      if (c.dismissedVersions.includes(v.id)) return `<span class="chip dismissed">${esc(v.name)}</span>`;
+      return commentRelevantTo(c, activePiece, v) ? `<span class="chip">${esc(v.name)}</span>` : '';
+    }).filter(Boolean).join('');
+    return `
+    <div class="todo-row" data-id="${c.id}" data-vid="${c.versionId || ''}">
+      <span class="todo-dot ${c.resolved ? 'resolved' : 'open'}"></span>
+      <div class="body">
+        <div class="txt">${esc(c.text)}</div>
+        <div class="meta">
+          <span>${c.region ? '▭ boxed' : '◻︎ whole image'}${c.sketch ? ' · ✎ drafted' : ''}</span>
+          <span>${c.name ? `${esc(c.name)} · ` : ''}${timeago(c.at)}</span>
+          ${nReplies ? `<span class="replies">💬 ${nReplies}</span>` : ''}
+          ${c.resolved && c.resolvedBy ? `<span>resolved by ${esc(c.resolvedBy)}</span>` : ''}
+          ${chips}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+// Clicking a row takes you to where the note was made: its origin revision,
+// that box highlighted, drawer open.
+$('todoList').addEventListener('click', (e) => {
+  const row = e.target.closest('.todo-row');
+  if (!row || !activePiece) return;
+  const vi = activePiece.versions.findIndex(v => v.id === row.dataset.vid);
+  if (vi !== -1 && vi !== activeRev) showRevision(vi);
+  activeBoxId = row.dataset.id;
+  closeTodo();
+  openDrawer(true);
+  renderRegions(); renderComments();
+});
+function openTodo(){ if (!activePiece || singleShare) return; $('todoModal').classList.add('open'); renderTodo(); }
+function closeTodo(){ $('todoModal').classList.remove('open'); }
+$('todoToggle').onclick = openTodo;
+$('todoClose').onclick = closeTodo;
+$('todoModal').addEventListener('click', (e) => { if (e.target === $('todoModal')) closeTodo(); });
+$('todoSort').onchange = renderTodo;
+$('todoTabOpen').onclick   = () => { todoTab = 'open';     renderTodo(); };
+$('todoTabClosed').onclick = () => { todoTab = 'resolved'; renderTodo(); };
+
+// ---------- Share links ----------
+// Same query form as the player: ?b&s&v is one revision and opens WITHOUT a
+// login; a piece or band link needs one.
+function shareUrl(piece, rev){
+  const q = new URLSearchParams();
+  q.set('b', curBand);
+  if (piece) q.set('s', piece.folder || piece.title);
+  if (rev) q.set('v', rev.name);
+  return pageBase() + '?' + q.toString();
+}
+async function copyLink(url, msg){
+  try { await navigator.clipboard.writeText(url); }
+  catch { prompt('Copy this link:', url); return; }
+  const el = $('artCount');
+  const was = el.textContent;
+  el.textContent = msg || 'Link copied';
+  setTimeout(() => { el.textContent = was; }, 1600);
+}
+$('shareBtn').onclick = () => copyLink(
+  activePiece ? shareUrl(activePiece) : shareUrl(null),
+  activePiece ? 'Link to this piece copied' : 'Link to the artwork copied');
+
+// ---------- Add artwork (upload) ----------
+// Same transport as the player: files land in the band inbox bucket (the path
+// carries the band password, which is what the storage policy checks), then
+// the import-inbox Edge Function moves them into the permanent bucket and
+// writes the rows — here with kind:'art'. No compression step: that is a
+// lossless-audio problem, and an image that big just gets refused.
+const INBOX_MAX = 50 * 1024 * 1024;    // Supabase free-tier per-file ceiling (fixed)
+
+function setAddStatus(msg, cls){ const el = $('addStatus'); el.textContent = msg || ''; el.className = 'status' + (cls ? ' ' + cls : ''); }
+function fillPieceSelect(){
+  const sel = $('addSongSel');
+  sel.innerHTML = pieces.map(p => `<option value="${esc(p.title)}">${esc(p.title)}</option>`).join('')
+    + `<option value="__new__">➕ New piece…</option>`;
+  if (!pieces.length) sel.value = '__new__';
+  syncPieceNew();
+}
+function syncPieceNew(){ $('addSongNew').style.display = $('addSongSel').value === '__new__' ? 'block' : 'none'; }
+$('addSongSel').addEventListener('change', syncPieceNew);
+
+function syncFileUI(){
+  const files = $('addFile').files;
+  const multi = files && files.length > 1;
+  $('addVerRow').style.display = multi ? 'none' : 'flex';
+  $('addNote').disabled = !!multi;
+  if (files && files.length === 1 && !$('addVerName').value)
+    $('addVerName').value = files[0].name.replace(/\.[^.]+$/, '');
+  let hint = multi ? `${files.length} files — each becomes a revision named after its filename.` : '';
+  const big = files && [...files].find(f => f.size > INBOX_MAX);
+  if (big) hint += ` ${big.name} is ${(big.size/1048576).toFixed(0)} MB — over the ${(INBOX_MAX/1048576)|0} MB limit. Export it smaller first.`;
+  $('addFileHint').textContent = hint;
+}
+$('addFile').addEventListener('change', syncFileUI);
+
+function openAdd(){
+  if (!curBand || !isAuthed(curBand)) return showGate(curBand, false);
+  $('addModal').classList.add('open');
+  setAddStatus('');
+  fillPieceSelect();
+  fillLinkSelect($('addLinkSel'), activePiece ? (activePiece.link || '') : '');
+  if (activePiece) $('addSongSel').value = activePiece.title;
+  syncPieceNew();
+  const modeEl = $('addMode');
+  modeEl.className = 'mode github';
+  modeEl.textContent = `● Uploading to ${curBandTitle || curBand}.`;
+  syncFileUI();
+}
+function closeAdd(){ $('addModal').classList.remove('open'); }
+$('addBtn').onclick = openAdd;
+$('addClose').onclick = closeAdd;
+$('addModal').addEventListener('click', (e) => { if (e.target === $('addModal')) closeAdd(); });
+
+async function doUpload(){
+  const files = [...($('addFile').files || [])];
+  const sel = $('addSongSel').value;
+  const piece = sel === '__new__' ? $('addSongNew').value.trim() : sel;
+  if (!files.length){ setAddStatus('Choose at least one image.', 'err'); return; }
+  if (!piece){ setAddStatus('Give the piece a title.', 'err'); return; }
+  const multi = files.length > 1;
+  const note = multi ? '' : $('addNote').value.trim();
+  const btn = $('addGo');
+  btn.disabled = true;
+  try {
+    const pass = bandPass(curBand);
+    if (!pass){ closeAdd(); showGate(curBand, false); return; }
+    const big = files.find(f => f.size > INBOX_MAX);
+    if (big) throw new Error(`${big.name} is ${(big.size/1048576).toFixed(0)} MB — over the ${(INBOX_MAX/1048576)|0} MB limit. Export a smaller version.`);
+
+    // The inbox storage policy checks the password embedded in the path, so a
+    // wrong one is rejected before a single byte is stored.
+    const put = async (path, body, type) => {
+      const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${path}`, {
+        method: 'POST',
+        headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+                   'Content-Type': type, 'x-upsert': 'true' },
+        body });
+      if (r.ok) return;
+      let detail = '';
+      try { const j = await r.json(); detail = j.message || j.error || ''; } catch {}
+      throw new Error(`Upload of ${decodeURIComponent(path.split('/').pop())} failed `
+                    + `(${r.status}${detail ? ': ' + detail : ''})`);
+    };
+    const enc = (...seg) => seg.map(encodeURIComponent).join('/');
+    let firstBase = null;
+    for (const [i, f] of files.entries()){
+      setAddStatus(`Uploading ${i+1}/${files.length}: ${f.name}…`);
+      const ext = (f.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+      const verName = (multi || !$('addVerName').value.trim())
+        ? f.name.replace(/\.[^.]+$/, '') : $('addVerName').value.trim();
+      firstBase ??= verName;
+      await put(enc(curBand, pass, piece, verName + ext), f, f.type || 'application/octet-stream');
+    }
+    if (note && firstBase)
+      await put(enc(curBand, pass, piece, firstBase + '.changelog.md'), note + '\n', 'text/markdown');
+
+    setAddStatus('Importing…');
+    const res = await edgeFn('import-inbox', { band: curBand, pass, song: piece, kind: 'art' });
+    // The row exists only after the import, so the link is set on the way out.
+    const linkTo = $('addLinkSel').value || null;
+    if (linkTo){
+      try { await libRpc('set_song_link', { f: piece, target: linkTo }); }
+      catch { /* the upload worked; a failed link is not worth failing over */ }
+    }
+    setAddStatus(`Done ✓ — ${res.imported} revision${res.imported === 1 ? '' : 's'} added to “${piece}”.`, 'ok');
+    const wasOpen = activePiece && activePiece.title;
+    await init();
+    if (wasOpen){
+      const i = pieces.findIndex(p => p.title === wasOpen);
+      if (i !== -1) openPiece(i);
+    }
+    fillPieceSelect();
+    $('addFile').value = ''; $('addVerName').value = ''; $('addNote').value = '';
+    syncFileUI();
+  } catch (err){
+    setAddStatus(String(err.message || err), 'err');
+  } finally { btn.disabled = false; }
+}
+$('addGo').onclick = doUpload;
+
+// ---------- Keyboard ----------
+document.addEventListener('keydown', (e) => {
+  if (e.target.matches('input, textarea, select')) return;
+  if (e.key === 'Escape'){
+    if ($('addModal').classList.contains('open')) return closeAdd();
+    if ($('todoModal').classList.contains('open')) return closeTodo();
+    if (skMode) return endSketch(false);
+    if (pendingSketch){ pendingSketch = null; syncComposer(); renderSketchView(); return; }
+    if (pendingRegion){ pendingRegion = null; syncComposer(); renderRegions(); return; }
+    if ($('drawer').classList.contains('open')) return openDrawer(false);
+    if (activePiece) return closeStage();
+  }
+  if (!activePiece || skMode) return;
+  if (e.key === 'c'){ e.preventDefault(); openDrawer(!$('drawer').classList.contains('open')); }
+  if (e.key === 't'){ e.preventDefault(); openTodo(); }
+  if (e.key === 'd'){ e.preventDefault(); startSketch(pendingSketch, null); }
+  // 1–9 jump between revisions, same as the player's version shortcuts.
+  if (/^[1-9]$/.test(e.key) && activePiece.versions[+e.key - 1]) showRevision(+e.key - 1);
+});
+
+// The cross-page buttons keep you in the same band.
+if (curBand || route.band){
+  const b = encodeURIComponent(bandSlugOf(route.band || curBand));
+  $('musicBtn').href = 'music.html?b=' + b;
+  $('homeBtn').href  = 'index.html?b=' + b;
+}
+
+syncComposer();
+init();
+</script>
+</body>
+</html>

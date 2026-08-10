@@ -35,6 +35,52 @@ create index if not exists songs_band_kind on songs (band, kind, position) where
 -- namespace, one storage path (tracks/<band>/<folder>/), no collisions.
 
 -- ---------------------------------------------------------------------------
+-- songs.linked_folder — tie a piece of art to a song
+-- ---------------------------------------------------------------------------
+-- Cover art, a lyric sheet, a poster for the single: artwork often belongs TO
+-- something in the music library. Optional, and a plain folder reference
+-- rather than a foreign key so that renaming or trashing either side can never
+-- take the other down with it — a dangling link just stops showing.
+alter table songs add column if not exists linked_folder text;
+
+-- One song as the JSON shape the clients expect. Overridden here (rather than
+-- in v6) to carry the link and the kind.
+create or replace function _song_json(s songs) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'folder', s.folder,
+    'id',     s.comment_key,
+    'title',  s.title,
+    'artist', s.artist,
+    'album',  s.album,
+    'cover',  s.cover,
+    'kind',   s.kind,
+    'link',   s.linked_folder,
+    'versions', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', v.id, 'name', v.name, 'src', v.src,
+               'date', coalesce(to_char(v.date, 'YYYY-MM-DD'), ''),
+               'changelog', v.changelog, 'changes', v.changes,
+               'created_at', v.created_at)
+             order by v.position, v.created_at desc)
+      from versions v where v.song_id = s.id and v.trashed_at is null), '[]'::jsonb))
+$$;
+
+-- Set or clear the link. `target` is the OTHER item's folder in the same band,
+-- or null to unlink. Named `target` rather than `linked_folder` to stay clear
+-- of the parameter/column ambiguity trap.
+create or replace function set_song_link(b text, p text, f text, target text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  perform _require_pass(b, p);
+  if target is not null and not exists (
+      select 1 from songs where band = lower(b) and folder = target) then
+    raise exception 'nothing to link to by that name';
+  end if;
+  update songs set linked_folder = target where band = lower(b) and folder = f;
+end $$;
+
+-- ---------------------------------------------------------------------------
 -- comments.region — the box the comment is about, or null for "this image"
 -- ---------------------------------------------------------------------------
 -- {x, y, w, h} as fractions of the image, 0–1: a box survives window resizes,
@@ -51,6 +97,39 @@ language sql immutable set search_path = public as $$
     and (r->>'x')::real between 0 and 1 and (r->>'y')::real between 0 and 1
     and (r->>'w')::real >  0 and (r->>'w')::real <= 1
     and (r->>'h')::real >  0 and (r->>'h')::real <= 1
+  )
+$$;
+
+-- ---------------------------------------------------------------------------
+-- comments.sketch — a drafted edit suggestion drawn over the image
+-- ---------------------------------------------------------------------------
+-- "Here's what I mean" is often a scribble, not a sentence, so a comment can
+-- carry a drawing: arrows, a crop line, a rough shape moved two inches left.
+--
+-- Stored as STROKES, not a flattened PNG:
+--   [ { c: '#ff5c5c', w: 0.004, p: [[x,y],[x,y], …] }, … ]
+-- with x/y as 0–1 fractions of the image and w as a fraction of its width —
+-- the same normalisation the region box uses, and for the same reason. It
+-- scales to any display, survives a revision exported at other dimensions,
+-- costs a couple of KB in a jsonb column instead of a file in storage, and
+-- needs no bucket, no upload policy and no import step to travel.
+alter table comments add column if not exists sketch jsonb;
+
+create or replace function _valid_sketch(s jsonb) returns boolean
+language sql immutable set search_path = public as $$
+  select s is null or (
+        jsonb_typeof(s) = 'array'
+    and jsonb_array_length(s) <= 200
+    and length(s::text) <= 200000
+    and not exists (
+      select 1 from jsonb_array_elements(s) e
+      where jsonb_typeof(e)        <> 'object'
+         or jsonb_typeof(e->'p')   <> 'array'
+         or jsonb_array_length(e->'p') > 4000
+         or jsonb_typeof(e->'w')   <> 'number'
+         or jsonb_typeof(e->'c')   <> 'string'
+         or length(e->>'c') > 24
+    )
   )
 $$;
 
@@ -106,11 +185,13 @@ end $$;
 -- disambiguate.
 -- ---------------------------------------------------------------------------
 drop function if exists add_comment(text, text, text, real, text, text, text, uuid, uuid);
+drop function if exists add_comment(text, text, text, real, text, text, text, uuid, uuid, jsonb);
 
 create or replace function add_comment(b text, p text, sid text, time_s real,
                                         txt text, who text, ver text, vid uuid,
                                         parent_id uuid default null,
-                                        reg jsonb default null)
+                                        reg jsonb default null,
+                                        sk jsonb default null)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 -- pid/tsec shadow the parent_id/time_s parameters, whose names collide with
@@ -119,17 +200,22 @@ language plpgsql security definer set search_path = public as $$
 -- the same collision with comments.region.) The parameter names stay as-is so
 -- the RPC's named-argument API doesn't change.
 declare row_out comments; parent comments;
-        pid uuid := parent_id; tsec real := time_s; rgn jsonb := reg;
+        pid uuid := parent_id; tsec real := time_s; rgn jsonb := reg; skt jsonb := sk;
 begin
   perform _require_pass(b, p);
   if sid not like lower(b) || '/%' then
     raise exception using errcode = '42501', message = 'comment outside this band';
   end if;
-  if coalesce(trim(txt), '') = '' then
+  -- A drawn suggestion can stand on its own; a comment with neither text nor
+  -- sketch cannot.
+  if coalesce(trim(txt), '') = '' and skt is null then
     raise exception 'comment text required';
   end if;
   if not _valid_region(rgn) then
     raise exception 'region must be {x,y,w,h} as fractions between 0 and 1';
+  end if;
+  if not _valid_sketch(skt) then
+    raise exception 'sketch must be an array of {c,w,p} strokes in 0–1 coordinates';
   end if;
   if pid is not null then
     select * into parent from comments where comments.id = pid and comments.song_id = sid;
@@ -147,10 +233,33 @@ begin
     vid  := parent.version_id;
     rgn  := parent.region;
   end if;
-  insert into comments (song_id, time_s, text, name, version, version_id, parent_id, region)
-    values (sid, tsec, txt, coalesce(who, ''), coalesce(ver, ''), vid, pid, rgn)
+  insert into comments (song_id, time_s, text, name, version, version_id, parent_id, region, sketch)
+    values (sid, tsec, coalesce(nullif(trim(txt), ''), ''), coalesce(who, ''),
+            coalesce(ver, ''), vid, pid, rgn, skt)
     returning * into row_out;
   return to_jsonb(row_out) || jsonb_build_object('dismissed_versions', '[]'::jsonb);
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- set_comment_sketch — redraw or wipe the suggestion on an existing comment.
+-- Separate from edit_comment so that "no sketch argument" can never be
+-- confused with "clear the sketch". Honor system, same as edit and delete.
+-- ---------------------------------------------------------------------------
+create or replace function set_comment_sketch(b text, p text, cid uuid, sk jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare row_out comments; skt jsonb := sk;
+begin
+  perform _require_pass(b, p);
+  if not _valid_sketch(skt) then
+    raise exception 'sketch must be an array of {c,w,p} strokes in 0–1 coordinates';
+  end if;
+  update comments set sketch = skt, edited_at = now()
+    where id = cid and comments.song_id like lower(b) || '/%'
+    returning * into row_out;
+  if not found then
+    raise exception 'comment not found';
+  end if;
+  return to_jsonb(row_out);
 end $$;
 
 -- get_comments needs no change: to_jsonb(c) picks up region for free, and the

@@ -30,7 +30,9 @@ const fmt = (s) => { if (!isFinite(s) || s < 0) s = 0; const m = Math.floor(s/60
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const filename = (p) => decodeURIComponent(p.split('/').pop().replace(/\.[^.]+$/, ''));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+// Read off <body>, not :root — themes set their variables on
+// body[data-theme=…], and :root would only ever hand back the defaults.
+function cssVar(n){ return getComputedStyle(document.body).getPropertyValue(n).trim(); }
 const pageBase = () => location.href.split('#')[0].split('?')[0];
 // Bind only if the page actually has that element — the two pages share this
 // file but not every control.
@@ -98,6 +100,20 @@ function publicUrl(p){
 
 // Which band's library this page is currently showing.
 let curBand = null, curBandTitle = '';
+
+// ---------- Per-band themes ----------
+// A band can have its own look without forking the site: the theme file is
+// scoped to body[data-theme=…] and every band not listed here gets the
+// original styling. Applied as early as the band is known — from the URL
+// before login, so the gate itself is already wearing the right coat.
+const BAND_THEME = {
+  lakehorse: 'dazzle',       // WWI ship dazzle camo — theme-dazzle.css
+};
+function applyTheme(band){
+  const t = BAND_THEME[bandSlugOf(band || '')] || '';
+  if (t) document.body.dataset.theme = t;
+  else delete document.body.dataset.theme;
+}
 
 // ---------- Deep-link routing ----------
 // Canonical (what the 🔗 buttons copy):  ?b=<band>&s=<folder>&v=<name>
@@ -172,6 +188,7 @@ function gateStep(n){
   setTimeout(() => (n === 1 ? $('gateName') : $('gatePass')).focus(), 0);
 }
 function showGate(bandSlug, hard = true, bandTitle = null){
+  applyTheme(bandSlug);
   if (hard){
     document.body.classList.remove('authed');
     document.body.classList.add('locked');
@@ -216,6 +233,7 @@ function proceedToBand(band){
   gateStep(2);
 }
 async function enterBand(slug){
+  applyTheme(slug);
   history.replaceState(null, '', pageBase() + '?b=' + encodeURIComponent(slug));
   route = parseRoute();
   await App.init();
@@ -249,6 +267,191 @@ on('gateModal', 'click', (e) => {
 });
 on('mixLogin', 'click', () => showGate(curBand, false));
 
+// ---------- Site admin ----------
+// Gated separately from band logins: this password only unlocks adding new
+// bands/libraries, never library contents. Session-only (sessionStorage) —
+// closing the tab logs it out, unlike band logins which persist in
+// localStorage. The server re-checks the password on every admin_create_band
+// call, so a stale/cleared session just falls back to the login step.
+//
+// It lives here rather than on one page because the ⚙ button belongs at the
+// top of every page. The markup is injected instead of copied into three
+// files, so there is exactly one version of it to keep right.
+const ADMIN_KEY = 'mp_admin_v1';
+const adminPass = () => sessionStorage.getItem(ADMIN_KEY) || '';
+
+document.body.insertAdjacentHTML('beforeend', `
+  <div class="modal-back" id="adminModal">
+    <div class="modal" style="max-width:380px">
+      <h2>Site admin</h2>
+
+      <!-- First-time setup -->
+      <div id="adminSetup" style="display:none">
+        <div class="hint" style="margin-bottom:6px">First time here — set an admin
+          password and a recovery question. There's no email to reset through,
+          so don't lose the answer.</div>
+        <label>Admin password</label>
+        <input type="password" id="adminSetupPass" autocomplete="off" />
+        <label>Recovery question</label>
+        <input type="text" id="adminSetupQ" placeholder="e.g. What was the first band's name?" maxlength="200" />
+        <label>Answer</label>
+        <input type="text" id="adminSetupA" autocomplete="off" maxlength="200" />
+        <div class="status err" id="adminSetupErr"></div>
+        <div class="actions">
+          <button class="btn ghost" id="adminSetupClose">Close</button>
+          <button class="btn primary" id="adminSetupGo">Set up</button>
+        </div>
+      </div>
+
+      <!-- Login -->
+      <div id="adminLoginStep" style="display:none">
+        <label>Admin password</label>
+        <input type="password" id="adminPass" autocomplete="off" />
+        <div class="status err" id="adminLoginErr"></div>
+        <div class="hint" style="margin-top:6px"><span class="linky" id="adminForgotLink">Forgot password?</span></div>
+        <div class="actions">
+          <button class="btn ghost" id="adminLoginClose">Close</button>
+          <button class="btn primary" id="adminLoginGo">Log in</button>
+        </div>
+      </div>
+
+      <!-- Recovery -->
+      <div id="adminRecover" style="display:none">
+        <div class="hint" id="adminRecoverQ" style="margin-bottom:6px"></div>
+        <label>Answer</label>
+        <input type="text" id="adminRecoverA" autocomplete="off" />
+        <label>New admin password</label>
+        <input type="password" id="adminRecoverNew" autocomplete="off" />
+        <div class="status err" id="adminRecoverErr"></div>
+        <div class="actions">
+          <button class="btn ghost" id="adminRecoverBack">Back</button>
+          <button class="btn primary" id="adminRecoverGo">Reset password</button>
+        </div>
+      </div>
+
+      <!-- Add a band, once logged in -->
+      <div id="adminPanel" style="display:none">
+        <div class="hint" style="margin-bottom:6px">Add another project as a new band library.</div>
+        <label>Band name</label>
+        <input type="text" id="adminBandTitle" placeholder="e.g. Some Other Band" maxlength="120" />
+        <label>URL slug</label>
+        <input type="text" id="adminBandSlug" placeholder="e.g. someotherband" autocomplete="off" autocapitalize="none" maxlength="60" />
+        <div class="hint" id="adminSlugHint">Lowercase letters, numbers and hyphens only — this is what goes in the link.</div>
+        <label>Band password</label>
+        <input type="text" id="adminBandPass" autocomplete="off" maxlength="120" />
+        <div class="status err" id="adminPanelErr"></div>
+        <div class="status" id="adminPanelStatus"></div>
+        <div class="actions">
+          <button class="btn ghost" id="adminClose">Close</button>
+          <button class="btn primary" id="adminCreateGo">Create band</button>
+        </div>
+      </div>
+    </div>
+  </div>`);
+
+function adminHideAll(){
+  ['adminSetup', 'adminLoginStep', 'adminRecover', 'adminPanel']
+    .forEach(id => $(id).style.display = 'none');
+}
+function adminShowPanel(){
+  adminHideAll(); $('adminPanel').style.display = 'block';
+  $('adminBandTitle').value = ''; $('adminBandSlug').value = ''; $('adminBandPass').value = '';
+  $('adminPanelErr').textContent = ''; $('adminPanelStatus').textContent = '';
+}
+async function adminShowLoggedOut(){
+  adminHideAll();
+  if (adminPass()){ adminShowPanel(); return; }
+  let status = { configured: true };
+  try { status = await rpc('admin_status', {}); } catch {}
+  if (status && status.configured === false){
+    $('adminSetup').style.display = 'block';
+    $('adminSetupPass').value = ''; $('adminSetupQ').value = ''; $('adminSetupA').value = '';
+    $('adminSetupErr').textContent = '';
+  } else {
+    $('adminLoginStep').style.display = 'block';
+    $('adminPass').value = ''; $('adminLoginErr').textContent = '';
+  }
+}
+function openAdmin(){ $('adminModal').classList.add('open'); adminShowLoggedOut(); }
+function closeAdmin(){ $('adminModal').classList.remove('open'); }
+async function adminDoSetup(){
+  const password = $('adminSetupPass').value;
+  const question = $('adminSetupQ').value.trim();
+  const answer = $('adminSetupA').value.trim();
+  if (!password || !question || !answer){ $('adminSetupErr').textContent = 'All three fields are required.'; return; }
+  $('adminSetupGo').disabled = true;
+  try {
+    await rpc('admin_setup', { password, question, answer });
+    sessionStorage.setItem(ADMIN_KEY, password);
+    adminShowPanel();
+  } catch (e) { $('adminSetupErr').textContent = e.message || 'Setup failed.'; }
+  finally { $('adminSetupGo').disabled = false; }
+}
+async function adminDoLogin(){
+  const password = $('adminPass').value;
+  if (!password){ $('adminLoginErr').textContent = 'Enter the admin password.'; return; }
+  $('adminLoginGo').disabled = true;
+  try {
+    const ok = await rpc('admin_login', { password });
+    if (ok !== true){ $('adminLoginErr').textContent = 'Wrong password.'; return; }
+    sessionStorage.setItem(ADMIN_KEY, password);
+    adminShowPanel();
+  } catch { $('adminLoginErr').textContent = 'Could not reach the login service.'; }
+  finally { $('adminLoginGo').disabled = false; }
+}
+async function adminShowRecover(){
+  adminHideAll(); $('adminRecover').style.display = 'block';
+  $('adminRecoverA').value = ''; $('adminRecoverNew').value = ''; $('adminRecoverErr').textContent = '';
+  try {
+    const status = await rpc('admin_status', {});
+    $('adminRecoverQ').textContent = (status && status.question) || '';
+  } catch { $('adminRecoverQ').textContent = ''; }
+}
+async function adminDoRecover(){
+  const answer = $('adminRecoverA').value;
+  const newPassword = $('adminRecoverNew').value;
+  if (!answer || !newPassword){ $('adminRecoverErr').textContent = 'Answer and new password are both required.'; return; }
+  $('adminRecoverGo').disabled = true;
+  try {
+    const ok = await rpc('admin_recover', { answer, new_password: newPassword });
+    if (!ok){ $('adminRecoverErr').textContent = 'That answer doesn’t match.'; return; }
+    sessionStorage.setItem(ADMIN_KEY, newPassword);
+    adminShowPanel();
+  } catch (e) { $('adminRecoverErr').textContent = e.message || 'Reset failed.'; }
+  finally { $('adminRecoverGo').disabled = false; }
+}
+async function adminDoCreate(){
+  const title = $('adminBandTitle').value.trim();
+  const bandSlug = $('adminBandSlug').value.trim().toLowerCase();
+  const bandPassword = $('adminBandPass').value;
+  if (!bandSlug || !bandPassword){ $('adminPanelErr').textContent = 'Slug and band password are required.'; return; }
+  $('adminCreateGo').disabled = true; $('adminPanelErr').textContent = ''; $('adminPanelStatus').textContent = '';
+  try {
+    await rpc('admin_create_band', { admin_password: adminPass(), slug: bandSlug, title, band_password: bandPassword });
+    $('adminPanelStatus').textContent = `Created — share this link: ${pageBase()}?b=${encodeURIComponent(bandSlug)}`;
+    $('adminBandTitle').value = ''; $('adminBandSlug').value = ''; $('adminBandPass').value = '';
+  } catch (e) {
+    if (/wrong admin password/i.test(e.message || '')){
+      sessionStorage.removeItem(ADMIN_KEY); adminShowLoggedOut(); return;
+    }
+    $('adminPanelErr').textContent = e.message || 'Could not create the band.';
+  } finally { $('adminCreateGo').disabled = false; }
+}
+// Two ways in on every page: the ⚙ in the header once you're through the gate,
+// and the link on the gate itself for when you aren't.
+on('adminOpenLink', 'click', openAdmin);
+on('adminBtn', 'click', openAdmin);
+on('adminSetupClose', 'click', closeAdmin);
+on('adminLoginClose', 'click', closeAdmin);
+on('adminClose', 'click', closeAdmin);
+on('adminSetupGo', 'click', adminDoSetup);
+on('adminLoginGo', 'click', adminDoLogin);
+on('adminForgotLink', 'click', adminShowRecover);
+on('adminRecoverBack', 'click', adminShowLoggedOut);
+on('adminRecoverGo', 'click', adminDoRecover);
+on('adminCreateGo', 'click', adminDoCreate);
+on('adminModal', 'click', (e) => { if (e.target === $('adminModal')) closeAdmin(); });
+
 // Log out of the current band → back to the home page (band-name entry).
 function logout(){
   clearAuth(curBand);
@@ -256,8 +459,12 @@ function logout(){
   if (localStorage.getItem('mp_last_band') === curBand) localStorage.removeItem('mp_last_band');
   App.onLogout();
   document.body.classList.remove('authed', 'editing');
+  applyTheme(null);
   history.replaceState(null, '', pageBase());
   route = parseRoute();
   App.init();
 }
 on('logoutBtn', 'click', logout);
+
+// Theme the very first paint, before any page code runs.
+applyTheme(route.band);

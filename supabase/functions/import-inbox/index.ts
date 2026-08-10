@@ -4,15 +4,25 @@
 // 60-second polling importer). Deploy with:
 //   supabase functions deploy import-inbox --no-verify-jwt
 //
-// Request:  POST { band, pass, song }
+// Request:  POST { band, pass, song, kind? }   kind: 'audio' (default) | 'art'
 // Response: { ok: true, imported: n }  |  { error }
+//
+// 'art' is S'nart: the same import, pointed at images. A revision of a piece
+// of art stacks exactly like a new mix of a song — same songs/versions rows,
+// distinguished only by songs.kind — so the only thing that varies here is
+// which file extensions count and what MIME type they go up as.
 
 const SUPA_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const AUDIO_RE = /\.(mp3|m4a|aac|ogg|opus|wav|aif|aiff|flac)$/i;
+const IMAGE_RE = /\.(png|jpe?g|webp|gif|avif|tiff?|bmp|heic)$/i;
 const MIME: Record<string, string> = {
   '.m4a': 'audio/mp4', '.mp3': 'audio/mpeg', '.aac': 'audio/aac',
   '.ogg': 'audio/ogg', '.opus': 'audio/opus', '.wav': 'audio/wav',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp', '.gif': 'image/gif', '.avif': 'image/avif',
+  '.tif': 'image/tiff', '.tiff': 'image/tiff', '.bmp': 'image/bmp',
+  '.heic': 'image/heic',
 };
 
 const CORS = {
@@ -40,8 +50,10 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
   try {
-    const { band, pass, song } = await req.json();
+    const { band, pass, song, kind } = await req.json();
     if (!band || !pass || !song) return json({ error: 'band, pass, song required' }, 400);
+    const k = kind === 'art' ? 'art' : 'audio';
+    const MEDIA_RE = k === 'art' ? IMAGE_RE : AUDIO_RE;
 
     const okRes = await api('/rest/v1/rpc/band_pass_ok', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -57,9 +69,9 @@ Deno.serve(async (req) => {
     });
     const entries: { name: string }[] = await listRes.json();
     const files = entries.map((e) => e.name).filter((n) => n && !n.endsWith('/'));
-    const audio = files.filter((n) => AUDIO_RE.test(n));
+    const media = files.filter((n) => MEDIA_RE.test(n));
     const sidecars = files.filter((n) => n.endsWith('.changelog.md'));
-    if (!audio.length && !sidecars.length) return json({ ok: true, imported: 0 });
+    if (!media.length && !sidecars.length) return json({ ok: true, imported: 0 });
 
     // changelogs by version base name — read them, then delete from the inbox
     const changelogs = new Map<string, string>();
@@ -70,27 +82,17 @@ Deno.serve(async (req) => {
       await api('/storage/v1/object/inbox/' + enc(obj), { method: 'DELETE' });
     }
 
-    // ensure the song row (new songs land at the top of the library)
-    const q = `band=eq.${encodeURIComponent(b)}&folder=eq.${encodeURIComponent(song)}`;
-    let rows = await (await api(`/rest/v1/songs?${q}&select=id`)).json();
-    if (!rows.length) {
-      const key = String(song).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      const minRes = await api(
-        `/rest/v1/songs?band=eq.${encodeURIComponent(b)}&select=position&order=position.asc&limit=1`);
-      const minRows = await minRes.json();
-      const top = minRows.length ? minRows[0].position - 1 : 0;
-      rows = await (await api('/rest/v1/songs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
-        body: JSON.stringify({ band: b, folder: song, title: song,
-                               comment_key: key || 'song', position: top }),
-      })).json();
-    }
-    const songId = rows[0].id;
+    // ensure the song/artwork row (new ones land at the top of the library).
+    // ensure_song is service-role-only and owns the slug + position logic, so
+    // both kinds get an identical row shape.
+    const songId: string = await (await api('/rest/v1/rpc/ensure_song', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ b, f: song, k }),
+    })).json();
 
     let imported = 0;
     const today = new Date().toISOString().slice(0, 10);
-    for (const f of audio) {
+    for (const f of media) {
       const srcObj = `${b}/${pass}/${song}/${f}`;
       const ext = (f.match(/\.[^.]+$/)?.[0] ?? '').toLowerCase();
       const verName = f.replace(/\.[^.]+$/, '');

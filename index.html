@@ -6,46 +6,11 @@
 <title>S'notify</title>
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
+<!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
+<link rel="stylesheet" href="core.css?v=1" />
 <style>
-  :root {
-    --bg:        #0d0e12;
-    --bg-soft:   #15171e;
-    --bg-row:    #181a22;
-    --bg-hover:  #1f222c;
-    --line:      #262936;
-    --text:      #e7e9ee;
-    --text-dim:  #8b90a0;
-    --text-mute: #5b6072;
-    --accent:    #6c5ce7;
-    --accent-2:  #00d0a4;
-    --warn:      #ffb454;
-    --wave:      #3a3f52;
-    --wave-prog: #6c5ce7;
-    --shadow:    0 8px 40px rgba(0,0,0,.5);
-    --radius:    12px;
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; }
-  body {
-    margin: 0;
-    background: radial-gradient(1200px 600px at 50% -10%, #1a1c26 0%, var(--bg) 55%) fixed;
-    color: var(--text);
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  a { color: var(--accent); }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 280px; }
-
-  header.app { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
-  header.app .logo {
-    width: 46px; height: 46px; border-radius: 12px; flex: none;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    display: grid; place-items: center; font-size: 22px;
-    box-shadow: 0 6px 20px rgba(108,92,231,.35);
-  }
-  header.app h1 { font-size: 20px; margin: 0; letter-spacing: -.2px; }
-  header.app p  { margin: 2px 0 0; color: var(--text-dim); font-size: 13px; }
-  header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px; }
+  /* Player-only surface: the song list, the version menu, the waveform dock
+     and the transport. Everything this page shares with S'nart is in core.css. */
 
   /* Song list */
   .songlist { display: flex; flex-direction: column; gap: 6px; }
@@ -78,93 +43,9 @@
   .song .meta { min-width: 0; }
   .song .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .song .sub { color: var(--text-dim); font-size: 13px; display: flex; gap: 8px; align-items: center; }
-  .badge {
-    display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600;
-    color: var(--accent); background: rgba(108,92,231,.14); border: 1px solid rgba(108,92,231,.3);
-    padding: 1px 7px; border-radius: 20px;
-  }
-  .badge.dim { color: var(--text-dim); background: var(--bg-soft); border-color: var(--line); }
   .song .right { color: var(--text-mute); font-size: 13px; font-variant-numeric: tabular-nums; }
 
-  /* Empty state */
-  .empty { margin-top: 18px; padding: 34px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--bg-soft); color: var(--text-dim); }
-  .empty h2 { color: var(--text); margin: 0 0 10px; font-size: 16px; }
-  .empty code, .empty pre { background: #0a0b0f; border: 1px solid var(--line); border-radius: 8px; color: #d7dae3; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
-  .empty code { padding: 2px 6px; } .empty pre { padding: 12px 14px; overflow-x: auto; margin: 12px 0; line-height: 1.45; }
-  .loading { color: var(--text-dim); padding: 30px; text-align: center; }
 
-  /* ---------- Dock (versions + comments + transport) ---------- */
-  .dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; }
-  .dock .inner { max-width: 1000px; margin: 0 auto; }
-
-  /* Comments drawer (slides above transport) */
-  .drawer {
-    background: rgba(16,18,25,.97); backdrop-filter: blur(14px);
-    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
-    max-height: 0; overflow: hidden; transition: max-height .22s ease;
-  }
-  .drawer.open { max-height: 46vh; }
-  .drawer .pad { max-width: 1000px; margin: 0 auto; padding: 14px 20px; }
-  .drawer h3 { margin: 0 0 10px; font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
-  .cdl { float: right; background: none; border: 1px solid var(--line); color: var(--text-dim); border-radius: 6px; padding: 2px 8px; font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .3px; cursor: pointer; }
-  .cdl:hover { border-color: var(--accent); color: var(--accent); }
-  .cdl[disabled] { opacity: .35; cursor: default; }
-  .composer { display: flex; gap: 8px; margin-bottom: 12px; }
-  .composer .at { flex: none; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 8px; background: rgba(108,92,231,.15); color: var(--accent); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; }
-  .composer input { flex: 1; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; outline: none; }
-  .composer input:focus { border-color: var(--accent); }
-  .composer button { flex: none; background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 0 16px; font: inherit; font-weight: 600; cursor: pointer; }
-  .composer button:hover { filter: brightness(1.08); }
-  .clist { display: flex; flex-direction: column; gap: 2px; max-height: 26vh; overflow-y: auto; margin: 0 -6px; }
-  .cmt { display: flex; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
-  .cmt:hover { background: var(--bg-hover); }
-  .cmt .t { flex: none; color: var(--accent); font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; width: 42px; padding-top: 1px; }
-  .cmt .body { flex: 1; min-width: 0; }
-  .cmt .body .txt { word-wrap: break-word; }
-  .cmt .body .who { color: var(--text-mute); font-size: 11px; margin-top: 2px; }
-  .cmt .del { flex: none; color: var(--text-mute); cursor: pointer; opacity: 0; font-size: 16px; line-height: 1; padding: 2px 4px; }
-  .cmt:hover .del { opacity: 1; } .cmt .del:hover { color: #ff6b6b; }
-  .cempty { color: var(--text-mute); font-size: 13px; padding: 6px 10px; }
-
-  /* Threads: replies, resolve/dismiss, inline edit */
-  .cthread { border-radius: 8px; }
-  .cthread.resolved > .cmt .body .txt { color: var(--text-mute); text-decoration: line-through; text-decoration-color: var(--line); }
-  .cmt .carried { color: var(--accent-2); font-weight: 600; }
-  .cmt .edited-tag { color: var(--text-mute); }
-  .creplies { margin-left: 52px; display: flex; flex-direction: column; gap: 2px; }
-  .creplies .cmt { padding: 6px 10px; }
-  .creplies .cmt .t { display: none; }
-  .cactions { display: flex; gap: 10px; margin-top: 3px; }
-  .cactions span { font-size: 11px; color: var(--text-mute); cursor: pointer; font-weight: 600; }
-  .cactions span:hover { color: var(--accent); }
-  .cactions span.on { color: var(--accent-2); }
-  .cedit { display: flex; gap: 6px; margin-top: 4px; }
-  .cedit input { flex: 1; background: var(--bg); border: 1px solid var(--accent); color: var(--text); border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 13px; outline: none; }
-  .cedit button { flex: none; background: none; border: none; color: var(--text-mute); font-size: 11px; font-weight: 600; cursor: pointer; }
-  .cedit button:hover { color: var(--accent); }
-  .cbadge { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-left: 6px; letter-spacing: .2px; }
-  .cbadge.resolved { background: rgba(155,107,231,.16); color: #b48cf0; }
-
-  /* To-do modal (per-song issues list, GitHub-style) */
-  .todo-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 4px 0 12px; }
-  .todo-tab { background: none; border: none; color: var(--text-mute); font: inherit; font-size: 13px; font-weight: 600; padding: 8px 12px; cursor: pointer; border-bottom: 2px solid transparent; }
-  .todo-tab.active { color: var(--text); border-bottom-color: var(--accent); }
-  .todo-sort { margin-left: auto; align-self: center; }
-  .todo-sort select { background: var(--bg); border: 1px solid var(--line); color: var(--text-dim); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 12px; }
-  .todo-toolbar { display: flex; align-items: center; }
-  .todo-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; margin: 0 -6px; }
-  .todo-row { display: flex; gap: 10px; padding: 10px; border-radius: 8px; cursor: pointer; }
-  .todo-row:hover { background: var(--bg-hover); }
-  .todo-dot { flex: none; width: 15px; height: 15px; border-radius: 50%; margin-top: 2px; }
-  .todo-dot.open { background: rgba(46,204,113,.18); border: 2px solid #2ecc71; }
-  .todo-dot.resolved { background: rgba(155,107,231,.18); border: 2px solid #9b6be7; }
-  .todo-row .body { flex: 1; min-width: 0; }
-  .todo-row .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .todo-row .meta { color: var(--text-mute); font-size: 11.5px; margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .todo-row .replies { color: var(--text-mute); }
-  .chip { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 20px; background: var(--bg-row); border: 1px solid var(--line); color: var(--text-mute); }
-  .chip.origin { color: var(--accent); border-color: var(--accent); }
-  .chip.dismissed { text-decoration: line-through; opacity: .5; }
 
   /* Changelog drawer (git-style version history) */
   .vlog-list { display: flex; flex-direction: column; max-height: 32vh; overflow-y: auto; padding: 2px 0 2px 4px; }
@@ -269,74 +150,12 @@
   .vol input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--text); cursor: pointer; }
   .vol input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border: none; border-radius: 50%; background: var(--text); cursor: pointer; }
 
-  /* ---------- Add-music modal ---------- */
-  .addbtn {
-    display: inline-flex; align-items: center; gap: 6px; flex: none;
-    background: var(--bg-row); border: 1px solid var(--line); color: var(--text-dim);
-    padding: 7px 14px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 600;
-    transition: all .12s;
-  }
-  .addbtn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--accent); }
-  .modal-back {
-    display: none; position: fixed; inset: 0; z-index: 50;
-    background: rgba(6,7,10,.72); backdrop-filter: blur(4px);
-    align-items: flex-start; justify-content: center; padding: 8vh 16px 16px;
-    overflow-y: auto;
-  }
-  .modal-back.open { display: flex; }
-  .modal {
-    width: 100%; max-width: 480px; background: var(--bg-soft);
-    border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
-    padding: 20px;
-  }
-  .modal h2 { margin: 0 0 4px; font-size: 17px; }
-  .modal .mode { font-size: 12px; margin-bottom: 14px; }
-  .modal .mode.local { color: var(--accent-2); }
-  .modal .mode.github { color: var(--accent); }
-  .modal .mode.none { color: var(--warn); }
-  .modal label { display: block; font-size: 12px; color: var(--text-dim); margin: 10px 0 4px; }
-  .modal input[type=text], .modal input[type=password], .modal select, .modal textarea {
-    width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--text);
-    border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; outline: none;
-  }
-  .modal input:focus, .modal select:focus, .modal textarea:focus { border-color: var(--accent); }
-  .modal textarea { resize: vertical; min-height: 60px; }
-  .modal input[type=file] { width: 100%; color: var(--text-dim); font-size: 13px; padding: 8px 0; }
-  .modal label.check { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-dim); margin: 6px 0 0; cursor: pointer; }
-  .modal label.check input { margin: 0; }
-  .modal .row { display: flex; gap: 10px; }
-  .modal .row > div { flex: 1; }
-  .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-  .modal .btn {
-    border: none; border-radius: 8px; padding: 9px 18px; font: inherit; font-weight: 600;
-    cursor: pointer; font-size: 14px;
-  }
-  .modal .btn.primary { background: var(--accent); color: #fff; }
-  .modal .btn.primary:hover { filter: brightness(1.1); }
-  .modal .btn.primary:disabled { opacity: .5; cursor: default; }
-  .modal .btn.ghost { background: var(--bg-row); color: var(--text-dim); border: 1px solid var(--line); }
-  .modal .btn.ghost:hover { color: var(--text); }
-  .modal .status { font-size: 12.5px; color: var(--text-dim); min-height: 18px; margin-top: 10px; white-space: pre-wrap; }
-  .modal .status.err { color: #ff6b6b; }
-  .modal .status.ok { color: var(--accent-2); }
-  .modal .hint { font-size: 11.5px; color: var(--text-mute); margin-top: 4px; line-height: 1.45; }
-  .modal .linky { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 12px; }
-
-  /* Band gate: nothing renders until the magic words are said */
-  body.locked .wrap, body.locked .dock { visibility: hidden; }
-  #gateModal.open { background: var(--bg); }
-
-  /* Log out — only while signed into a band (hidden on shared/single-mix views) */
-  #logoutBtn { display: none; }
-  body.authed:not(.singlemix):not(.shared) #logoutBtn { display: inline-flex; }
 
   /* Single-mix view (?b&s&v, no login): playback only — no comments, no
      library affordances. Band members log in for everything else. */
   body.singlemix #cToggle, body.singlemix #vlogToggle, body.singlemix #shareBtn,
   body.singlemix #todoToggle,
   body.singlemix #addBtn, body.singlemix .song .scpy { display: none !important; }
-  .mixhint { margin: 12px 4px 0; color: var(--text-mute); font-size: 12px; }
-  .mixhint .linky { color: var(--accent); cursor: pointer; text-decoration: underline; }
 
   /* Shared (project-link) view: listening surface — no library editing,
      but logged-in bandmates can still add mixes and copy the link */
@@ -722,6 +541,9 @@
     </div>
   </div>
 
+<!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
+     script, so everything it declares is in scope for the module below. -->
+<script src="core.js?v=1"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -739,11 +561,18 @@ try {
   }
 }
 
-const $ = (id) => document.getElementById(id);
-const fmt = (s) => { if (!isFinite(s) || s < 0) s = 0; const m = Math.floor(s/60), x = Math.floor(s%60); return `${m}:${String(x).padStart(2,'0')}`; };
-const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const filename = (p) => decodeURIComponent(p.split('/').pop().replace(/\.[^.]+$/, ''));
-const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+// core.js owns the gate, the route and every Supabase call — these are the
+// three moments it has to hand control back to this page.
+App.init     = () => init();
+App.onLock   = () => {          // hard gate went up: don't leave a library behind it
+  $('trackCount').textContent = '';
+  $('list').className = ''; $('list').innerHTML = '';
+};
+App.onLogout = () => {          // tear the player down before the band is forgotten
+  commentCache = {};
+  try { destroyPlayers(); } catch {}
+  activeSong = null; activeSongIndex = -1;
+};
 
 let songs = [];
 let curProject = null;             // project scoping the current view (via #/p/<slug>)
@@ -764,173 +593,10 @@ const waveOpts = {
   cursorColor: '#ffffff', cursorWidth: 1,
   barWidth: 2, barGap: 2, barRadius: 3, normalize: true, dragToSeek: true,
 };
-function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 
 $('vol').value = curVolume;
 
-// ---------- Deep-link routing ----------
-// Canonical (what the 🔗 buttons copy):  ?b=<band>&s=<folder>&v=<name>
-// Query strings survive messaging apps and link-preview redirectors, which
-// routinely strip #fragments. Old hash links (#/p/../s/..) still parse.
-// Band sub-URLs (/<band>/) are stub pages that redirect here with ?b=.
-function parseRoute(){
-  const seg = location.hash.replace(/^#\/?/, '').split('/').map(x => { try { return decodeURIComponent(x); } catch { return x; } });
-  const r = { band: null, album: null, project: null, song: null, version: null };
-  for (let i = 0; i + 1 < seg.length; i += 2){
-    if (seg[i] === 'p') r.project = seg[i+1];
-    else if (seg[i] === 's') r.song = seg[i+1];
-    else if (seg[i] === 'v') r.version = seg[i+1];
-  }
-  if (!r.project && !r.song){
-    const q = new URLSearchParams(location.search);
-    r.band = q.get('b'); r.project = q.get('p'); r.song = q.get('s'); r.version = q.get('v');
-    r.album = q.get('al');
-  }
-  return r;
-}
-let route = parseRoute();
-window.addEventListener('hashchange', () => { route = parseRoute(); init(); });
 
-// ---------- Band login (gate) ----------
-// Checked server-side: a Supabase RPC compares band + password against the
-// bands table, so no credentials live in this page or the repo. Being a
-// static site, the audio files themselves remain technically reachable by
-// direct URL — the gate keeps the *site* band-only, it isn't DRM.
-// Every library read and write is an RPC that re-checks the password, so the
-// password itself is what we keep — not a "logged in" flag. (v1 stored a bare
-// 1; those entries read as logged-out and ask for the password once.)
-const AUTH_KEY = 'mp_auth_v1';
-const bandSlugOf = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
-function auths(){ try { return JSON.parse(localStorage.getItem(AUTH_KEY) || '{}'); } catch { return {}; } }
-const bandPass = (b) => { const v = auths()[b]; return typeof v === 'string' ? v : ''; };
-const isAuthed = (b) => !!bandPass(b);
-function grantAuth(b, pass){
-  const a = auths(); a[b] = pass;
-  localStorage.setItem(AUTH_KEY, JSON.stringify(a));
-  localStorage.setItem('mp_last_band', b);
-}
-function clearAuth(b){
-  const a = auths(); delete a[b];
-  localStorage.setItem(AUTH_KEY, JSON.stringify(a));
-}
-// The band password was wrong or has changed since we cached it.
-const isAuthErr = (e) => e && (e.status === 401 || e.status === 403 || /band password/i.test(e.message || ''));
-
-function unlockView(){ document.body.classList.remove('locked'); $('gateModal').classList.remove('open'); }
-
-// Fuzzy band lookup happens server-side now — there is no public manifest to
-// scan, and the RPC deliberately reveals at most one band name per query.
-async function resolveBand(input){
-  if (!String(input || '').trim()) return { kind: 'empty' };
-  try {
-    const r = await rpc('resolve_band', { q: input });
-    return r && r.kind !== 'none'
-      ? { kind: r.kind, band: { slug: r.slug, title: r.title } }
-      : { kind: 'none' };
-  } catch { return { kind: 'offline' }; }
-}
-
-let pendingBand = null;
-function gateStep(n){
-  $('gateStep1').style.display = n === 1 ? 'block' : 'none';
-  $('gateStep2').style.display = n === 2 ? 'block' : 'none';
-  $('gateSuggest').style.display = 'none';
-  $('gateErr1').textContent = ''; $('gateErr2').textContent = '';
-  setTimeout(() => (n === 1 ? $('gateName') : $('gatePass')).focus(), 0);
-}
-function showGate(bandSlug, hard = true, bandTitle = null){
-  if (hard){
-    document.body.classList.remove('authed');
-    document.body.classList.add('locked');
-    $('trackCount').textContent = '';
-    $('list').className = ''; $('list').innerHTML = '';
-  }
-  // Prefill only when the gate is reached via a specific band link; the main
-  // URL's home box always starts empty.
-  $('gateName').value = bandTitle || bandSlug || '';
-  $('gatePass').value = '';
-  gateStep(1);
-  $('gateModal').classList.add('open');
-}
-
-// Step 1: resolve the typed band name.
-async function gateNext(){
-  $('gateSuggest').style.display = 'none'; $('gateErr1').textContent = '';
-  const res = await resolveBand($('gateName').value);
-  if (res.kind === 'empty'){ $('gateErr1').textContent = 'Enter your band name.'; return; }
-  if (res.kind === 'offline'){ $('gateErr1').textContent = 'Could not reach the login service — check your connection.'; return; }
-  if (res.kind === 'exact'){ proceedToBand(res.band); return; }
-  if (res.kind === 'suggest'){
-    $('gateSuggest').style.display = 'block';
-    $('gateSuggest').innerHTML =
-      `<div class="hint">Did you mean <b>${esc(res.band.title || res.band.slug)}</b>? ` +
-      `<span class="linky" id="sugYes">Yes</span> &nbsp;·&nbsp; <span class="linky" id="sugNo">No</span></div>`;
-    $('sugYes').onclick = () => proceedToBand(res.band);
-    $('sugNo').onclick = () => { $('gateSuggest').style.display = 'none'; $('gateName').select(); };
-    return;
-  }
-  // Unknown band — point them to the owner.
-  $('gateSuggest').style.display = 'block';
-  $('gateSuggest').innerHTML =
-    `<div class="hint">No band by that name here. Email ` +
-    `<a href="mailto:bunjumun@gmail.com?subject=S'notify%20band%20page">bunjumun@gmail.com</a> ` +
-    `to set one up.</div>`;
-}
-// Already logged in on this device → straight in; otherwise ask the password.
-function proceedToBand(band){
-  pendingBand = band;
-  if (isAuthed(band.slug)) return enterBand(band.slug);
-  $('gateBandLabel').textContent = band.title || band.slug;
-  gateStep(2);
-}
-async function enterBand(slug){
-  history.replaceState(null, '', pageBase() + '?b=' + encodeURIComponent(slug));
-  route = parseRoute();
-  await init();
-}
-// Step 2: password check for the resolved band.
-async function gateGo(){
-  if (!pendingBand) return gateStep(1);
-  const pass = $('gatePass').value.trim().toLowerCase();
-  if (!pass){ $('gateErr2').textContent = 'Enter the password.'; return; }
-  $('gateGo').disabled = true; $('gateErr2').textContent = '';
-  try {
-    if ((await rpc('band_pass_ok', { b: pendingBand.slug, p: pass })) !== true){
-      $('gateErr2').textContent = 'That’s not it — check with the band.'; return;
-    }
-    grantAuth(pendingBand.slug, pass);
-    $('gatePass').value = '';
-    await enterBand(pendingBand.slug);
-  } catch {
-    $('gateErr2').textContent = 'Could not reach the login service — check your connection.';
-  } finally { $('gateGo').disabled = false; }
-}
-$('gateNext').onclick = gateNext;
-$('gateGo').onclick = gateGo;
-$('gateBack').onclick = () => gateStep(1);
-$('gateName').addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); gateNext(); } });
-$('gatePass').addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); gateGo(); } });
-// Voluntary login (from a shared mix): backdrop click closes the gate.
-$('gateModal').addEventListener('click', (e) => {
-  if (e.target === $('gateModal') && !document.body.classList.contains('locked'))
-    $('gateModal').classList.remove('open');
-});
-$('mixLogin').onclick = () => showGate(curBand, false);
-
-// Log out of the current band → back to the home page (band-name entry).
-function logout(){
-  clearAuth(curBand);
-  localStorage.removeItem('mp_band_pass');   // pre-v3 key — clear it out
-  commentCache = {};
-  if (localStorage.getItem('mp_last_band') === curBand) localStorage.removeItem('mp_last_band');
-  try { destroyPlayers(); } catch {}
-  activeSong = null; activeSongIndex = -1;
-  document.body.classList.remove('authed', 'editing');
-  history.replaceState(null, '', pageBase());
-  route = parseRoute();
-  init();
-}
-$('logoutBtn').onclick = logout;
 
 // ---------- Site admin ----------
 // Gated separately from band logins: this password only unlocks adding new
@@ -1046,7 +712,6 @@ $('adminModal').addEventListener('click', (e) => { if (e.target === $('adminModa
 // mix version, the scrap of project metadata needed to show the right gate,
 // and band-name resolution. Library, projects, comments and every edit go
 // through functions that re-check the band password server-side.
-let curBand = null, curBandTitle = '';
 let singleMix = false;             // ungated one-mix view (?b&s&v, not logged in)
 
 async function init() {
@@ -1154,14 +819,6 @@ function applyDeepLink(){
   openSong(i, false, vi); // opened paused — browsers block autoplay on load anyway
 }
 
-// Rows store the object path inside the 'tracks' bucket; the bucket is public
-// by exact URL but not listable, so a link plays and a crawl finds nothing.
-function publicUrl(p){
-  if (!p) return null;
-  if (/^(https?:|data:|blob:)/.test(p)) return p;
-  return SUPA_URL + '/storage/v1/object/public/tracks/'
-       + p.replace(/^tracks\//, '').split('/').map(encodeURIComponent).join('/');
-}
 
 function normalize(data){
   const arr = data.songs || data.tracks || [];
@@ -1563,7 +1220,6 @@ const extOf = (p) => { const m = String(p).match(/\.[^.]+$/); return m ? m[0] : 
 const dotCls = (vi) => readyByVer[vi] === false ? 'dot loading' : readyByVer[vi] === 'failed' ? 'dot failed' : 'dot';
 
 // ---------- Share links ----------
-const pageBase = () => location.href.split('#')[0].split('?')[0];
 // Player deep link. Query form (not #hash): survives messaging apps and
 // link redirectors. A version link (?b&s&v) plays WITHOUT login; song and
 // band links require it.
@@ -1719,46 +1375,8 @@ $('repeatBtn').onclick = () => { repeat = repeat==='off'?'all':repeat==='all'?'o
 
 // ---------- Comments (timestamped, per song) ----------
 // Comments are SITEWIDE — everyone in the band sees the same pool. Like the
-// library itself they go through password-checked RPCs, so a shared single-mix
-// link can play the audio but never reads or writes the band's comments.
-const SUPA_URL = 'https://twgukeyoayfqldnojrkg.supabase.co';
-const SUPA_KEY = 'sb_publishable_zIiAxxA5Zk1yRNzignANXA_rEp3vKdG';   // publishable — safe to ship
-const supaOn = () => !!(SUPA_URL && SUPA_KEY);
-async function supaFetch(path, opts = {}){
-  const r = await fetch(SUPA_URL + path, { ...opts,
-    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, ...(opts.headers || {}) } });
-  if (!r.ok){
-    let msg = 'Supabase ' + r.status;
-    try { const j = await r.json(); msg = j.message || j.error || msg; } catch {}
-    const e = new Error(msg); e.status = r.status; throw e;
-  }
-  return r;
-}
-// Call a database function. Arguments travel in the POST body, so a band
-// password never lands in a URL, a log, or a browser history entry.
-async function rpc(fn, args){
-  const r = await supaFetch('/rest/v1/rpc/' + fn, { method: 'POST',
-    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args || {}) });
-  if (r.status === 204) return null;
-  return r.json().catch(() => null);
-}
-// Same, with the current band + its password filled in — every library edit.
-function libRpc(fn, args){
-  if (!curBand || !bandPass(curBand)) throw new Error('Log in to your band first.');
-  return rpc(fn, { b: curBand, p: bandPass(curBand), ...args });
-}
-// The two operations that must delete storage objects, and the inbox import:
-// both need the service role, so they live in Edge Functions.
-async function edgeFn(name, body){
-  const r = await fetch(`${SUPA_URL}/functions/v1/${name}`, {
-    method: 'POST',
-    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
-               'Content-Type': 'application/json' },
-    body: JSON.stringify(body) });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || j.error) throw new Error(j.error || `${name} failed (${r.status})`);
-  return j;
-}
+// library itself they go through core.js's password-checked RPCs, so a shared
+// single-mix link can play the audio but never reads or writes the comments.
 
 let commentCache = {};   // song_id -> [comments], mirrors the shared table
 let cReplyTo = null, cEditId = null;   // which thread/comment has an inline compose box open
@@ -2067,14 +1685,6 @@ function refreshListBadges(){
   wsByVer.forEach((w,vi)=>{ if (readyByVer[vi] && vi===activeVer){ const cell=document.querySelector(`.right[data-dur="${activeSongIndex}"]`); if (cell) cell.textContent=fmt(w.getDuration()); }});
 }
 
-function timeago(ts){
-  const s = Math.floor((Date.now()-ts)/1000);
-  if (s<60) return 'just now';
-  const m=Math.floor(s/60); if (m<60) return m+'m ago';
-  const h=Math.floor(m/60); if (h<24) return h+'h ago';
-  const d=Math.floor(h/24); if (d<30) return d+'d ago';
-  return new Date(ts).toLocaleDateString();
-}
 
 // ---------- To-do (every thread on this song, GitHub-issues style) ----------
 let todoTab = 'open';

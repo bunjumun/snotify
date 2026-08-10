@@ -1,0 +1,203 @@
+/* core.css — the styling every page of this site shares.
+ *
+ * Companion to core.js: palette, page frame, header, modals, the band gate,
+ * and the comment drawer + to-do list. S'notify (index.html) and S'nart
+ * (art.html) each add only the CSS their own surface needs — the waveform and
+ * transport for one, the image stage and region boxes for the other — so the
+ * two pages look like one product without either owning the shared rules.
+ *
+ * Link it with a cache-busting query (core.css?v=N) — Pages caches hard. */
+
+:root {
+  --bg:        #0d0e12;
+  --bg-soft:   #15171e;
+  --bg-row:    #181a22;
+  --bg-hover:  #1f222c;
+  --line:      #262936;
+  --text:      #e7e9ee;
+  --text-dim:  #8b90a0;
+  --text-mute: #5b6072;
+  --accent:    #6c5ce7;
+  --accent-2:  #00d0a4;
+  --warn:      #ffb454;
+  --wave:      #3a3f52;
+  --wave-prog: #6c5ce7;
+  --shadow:    0 8px 40px rgba(0,0,0,.5);
+  --radius:    12px;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: radial-gradient(1200px 600px at 50% -10%, #1a1c26 0%, var(--bg) 55%) fixed;
+  color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); }
+.wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 280px; }
+
+header.app { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+header.app .logo {
+  width: 46px; height: 46px; border-radius: 12px; flex: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  display: grid; place-items: center; font-size: 22px;
+  box-shadow: 0 6px 20px rgba(108,92,231,.35);
+}
+header.app h1 { font-size: 20px; margin: 0; letter-spacing: -.2px; }
+header.app p  { margin: 2px 0 0; color: var(--text-dim); font-size: 13px; }
+header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px; }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600;
+  color: var(--accent); background: rgba(108,92,231,.14); border: 1px solid rgba(108,92,231,.3);
+  padding: 1px 7px; border-radius: 20px;
+}
+.badge.dim { color: var(--text-dim); background: var(--bg-soft); border-color: var(--line); }
+
+/* Empty state */
+.empty { margin-top: 18px; padding: 34px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--bg-soft); color: var(--text-dim); }
+.empty h2 { color: var(--text); margin: 0 0 10px; font-size: 16px; }
+.empty code, .empty pre { background: #0a0b0f; border: 1px solid var(--line); border-radius: 8px; color: #d7dae3; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+.empty code { padding: 2px 6px; } .empty pre { padding: 12px 14px; overflow-x: auto; margin: 12px 0; line-height: 1.45; }
+.loading { color: var(--text-dim); padding: 30px; text-align: center; }
+
+/* ---------- Dock (the fixed bottom stack each page builds on) ---------- */
+.dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; }
+.dock .inner { max-width: 1000px; margin: 0 auto; }
+
+/* Comments drawer (slides above whatever the page docks below it) */
+.drawer {
+  background: rgba(16,18,25,.97); backdrop-filter: blur(14px);
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  max-height: 0; overflow: hidden; transition: max-height .22s ease;
+}
+.drawer.open { max-height: 46vh; }
+.drawer .pad { max-width: 1000px; margin: 0 auto; padding: 14px 20px; }
+.drawer h3 { margin: 0 0 10px; font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
+.cdl { float: right; background: none; border: 1px solid var(--line); color: var(--text-dim); border-radius: 6px; padding: 2px 8px; font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .3px; cursor: pointer; }
+.cdl:hover { border-color: var(--accent); color: var(--accent); }
+.cdl[disabled] { opacity: .35; cursor: default; }
+.composer { display: flex; gap: 8px; margin-bottom: 12px; }
+.composer .at { flex: none; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 8px; background: rgba(108,92,231,.15); color: var(--accent); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; }
+.composer input { flex: 1; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; outline: none; }
+.composer input:focus { border-color: var(--accent); }
+.composer button { flex: none; background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 0 16px; font: inherit; font-weight: 600; cursor: pointer; }
+.composer button:hover { filter: brightness(1.08); }
+.clist { display: flex; flex-direction: column; gap: 2px; max-height: 26vh; overflow-y: auto; margin: 0 -6px; }
+.cmt { display: flex; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.cmt:hover { background: var(--bg-hover); }
+.cmt .t { flex: none; color: var(--accent); font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; width: 42px; padding-top: 1px; }
+.cmt .body { flex: 1; min-width: 0; }
+.cmt .body .txt { word-wrap: break-word; }
+.cmt .body .who { color: var(--text-mute); font-size: 11px; margin-top: 2px; }
+.cmt .del { flex: none; color: var(--text-mute); cursor: pointer; opacity: 0; font-size: 16px; line-height: 1; padding: 2px 4px; }
+.cmt:hover .del { opacity: 1; } .cmt .del:hover { color: #ff6b6b; }
+.cempty { color: var(--text-mute); font-size: 13px; padding: 6px 10px; }
+
+/* Threads: replies, resolve/dismiss, inline edit */
+.cthread { border-radius: 8px; }
+.cthread.resolved > .cmt .body .txt { color: var(--text-mute); text-decoration: line-through; text-decoration-color: var(--line); }
+.cmt .carried { color: var(--accent-2); font-weight: 600; }
+.cmt .edited-tag { color: var(--text-mute); }
+.creplies { margin-left: 52px; display: flex; flex-direction: column; gap: 2px; }
+.creplies .cmt { padding: 6px 10px; }
+.creplies .cmt .t { display: none; }
+.cactions { display: flex; gap: 10px; margin-top: 3px; }
+.cactions span { font-size: 11px; color: var(--text-mute); cursor: pointer; font-weight: 600; }
+.cactions span:hover { color: var(--accent); }
+.cactions span.on { color: var(--accent-2); }
+.cedit { display: flex; gap: 6px; margin-top: 4px; }
+.cedit input { flex: 1; background: var(--bg); border: 1px solid var(--accent); color: var(--text); border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 13px; outline: none; }
+.cedit button { flex: none; background: none; border: none; color: var(--text-mute); font-size: 11px; font-weight: 600; cursor: pointer; }
+.cedit button:hover { color: var(--accent); }
+.cbadge { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-left: 6px; letter-spacing: .2px; }
+.cbadge.resolved { background: rgba(155,107,231,.16); color: #b48cf0; }
+
+/* To-do modal (per-item issues list, GitHub-style) */
+.todo-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 4px 0 12px; }
+.todo-tab { background: none; border: none; color: var(--text-mute); font: inherit; font-size: 13px; font-weight: 600; padding: 8px 12px; cursor: pointer; border-bottom: 2px solid transparent; }
+.todo-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.todo-sort { margin-left: auto; align-self: center; }
+.todo-sort select { background: var(--bg); border: 1px solid var(--line); color: var(--text-dim); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 12px; }
+.todo-toolbar { display: flex; align-items: center; }
+.todo-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; margin: 0 -6px; }
+.todo-row { display: flex; gap: 10px; padding: 10px; border-radius: 8px; cursor: pointer; }
+.todo-row:hover { background: var(--bg-hover); }
+.todo-dot { flex: none; width: 15px; height: 15px; border-radius: 50%; margin-top: 2px; }
+.todo-dot.open { background: rgba(46,204,113,.18); border: 2px solid #2ecc71; }
+.todo-dot.resolved { background: rgba(155,107,231,.18); border: 2px solid #9b6be7; }
+.todo-row .body { flex: 1; min-width: 0; }
+.todo-row .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-row .meta { color: var(--text-mute); font-size: 11.5px; margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.todo-row .replies { color: var(--text-mute); }
+.chip { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 20px; background: var(--bg-row); border: 1px solid var(--line); color: var(--text-mute); }
+.chip.origin { color: var(--accent); border-color: var(--accent); }
+.chip.dismissed { text-decoration: line-through; opacity: .5; }
+
+/* ---------- Header buttons + modals ---------- */
+.addbtn {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  background: var(--bg-row); border: 1px solid var(--line); color: var(--text-dim);
+  padding: 7px 14px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 600;
+  transition: all .12s;
+}
+.addbtn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--accent); }
+/* The cross-page links (🎨 Art / 🎵 Music) are anchors wearing the same chip. */
+a.addbtn { text-decoration: none; }
+.modal-back {
+  display: none; position: fixed; inset: 0; z-index: 50;
+  background: rgba(6,7,10,.72); backdrop-filter: blur(4px);
+  align-items: flex-start; justify-content: center; padding: 8vh 16px 16px;
+  overflow-y: auto;
+}
+.modal-back.open { display: flex; }
+.modal {
+  width: 100%; max-width: 480px; background: var(--bg-soft);
+  border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+  padding: 20px;
+}
+.modal h2 { margin: 0 0 4px; font-size: 17px; }
+.modal .mode { font-size: 12px; margin-bottom: 14px; }
+.modal .mode.local { color: var(--accent-2); }
+.modal .mode.github { color: var(--accent); }
+.modal .mode.none { color: var(--warn); }
+.modal label { display: block; font-size: 12px; color: var(--text-dim); margin: 10px 0 4px; }
+.modal input[type=text], .modal input[type=password], .modal select, .modal textarea {
+  width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--text);
+  border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; outline: none;
+}
+.modal input:focus, .modal select:focus, .modal textarea:focus { border-color: var(--accent); }
+.modal textarea { resize: vertical; min-height: 60px; }
+.modal input[type=file] { width: 100%; color: var(--text-dim); font-size: 13px; padding: 8px 0; }
+.modal label.check { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-dim); margin: 6px 0 0; cursor: pointer; }
+.modal label.check input { margin: 0; }
+.modal .row { display: flex; gap: 10px; }
+.modal .row > div { flex: 1; }
+.modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.modal .btn {
+  border: none; border-radius: 8px; padding: 9px 18px; font: inherit; font-weight: 600;
+  cursor: pointer; font-size: 14px;
+}
+.modal .btn.primary { background: var(--accent); color: #fff; }
+.modal .btn.primary:hover { filter: brightness(1.1); }
+.modal .btn.primary:disabled { opacity: .5; cursor: default; }
+.modal .btn.ghost { background: var(--bg-row); color: var(--text-dim); border: 1px solid var(--line); }
+.modal .btn.ghost:hover { color: var(--text); }
+.modal .status { font-size: 12.5px; color: var(--text-dim); min-height: 18px; margin-top: 10px; white-space: pre-wrap; }
+.modal .status.err { color: #ff6b6b; }
+.modal .status.ok { color: var(--accent-2); }
+.modal .hint { font-size: 11.5px; color: var(--text-mute); margin-top: 4px; line-height: 1.45; }
+.modal .linky { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 12px; }
+
+/* Band gate: nothing renders until the magic words are said */
+body.locked .wrap, body.locked .dock { visibility: hidden; }
+#gateModal.open { background: var(--bg); }
+
+/* Log out — only while signed into a band (hidden on shared/single-item views) */
+#logoutBtn { display: none; }
+body.authed:not(.singlemix):not(.shared) #logoutBtn { display: inline-flex; }
+
+/* Shared-link hint under the list */
+.mixhint { margin: 12px 4px 0; color: var(--text-mute); font-size: 12px; }
+.mixhint .linky { color: var(--accent); cursor: pointer; text-decoration: underline; }

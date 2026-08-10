@@ -7,9 +7,9 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=7" />
+<link rel="stylesheet" href="core.css?v=8" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=7" />
+<link rel="stylesheet" href="theme-dazzle.css?v=8" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -474,19 +474,27 @@
           <div class="timeline">
             <span class="time cur" id="curTime">0:00</span>
             <div class="wavewrap" id="wavewrap">
+              <canvas id="wake" aria-hidden="true"></canvas>
               <div id="markers"></div>
               <!-- Lakehorse only (see theme-dazzle.css): a dazzle-painted boat
                    riding the playhead, where the swell is breaking. -->
               <div id="boat" aria-hidden="true">
-                <svg viewBox="0 0 24 17">
+                <!-- Plan view: bow to the right, pointing down the track. The
+                     deck is dazzle-painted, which is the whole point of seeing
+                     it from above. -->
+                <svg viewBox="0 0 34 16">
                   <defs>
                     <pattern id="dzl" width="4" height="4" patternTransform="rotate(115)" patternUnits="userSpaceOnUse">
                       <rect width="4" height="4" fill="#fff"/><rect width="1.9" height="4" fill="#08080a"/>
                     </pattern>
                   </defs>
-                  <path d="M12 3.2 V11.4" stroke="#fff" stroke-width="1.1"/>
-                  <path d="M12.9 3.6 L17.6 8.2 L12.9 9.6 Z" fill="url(#dzl)" stroke="#fff" stroke-width=".5"/>
-                  <path d="M2.5 11.4 H21.5 L18.6 15.6 H5.4 Z" fill="url(#dzl)" stroke="#fff" stroke-width=".7"/>
+                  <path d="M2 3.6 H21 C27 3.6 31.4 6.2 32.6 8 C31.4 9.8 27 12.4 21 12.4 H2 Z"
+                        fill="url(#dzl)" stroke="#08080a" stroke-width="1.5"
+                        stroke-linejoin="round" paint-order="stroke fill"/>
+                  <path d="M2 3.6 H21 C27 3.6 31.4 6.2 32.6 8 C31.4 9.8 27 12.4 21 12.4 H2 Z"
+                        fill="none" stroke="#fff" stroke-width=".8"/>
+                  <rect x="9" y="6" width="8" height="4" rx="1" fill="#08080a" stroke="#fff" stroke-width=".7"/>
+                  <path d="M17.5 8 H23" stroke="#fff" stroke-width=".7"/>
                 </svg>
               </div>
               <!-- …and the horse below it: same playhead, opposite side of the
@@ -530,7 +538,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=7"></script>
+<script src="core.js?v=8"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -1515,21 +1523,112 @@ function seekTo(t){ const w=curWS(); if (w){ w.setTime(t); $('curTime').textCont
 // Two riders on the playhead, one per side of the waterline: the boat lifts on
 // the crest, and the amphibious horse dives with the trough — so the louder
 // the underside of the wave, the deeper the horse goes.
+// The course: down the middle of the channel, pushed aside by any buoy the
+// ship is drawing level with. The push falls off with distance, so the helm
+// starts turning before the buoy and settles again once it is astern.
+const LOOK_AHEAD = 0.055;          // how far up the track a buoy starts to matter
+function steerTo(prog){
+  const mid = WAVE_H / 2;
+  // Only the buoy she is closest to matters. Summing every nearby buoy pushed
+  // the helm hard over and pinned her to the edge of the channel for whole
+  // passages — a ship gives way to the one it is about to hit, then recovers.
+  let strongest = 0, dev = 0;
+  for (const b of buoyField){
+    const dx = Math.abs(prog - b.x);
+    if (dx > LOOK_AHEAD) continue;
+    const push = 1 - dx / LOOK_AHEAD;             // 0 at the edge, 1 alongside
+    const weight = push * push;                   // ease in and out of the turn
+    if (weight > strongest){
+      strongest = weight;
+      dev = (b.y <= mid ? 1 : -1) * weight * (mid * 0.62);   // a wide berth
+    }
+  }
+  return Math.max(6, Math.min(WAVE_H - 6, mid + dev));
+}
+
+let wakeTrail = [];                 // recent {x, y} in wavewrap pixels
+let helmY = null, lastProg = null;  // the helm eases; it does not snap
 function moveRiders(w){
   const boat = $('boat'), horse = $('horse');
   if (!boat && !horse) return;
   const dur = w ? w.getDuration() : 0;
-  if (!dur){ [boat, horse].forEach(el => el && (el.style.opacity = '0')); return; }
+  if (!dur){ [boat, horse].forEach(el => el && (el.style.opacity = '0')); wakeTrail = []; drawWake(); return; }
   const prog = Math.min(1, Math.max(0, w.getCurrentTime() / dur));
+  const plan = num('--wave-caps', 0) === 1;       // themed player: the view from above
+  let y;
+  if (plan){
+    // Ease towards the course rather than jumping onto it: when the buoy she
+    // is answering to changes, the two targets can be half a channel apart and
+    // an un-smoothed helm teleports across the water.
+    const target = steerTo(prog);
+    const jumped = lastProg === null || Math.abs(prog - lastProg) > 0.02;   // a seek, not sailing
+    helmY = (jumped || helmY === null) ? target : helmY + (target - helmY) * 0.13;
+    if (jumped) wakeTrail = [];
+    lastProg = prog;
+    y = helmY;
+  } else {
+    y = swellTop(w, prog, 1);
+  }
+
   if (boat){
-    boat.style.opacity = '1'; boat.style.left = prog * 100 + '%';
-    boat.style.top = swellTop(w, prog, 1) + 'px';
+    boat.style.opacity = '1';
+    boat.style.left = prog * 100 + '%';
+    boat.style.top = y + 'px';
+    // Point where she's going. Measured against where she was about half a
+    // second ago, not against the previous frame: at this scale a tick moves
+    // her a tenth of a pixel and the bow would never visibly come round.
+    // A literal path angle is no good either — she crosses the whole track in
+    // four minutes, so any real turn is nearly vertical — so this is a
+    // stylised heading: vertical rate, scaled to something a boat would do.
+    const back = wakeTrail[Math.max(0, wakeTrail.length - 24)];
+    const turn = Math.max(-26, Math.min(26, (y - (back ? back.y : y)) * 20));
+    boat.style.setProperty('--heading', turn.toFixed(1) + 'deg');
   }
   if (horse){
-    horse.style.opacity = '1'; horse.style.left = prog * 100 + '%';
-    horse.style.top = swellTop(w, prog, -1) + 'px';
+    // Swimming in the wake, a little astern and a beat behind the turns.
+    const back = wakeTrail[Math.max(0, wakeTrail.length - 9)];
+    horse.style.opacity = '1';
+    horse.style.left = (plan ? Math.max(0, prog - 0.012) : prog) * 100 + '%';
+    horse.style.top = (plan ? (back ? back.y : y) : swellTop(w, prog, -1)) + 'px';
+  }
+
+  if (plan){
+    const wrap = $('wavewrap').getBoundingClientRect();
+    wakeTrail.push({ x: prog * wrap.width, y });
+    if (wakeTrail.length > 46) wakeTrail.shift();
+    drawWake();
   }
   hailBuoys(w.getCurrentTime());
+}
+
+// A short, fading wake: the churned centre line plus the two arms spreading
+// off the stern. Redrawn each tick; it disappears as soon as she stops.
+function drawWake(){
+  const cv = $('wake');
+  if (!cv) return;
+  const wrap = $('wavewrap').getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(wrap.width * dpr) || cv.height !== Math.round(wrap.height * dpr)){
+    cv.width = Math.round(wrap.width * dpr); cv.height = Math.round(wrap.height * dpr);
+  }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, wrap.width, wrap.height);
+  if (wakeTrail.length < 2) return;
+  const n = wakeTrail.length;
+  ctx.lineCap = 'round';
+  for (let i = 1; i < n; i++){
+    const a = wakeTrail[i - 1], b = wakeTrail[i];
+    const age = i / n;                      // 0 = oldest, 1 = just now
+    const spread = (1 - age) * 5.5;
+    ctx.strokeStyle = `rgba(255,255,255,${(0.30 * age * age).toFixed(3)})`;
+    ctx.lineWidth = 0.6 + age * 1.5;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    ctx.strokeStyle = `rgba(255,255,255,${(0.16 * age * age).toFixed(3)})`;
+    ctx.lineWidth = 0.5 + age;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y - spread); ctx.lineTo(b.x, b.y - spread * 0.86); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(a.x, a.y + spread); ctx.lineTo(b.x, b.y + spread * 0.86); ctx.stroke();
+  }
 }
 
 // As the ship reaches a buoy, the buoy says its piece for a few seconds. Only
@@ -1715,14 +1814,49 @@ const BUOY_SVG = `<svg class="buoy" viewBox="0 0 16 22" aria-hidden="true">
   <path d="M2.4 17.2 H13.6" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>
 </svg>`;
 
+// Seen from above, a buoy is moored somewhere across the channel rather than
+// on top of a wave. Its position ALONG the track is exact — that is the
+// timestamp and must not drift — but across the channel it is scattered
+// evenly over the full width, from one bank to the other. The offset comes
+// from the comment's own id through the pattern generator's RNG, so it is
+// uniform, unclustered, and identical on every render.
+let buoyField = [];
+function hashId(id){
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++){ h ^= id.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+// Eight independent random draws clump — half the channel ends up empty and
+// three buoys sit on top of each other. So the width is divided into one band
+// per buoy and each takes a band, jittered inside it: even coverage bank to
+// bank, no two moored on the same line. Which buoy gets which band is a
+// deterministic shuffle, so it never changes between renders.
+function buoyLanes(list){
+  const pad = 7, span = WAVE_H - pad * 2, n = list.length;
+  const bands = [...Array(n).keys()];
+  const seed = hashId(list.map(c => c.id).join('|'));
+  const r = rng(seed);
+  for (let i = n - 1; i > 0; i--){                 // Fisher-Yates, seeded
+    const j = Math.floor(r() * (i + 1));
+    [bands[i], bands[j]] = [bands[j], bands[i]];
+  }
+  const h = span / Math.max(1, n);
+  return list.map((c, i) => {
+    const jitter = (rng(hashId(String(c.id)))() - 0.5) * h * 0.7;
+    return pad + (bands[i] + 0.5) * h + jitter;
+  });
+}
+
 function renderMarkers(){
-  const mk = $('markers'); mk.innerHTML = '';
+  const mk = $('markers'); mk.innerHTML = ''; buoyField = [];
   if (!activeSong || singleMix) return;
   const w = curWS(); const dur = w ? w.getDuration() : 0;
   if (!dur) return;
   const buoys = num('--wave-caps', 0) === 1;      // themed players get the water
   const ver = activeSong.versions[activeVer];
-  commentsForActiveVersion().forEach(c => {
+  const list = commentsForActiveVersion();
+  const lanes = buoys ? buoyLanes(list) : [];
+  list.forEach((c, li) => {
     const el = document.createElement('div');
     el.className = 'mk';
     const at = Math.min(1, Math.max(0, c.time / dur));
@@ -1734,7 +1868,11 @@ function renderMarkers(){
     const from = origin && ver && origin.id !== ver.id ? ` (from ${esc(origin.name)})` : '';
     el.innerHTML = `<div class="tip">${fmt(c.time)} — ${esc(c.text)}${from}</div>`
                  + (buoys ? BUOY_SVG : '');
-    if (buoys) el.style.top = swellTop(w, at, 1) + 'px';
+    if (buoys){
+      const lane = lanes[li];                      // across the channel
+      el.style.top = lane + 'px';                  // (left % is the timestamp, untouched)
+      buoyField.push({ x: at, y: lane });
+    }
     el.addEventListener('click', (e) => {
       e.stopPropagation(); seekTo(c.time); openDrawer(true);
       const w = curWS(); if (w && !w.isPlaying()) w.play();

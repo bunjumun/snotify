@@ -143,33 +143,43 @@ body[data-theme="dazzle"] .wavewrap::after {
 }
 body[data-theme="dazzle"] .transport { background: rgba(8,8,10,.95); }
 
-/* The boat. Hidden everywhere else — only this band sails. */
+/* The player is now a chart, not a cross-section: you are looking down at the
+   water. The ship runs the length of the track, bow forward, and the wake
+   spreads astern. Hidden everywhere else — only this band sails. */
+#wake { display: none; }
+body[data-theme="dazzle"] #wake {
+  display: block; position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 2;
+}
 #boat { display: none; }
 body[data-theme="dazzle"] #boat {
   display: block; position: absolute; left: 0; top: 50%;
-  width: 24px; height: 17px; margin-left: -12px; margin-top: -15px;
-  opacity: 0; pointer-events: none; z-index: 3;
-  transition: top .12s ease-out, opacity .2s;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,.9));
+  width: 34px; height: 16px; margin-left: -22px; margin-top: -8px;
+  opacity: 0; pointer-events: none; z-index: 5;
+  transition: top .1s linear, opacity .2s;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,.95));
 }
-body[data-theme="dazzle"] #boat svg { width: 100%; height: 100%; display: block; }
-/* A little roll, so it looks afloat rather than pinned. */
-@keyframes boat-roll { 0%,100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
-body[data-theme="dazzle"] #boat svg { animation: boat-roll 2.6s ease-in-out infinite; transform-origin: 50% 90%; }
+body[data-theme="dazzle"] #boat svg {
+  width: 100%; height: 100%; display: block;
+  /* --heading is written by the helm each tick; the gentle roll rides on top */
+  transform: rotate(var(--heading, 0deg));
+  transition: transform .12s ease-out;
+  transform-origin: 62% 50%;
+}
 
-/* Its opposite number under the waterline: a small amphibious horse that dives
-   as the trough deepens. Lakehorse, literally. Decoration only. */
+/* The horse swims astern, in the wake, a beat behind every turn. Smaller than
+   the ship and half under, as an amphibious horse would be. Decoration only. */
 #horse { display: none; }
 body[data-theme="dazzle"] #horse {
   display: block; position: absolute; left: 0; top: 50%;
-  width: 26px; height: 18px; margin-left: -13px; margin-top: -1px;
-  opacity: 0; pointer-events: none; z-index: 3;
-  transition: top .12s ease-out, opacity .2s;
-  filter: drop-shadow(0 -1px 2px rgba(0,0,0,.9));
+  width: 19px; height: 13px; margin-left: -30px; margin-top: -6px;
+  opacity: 0; pointer-events: none; z-index: 4;
+  transition: top .14s ease-out, opacity .2s;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.9));
 }
-body[data-theme="dazzle"] #horse svg { width: 100%; height: 100%; display: block; }
-@keyframes horse-swim { 0%,100% { transform: rotate(3deg) translateY(0); } 50% { transform: rotate(-3deg) translateY(1px); } }
-body[data-theme="dazzle"] #horse svg { animation: horse-swim 2.2s ease-in-out infinite; transform-origin: 50% 10%; }
+body[data-theme="dazzle"] #horse svg { width: 100%; height: 100%; display: block; opacity: .92; }
+@keyframes horse-swim { 0%,100% { transform: translateY(-.6px) rotate(-2deg); } 50% { transform: translateY(.6px) rotate(2deg); } }
+body[data-theme="dazzle"] #horse svg { animation: horse-swim 1.5s ease-in-out infinite; transform-origin: 50% 50%; }
 body[data-theme="dazzle"] button.play { background: #fff; color: #08080a; }
 body[data-theme="dazzle"] .verbtn, body[data-theme="dazzle"] .rev {
   border-radius: 2px; text-transform: uppercase; letter-spacing: .06em; font-size: 12px;

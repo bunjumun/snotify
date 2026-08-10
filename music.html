@@ -7,9 +7,9 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=14" />
+<link rel="stylesheet" href="core.css?v=15" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=14" />
+<link rel="stylesheet" href="theme-dazzle.css?v=15" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -99,7 +99,7 @@
   .latest { font-size: 10px; font-weight: 700; color: var(--accent-2); flex: none; }
   .vdate { color: var(--text-mute); font-size: 11px; flex: none; }
   .vermenu {
-    display: none; position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 45;
+    display: none; position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 80;
     min-width: 280px; max-width: 340px; max-height: 40vh; overflow-y: auto;
     background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px;
     box-shadow: var(--shadow); padding: 6px;
@@ -145,7 +145,9 @@
   #markers .mk { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--warn); transform: translateX(-1px); pointer-events: auto; cursor: pointer; }
   #markers .mk::after { content: "💬"; position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 11px; line-height: 1; filter: saturate(.9); }
   #markers .mk:hover { background: #fff; }
-  #markers .mk .tip { display: none; position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); background: #000; border: 1px solid var(--line); color: var(--text); font-size: 12px; padding: 5px 9px; border-radius: 7px; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; z-index: 5; }
+  /* A tooltip is for reading, never for clicking — it must not intercept a
+     press meant for whatever it happens to be floating over. */
+  #markers .mk .tip { display: none; position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); background: #000; border: 1px solid var(--line); color: var(--text); font-size: 12px; padding: 5px 9px; border-radius: 7px; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; z-index: 5; pointer-events: none; }
   #markers .mk:hover .tip { display: block; }
 
   .vol { display: flex; align-items: center; gap: 8px; }
@@ -540,7 +542,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=14"></script>
+<script src="core.js?v=15"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;

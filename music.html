@@ -7,9 +7,9 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=19" />
+<link rel="stylesheet" href="core.css?v=20" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=19" />
+<link rel="stylesheet" href="theme-dazzle.css?v=20" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -248,10 +248,11 @@
   .lyr-pop-add input:focus { border-color: var(--accent); }
   .lyr-pop-add .btn { border: none; border-radius: 8px; padding: 7px 14px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--accent); color: #fff; }
   .lyr-pop-add .btn.ghost { background: var(--bg-row); color: var(--text-dim); border: 1px solid var(--line); }
-  /* A note is only ever a reply to a suggestion — there is nothing to discuss
-     about a line until someone has proposed something for it. */
-  #lyrPopNote { display: none; }
-  .lyr-pop.replying #lyrPopNote { display: block; }
+  /* Comment or suggestion is a choice you make as you write it, on any line —
+     a comment says something about the words without offering replacements. */
+  .lyr-line.noted { box-shadow: inset 2px 0 0 var(--accent-2); }
+  .lyr-note-dot { font-size: 10px; opacity: .65; margin-left: 6px; vertical-align: 1px; }
+  body:not(.lyr-review) .lyr-note-dot { display: none; }
 
   /* Cross-page buttons + admin: band members only, and never on a shared mix */
   #artBtn, #homeBtn { display: none; }
@@ -492,7 +493,7 @@
     <div class="lyr-pop-add">
       <input type="text" id="lyrPopInput" maxlength="300" placeholder="Suggest this line instead…" />
       <button class="btn primary" id="lyrPopGo">Suggest</button>
-      <button class="btn ghost" id="lyrPopNote" title="Say what you think, without offering a line">Note</button>
+      <button class="btn ghost" id="lyrPopNote" title="Say something about this line without replacing it">Comment</button>
     </div>
   </div>
 
@@ -679,7 +680,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=19"></script>
+<script src="core.js?v=20"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -2094,6 +2095,10 @@ const lyrLines = (d) => (d ? String(d.body).split('\n') : []);
 const lyrFor = (draftId) => lyrSugs.filter(s => s.draft_id === draftId && s.status === 'open');
 const lyrRoots = (draftId, line, kind) =>
   lyrFor(draftId).filter(s => !s.parent_id && s.line_no === line && s.kind === kind);
+// A comment on a line stands on its own — it says something about the words
+// without offering any to replace them, so it is never one of the choices.
+const lyrNotes = (draftId, line) =>
+  lyrFor(draftId).filter(s => !s.parent_id && s.kind === 'note' && s.line_no === line);
 const lyrReplies = (id) => lyrSugs.filter(s => s.parent_id === id);
 // A tweak counts as an alternative; a note is only discussion.
 const lyrAlts = (root) => [root, ...lyrReplies(root.id).filter(r => r.kind !== 'note')];
@@ -2145,7 +2150,7 @@ function lyrCuts(d){
 
 function renderLyrics(){
   const d = lyrDraft(), body = $('lyrBody');
-  const sugTotal = d ? lyrFor(d.id).filter(x => !x.parent_id).length : 0;
+  const sugTotal = d ? lyrFor(d.id).filter(x => !x.parent_id).length : 0;   // suggestions and comments alike
   $('lyrSugCount').textContent = sugTotal;
   $('lyricHint').textContent = activeSong ? `on “${activeSong.title}”` : '';
   $('lyrDraftName').textContent = d ? `Draft ${d.n}${d.name ? ' · ' + d.name : ''}` : 'No lyrics yet';
@@ -2183,8 +2188,11 @@ function renderLyrics(){
     });
     const text = lines[oi] !== undefined ? lines[oi] : '';
     const has = lyrRoots(d.id, i, 'replace').length > 0;
-    html += `<div class="lyr-line ${has ? 'has' : ''} ${staged.has(i) ? 'staged' : ''} ${text.trim() ? '' : 'blank'}" `
-          + `data-line="${i}">${esc(lyrStagedAt(i) ? lyrStagedAt(i).text : text) || '&nbsp;'}</div>`;
+    const noted = lyrNotes(d.id, i).length;
+    html += `<div class="lyr-line ${has ? 'has' : ''} ${noted ? 'noted' : ''} ${staged.has(i) ? 'staged' : ''} ${text.trim() ? '' : 'blank'}" `
+          + `data-line="${i}">${esc(lyrStagedAt(i) ? lyrStagedAt(i).text : text) || '&nbsp;'}`
+          + (noted ? `<span class="lyr-note-dot" title="${noted} comment${noted === 1 ? '' : 's'} on this line">💬</span>` : '')
+          + `</div>`;
     oi++;
   }
   body.innerHTML = html;
@@ -2289,6 +2297,24 @@ function openLyrPop(target, line, kind){
   let html = '';
   let k = 0;
   const letter = () => String.fromCharCode(97 + k++);
+  // Comments first: they frame the line, and none of them can be taken.
+  lyrNotes(d.id, line).forEach(nt => {
+    html += `<div class="lyr-opt note">
+      <span class="key">💬</span>
+      <div class="body"><div class="txt">${esc(nt.text)}</div>
+        <div class="who">${nt.name ? '<b>' + esc(nt.name) + '</b> · ' : ''}${timeago(Date.parse(nt.created_at))} · comment</div></div>
+      <span class="act" data-reply="${nt.id}">reply</span>
+      <span class="act" data-delsug="${nt.id}">×</span>
+    </div>`;
+    lyrReplies(nt.id).forEach(r => {
+      html += `<div class="lyr-opt note reply">
+        <span class="key">↳</span>
+        <div class="body"><div class="txt">${esc(r.text)}</div>
+          <div class="who">${r.name ? '<b>' + esc(r.name) + '</b> · ' : ''}${timeago(Date.parse(r.created_at))}</div></div>
+        <span class="act" data-delsug="${r.id}">×</span>
+      </div>`;
+    });
+  });
   roots.forEach(r => {
     lyrAlts(r).forEach((alt, ai) => {
       html += `<div class="lyr-opt ${ai ? 'reply' : ''}" data-take="${alt.id}">
@@ -2364,7 +2390,7 @@ $('lyrPop').addEventListener('click', async (e) => {
   if (rep){
     $('lyrPopInput').dataset.parent = rep.dataset.reply;
     $('lyrPop').classList.add('replying');
-    $('lyrPopInput').placeholder = 'Tweak the line, or leave a note…';
+    $('lyrPopInput').placeholder = 'Tweak the line, or comment on it…';
     $('lyrPopInput').focus();
     return;
   }
@@ -2401,7 +2427,7 @@ async function addLyrSuggestion(asNote){
   const parent = $('lyrPopInput').dataset.parent || null;
   // Replying with a line is a tweak — another option people can take. Replying
   // with a note is just talking, and never appears among the choices.
-  const kind = parent ? (asNote ? 'note' : 'replace') : lyrPopKind;
+  const kind = asNote ? 'note' : (parent ? 'replace' : lyrPopKind);
   try {
     const row = await libRpc('add_lyric_suggestion', {
       draft: d.id, ln: lyrPopLine, kind, txt, who: $('cname').value.trim(), parent });

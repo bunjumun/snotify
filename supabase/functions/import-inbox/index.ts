@@ -4,8 +4,8 @@
 // 60-second polling importer). Deploy with:
 //   supabase functions deploy import-inbox --no-verify-jwt
 //
-// Request:  POST { band, pass, song, kind? }   kind: 'audio' (default) | 'art'
-// Response: { ok: true, imported: n }  |  { error }
+// Request:  POST { band, pass, song, kind? }   kind: 'audio' (default) | 'art' | 'ref'
+// Response: { ok: true, imported: n }  |  { ok: true, ref: '<path>' }  |  { error }
 //
 // 'art' is S'nart: the same import, pointed at images. A revision of a piece
 // of art stacks exactly like a new mix of a song — same songs/versions rows,
@@ -52,8 +52,48 @@ Deno.serve(async (req) => {
   try {
     const { band, pass, song, kind } = await req.json();
     if (!band || !pass || !song) return json({ error: 'band, pass, song required' }, 400);
-    const k = kind === 'art' ? 'art' : 'audio';
+    const k = kind === 'art' ? 'art' : kind === 'ref' ? 'ref' : 'audio';
     const MEDIA_RE = k === 'art' ? IMAGE_RE : AUDIO_RE;
+
+    // A reference is not a version of anything: it is the track this song is
+    // chasing. Move the one file into the permanent bucket under the song's
+    // own _ref/ folder and hand the path back — no songs or versions rows.
+    if (k === 'ref') {
+      const okRef = await api('/rest/v1/rpc/band_pass_ok', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ b: band, p: pass }),
+      });
+      if ((await okRef.json()) !== true) return json({ error: 'wrong band password' }, 403);
+      const bb = String(band).toLowerCase();
+      const listed = await api('/storage/v1/object/list/inbox', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefix: `${bb}/${pass}/${song}`, limit: 20 }),
+      });
+      const names = ((await listed.json()) as { name: string }[])
+        .map((e) => e.name).filter((n) => n && AUDIO_RE.test(n));
+      if (!names.length) return json({ error: 'no audio found to use as a reference' }, 400);
+      const file = names[0];
+      const from = `${bb}/${pass}/${song}/${file}`;
+      const to = `${bb}/${song}/_ref/${file}`;
+      const ext = (file.match(/\.[^.]+$/)?.[0] ?? '').toLowerCase();
+      try {
+        await api('/storage/v1/object/move', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bucketId: 'inbox', sourceKey: from,
+                                 destinationBucket: 'tracks', destinationKey: to }),
+        });
+      } catch {
+        // storage-api without cross-bucket move, same fallback the mixes use
+        const blob = await (await api('/storage/v1/object/inbox/' + enc(from))).blob();
+        await api('/storage/v1/object/tracks/' + enc(to), {
+          method: 'POST', body: blob,
+          headers: { 'Content-Type': MIME[ext] ?? 'application/octet-stream',
+                     'x-upsert': 'true', 'cache-control': 'max-age=31536000' },
+        });
+        await api('/storage/v1/object/inbox/' + enc(from), { method: 'DELETE' });
+      }
+      return json({ ok: true, ref: to, name: file.replace(/\.[^.]+$/, '') });
+    }
 
     const okRes = await api('/rest/v1/rpc/band_pass_ok', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

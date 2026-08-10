@@ -7,9 +7,9 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=20" />
+<link rel="stylesheet" href="core.css?v=21" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=20" />
+<link rel="stylesheet" href="theme-dazzle.css?v=21" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -168,6 +168,55 @@
      but logged-in bandmates can still add mixes and copy the link */
   body.shared .addbtn { display: none; }
   body.shared #addBtn, body.shared #shareBtn { display: inline-flex; }
+
+  /* ---------- Reference ---------- */
+  .ref-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .ref-side { background: var(--bg-row); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
+  .ref-side h3 { margin: 0 0 10px; font-size: 11px; font-weight: 800; color: var(--text-mute); text-transform: uppercase; letter-spacing: .1em; }
+  .ref-kind { font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text-dim); }
+  .ref-stack { max-height: 30vh; overflow-y: auto; margin: 0 -4px 10px; }
+  .ref-ver { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+  .ref-ver:hover { background: var(--bg-hover); }
+  .ref-ver.on { background: rgba(108,92,231,.16); color: var(--text); }
+  .ref-ver .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ref-ver .dt { color: var(--text-mute); font-size: 11px; flex: none; }
+  .ref-transport { display: flex; align-items: center; gap: 9px; margin-top: 4px; }
+  .ref-play { flex: none; width: 32px; height: 32px; border-radius: 50%; border: none; cursor: pointer; background: var(--text); color: var(--bg); font-size: 12px; }
+  .ref-play:hover { filter: brightness(1.1); }
+  .ref-play:disabled { opacity: .35; cursor: default; }
+  .ref-transport input[type=range], .ref-vol input[type=range] {
+    -webkit-appearance: none; appearance: none; height: 4px; border-radius: 4px;
+    background: var(--line); outline: none; cursor: pointer; flex: 1; min-width: 40px;
+  }
+  .ref-transport input[type=range]::-webkit-slider-thumb,
+  .ref-vol input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--text); cursor: pointer;
+  }
+  .ref-time { color: var(--text-mute); font-size: 11px; font-variant-numeric: tabular-nums; flex: none; }
+  /* Each side keeps its own level: a reference is usually mastered louder than
+     a rough mix, and matching them by ear is the whole point. */
+  .ref-vol { display: flex; align-items: center; gap: 8px; margin-top: 9px; color: var(--text-mute); font-size: 11px; }
+  .ref-none { color: var(--text-mute); font-size: 12.5px; padding: 6px 0 10px; }
+  .ref-what { font-size: 13px; margin-bottom: 10px; word-break: break-word; }
+  .ref-what a { color: var(--accent); }
+  .ref-embed { display: none; margin-bottom: 10px; }
+  .ref-embed iframe { width: 100%; border: 1px solid var(--line); border-radius: var(--radius); display: block; }
+  .ref-attach { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .ref-attach summary { cursor: pointer; color: var(--text-mute); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; list-style: none; }
+  .ref-attach summary::-webkit-details-marker { display: none; }
+  .ref-attach summary::before { content: "▸ "; }
+  .ref-attach[open] summary::before { content: "▾ "; }
+  .ref-attach label { display: block; font-size: 12px; color: var(--text-dim); margin: 10px 0 4px; }
+  .ref-attach input[type=text] {
+    width: 100%; background: var(--field); border: 1px solid var(--line); color: var(--text);
+    border-radius: 8px; padding: 8px 11px; font: inherit; font-size: 13px; outline: none;
+  }
+  .ref-attach input[type=text]:focus { border-color: var(--accent); background: var(--field-on); }
+  .ref-attach .btn { border: none; border-radius: 8px; padding: 7px 14px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--bg-soft); color: var(--text-dim); border: 1px solid var(--line); }
+  .ref-attach .btn:hover { color: var(--text); }
+  #refToggle { display: none; }
+  body.authed:not(.singlemix) #refToggle { display: inline-flex; }
+  @media (max-width: 620px) { .ref-grid { grid-template-columns: 1fr; } }
 
   /* ---------- Lyrics ---------- */
   .lyr-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
@@ -486,6 +535,66 @@
     </div>
   </div>
 
+  <!-- Reference: this song's mixes on one side, the track it is chasing on the
+       other. Only one of them is ever making a sound. -->
+  <div class="modal-back" id="refModal">
+    <div class="modal" style="max-width:720px">
+      <h2>Reference <span id="refSong" style="font-size:12px;font-weight:400;color:var(--text-mute)"></span></h2>
+
+      <div class="ref-grid">
+        <div class="ref-side">
+          <h3>This song</h3>
+          <div class="ref-stack" id="refVersions"></div>
+          <div class="ref-transport">
+            <button class="ref-play" id="refMixPlay" title="Play this mix">▶</button>
+            <input type="range" id="refMixSeek" min="0" max="1000" value="0" />
+            <span class="ref-time" id="refMixTime">0:00</span>
+          </div>
+          <div class="ref-vol">
+            <span>Vol</span><input type="range" id="refMixVol" min="0" max="1" step="0.01" />
+          </div>
+        </div>
+
+        <div class="ref-side">
+          <h3>Reference <span class="ref-kind" id="refKind"></span></h3>
+          <div class="ref-none" id="refNone">Nothing attached yet.</div>
+          <div class="ref-what" id="refWhat"></div>
+          <div class="ref-embed" id="refEmbed"></div>
+          <div class="ref-transport" id="refOwnTransport">
+            <button class="ref-play" id="refPlay" title="Play the reference">▶</button>
+            <input type="range" id="refSeek" min="0" max="1000" value="0" />
+            <span class="ref-time" id="refTime">0:00</span>
+          </div>
+          <div class="ref-vol" id="refVolRow">
+            <span>Vol</span><input type="range" id="refVol" min="0" max="1" step="0.01" />
+          </div>
+          <audio id="refAudio" preload="none"></audio>
+        </div>
+      </div>
+
+      <div class="hint" id="refHint" style="margin-top:10px"></div>
+
+      <details class="ref-attach" id="refAttach">
+        <summary>Attach a reference</summary>
+        <label>Link to audio, or a player to embed</label>
+        <input type="text" id="refUrl" placeholder="https://…  (an mp3, or a YouTube / SoundCloud / Bandcamp / Spotify link)" maxlength="2000" />
+        <label>What is it?</label>
+        <input type="text" id="refTitle" placeholder="Artist — Track" maxlength="120" />
+        <div class="tool-row" style="margin-top:10px;gap:8px">
+          <button class="btn ghost" id="refSaveUrl">Use this link</button>
+          <span style="flex:1"></span>
+          <label class="btn ghost" style="cursor:pointer;margin:0">
+            Upload a file<input type="file" id="refFile" accept="audio/*,.mp3,.m4a,.wav,.aif,.aiff,.flac,.ogg" style="display:none" />
+          </label>
+          <button class="btn ghost" id="refClear">Remove</button>
+        </div>
+        <div class="status" id="refStatus"></div>
+      </details>
+
+      <div class="actions"><button class="btn ghost" id="refClose">Close</button></div>
+    </div>
+  </div>
+
   <!-- A line's alternatives, and the tweaks people hung off them -->
   <div class="lyr-pop" id="lyrPop">
     <div class="lyr-pop-head" id="lyrPopHead"></div>
@@ -591,6 +700,10 @@
             <svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 00-9 9H1l3.9 3.9L8.8 12H6a7 7 0 117 7 7 7 0 01-4.9-2L6.7 18.4A9 9 0 1013 3zm-1 5v5l4.25 2.52.75-1.23-3.5-2.08V8H12z"/></svg>
             <span>Log</span>
           </button>
+          <button class="cbtn" id="refToggle" title="Reference — the track this one is chasing (f)" style="margin-left:0">
+            <svg viewBox="0 0 24 24"><path d="M12 3v10.6a4 4 0 10 2 3.4V7h4V3h-6z"/></svg>
+            <span>Reference</span>
+          </button>
           <button class="cbtn" id="lyricToggle" title="Lyrics (l)" style="margin-left:0">
             <svg viewBox="0 0 24 24"><path d="M4 5h16v2H4V5zm0 4h11v2H4V9zm0 4h16v2H4v-2zm0 4h11v2H4v-2z"/></svg>
             <span>Lyrics</span>
@@ -680,7 +793,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=20"></script>
+<script src="core.js?v=21"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -1311,7 +1424,7 @@ function wireVersion(w, vi){
     renderVersions();
   });
   w.on('timeupdate', (t) => { if (vi === activeVer){ $('curTime').textContent = fmt(t); $('atTime').textContent = fmt(t); moveRiders(w); } });
-  w.on('play',  () => { if (vi === activeVer) setPlayingUI(true);  });
+  w.on('play',  () => { if (vi === activeVer){ setPlayingUI(true); refStopAll('main'); } });
   w.on('pause', () => { if (vi === activeVer) setPlayingUI(false); });
   w.on('finish',() => { if (vi === activeVer) next(true); });
   w.on('error', () => {
@@ -2074,6 +2187,242 @@ function refreshListBadges(){
   wsByVer.forEach((w,vi)=>{ if (readyByVer[vi] && vi===activeVer){ const cell=document.querySelector(`.right[data-dur="${activeSongIndex}"]`); if (cell) cell.textContent=fmt(w.getDuration()); }});
 }
 
+
+// ---------- Reference ----------
+// The track this song is chasing. It belongs to the SONG, not to a mix and not
+// to the album, so it stays put whichever version you are listening to.
+//
+// The rule that makes comparing worth anything: only one thing is ever making
+// a sound. Starting either side stops the other — including the page's main
+// transport, so opening the reference never leaves two tracks fighting.
+let refMixWS = null;          // a wavesurfer of its own, so the main deck is untouched
+let refVerIdx = 0;
+const REF_VOL_KEY = 'mp_ref_vol', MIX_VOL_KEY = 'mp_ref_mixvol';
+
+const refOf = (song) => (song && song.reference) || null;
+// Which services we can recognise well enough to embed, and how to pause them.
+function refEmbedSrc(url){
+  const u = String(url || '');
+  let m;
+  if ((m = u.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{6,})/)))
+    return { src: `https://www.youtube.com/embed/${m[1]}?enablejsapi=1`, api: 'yt' };
+  if (/soundcloud\.com\//.test(u))
+    return { src: `https://w.soundcloud.com/player/?url=${encodeURIComponent(u)}`, api: 'sc' };
+  if ((m = u.match(/open\.spotify\.com\/(track|album|playlist)\/([\w]+)/)))
+    return { src: `https://open.spotify.com/embed/${m[1]}/${m[2]}`, api: null };
+  if (/bandcamp\.com\//.test(u)) return { src: u, api: null };
+  return null;
+}
+const refIsEmbed = (r) => r && (r.kind === 'embed' || (r.kind === 'url' && refEmbedSrc(r.src)));
+
+function refSrcUrl(r){
+  if (!r) return null;
+  return r.kind === 'file' ? publicUrl(r.src) : r.src;
+}
+
+// Anything that starts playing must silence everything else first.
+function refStopAll(except){
+  if (except !== 'main'){ try { const w = curWS(); if (w && w.isPlaying()) w.pause(); } catch {} }
+  if (except !== 'refmix' && refMixWS && refMixWS.isPlaying()) refMixWS.pause();
+  if (except !== 'ref'){
+    const a = $('refAudio'); if (a && !a.paused) a.pause();
+    refPauseEmbed();
+  }
+}
+// An embedded widget is someone else's player in someone else's iframe. YouTube
+// and SoundCloud answer a postMessage; for anything else the only reliable stop
+// is to take the iframe away, which is what this does.
+function refPauseEmbed(){
+  const box = $('refEmbed');
+  const f = box.querySelector('iframe');
+  if (!f) return;
+  const api = f.dataset.api;
+  try {
+    if (api === 'yt') f.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+    else if (api === 'sc') f.contentWindow.postMessage('{"method":"pause"}', '*');
+    else { const src = f.src; f.src = src; }      // reload = stop, for the rest
+  } catch { const src = f.src; f.src = src; }
+}
+
+function renderRefVersions(){
+  const vs = activeSong ? activeSong.versions : [];
+  $('refVersions').innerHTML = vs.map((v, i) => `
+    <div class="ref-ver ${i === refVerIdx ? 'on' : ''}" data-rv="${i}">
+      <span class="nm">${esc(v.name)}</span>
+      ${i === 0 ? '<span class="dt">latest</span>' : (v.date ? `<span class="dt">${esc(v.date)}</span>` : '')}
+    </div>`).join('') || `<div class="ref-none">No mixes yet.</div>`;
+}
+
+function refLoadMix(i){
+  if (!activeSong) return;
+  refVerIdx = Math.max(0, Math.min(i, activeSong.versions.length - 1));
+  renderRefVersions();
+  const src = activeSong.versions[refVerIdx].src;
+  if (refMixWS){ try { refMixWS.destroy(); } catch {} refMixWS = null; }
+  const holder = document.createElement('div');            // headless: no waveform needed here
+  refMixWS = WaveSurfer.create({ container: holder, url: src, height: 0, backend: 'MediaElement' });
+  refMixWS.setVolume(parseFloat($('refMixVol').value));
+  refMixWS.on('play',  () => { refStopAll('refmix'); $('refMixPlay').textContent = '❚❚'; });
+  refMixWS.on('pause', () => { $('refMixPlay').textContent = '▶'; });
+  refMixWS.on('timeupdate', (t) => {
+    const d = refMixWS.getDuration() || 0;
+    if (d) $('refMixSeek').value = Math.round((t / d) * 1000);
+    $('refMixTime').textContent = fmt(t);
+  });
+}
+
+function renderReference(){
+  const r = refOf(activeSong);
+  $('refSong').textContent = activeSong ? `· ${activeSong.title}` : '';
+  $('refNone').style.display = r ? 'none' : 'block';
+  $('refWhat').innerHTML = '';
+  $('refEmbed').style.display = 'none';
+  $('refEmbed').innerHTML = '';
+  $('refKind').textContent = '';
+  $('refHint').textContent = '';
+  const own = $('refOwnTransport'), vol = $('refVolRow');
+  const a = $('refAudio');
+  if (!a.paused) a.pause();
+  a.removeAttribute('src');
+
+  if (!r){ own.style.display = 'none'; vol.style.display = 'none'; return; }
+
+  const emb = refIsEmbed(r) ? (refEmbedSrc(r.src) || { src: r.src, api: null }) : null;
+  $('refWhat').innerHTML = r.title
+    ? `<b>${esc(r.title)}</b>` + (r.kind !== 'file' ? ` — <a href="${esc(r.src)}" target="_blank" rel="noopener">open</a>` : '')
+    : (r.kind === 'file' ? 'Uploaded reference' : `<a href="${esc(r.src)}" target="_blank" rel="noopener">${esc(r.src)}</a>`);
+
+  if (emb){
+    $('refKind').textContent = '· embedded player';
+    $('refEmbed').style.display = 'block';
+    $('refEmbed').innerHTML = `<iframe src="${esc(emb.src)}" height="120" allow="autoplay; encrypted-media"
+                                       data-api="${esc(emb.api || '')}" loading="lazy"></iframe>`;
+    own.style.display = 'none'; vol.style.display = 'none';
+    // Be straight about what this cannot do rather than pretending.
+    $('refHint').textContent = emb.api
+      ? 'Embedded player — starting a mix pauses it. Its volume is its own.'
+      : 'Embedded player — starting a mix reloads it to stop it, and its volume is its own. Attach a file or a direct audio link for gapless comparing.';
+  } else {
+    $('refKind').textContent = r.kind === 'file' ? '· uploaded' : '· link';
+    own.style.display = 'flex'; vol.style.display = 'flex';
+    a.src = refSrcUrl(r);
+    a.volume = parseFloat($('refVol').value);
+    $('refHint').textContent = 'Only one side plays at a time — starting either pauses the other.';
+  }
+}
+
+function openReference(){
+  if (!activeSong || singleMix) return;
+  $('refModal').classList.add('open');
+  $('refMixVol').value = localStorage.getItem(MIX_VOL_KEY) ?? '0.9';
+  $('refVol').value    = localStorage.getItem(REF_VOL_KEY) ?? '0.9';
+  refVerIdx = activeVer;
+  renderRefVersions();
+  renderReference();
+  refLoadMix(refVerIdx);
+  $('refUrl').value = (refOf(activeSong) || {}).src || '';
+  $('refTitle').value = (refOf(activeSong) || {}).title || '';
+  $('refStatus').textContent = '';
+}
+function closeReference(){
+  refStopAll(null);
+  if (refMixWS){ try { refMixWS.destroy(); } catch {} refMixWS = null; }
+  $('refModal').classList.remove('open');
+}
+$('refToggle').onclick = openReference;
+$('refClose').onclick = closeReference;
+$('refModal').addEventListener('click', (e) => { if (e.target === $('refModal')) closeReference(); });
+
+$('refVersions').addEventListener('click', (e) => {
+  const v = e.target.closest('[data-rv]');
+  if (v) refLoadMix(+v.dataset.rv);
+});
+$('refMixPlay').onclick = () => {
+  if (!refMixWS) return;
+  if (refMixWS.isPlaying()) refMixWS.pause();
+  else { refStopAll('refmix'); refMixWS.play(); }
+};
+$('refMixSeek').addEventListener('input', () => {
+  if (!refMixWS) return;
+  const d = refMixWS.getDuration() || 0;
+  if (d) refMixWS.setTime(($('refMixSeek').value / 1000) * d);
+});
+$('refMixVol').addEventListener('input', () => {
+  localStorage.setItem(MIX_VOL_KEY, $('refMixVol').value);
+  if (refMixWS) refMixWS.setVolume(parseFloat($('refMixVol').value));
+});
+
+$('refPlay').onclick = () => {
+  const a = $('refAudio');
+  if (a.paused){ refStopAll('ref'); a.play().catch(() => {}); } else a.pause();
+};
+$('refAudio').addEventListener('play',  () => { refStopAll('ref'); $('refPlay').textContent = '❚❚'; });
+$('refAudio').addEventListener('pause', () => { $('refPlay').textContent = '▶'; });
+$('refAudio').addEventListener('timeupdate', () => {
+  const a = $('refAudio');
+  if (!a.duration) return;
+  $('refSeek').value = Math.round((a.currentTime / a.duration) * 1000);
+  $('refTime').textContent = fmt(a.currentTime);
+});
+$('refSeek').addEventListener('input', () => {
+  const a = $('refAudio');
+  if (a.duration) a.currentTime = ($('refSeek').value / 1000) * a.duration;
+});
+$('refVol').addEventListener('input', () => {
+  localStorage.setItem(REF_VOL_KEY, $('refVol').value);
+  $('refAudio').volume = parseFloat($('refVol').value);
+});
+
+// ---- attaching one ----
+async function refSave(ref){
+  if (!activeSong) return;
+  try {
+    await libRpc('set_song_reference', { f: activeSong.folder || activeSong.title, ref });
+  } catch (err){
+    $('refStatus').className = 'status err';
+    $('refStatus').textContent = err.message || 'Could not save that.';
+    return false;
+  }
+  activeSong.reference = ref;
+  renderReference();
+  $('refStatus').className = 'status ok';
+  $('refStatus').textContent = ref ? 'Attached.' : 'Removed.';
+  return true;
+}
+$('refSaveUrl').onclick = () => {
+  const src = $('refUrl').value.trim();
+  if (!src){ $('refStatus').className = 'status err'; $('refStatus').textContent = 'Paste a link first.'; return; }
+  if (!/^https?:\/\//i.test(src)){ $('refStatus').className = 'status err'; $('refStatus').textContent = 'That needs to be an http(s) address.'; return; }
+  // A link we can play directly beats an embed; anything else becomes a widget.
+  const direct = /\.(mp3|m4a|aac|ogg|opus|wav|aif|aiff|flac)(\?|$)/i.test(src);
+  refSave({ kind: direct ? 'url' : 'embed', src, title: $('refTitle').value.trim() });
+};
+$('refClear').onclick = () => { if (confirm('Remove the reference from this song?')) refSave(null); };
+$('refFile').addEventListener('change', async () => {
+  const f = $('refFile').files[0];
+  if (!f || !activeSong) return;
+  const pass = bandPass(curBand);
+  if (!pass){ showGate(curBand, false); return; }
+  const song = activeSong.folder || activeSong.title;
+  $('refStatus').className = 'status';
+  $('refStatus').textContent = `Uploading ${f.name}…`;
+  try {
+    if (f.size > 50 * 1024 * 1024) throw new Error('That file is over the 50 MB limit.');
+    const enc = (...seg) => seg.map(encodeURIComponent).join('/');
+    const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${enc(curBand, pass, song, f.name)}`, {
+      method: 'POST',
+      headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+                 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'true' },
+      body: f });
+    if (!r.ok) throw new Error(`Upload failed (${r.status})`);
+    const res = await edgeFn('import-inbox', { band: curBand, pass, song, kind: 'ref' });
+    await refSave({ kind: 'file', src: res.ref, title: $('refTitle').value.trim() || res.name || f.name });
+  } catch (err){
+    $('refStatus').className = 'status err';
+    $('refStatus').textContent = err.message || 'Could not upload that.';
+  }
+  $('refFile').value = '';
+});
 
 // ---------- Lyrics ----------
 // The words live on the SONG, not on a mix — one set across every version.
@@ -2997,7 +3346,7 @@ $('projBtn').onclick = async () => {
 // ---------- Keyboard ----------
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape'){
-    closeAdd(); closeTrash();
+    closeAdd(); closeTrash(); closeReference();
     if (!document.body.classList.contains('locked')) $('gateModal').classList.remove('open');
     if (pickCloser) pickCloser(null);
     else if (editing) setEditing(false);
@@ -3014,6 +3363,7 @@ document.addEventListener('keydown', (e) => {
     case 'r': $('repeatBtn').click(); break;
     case 'c': openDrawer(!$('drawer').classList.contains('open')); break;
     case 'l': openLyrics(!$('lyricDrawer').classList.contains('open')); break;
+    case 'f': openReference(); break;
     case 'v': openVlog(!$('vlogDrawer').classList.contains('open')); break;
     default:
       // number keys 1-9 switch versions

@@ -165,3 +165,46 @@ section to `supabase/DEPLOY.md`.
 
 Zoom/pan on the image, side-by-side revision compare, drawing anything other
 than a rectangle, and project (`?p=`) links for art unless free.
+
+---
+
+## What actually shipped (2026-08-10)
+
+Built on branch `snart`, in this order. Everything below is committed; nothing
+is pushed and the database migration has NOT been run yet.
+
+- **Phase 0 — `core.js` + `core.css`.** The shared layer: Supabase access, the
+  band gate, routing, helpers, and later the site-admin panel (injected once
+  rather than pasted into three pages). Verified against the live database
+  before any S'nart code existed.
+- **Phase 1/2 — `supabase/schema-v7.sql` + image-aware `import-inbox`.** As
+  planned, plus two things the plan didn't anticipate (below).
+- **Phase 3/4 — `art.html`, cross-links.** As planned.
+
+### Added mid-build, at the user's request
+
+1. **Sn'Album is now the front door.** `index.html` became the band landing
+   page (two doors: 🎵 S'notify, 🎨 S'nart) and the player moved to
+   `music.html`. Old share links still work: the landing page forwards
+   anything carrying a song/version/project to the player untouched. All three
+   pages carry links to the other two, plus ⚙ admin, at the top.
+2. **Drafted edit suggestions.** A comment can carry a drawing over the image —
+   `comments.sketch`, stored as strokes in 0–1 coordinates for the same reasons
+   the region box is. `set_comment_sketch` allows a redraw or a wipe.
+3. **Art can be linked to a song** — `songs.linked_folder` + `set_song_link`.
+4. **Per-band themes.** `BAND_THEME` in core.js sets `body[data-theme]`;
+   `theme-dazzle.css` is Lakehorse's WWI ship camouflage. Other bands keep the
+   original look. The waveform reads as water: white caps only on the played
+   side, and a dazzle boat riding the playhead on the real peak data.
+
+### Still to do
+
+- **Deploy** (Phase 5, unchanged): run `schema-v7.sql` in the SQL editor, run
+  `supabase functions deploy import-inbox --no-verify-jwt`, push, verify live
+  with a cache-busting param, and append the S'nart section to `DEPLOY.md`.
+  Until the migration runs, the art page correctly reports that
+  `get_library(b, p, k)` doesn't exist and the Sn'Album art tally stays blank.
+- **Not built, deliberately:** edit mode and trash on the art page (the player
+  has both; art has neither yet), art in project (`?p=`) links, and a 🎨 marker
+  on player rows whose song has art linked to it — the link is currently only
+  visible from the art side.

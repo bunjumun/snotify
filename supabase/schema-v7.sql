@@ -7,7 +7,7 @@
 -- off a rectangle drawn over part of the image.
 --
 -- So this migration adds two columns and re-signs three functions. It does NOT
--- add art tables. Art is a `kind` of song: same songs/versions rows, same
+-- add art tables. Art is a "kind" of song: same songs/versions rows, same
 -- stack semantics, same trash, same share links, and — most importantly — the
 -- same comments table, so threading, resolve, dismiss and carry-forward apply
 -- to art for free instead of being written twice. A parallel set of art tables
@@ -66,8 +66,8 @@ language sql stable security definer set search_path = public as $$
       from versions v where v.song_id = s.id and v.trashed_at is null), '[]'::jsonb))
 $$;
 
--- Set or clear the link. `target` is the OTHER item's folder in the same band,
--- or null to unlink. Named `target` rather than `linked_folder` to stay clear
+-- Set or clear the link. "target" is the OTHER item's folder in the same band,
+-- or null to unlink. Named "target" rather than "linked_folder" to stay clear
 -- of the parameter/column ambiguity trap.
 create or replace function set_song_link(b text, p text, f text, target text) returns void
 language plpgsql security definer set search_path = public as $$
@@ -196,7 +196,7 @@ returns jsonb
 language plpgsql security definer set search_path = public as $$
 -- pid/tsec shadow the parent_id/time_s parameters, whose names collide with
 -- comments' own columns — referencing the parameters directly inside a query
--- against comments is an ambiguous-identifier error. (`reg` is named to avoid
+-- against comments is an ambiguous-identifier error. ("reg" is named to avoid
 -- the same collision with comments.region.) The parameter names stay as-is so
 -- the RPC's named-argument API doesn't change.
 declare row_out comments; parent comments;

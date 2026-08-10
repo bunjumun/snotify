@@ -7,9 +7,9 @@
 <meta name="description" content="Sn'Album — a band's music and artwork, in one place." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💿</text></svg>" />
 <!-- Palette, page frame, modals, gate — shared with music.html and art.html -->
-<link rel="stylesheet" href="core.css?v=2" />
+<link rel="stylesheet" href="core.css?v=3" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=2" />
+<link rel="stylesheet" href="theme-dazzle.css?v=3" />
 <style>
   /* Landing-only surface: the two doors. */
   .doors { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-top: 8px; }
@@ -43,7 +43,7 @@
        one band password opens all three. -->
   <div class="modal-back" id="gateModal">
     <div class="modal" style="max-width:360px">
-      <h2>💿 Sn'Album</h2>
+      <h2 data-txt="album.gate.title">💿 Sn'Album</h2>
 
       <div id="gateStep1">
         <div class="hint" style="margin-bottom:6px">Enter your band to continue.</div>
@@ -75,8 +75,8 @@
     <header class="app">
       <div class="logo">💿</div>
       <div>
-        <h1>Sn'Album</h1>
-        <p>Everything the band is working on</p>
+        <h1 data-txt="album.title">Sn'Album</h1>
+        <p data-txt="album.tagline">Everything the band is working on</p>
       </div>
       <div class="count" id="bandCount"></div>
       <a class="addbtn" id="musicBtn" href="music.html" title="S'notify — the band's music">🎵 Music</a>
@@ -90,16 +90,16 @@
     <div class="doors">
       <a class="door music" id="doorMusic" href="music.html">
         <div class="glyph">🎵</div>
-        <h2>S'notify</h2>
-        <p>Mixes, stacked by version. Play them back, compare takes, and leave
+        <h2 data-txt="door.music.title">S'notify</h2>
+        <p data-txt="door.music.blurb">Mixes, stacked by version. Play them back, compare takes, and leave
            comments pinned to the second they're about.</p>
         <div class="tally" id="tallyMusic">&nbsp;</div>
       </a>
 
       <a class="door art" id="doorArt" href="art.html">
         <div class="glyph">🎨</div>
-        <h2>S'nart</h2>
-        <p>Artwork, stacked by revision. Comment on a part of the picture by
+        <h2 data-txt="door.art.title">S'nart</h2>
+        <p data-txt="door.art.blurb">Artwork, stacked by revision. Comment on a part of the picture by
            boxing it — or draft the edit you mean by drawing over it.</p>
         <div class="tally" id="tallyArt">&nbsp;</div>
       </a>
@@ -108,7 +108,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=2"></script>
+<script src="core.js?v=3"></script>
 <script type="module">
 // This page is the front door, so it inherits every link ever shared before it
 // existed — back when index.html WAS the player. Anything carrying a song, a

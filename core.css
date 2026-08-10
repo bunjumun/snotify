@@ -216,3 +216,24 @@ body.authed:not(.singlemix):not(.shared) #logoutBtn { display: inline-flex; }
 /* Shared-link hint under the list */
 .mixhint { margin: 12px 4px 0; color: var(--text-mute); font-size: 12px; }
 .mixhint .linky { color: var(--accent); cursor: pointer; text-decoration: underline; }
+
+/* ---------- Admin text editing ---------- */
+/* Editable copy is rewritten in place rather than in a form, so the admin sees
+   exactly what the page will look like while typing. */
+body.texting [data-txt] {
+  outline: 1px dashed var(--accent); outline-offset: 3px;
+  border-radius: 3px; cursor: text; min-width: 24px;
+}
+body.texting [data-txt]:focus { outline-style: solid; background: var(--bg-hover); }
+#textBar {
+  display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
+  align-items: center; gap: 10px; padding: 12px 20px;
+  background: var(--bg-soft); border-top: 1px solid var(--accent);
+  box-shadow: var(--shadow); font-size: 12.5px; color: var(--text-dim);
+}
+#textBar.open { display: flex; }
+#textBar .btn { border: none; border-radius: 8px; padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; font-size: 13px; }
+#textBar .btn.primary { background: var(--accent); color: #fff; }
+#textBar .btn.ghost { background: var(--bg-row); color: var(--text-dim); border: 1px solid var(--line); }
+body.texting .dock { display: none; }
+

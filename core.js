@@ -331,7 +331,9 @@ document.body.insertAdjacentHTML('beforeend', `
 
       <!-- Add a band, once logged in -->
       <div id="adminPanel" style="display:none">
-        <div class="hint" style="margin-bottom:6px">Add another project as a new band library.</div>
+        <div class="hint" style="margin-bottom:10px">Rewrite this page's wording in place — titles, taglines, the descriptions on the doors.</div>
+        <button class="btn ghost" id="adminTextGo" style="width:100%">✎ Edit text on this page</button>
+        <div class="hint" style="margin:14px 0 6px;border-top:1px solid var(--line);padding-top:14px">Add another project as a new band library.</div>
         <label>Band name</label>
         <input type="text" id="adminBandTitle" placeholder="e.g. Some Other Band" maxlength="120" />
         <label>URL slug</label>
@@ -450,7 +452,86 @@ on('adminForgotLink', 'click', adminShowRecover);
 on('adminRecoverBack', 'click', adminShowLoggedOut);
 on('adminRecoverGo', 'click', adminDoRecover);
 on('adminCreateGo', 'click', adminDoCreate);
+on('adminTextGo', 'click', startTextEdit);
 on('adminModal', 'click', (e) => { if (e.target === $('adminModal')) closeAdmin(); });
+
+// ---------- Editable page text ----------
+// Any element marked data-txt="some.key" has its wording stored in the
+// site_text table (schema v8) and can be rewritten in place by the site admin.
+// The markup keeps the built-in wording, so the page is never blank and never
+// depends on the fetch landing — a stored value simply wins when there is one.
+let siteText = {};
+function applySiteText(){
+  document.querySelectorAll('[data-txt]').forEach(el => {
+    const v = siteText[el.dataset.txt];
+    if (typeof v === 'string' && v.length) el.textContent = v;
+  });
+}
+async function loadSiteText(){
+  try { siteText = (await rpc('get_site_text', {})) || {}; } catch { siteText = {}; }
+  applySiteText();
+}
+
+// Admin edit mode: the marked elements become editable in place. No modal, no
+// separate form — you rewrite the page on the page.
+let textEditing = false;
+function textTargets(){ return [...document.querySelectorAll('[data-txt]')]; }
+function startTextEdit(){
+  if (textEditing) return;
+  textEditing = true;
+  closeAdmin();
+  document.body.classList.add('texting');
+  textTargets().forEach(el => {
+    el.dataset.orig = el.textContent;
+    el.contentEditable = 'true';
+    el.spellcheck = false;
+  });
+  $('textBar').classList.add('open');
+  $('textBarMsg').textContent = `${textTargets().length} editable pieces of text on this page.`;
+}
+function stopTextEdit(revert){
+  if (!textEditing) return;
+  textEditing = false;
+  textTargets().forEach(el => {
+    if (revert && el.dataset.orig !== undefined) el.textContent = el.dataset.orig;
+    el.removeAttribute('contenteditable');
+    delete el.dataset.orig;
+  });
+  document.body.classList.remove('texting');
+  $('textBar').classList.remove('open');
+}
+async function saveTextEdit(){
+  // Only what actually changed travels; blanking a field clears the override
+  // and the built-in wording comes back on the next load.
+  const entries = {};
+  textTargets().forEach(el => {
+    const now = el.textContent.trim();
+    if (now !== (el.dataset.orig || '').trim()) entries[el.dataset.txt] = now;
+  });
+  if (!Object.keys(entries).length){ stopTextEdit(false); return; }
+  $('textSave').disabled = true;
+  $('textBarMsg').textContent = 'Saving…';
+  try {
+    siteText = (await rpc('set_site_text', { admin_password: adminPass(), entries })) || siteText;
+  } catch (e) {
+    $('textBarMsg').textContent = e.message || 'Could not save.';
+    $('textSave').disabled = false;
+    return;
+  }
+  $('textSave').disabled = false;
+  stopTextEdit(false);
+  applySiteText();
+}
+
+document.body.insertAdjacentHTML('beforeend', `
+  <div id="textBar">
+    <span id="textBarMsg"></span>
+    <span style="flex:1"></span>
+    <button class="btn ghost" id="textCancel">Cancel</button>
+    <button class="btn primary" id="textSave">Save text</button>
+  </div>`);
+on('textCancel', 'click', () => stopTextEdit(true));
+on('textSave', 'click', saveTextEdit);
 
 // Log out of the current band → back to the home page (band-name entry).
 function logout(){
@@ -468,3 +549,4 @@ on('logoutBtn', 'click', logout);
 
 // Theme the very first paint, before any page code runs.
 applyTheme(route.band);
+loadSiteText();

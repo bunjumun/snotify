@@ -7,9 +7,9 @@
 <meta name="description" content="S'nart — versioned artwork with comments pinned to a region of the image." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with index.html -->
-<link rel="stylesheet" href="core.css?v=2" />
+<link rel="stylesheet" href="core.css?v=3" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=2" />
+<link rel="stylesheet" href="theme-dazzle.css?v=3" />
 <style>
   /* Art-only surface: the piece grid, the image stage, and the region boxes.
      Everything shared with S'notify lives in core.css. */
@@ -158,7 +158,7 @@
        the logic behind it lives once, in core.js. -->
   <div class="modal-back" id="gateModal">
     <div class="modal" style="max-width:360px">
-      <h2>🎨 S'nart</h2>
+      <h2 data-txt="art.gate.title">🎨 S'nart</h2>
 
       <div id="gateStep1">
         <div class="hint" style="margin-bottom:6px">Enter your band to continue.</div>
@@ -191,7 +191,7 @@
       <div class="logo">🎨</div>
       <div>
         <h1 id="collectionTitle">S'nart</h1>
-        <p>Versioned artwork · stack revisions, comment on a region</p>
+        <p data-txt="art.tagline">Versioned artwork · stack revisions, comment on a region</p>
       </div>
       <div class="count" id="artCount"></div>
       <button class="addbtn" id="addBtn" title="Add a piece of art or a new revision">
@@ -251,7 +251,7 @@
         <select id="linkSel"></select>
         <a class="linky" id="linkGo" style="display:none">Open in the player →</a>
       </div>
-      <div class="hint drawhint">Drag a box on the image to comment on that part of it — or just type to comment on the whole thing. Use <b>✎ Draft</b> to scribble a suggested edit over the picture.</div>
+      <div class="hint drawhint" data-txt="art.drawhint">Drag a box on the image to comment on that part of it — or just type to comment on the whole thing. Use ✎ Draft to scribble a suggested edit over the picture.</div>
     </div>
 
     <div class="mixhint" id="mixHint" style="display:none">Shared revision ·
@@ -261,7 +261,7 @@
   <!-- Add-art modal -->
   <div class="modal-back" id="addModal">
     <div class="modal">
-      <h2>Add artwork</h2>
+      <h2 data-txt="art.add.title">Add artwork</h2>
       <div class="mode" id="addMode">Preparing…</div>
 
       <div id="addForm">
@@ -360,7 +360,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=2"></script>
+<script src="core.js?v=3"></script>
 <script type="module">
 // core.js owns the gate, the route and every Supabase call — these are the
 // three moments it has to hand control back to this page.

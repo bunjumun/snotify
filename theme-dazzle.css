@@ -186,3 +186,147 @@ body[data-theme="dazzle"] .door .glyph {
 body[data-theme="dazzle"] .door h2 { text-transform: uppercase; letter-spacing: .08em; font-weight: 800; font-size: 18px; }
 body[data-theme="dazzle"] .sktools { border-color: var(--edge); border-radius: var(--radius); }
 body[data-theme="dazzle"] .imgwrap img { border-radius: var(--radius); border-color: var(--edge); }
+
+/* ---------- Buoys ---------- */
+/* A comment is a buoy moored at its own second, floating at the height of the
+   swell there. The plain tick and its hover tooltip stay for every other band. */
+body[data-theme="dazzle"] #markers .mk {
+  width: 16px; margin-left: -8px; background: none;
+  /* the base rule stretches the marker top-to-bottom; a buoy hangs from a
+     single point on the water instead */
+  bottom: auto; height: 0; transform: none; transition: top .12s ease-out;
+}
+body[data-theme="dazzle"] #markers .mk::after { content: none; }   /* drop the 💬 */
+body[data-theme="dazzle"] #markers .mk .buoy {
+  position: absolute; bottom: -6px; left: 0; width: 16px; height: 22px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.9));
+  animation: buoy-bob 3.4s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+@keyframes buoy-bob {
+  0%,100% { transform: rotate(-6deg) translateY(0); }
+  50%     { transform: rotate(6deg)  translateY(-1.5px); }
+}
+body[data-theme="dazzle"] #markers .mk:nth-child(2n) .buoy { animation-delay: -1.1s; }
+body[data-theme="dazzle"] #markers .mk:nth-child(3n) .buoy { animation-delay: -2.3s; }
+
+/* What it says, called out as the ship goes past — then it falls quiet again. */
+body[data-theme="dazzle"] #markers .mk .tip {
+  display: block; opacity: 0; transform: translate(-50%, 4px);
+  transition: opacity .25s, transform .25s;
+  bottom: calc(100% + 12px); background: #08080a;
+  border: 1px solid var(--edge); border-radius: 2px;
+  font-size: 11px; font-weight: 700; letter-spacing: .03em;
+  padding: 4px 8px; max-width: 260px;
+}
+body[data-theme="dazzle"] #markers .mk.calling .tip,
+body[data-theme="dazzle"] #markers .mk:hover .tip {
+  opacity: 1; transform: translate(-50%, 0);
+}
+body[data-theme="dazzle"] #markers .mk.calling .buoy { animation-duration: 1.1s; }
+
+/* ---------- More dazzle ---------- */
+/* The pattern should be the loudest thing in the room, not an accent. */
+body[data-theme="dazzle"] { background-attachment: fixed; }
+/* A ghost of the camouflage across the whole page, so nothing sits on flat black. */
+body[data-theme="dazzle"] .wrap::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: var(--dazzle); opacity: .035;
+}
+/* Painted waterline under the masthead. */
+body[data-theme="dazzle"] header.app {
+  border-bottom: 1px solid var(--edge); padding-bottom: 16px; position: relative;
+}
+body[data-theme="dazzle"] header.app::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -7px;
+  height: 6px; background: var(--dazzle-2); border-bottom: 1px solid var(--edge);
+}
+body[data-theme="dazzle"] header.app h1 { font-size: 22px; letter-spacing: .14em; }
+
+/* Every row is a hull plate: striped bow on the left, hard edge all round. */
+body[data-theme="dazzle"] .song {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding-left: 22px; overflow: hidden;
+}
+body[data-theme="dazzle"] .song::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 12px;
+  background: var(--dazzle-2); border-right: 1px solid var(--edge);
+  opacity: .55; transition: opacity .12s, width .12s;
+  z-index: 0;
+}
+body[data-theme="dazzle"] .song:hover::before { opacity: .9; }
+body[data-theme="dazzle"] .song.active {
+  border-color: var(--edge); background: var(--bg-hover);
+}
+body[data-theme="dazzle"] .song.active::before { opacity: 1; width: 18px; }
+body[data-theme="dazzle"] .song.stacked::before,
+body[data-theme="dazzle"] .song.stacked::after { background: var(--bg-row); }
+body[data-theme="dazzle"] .song .title { letter-spacing: .02em; }
+
+/* Transport and drawer are decks: stripe bands where they meet the page. */
+body[data-theme="dazzle"] .transport { border-top: none; position: relative; }
+body[data-theme="dazzle"] .transport::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 7px;
+  background: var(--dazzle); border-bottom: 1px solid var(--edge);
+}
+body[data-theme="dazzle"] .transport .pad { padding-top: 16px; }
+body[data-theme="dazzle"] .drawer .pad { position: relative; }
+body[data-theme="dazzle"] .drawer h3 {
+  border-bottom: 1px solid var(--line); padding-bottom: 8px;
+}
+
+/* The play button: a striped life ring with a solid centre for the glyph. */
+body[data-theme="dazzle"] button.play {
+  background: var(--dazzle); border: 1px solid var(--edge); position: relative;
+}
+body[data-theme="dazzle"] button.play::before {
+  content: ""; position: absolute; inset: 7px; border-radius: 50%;
+  background: #08080a; border: 1px solid var(--edge);
+}
+body[data-theme="dazzle"] button.play svg { position: relative; z-index: 1; fill: #fff; }
+body[data-theme="dazzle"] button.play:hover { transform: scale(1.06); }
+body[data-theme="dazzle"] button.ctrl:hover { background: var(--text); color: #08080a; }
+
+/* Empty states and hints get the same hard treatment. */
+body[data-theme="dazzle"] .empty {
+  border: 1px solid var(--edge); border-style: solid; border-radius: var(--radius);
+  position: relative; overflow: hidden;
+}
+body[data-theme="dazzle"] .empty::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 8px;
+  background: var(--dazzle-2); border-bottom: 1px solid var(--edge);
+}
+body[data-theme="dazzle"] .edithint, body[data-theme="dazzle"] .mixhint,
+body[data-theme="dazzle"] .drawhint {
+  border-left: 3px solid var(--edge); padding-left: 10px;
+}
+
+/* Art page: the piece grid as painted plates too. */
+body[data-theme="dazzle"] .piece { border-color: var(--line); }
+body[data-theme="dazzle"] .piece:hover { border-color: var(--edge); }
+body[data-theme="dazzle"] .piece .pmeta { border-top: 1px solid var(--line); }
+body[data-theme="dazzle"] .door { position: relative; overflow: hidden; }
+body[data-theme="dazzle"] .door::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 9px;
+  background: var(--dazzle); border-bottom: 1px solid var(--edge);
+}
+body[data-theme="dazzle"] .door { padding-top: 38px; }
+body[data-theme="dazzle"] .door:hover { border-color: var(--edge); }
+
+/* The admin's text-editing bar, in uniform. */
+body[data-theme="dazzle"] #textBar {
+  border-top: none; position: fixed;
+}
+body[data-theme="dazzle"] #textBar::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 7px;
+  background: var(--dazzle-2); border-bottom: 1px solid var(--edge);
+}
+body[data-theme="dazzle"] #textBar { padding-top: 18px; }
+body[data-theme="dazzle"] #textBar .btn {
+  border-radius: 2px; text-transform: uppercase; letter-spacing: .08em;
+  font-weight: 800; font-size: 11.5px;
+}
+body[data-theme="dazzle"] #textBar .btn.primary { background: #fff; color: #08080a; }
+body[data-theme="dazzle"] #textBar .btn.ghost { background: transparent; border-color: var(--line); }
+body[data-theme="dazzle"] body.texting [data-txt] { outline-color: #fff; }
+

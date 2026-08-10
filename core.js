@@ -465,6 +465,7 @@ document.body.insertAdjacentHTML('beforeend', `
       <div id="adminPanel" style="display:none">
         <div class="hint" style="margin-bottom:10px">Rewrite this page's wording in place — titles, taglines, the descriptions on the doors.</div>
         <button class="btn ghost" id="adminTextGo" style="width:100%">✎ Edit text on this page</button>
+        <button class="btn ghost" id="adminToolsGo" style="width:100%;margin-top:8px">▨ Tools menu — add or remove</button>
         <div class="hint" style="margin:14px 0 6px;border-top:1px solid var(--line);padding-top:14px">Add another project as a new band library.</div>
         <label>Band name</label>
         <input type="text" id="adminBandTitle" placeholder="e.g. Some Other Band" maxlength="120" />
@@ -585,6 +586,7 @@ on('adminRecoverBack', 'click', adminShowLoggedOut);
 on('adminRecoverGo', 'click', adminDoRecover);
 on('adminCreateGo', 'click', adminDoCreate);
 on('adminTextGo', 'click', startTextEdit);
+on('adminToolsGo', 'click', openToolAdmin);
 on('adminModal', 'click', (e) => { if (e.target === $('adminModal')) closeAdmin(); });
 
 // ---------- Editable page text ----------
@@ -602,6 +604,8 @@ function applySiteText(){
 async function loadSiteText(){
   try { siteText = (await rpc('get_site_text', {})) || {}; } catch { siteText = {}; }
   applySiteText();
+  loadToolList();
+  renderToolMenu();
 }
 
 // Admin edit mode: the marked elements become editable in place. No modal, no
@@ -674,7 +678,11 @@ on('textSave', 'click', saveTextEdit);
 // tools/ that open in their own tab, because they are full applications with
 // their own canvases, keyboard maps and controllers — wrapping them in a
 // dialog would only get in their way.
-const TOOLS = [
+//
+// This is only the STARTING list. The live one is whatever the site admin has
+// saved (see the tools manager below), stored as JSON in the same site_text
+// table the editable page copy uses — so adding a tool needs no deploy.
+const BUILTIN_TOOLS = [
   { id: 'dazzle', label: '▨  Dazzle camouflage generator',
     hint: 'Panels, stripe angles, seed — save as SVG or PNG' },
   { href: 'tools/moire-maker.html', label: '◎  Moiré pattern toy',
@@ -688,15 +696,46 @@ const TOOLS = [
   { href: 'tools/vj-mixer.html', label: '◐  VJ mixer',
     hint: 'Two live generators, crossfade, mic reactive, gamepad or MIDI' },
 ];
+let toolList = BUILTIN_TOOLS.slice();
+
+// A link in this menu is whatever an admin typed, so it is checked before it
+// is ever put in an href: same-origin relative paths and plain http(s) only,
+// which keeps javascript: and data: URLs out of the menu entirely.
+function safeHref(u){
+  const v = String(u || '').trim();
+  if (!v || v.startsWith('//')) return '';
+  if (/^https?:\/\//i.test(v)) return v;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return '';        // any other scheme
+  return v;
+}
+function loadToolList(){
+  const raw = siteText['tools.custom'];
+  if (!raw){ toolList = BUILTIN_TOOLS.slice(); return; }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)){
+      toolList = parsed
+        .filter(t => t && (t.id === 'dazzle' || safeHref(t.href)))
+        .map(t => ({ id: t.id, href: t.href, label: String(t.label || '').slice(0, 80),
+                     hint: String(t.hint || '').slice(0, 140) }));
+      return;
+    }
+  } catch {}
+  toolList = BUILTIN_TOOLS.slice();
+}
+function renderToolMenu(){
+  const m = $('toolMenu');
+  if (!m) return;
+  m.innerHTML = toolList.map(t => t.href
+    ? `<a class="toolitem" href="${esc(safeHref(t.href))}" target="_blank" rel="noopener">
+         <b>${esc(t.label)}</b><span>${esc(t.hint)}</span></a>`
+    : `<button class="toolitem" data-tool="${esc(t.id)}">
+         <b>${esc(t.label)}</b><span>${esc(t.hint)}</span></button>`).join('')
+    || `<div class="toolitem"><b>No tools</b><span>Add one from Site admin → Tools</span></div>`;
+}
 
 document.body.insertAdjacentHTML('beforeend', `
-  <div id="toolMenu">
-    ${TOOLS.map(t => t.href
-      ? `<a class="toolitem" href="${t.href}" target="_blank" rel="noopener">
-           <b>${t.label}</b><span>${t.hint}</span></a>`
-      : `<button class="toolitem" data-tool="${t.id}">
-           <b>${t.label}</b><span>${t.hint}</span></button>`).join('')}
-  </div>
+  <div id="toolMenu"></div>
 
   <div class="modal-back" id="dazzleModal">
     <div class="modal" style="max-width:760px">
@@ -729,7 +768,99 @@ document.body.insertAdjacentHTML('beforeend', `
         <button class="btn primary" id="dzPng">Save PNG</button>
       </div>
     </div>
+  </div>
+
+  <!-- Tools manager (site admin) -->
+  <div class="modal-back" id="toolAdminModal">
+    <div class="modal" style="max-width:640px">
+      <h2>Tools menu</h2>
+      <div class="hint" style="margin-bottom:12px">What appears under ▨ Tools on
+        every page. A link can be a page in this site (<code>tools/thing.html</code>)
+        or anywhere on the web. Removing the generator only hides it from the menu.</div>
+      <div id="toolRows"></div>
+      <div class="tool-add">
+        <input type="text" id="toolNewLabel" placeholder="Name" maxlength="80" />
+        <input type="text" id="toolNewHref" placeholder="tools/my-tool.html  or  https://…" maxlength="400" />
+        <input type="text" id="toolNewHint" placeholder="One line about what it does" maxlength="140" />
+        <button class="btn ghost" id="toolAdd">Add</button>
+      </div>
+      <div class="status" id="toolAdminStatus"></div>
+      <div class="actions">
+        <button class="btn ghost" id="toolRestore">Restore built-ins</button>
+        <button class="btn ghost" id="toolAdminClose">Close</button>
+        <button class="btn primary" id="toolAdminSave">Save menu</button>
+      </div>
+    </div>
   </div>`);
+
+// --- the tools manager ---
+let toolDraft = [];
+function renderToolRows(){
+  $('toolRows').innerHTML = toolDraft.map((t, i) => `
+    <div class="tool-row" data-i="${i}">
+      <div class="tool-move">
+        <span class="ec ${i === 0 ? 'disabled' : ''}" data-move="up" title="Move up">▲</span>
+        <span class="ec ${i === toolDraft.length - 1 ? 'disabled' : ''}" data-move="down" title="Move down">▼</span>
+      </div>
+      <div class="tool-what">
+        <b>${esc(t.label)}</b>
+        <span>${t.href ? esc(t.href) : 'built in — opens here'}</span>
+      </div>
+      <span class="ec danger" data-del="${i}" title="Remove from the menu">✕</span>
+    </div>`).join('') || `<div class="hint">The menu is empty.</div>`;
+}
+function openToolAdmin(){
+  closeAdmin();
+  toolDraft = toolList.map(t => ({ ...t }));
+  $('toolAdminStatus').textContent = '';
+  renderToolRows();
+  $('toolAdminModal').classList.add('open');
+}
+on('toolRows', 'click', (e) => {
+  const del = e.target.closest('[data-del]');
+  if (del){ toolDraft.splice(+del.dataset.del, 1); renderToolRows(); return; }
+  const mv = e.target.closest('[data-move]');
+  if (!mv || mv.classList.contains('disabled')) return;
+  const i = +mv.closest('.tool-row').dataset.i;
+  const j = mv.dataset.move === 'up' ? i - 1 : i + 1;
+  [toolDraft[i], toolDraft[j]] = [toolDraft[j], toolDraft[i]];
+  renderToolRows();
+});
+on('toolAdd', 'click', () => {
+  const label = $('toolNewLabel').value.trim();
+  const href = safeHref($('toolNewHref').value);
+  if (!label || !href){
+    $('toolAdminStatus').textContent = href
+      ? 'Give the tool a name.'
+      : 'That link is not usable — use a path in this site or an http(s) address.';
+    $('toolAdminStatus').className = 'status err';
+    return;
+  }
+  toolDraft.push({ label, href, hint: $('toolNewHint').value.trim() });
+  $('toolNewLabel').value = $('toolNewHref').value = $('toolNewHint').value = '';
+  $('toolAdminStatus').textContent = ''; $('toolAdminStatus').className = 'status';
+  renderToolRows();
+});
+on('toolRestore', 'click', () => { toolDraft = BUILTIN_TOOLS.map(t => ({ ...t })); renderToolRows(); });
+on('toolAdminClose', 'click', () => $('toolAdminModal').classList.remove('open'));
+on('toolAdminModal', 'click', (e) => { if (e.target === $('toolAdminModal')) $('toolAdminModal').classList.remove('open'); });
+on('toolAdminSave', 'click', async () => {
+  $('toolAdminSave').disabled = true;
+  $('toolAdminStatus').className = 'status';
+  $('toolAdminStatus').textContent = 'Saving…';
+  try {
+    siteText = await rpc('set_site_text', {
+      admin_password: adminPass(),
+      entries: { 'tools.custom': JSON.stringify(toolDraft) },
+    }) || siteText;
+    loadToolList(); renderToolMenu();
+    $('toolAdminStatus').textContent = 'Saved — the menu is live on every page.';
+    setTimeout(() => $('toolAdminModal').classList.remove('open'), 700);
+  } catch (e) {
+    $('toolAdminStatus').className = 'status err';
+    $('toolAdminStatus').textContent = e.message || 'Could not save.';
+  } finally { $('toolAdminSave').disabled = false; }
+});
 
 function toolMenuOpen(open){
   const m = $('toolMenu'), b = $('toolsBtn');

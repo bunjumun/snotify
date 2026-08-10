@@ -7,9 +7,9 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=16" />
+<link rel="stylesheet" href="core.css?v=17" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=16" />
+<link rel="stylesheet" href="theme-dazzle.css?v=17" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -542,7 +542,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=16"></script>
+<script src="core.js?v=17"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;

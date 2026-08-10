@@ -7,9 +7,9 @@
 <meta name="description" content="Sn'art — versioned artwork with comments pinned to a region of the image." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with index.html -->
-<link rel="stylesheet" href="core.css?v=16" />
+<link rel="stylesheet" href="core.css?v=17" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=16" />
+<link rel="stylesheet" href="theme-dazzle.css?v=17" />
 <style>
   /* Art-only surface: the piece grid, the image stage, and the region boxes.
      Everything shared with S'notify lives in core.css. */
@@ -388,7 +388,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=16"></script>
+<script src="core.js?v=17"></script>
 <script type="module">
 // core.js owns the gate, the route and every Supabase call — these are the
 // three moments it has to hand control back to this page.

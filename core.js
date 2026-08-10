@@ -140,6 +140,24 @@ function rng(seed){
   };
 }
 
+// Ships were painted in more than black and white — most schemes carried a
+// mid grey or two, which is what lets shapes read as separate planes rather
+// than as one flat cutout. `tones` is how many steps sit between the two ends.
+function dazzlePalette(ink, ground, tones){
+  const hex = (c) => {
+    const m = String(c).trim().replace('#','');
+    return m.length === 3 ? m.split('').map(x => parseInt(x+x,16)) : [0,2,4].map(i => parseInt(m.slice(i,i+2),16));
+  };
+  const a = hex(ink), b = hex(ground);
+  const out = [];
+  const n = Math.max(2, Math.min(4, tones|0));
+  for (let i = 0; i < n; i++){
+    const t = i / (n - 1);
+    out.push('#' + a.map((v, j) => Math.round(v + (b[j] - v) * t).toString(16).padStart(2,'0')).join(''));
+  }
+  return out;                                   // [ink … ground]
+}
+
 // Cut a convex polygon with a line, keeping the side the normal points away
 // from (Sutherland–Hodgman against a single edge).
 function clipHalf(poly, nx, ny, d){
@@ -164,9 +182,14 @@ const polyArea = (p) => Math.abs(p.reduce((s, cur, i) => {
 // Split the canvas into irregular panels by repeated cuts. Each cut runs
 // through a point inside the panel it divides, at an angle picked from a set
 // that deliberately conflicts.
-function dazzlePanels(w, h, n, rand){
+function dazzlePanels(w, h, n, rand, conflict = 1){
   let panels = [[[0,0],[w,0],[w,h],[0,h]]];
-  const angles = [18, 62, 108, 143, 74, 127, 35, 158];
+  // At full conflict the cuts disagree as widely as possible; wound down, they
+  // converge on one prevailing angle and the scheme calms into stripes across
+  // a few big plates.
+  const base = 104;
+  const angles = [18, 62, 108, 143, 74, 127, 35, 158]
+    .map(a => base + (a - base) * conflict);
   for (let i = 0; i < n; i++){
     // bias towards cutting the biggest panel, so nothing stays a huge slab
     panels.sort((a, b) => polyArea(b) - polyArea(a));
@@ -191,18 +214,25 @@ function dazzlePanels(w, h, n, rand){
 
 // One panel's paint: flat, or stripes at this panel's own angle with widths
 // that never settle into a rhythm.
-function dazzlePanelSVG(poly, i, rand, ink, ground, scale, flat, varied){
+function dazzlePanelSVG(poly, i, rand, pal, scale, conflict, stripeBase){
   const pts = poly.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
   const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]);
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
   const span = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-  const flip = rand() < flat;                       // some panels stay unstriped
-  const base = flip && rand() < 0.5 ? ink : ground;
+  const flip = rand() < 0.22;                       // some panels stay unstriped
+  // Two tones drawn from the palette: the plate and whatever is ruled on it.
+  const gi = Math.floor(rand() * pal.length);
+  let si = Math.floor(rand() * pal.length);
+  if (si === gi) si = (gi + 1 + Math.floor(rand() * (pal.length - 1))) % pal.length;
+  const ground = pal[gi], ink = pal[si];
+  const base = flip ? ink : ground;
   let out = `<g clip-path="url(#dp${i})"><rect x="${(cx - span).toFixed(1)}" y="${(cy - span).toFixed(1)}" `
           + `width="${(span * 2).toFixed(1)}" height="${(span * 2).toFixed(1)}" fill="${base}"/>`;
   if (!flip){
-    const ang = (rand() * 360).toFixed(1);
+    // Conflict also governs how far this panel's ruling may swing away from
+    // the scheme's prevailing angle: at 0 every panel is ruled the same way.
+    const ang = (stripeBase + (rand() - 0.5) * 360 * conflict).toFixed(1);
     out += `<g transform="rotate(${ang} ${cx.toFixed(1)} ${cy.toFixed(1)})">`;
     let x = cx - span;
     let guard = 0;
@@ -210,8 +240,8 @@ function dazzlePanelSVG(poly, i, rand, ink, ground, scale, flat, varied){
       // Uneven bands: a wide one, a hairline, a medium. `varied` is how far
       // from a regular stripe pattern they are allowed to wander — at 0 the
       // panel is a plain ruled field, at 1 no two bands are alike.
-      const bar = (3 + rand() * 10 * varied) * scale;
-      const gap = (3 + rand() * 12 * varied) * scale;
+      const bar = (3 + rand() * 8.5) * scale;
+      const gap = (3 + rand() * 10) * scale;
       out += `<rect x="${x.toFixed(1)}" y="${(cy - span).toFixed(1)}" `
            + `width="${bar.toFixed(1)}" height="${(span * 2).toFixed(1)}" fill="${ink}"/>`;
       x += bar + gap;
@@ -224,12 +254,14 @@ function dazzlePanelSVG(poly, i, rand, ink, ground, scale, flat, varied){
 // A whole scheme, as standalone SVG markup.
 function dazzleSVG({ w = 1200, h = 120, seed = 1, cuts = 7, ink = '#ffffff',
                      ground = '#08080a', scale = 1, stretch = true,
-                     flat = 0.22, varied = 0.85 } = {}){
+                     tones = 2, conflict = 1 } = {}){
   const rand = rng(seed);
-  const panels = dazzlePanels(w, h, cuts, rand);
+  const pal = dazzlePalette(ink, ground, tones);
+  const panels = dazzlePanels(w, h, cuts, rand, conflict);
+  const stripeBase = rand() * 360;                  // the scheme's prevailing ruling
   let defs = '', body = '';
   panels.forEach((poly, i) => {
-    const part = dazzlePanelSVG(poly, i, rand, ink, ground, scale, flat, varied);
+    const part = dazzlePanelSVG(poly, i, rand, pal, scale, conflict, stripeBase);
     defs += part.defs; body += part.body;
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" `
@@ -244,7 +276,7 @@ const dazzleURL = (opts) =>
 // only what those variables contain changes.
 function paintDazzle(){
   const b = document.body.style;
-  b.setProperty('--dazzle',     dazzleURL({ w: 1400, h: 140, seed: 20260810, cuts: 8, scale: 1.1 }));
+  b.setProperty('--dazzle',     dazzleURL({ w: 1400, h: 140, seed: 20260810, cuts: 8, scale: 1.1 }));   // 2 tones, full conflict
   b.setProperty('--dazzle-2',   dazzleURL({ w: 1400, h: 120, seed: 771903,   cuts: 9, scale: 0.72 }));
   b.setProperty('--dazzle-narrow', dazzleURL({ w: 120, h: 900, seed: 40412,  cuts: 7, scale: 0.9 }));
   b.setProperty('--dazzle-bg',  dazzleURL({ w: 1600, h: 1000, seed: 5150,    cuts: 11, scale: 2.2,
@@ -838,10 +870,10 @@ document.body.insertAdjacentHTML('beforeend', `
           <input type="range" id="dzCuts" min="1" max="18" value="8" /></label>
         <label>Stripe scale <span class="dz-val" id="dzScaleVal">1.0</span>
           <input type="range" id="dzScale" min="3" max="45" value="10" /></label>
-        <label>Flat panels <span class="dz-val" id="dzFlatVal">22%</span>
-          <input type="range" id="dzFlat" min="0" max="70" value="22" /></label>
-        <label>Band variation <span class="dz-val" id="dzVarVal">0.85</span>
-          <input type="range" id="dzVar" min="0" max="100" value="85" /></label>
+        <label>Tones <span class="dz-val" id="dzTonesVal">2</span>
+          <input type="range" id="dzTones" min="2" max="4" value="2" /></label>
+        <label>Conflict <span class="dz-val" id="dzConflictVal">100%</span>
+          <input type="range" id="dzConflict" min="0" max="100" value="100" /></label>
         <label>Seed <span class="dz-val" id="dzSeedVal">1</span>
           <input type="range" id="dzSeed" min="1" max="9999" value="1" /></label>
         <label class="check"><input type="checkbox" id="dzInvert" /> Invert (black on white)</label>
@@ -893,8 +925,8 @@ const DZ_W = 1200, DZ_H = 600;
 const dzOpts = () => ({
   w: DZ_W, h: DZ_H, seed: +$('dzSeed').value,
   cuts: +$('dzCuts').value, scale: +$('dzScale').value / 10,
-  flat:   +$('dzFlat').value / 100,          // how many panels stay unstriped
-  varied: +$('dzVar').value / 100,           // how uneven the bands run
+  tones:    +$('dzTones').value,               // steps between the two extremes
+  conflict: +$('dzConflict').value / 100,     // how far the angles disagree
   ink:    $('dzInvert').checked ? '#08080a' : '#ffffff',
   ground: $('dzInvert').checked ? '#ffffff' : '#08080a',
   stretch: false,
@@ -902,8 +934,8 @@ const dzOpts = () => ({
 function dzRender(){
   $('dzCutsVal').textContent  = $('dzCuts').value;
   $('dzScaleVal').textContent = (+$('dzScale').value / 10).toFixed(1);
-  $('dzFlatVal').textContent  = $('dzFlat').value + '%';
-  $('dzVarVal').textContent   = (+$('dzVar').value / 100).toFixed(2);
+  $('dzTonesVal').textContent    = $('dzTones').value;
+  $('dzConflictVal').textContent = $('dzConflict').value + '%';
   $('dzSeedVal').textContent  = $('dzSeed').value;
   $('dzPreview').innerHTML = dazzleSVG(dzOpts());
 }
@@ -911,13 +943,13 @@ function openDazzleTool(){
   $('dazzleModal').classList.add('open');
   dzRender();
 }
-['dzCuts','dzScale','dzFlat','dzVar','dzSeed','dzInvert'].forEach(id => on(id, 'input', dzRender));
+['dzCuts','dzScale','dzTones','dzConflict','dzSeed','dzInvert'].forEach(id => on(id, 'input', dzRender));
 on('dzRandom', 'click', () => {
   $('dzSeed').value  = 1 + Math.floor(Math.random() * 9999);
   $('dzCuts').value  = 4 + Math.floor(Math.random() * 12);
   $('dzScale').value = 5 + Math.floor(Math.random() * 30);
-  $('dzFlat').value  = Math.floor(Math.random() * 45);
-  $('dzVar').value   = 35 + Math.floor(Math.random() * 65);
+  $('dzTones').value    = 2 + Math.floor(Math.random() * 3);
+  $('dzConflict').value = 30 + Math.floor(Math.random() * 70);
   dzRender();
 });
 on('dzClose', 'click', () => $('dazzleModal').classList.remove('open'));

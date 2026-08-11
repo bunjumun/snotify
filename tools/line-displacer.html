@@ -8,322 +8,158 @@
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Image Line Displacer with Advanced Controls</title>
+    <title>Line Displacer</title>
 
     <style>
+        /* Layout only — the palette, the top bar and every control come from
+           tool.css, which is loaded after this and shared by all the tools.
 
-        body {
-
-            font-family: Arial, sans-serif;
-
-            display: flex;
-
-            justify-content: center;
-
-            align-items: flex-start;
-
-            min-height: 100vh;
-
-            background-color: #f0f0f0;
-
-            padding: 20px;
-
-            box-sizing: border-box;
-
-            gap: 20px;
-
+           The whole tool is one screen: controls down the left in a column
+           that scrolls on its own, the picture filling everything else and
+           always fitted to the space it has. Nothing here scrolls the page. */
+        html, body { height: 100%; }
+        /* `html body` rather than `body`: tool.css is loaded after this one and
+           sets a bottom padding with !important, which would otherwise push the
+           page past the viewport and reintroduce the scrollbar this layout
+           exists to get rid of. Specificity beats source order. */
+        html body {
+            margin: 0; padding: 0 !important;
+            display: flex; flex-direction: column; overflow: hidden;
         }
 
-
-
-        .container {
-
-            display: flex;
-
-            gap: 20px;
-
-            flex-wrap: wrap; /* Allows wrapping on smaller screens */
-
-            width: 100%;
-
-            max-width: 1200px;
-
+        .ld-main {
+            flex: 1; min-height: 0;
+            display: grid; grid-template-columns: 310px minmax(0, 1fr);
         }
 
-
-
-        .controls {
-
-            background-color: #fff;
-
-            padding: 20px;
-
-            border-radius: 8px;
-
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-
-            flex: 1;
-
-            min-width: 300px; /* Minimum width for controls */
-
-            max-width: 350px;
-
+        /* ---- the controls column ---- */
+        .ld-controls {
+            overflow-y: auto; overscroll-behavior: contain;
+            padding: 12px 14px 28px;
+            border-right: 1px solid var(--t-line);
+            background: var(--t-panel);
         }
-
-
-
-        .canvas-container {
-
-            background-color: #fff;
-
-            padding: 20px;
-
-            border-radius: 8px;
-
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-
-            flex: 2;
-
-            display: flex;
-
-            flex-direction: column;
-
-            align-items: center;
-
-            gap: 15px;
-
-            min-width: 400px; /* Minimum width for canvas */
-
+        .ld-controls details {
+            border-bottom: 1px solid var(--t-line);
+            padding: 9px 0;
         }
-
-
-
-        canvas {
-
-            border: 1px solid #ddd;
-
-            background-color: #fff;
-
-            display: block; /* Remove extra space below canvas */
-
+        .ld-controls details:last-of-type { border-bottom: none; }
+        .ld-controls summary {
+            cursor: pointer; list-style: none;
+            font-size: 10.5px; font-weight: 800; letter-spacing: .1em;
+            text-transform: uppercase; color: var(--t-mute);
+            display: flex; align-items: center; gap: 7px;
         }
+        .ld-controls summary::-webkit-details-marker { display: none; }
+        .ld-controls summary::before { content: "▸"; font-size: 9px; transition: transform .12s; }
+        .ld-controls details[open] > summary::before { transform: rotate(90deg); }
+        .ld-controls summary:hover { color: var(--t-text); }
+        .ld-body { padding: 11px 0 3px; display: grid; gap: 11px; }
 
-
-
-        .control-group {
-
-            margin-bottom: 15px;
-
+        .ld-field > span {
+            display: flex; justify-content: space-between; align-items: baseline;
+            font-size: 11.5px; color: var(--t-dim);
         }
-
-
-
-        label {
-
-            display: block;
-
-            margin-bottom: 5px;
-
-            font-weight: bold;
-
-            color: #333;
-
+        .ld-field > span b { color: var(--t-text); font-variant-numeric: tabular-nums; font-weight: 700; }
+        .ld-field input[type=range] { width: 100%; margin-top: 6px; }
+        .ld-row { display: flex; align-items: center; gap: 9px; }
+        .ld-row label { flex: 1; }
+        .ld-row select, .ld-row input[type=number] {
+            flex: none; min-width: 96px;
         }
+        .ld-check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; color: var(--t-dim); }
+        .ld-check input { margin: 0; }
+        .ld-note { font-size: 11px; color: var(--t-mute); line-height: 1.45; }
 
-
-
-        input[type="range"],
-
-        input[type="number"],
-
-        select,
-
-        input[type="file"] {
-
-            width: calc(100% - 10px); /* Adjust for padding/border */
-
-            padding: 8px;
-
-            border: 1px solid #ddd;
-
-            border-radius: 4px;
-
-            box-sizing: border-box; /* Include padding/border in width */
-
-            margin-top: 3px;
-
+        .ld-drop {
+            border: 1px dashed var(--t-line); border-radius: var(--t-radius);
+            padding: 14px 12px; text-align: center; cursor: pointer;
+            font-size: 12px; color: var(--t-dim); transition: border-color .12s, color .12s;
         }
-
-
-
-        input[type="color"] {
-
-            width: 50px; /* Smaller width for color input */
-
-            height: 30px;
-
-            padding: 0;
-
-            border: none;
-
-            margin-left: 10px;
-
-            vertical-align: middle; /* Align with label text */
-
-        }
-
-
-
-        input::file-selector-button {
-
-            background-color: #007bff;
-
-            color: white;
-
-            border: none;
-
-            border-radius: 4px;
-
-            cursor: pointer;
-
-            font-size: 16px;
-
-            transition: background-color 0.3s ease;
-
-        }
-
-
-
-        input::file-selector-button:hover {
-
-            background-color: #0056b3;
-
-        }
-
-
-
-        button {
-
-            background-color: #007bff;
-
-            color: white;
-
-            padding: 10px 15px;
-
-            border: none;
-
-            border-radius: 4px;
-
-            cursor: pointer;
-
-            font-size: 16px;
-
-            width: 100%;
-
-            margin-top: 10px;
-
-        }
-
-
-
-        button:hover {
-
-            background-color: #0056b3;
-
-        }
-
-
-
-        .slider-output {
-
-            display: inline-block;
-
-            margin-left: 10px;
-
-            min-width: 30px;
-
-            text-align: right;
-
-            font-weight: bold;
-
-            color: #555;
-
-        }
-
-
-
-        .layer-controls {
-
-            margin-bottom: 15px;
-
-            padding: 10px;
-
-            border: 1px dashed #ccc;
-
-            border-radius: 5px;
-
-            background-color: #f9f9f9;
-
-        }
-
-
-
-        .color-input-group {
-
-            display: flex;
-
-            align-items: center;
-
-            margin-bottom: 5px;
-
-        }
-
-
-
+        .ld-drop:hover, .ld-drop.over { border-color: var(--t-edge); color: var(--t-text); }
+        .ld-drop input { display: none; }
         #imagePreview {
-
-            display: none;
-
-            max-width: 100%;
-
-            height: auto;
-
-            margin-top: 10px;
-
-            border: 1px solid #ddd;
-
-            border-radius: 4px;
-
+            display: none; width: 100%; max-height: 116px; object-fit: contain;
+            margin-top: 9px; border: 1px solid var(--t-line); border-radius: var(--t-radius);
+            background: #000;
         }
 
+        .ld-btn {
+            width: 100%; cursor: pointer; font: inherit;
+            font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+            padding: 9px 12px; border-radius: var(--t-radius);
+            border: 1px solid var(--t-line); background: var(--t-row); color: var(--t-dim);
+        }
+        .ld-btn:hover { border-color: var(--t-edge); color: var(--t-text); }
+        .ld-btn.primary { background: var(--t-text); color: #08080a; border-color: var(--t-edge); }
+        .ld-btn.primary:hover { background: #d6d7dd; }
 
-
-        .plotter-output {
-
-            margin-top: 20px;
-
-            border-top: 1px solid #eee;
-
-            padding-top: 20px;
-
+        /* ---- the picture ---- */
+        .ld-stage {
+            position: relative; min-width: 0; min-height: 0;
+            display: flex; align-items: center; justify-content: center;
+            padding: 18px 18px 40px;
+            background:
+              linear-gradient(45deg, #0d0d11 25%, transparent 25%, transparent 75%, #0d0d11 75%) 0 0/22px 22px,
+              linear-gradient(45deg, #0d0d11 25%, transparent 25%, transparent 75%, #0d0d11 75%) 11px 11px/22px 22px,
+              #0b0b0e;
+        }
+        /* Fit: the canvas can be four thousand pixels across and still sit
+           whole on the screen. It is the RENDER that is high resolution, not
+           the thing you are looking at. */
+        #interactiveCanvas {
+            max-width: 100%; max-height: 100%;
+            box-shadow: 0 12px 50px rgba(0,0,0,.75); display: block;
+        }
+        .ld-stage.actual { overflow: auto; align-items: flex-start; justify-content: flex-start; }
+        .ld-stage.actual #interactiveCanvas { max-width: none; max-height: none; margin: auto; }
+        .ld-empty {
+            position: absolute; inset: 0; display: grid; place-items: center;
+            color: var(--t-mute); font-size: 13px; pointer-events: none; text-align: center;
         }
 
+        /* Read-out along the foot of the picture: what is actually being drawn. */
+        .ld-status {
+            position: absolute; left: 0; right: 0; bottom: 0;
+            display: flex; align-items: center; gap: 14px;
+            padding: 7px 14px; font-size: 11px; color: var(--t-dim);
+            background: rgba(8,8,10,.92); border-top: 1px solid var(--t-line);
+            font-variant-numeric: tabular-nums;
+        }
+        .ld-status b { color: var(--t-text); font-weight: 700; }
+        .ld-status .sp { flex: 1; }
+        .ld-status button {
+            cursor: pointer; font: inherit; font-size: 10.5px; font-weight: 800;
+            letter-spacing: .07em; text-transform: uppercase;
+            padding: 4px 10px; border-radius: var(--t-radius);
+            border: 1px solid var(--t-line); background: transparent; color: var(--t-dim);
+        }
+        .ld-status button.on, .ld-status button:hover { border-color: var(--t-edge); color: var(--t-text); }
 
-
+        /* ---- plotter layers, over the picture rather than under it ---- */
+        .ld-sheet {
+            display: none; position: absolute; inset: 0; z-index: 20;
+            background: rgba(8,8,10,.97); overflow-y: auto; padding: 14px 16px 24px;
+        }
+        .ld-sheet.open { display: block; }
+        .ld-sheet-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .ld-sheet-head h3 { margin: 0; font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--t-dim); }
+        .ld-sheet-head .sp { flex: 1; }
+        #plotterOutputDiv { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
         .plotter-layer-container {
-
-            margin-bottom: 15px;
-
-            padding: 10px;
-
-            border: 1px dashed #ccc;
-
-            border-radius: 5px;
-
-            background-color: #f9f9f9;
-
+            border: 1px solid var(--t-line); border-radius: var(--t-radius);
+            padding: 10px; background: var(--t-panel);
         }
+        .plotter-layer-container h4 {
+            margin: 0 0 8px; font-size: 10.5px; font-weight: 800;
+            letter-spacing: .08em; text-transform: uppercase; color: var(--t-dim);
+        }
+        .plotter-layer-container img { width: 100%; height: auto; display: block; background: #fff; border-radius: 2px; }
 
+        @media (max-width: 820px) {
+            .ld-main { grid-template-columns: 1fr; grid-template-rows: minmax(0,44vh) minmax(0,1fr); }
+            .ld-controls { border-right: none; border-bottom: 1px solid var(--t-line); }
+        }
     </style>
 
 
@@ -333,237 +169,141 @@
 </head>
 
 <body>
-
-
-
-    <div class="container">
-
-        <div class="controls">
-
-            <h2>Image Line Displacer</h2>
-
-
-
-            <h3>General Controls</h3>
-
-            <div class="control-group">
-
-                <label for="imageUpload">Upload Image:</label>
-
-                <input type="file" id="imageUpload" accept="image/*">
-
-            </div>
-
-            <img id="imagePreview" src="#" alt="Image Preview">
-
-
-
-            <div class="color-input-group">
-
-                <label for="bgColor">Background Color:</label>
-
-                <input type="color" id="bgColor" value="#FFFFFF">
-
-            </div>
-
-
-
-            <div class="control-group">
-
-                <label for="globalLineOpacity">Global Line Opacity:</label>
-
-                <input type="range" id="globalLineOpacity" value="1" min="0" max="1" step="0.01" class="control-input">
-
-                <span class="slider-output" id="globalLineOpacityValue">1</span>
-
-            </div>
-
-
-
-            <div class="control-group">
-
-                <label for="globalRotation">Global Rotation (degrees):</label>
-
-                <input type="range" id="globalRotation" value="0" min="-180" max="180" step="1" class="control-input">
-
-                <span class="slider-output" id="globalRotationValue">0</span>
-
-            </div>
-
-
-
-            <h3>Displacement Controls</h3>
-
-            <div class="control-group">
-
-                <label for="displacementStrength">Displacement Strength:</label>
-
-                <input type="range" id="displacementStrength" value="20" min="0" max="100" step="1" class="control-input">
-
-                <span class="slider-output" id="displacementStrengthValue">20</span>
-
-            </div>
-
-            <div class="control-group">
-
-                <label for="displacementAxis">Displacement Axis:</label>
-
-                <select id="displacementAxis" class="control-input">
-
-                    <option value="vertical">Vertical</option>
-
-                    <option value="horizontal">Horizontal</option>
-
-                </select>
-
-            </div>
-
-            <div class="control-group">
-
-                <label for="invertDisplacement">Invert Displacement:</label>
-
-                <input type="checkbox" id="invertDisplacement">
-
-            </div>
-
-            <div class="control-group">
-
-                <label for="samplingPixelStep">Sampling Pixel Step:</label>
-
-                <input type="range" id="samplingPixelStep" value="1" min="1" max="10" step="1" class="control-input">
-
-                <span class="slider-output" id="samplingPixelStepValue">1</span>
-
-            </div>
-
-
-
-            <h3>Line Properties</h3>
-
-            <div class="control-group">
-
-                <label for="approximationLineSpacing">Line Spacing:</label>
-
-                <input type="range" id="approximationLineSpacing" value="5" min="1" max="20" step="0.5" class="control-input">
-
-                <span class="slider-output" id="approximationLineSpacingValue">5</span>
-
-            </div>
-
-            <div class="control-group">
-
-                <label for="approximationLineWidth">Line Width:</label>
-
-                <input type="range" id="approximationLineWidth" value="1" min="0.1" max="5" step="0.1" class="control-input">
-
-                <span class="slider-output" id="approximationLineWidthValue">1</span>
-
-            </div>
-
-
-
-            <div class="control-group">
-
-                <label for="rgbLayerSeparation">Separate RGB Layers:</label>
-
-                <input type="checkbox" id="rgbLayerSeparation" checked>
-
-            </div>
-
-
-
-            <div id="rgbAngleControls">
-
-                <h4>RGB Line Angle Controls (for separate layers)</h4>
-
-                <div class="layer-controls">
-
-                    <h5>Red Layer</h5>
-
-                    <div class="control-group">
-
-                        <label for="redAngle">Angle (degrees):</label>
-
-                        <input type="range" id="redAngle" value="0" min="-180" max="180" step="1" class="control-input">
-
-                        <span class="slider-output" id="redAngleValue">0</span>
-
-                    </div>
-
+<div class="ld-main">
+    <div class="ld-controls">
+
+        <details open>
+            <summary>Image</summary>
+            <div class="ld-body">
+                <label class="ld-drop" id="dropZone">
+                    Drop an image here, or click to choose
+                    <input type="file" id="imageUpload" accept="image/*">
+                </label>
+                <img id="imagePreview" src="#" alt="">
+                <div class="ld-row">
+                    <label for="bgColor">Background</label>
+                    <input type="color" id="bgColor" value="#FFFFFF">
                 </div>
-
-                <div class="layer-controls">
-
-                    <h5>Green Layer</h5>
-
-                    <div class="control-group">
-
-                        <label for="greenAngle">Angle (degrees):</label>
-
-                        <input type="range" id="greenAngle" value="0" min="-180" max="180" step="1" class="control-input">
-
-                        <span class="slider-output" id="greenAngleValue">0</span>
-
-                    </div>
-
-                </div>
-
-                <div class="layer-controls">
-
-                    <h5>Blue Layer</h5>
-
-                    <div class="control-group">
-
-                        <label for="blueAngle">Angle (degrees):</label>
-
-                        <input type="range" id="blueAngle" value="0" min="-180" max="180" step="1" class="control-input">
-
-                        <span class="slider-output" id="blueAngleValue">0</span>
-
-                    </div>
-
-                </div>
-
             </div>
+        </details>
 
-
-
-            <button id="drawDisplacedButton">Draw Displaced Lines</button>
-
-            <button id="generatePlotterLayers">Generate Plotter Layers</button>
-
-
-
-        </div>
-
-
-
-        <div class="canvas-container">
-
-            <h2>Live Preview</h2>
-
-            <canvas id="interactiveCanvas" width="600" height="600"></canvas>
-
-
-
-            <div class="plotter-output" id="plotterOutput">
-
-                <h3>Plotter Layer Output (PNG)</h3>
-
-                <p>Click "Generate Plotter Layers" to create individual layers below.</p>
-
-                <div id="plotterOutputDiv">
-
-                    </div>
-
+        <!-- The control the tool was missing. Everything else is measured
+             against the output size, so the drawing stays put when you change
+             it — you get more resolution, not a different picture. -->
+        <details open>
+            <summary>Output size</summary>
+            <div class="ld-body">
+                <label class="ld-field" for="outputSize">
+                    <span>Long edge <b id="outputSizeValue">1200 px</b></span>
+                    <input type="range" id="outputSize" value="1200" min="400" max="4000" step="50">
+                </label>
+                <div class="ld-note">The canvas takes the image's own proportions at this size. Spacing, width and strength scale with it, so raising this makes a finer drawing of the same picture — which is what a plotter wants.</div>
             </div>
+        </details>
 
-        </div>
+        <details open>
+            <summary>Displacement</summary>
+            <div class="ld-body">
+                <label class="ld-field" for="displacementStrength">
+                    <span>Strength <b id="displacementStrengthValue">20</b></span>
+                    <input type="range" id="displacementStrength" value="20" min="0" max="100" step="1">
+                </label>
+                <div class="ld-row">
+                    <label for="displacementAxis">Axis</label>
+                    <select id="displacementAxis">
+                        <option value="vertical">Vertical</option>
+                        <option value="horizontal">Horizontal</option>
+                    </select>
+                </div>
+                <label class="ld-check" for="invertDisplacement">
+                    <input type="checkbox" id="invertDisplacement"> Invert — bright pixels push
+                </label>
+                <label class="ld-field" for="samplingPixelStep">
+                    <span>Sampling step <b id="samplingPixelStepValue">1</b></span>
+                    <input type="range" id="samplingPixelStep" value="1" min="1" max="10" step="1">
+                </label>
+                <div class="ld-note">A bigger step reads fewer pixels along each line: coarser, and much faster on a large output.</div>
+            </div>
+        </details>
 
+        <details open>
+            <summary>Lines</summary>
+            <div class="ld-body">
+                <label class="ld-field" for="approximationLineSpacing">
+                    <span>Spacing <b id="approximationLineSpacingValue">5</b></span>
+                    <input type="range" id="approximationLineSpacing" value="5" min="1" max="40" step="0.5">
+                </label>
+                <label class="ld-field" for="approximationLineWidth">
+                    <span>Width <b id="approximationLineWidthValue">1</b></span>
+                    <input type="range" id="approximationLineWidth" value="1" min="0.1" max="5" step="0.1">
+                </label>
+                <label class="ld-field" for="globalLineOpacity">
+                    <span>Opacity <b id="globalLineOpacityValue">1</b></span>
+                    <input type="range" id="globalLineOpacity" value="1" min="0" max="1" step="0.01">
+                </label>
+                <label class="ld-field" for="globalRotation">
+                    <span>Rotation <b id="globalRotationValue">0</b>°</span>
+                    <input type="range" id="globalRotation" value="0" min="-180" max="180" step="1">
+                </label>
+            </div>
+        </details>
+
+        <details>
+            <summary>RGB layers</summary>
+            <div class="ld-body">
+                <label class="ld-check" for="rgbLayerSeparation">
+                    <input type="checkbox" id="rgbLayerSeparation" checked> Separate into R / G / B
+                </label>
+                <div id="rgbAngleControls" style="display:grid;gap:11px">
+                    <label class="ld-field" for="redAngle">
+                        <span>Red angle <b id="redAngleValue">0</b>°</span>
+                        <input type="range" id="redAngle" value="0" min="-180" max="180" step="1">
+                    </label>
+                    <label class="ld-field" for="greenAngle">
+                        <span>Green angle <b id="greenAngleValue">0</b>°</span>
+                        <input type="range" id="greenAngle" value="0" min="-180" max="180" step="1">
+                    </label>
+                    <label class="ld-field" for="blueAngle">
+                        <span>Blue angle <b id="blueAngleValue">0</b>°</span>
+                        <input type="range" id="blueAngle" value="0" min="-180" max="180" step="1">
+                    </label>
+                </div>
+                <div class="ld-note">Each channel drawn as its own pass, at its own angle — one pen per layer on the plotter.</div>
+            </div>
+        </details>
+
+        <details open>
+            <summary>Export</summary>
+            <div class="ld-body">
+                <button class="ld-btn primary" id="generatePlotterLayers">Generate plotter layers</button>
+                <button class="ld-btn" id="downloadPreview">Download this drawing (PNG)</button>
+                <button class="ld-btn" id="drawDisplacedButton">Redraw</button>
+            </div>
+        </details>
     </div>
 
+    <div class="ld-stage" id="stage">
+        <canvas id="interactiveCanvas" width="1200" height="1200"></canvas>
+        <div class="ld-empty" id="emptyHint">Drop an image in the panel on the left to begin.</div>
 
+        <div class="ld-status">
+            <span>Output <b id="outDims">—</b></span>
+            <span>Shown at <b id="outZoom">—</b></span>
+            <span class="sp"></span>
+            <button id="zoomFit" class="on">Fit</button>
+            <button id="zoomActual">100%</button>
+        </div>
 
+        <div class="ld-sheet" id="plotterOutput">
+            <div class="ld-sheet-head">
+                <h3>Plotter layers</h3>
+                <span class="sp"></span>
+                <button class="ld-btn" style="width:auto" id="closeSheet">Close</button>
+            </div>
+            <div id="plotterOutputDiv"></div>
+        </div>
+    </div>
+</div>
     <script>
 
         const interactiveCanvas = document.getElementById('interactiveCanvas');
@@ -692,31 +432,15 @@
 
 
 
-            // Ensure image fits within current canvas size, scaling it down if needed
-
-            const aspectRatio = image.width / image.height;
-
-            let imgDrawWidth = ctx.canvas.width;
-
-            let imgDrawHeight = ctx.canvas.height;
-
-
-
-            if (imgDrawWidth / imgDrawHeight > aspectRatio) { // Canvas is wider than image
-
-                imgDrawWidth = imgDrawHeight * aspectRatio;
-
-            } else { // Canvas is taller than image
-
-                imgDrawHeight = imgDrawWidth / aspectRatio;
-
-            }
-
-
-
-            tempCanvas.width = Math.floor(imgDrawWidth);
-
-            tempCanvas.height = Math.floor(imgDrawHeight);
+            // The canvas has already been given the image's own proportions
+            // (fitCanvasToImage), so the picture fills it edge to edge and there
+            // is no letterboxing to allow for. Sampling happens at exactly the
+            // canvas resolution — one source pixel per drawn pixel — which is
+            // what makes the output size control mean anything at all.
+            const imgDrawWidth = ctx.canvas.width;
+            const imgDrawHeight = ctx.canvas.height;
+            tempCanvas.width = Math.max(1, Math.floor(imgDrawWidth));
+            tempCanvas.height = Math.max(1, Math.floor(imgDrawHeight));
 
 
 
@@ -996,6 +720,8 @@
 
             plotterGeneratedCanvases = [];
 
+            document.getElementById('plotterOutput').classList.add('open');
+
 
 
             if (!currentImage) {
@@ -1070,17 +796,10 @@
 
                 const aspectRatio = currentImage.width / currentImage.height;
 
-                let imgDrawWidth = layerCanvas.width;
-
-                let imgDrawHeight = layerCanvas.height;
-
-                if (imgDrawWidth / imgDrawHeight > aspectRatio) imgDrawWidth = imgDrawHeight * aspectRatio;
-
-                else imgDrawHeight = imgDrawWidth / aspectRatio;
-
-                tempCanvas.width = Math.floor(imgDrawWidth);
-
-                tempCanvas.height = Math.floor(imgDrawHeight);
+                const imgDrawWidth = layerCanvas.width;
+                const imgDrawHeight = layerCanvas.height;
+                tempCanvas.width = Math.max(1, Math.floor(imgDrawWidth));
+                tempCanvas.height = Math.max(1, Math.floor(imgDrawHeight));
 
                 tempCtx.drawImage(currentImage, 0, 0, tempCanvas.width, tempCanvas.height);
 
@@ -1256,17 +975,10 @@
 
                 const aspectRatio = currentImage.width / currentImage.height;
 
-                let imgDrawWidth = layerCanvas.width;
-
-                let imgDrawHeight = layerCanvas.height;
-
-                if (imgDrawWidth / imgDrawHeight > aspectRatio) imgDrawWidth = imgDrawHeight * aspectRatio;
-
-                else imgDrawHeight = imgDrawWidth / aspectRatio;
-
-                tempCanvas.width = Math.floor(imgDrawWidth);
-
-                tempCanvas.height = Math.floor(imgDrawHeight);
+                const imgDrawWidth = layerCanvas.width;
+                const imgDrawHeight = layerCanvas.height;
+                tempCanvas.width = Math.max(1, Math.floor(imgDrawWidth));
+                tempCanvas.height = Math.max(1, Math.floor(imgDrawHeight));
 
                 tempCtx.drawImage(currentImage, 0, 0, tempCanvas.width, tempCanvas.height);
 
@@ -1517,60 +1229,33 @@
 
 
         imageUpload.addEventListener('change', (event) => {
-
-            const file = event.target.files?.[0]; // Use optional chaining for safer access
-
-            if (file) {
-
-                const reader = new FileReader();
-
-                reader.onload = (e) => {
-
-                    const img = new Image();
-
-                    img.onload = () => {
-
-                        currentImage = img;
-
-                        imagePreview.src = e.target.result;
-
-                        imagePreview.style.display = 'block';
-
-                        drawDisplaced();
-
-                    };
-
-                    img.src = e.target.result;
-
-                };
-
-                reader.readAsDataURL(file);
-
-            } else {
-
-                currentImage = null;
-
-                imagePreview.style.display = 'none';
-
-                imagePreview.src = '#';
-
-                drawDisplaced();
-
-            }
-
+            const file = event.target.files?.[0];
+            if (file) { loadImageFile(file); return; }
+            currentImage = null;
+            imagePreview.style.display = 'none';
+            imagePreview.src = '#';
+            emptyHint.style.display = '';
+            drawDisplaced();
         });
 
 
 
         function drawDisplaced() {
 
-            // Read all current parameter values
+            // Give the canvas the image's proportions at the chosen output size
+            // before anything is measured against it.
+            fitCanvasToImage();
 
-            const lineSpacing = parseFloat(approximationLineSpacing.value);
+            // Spacing, width and strength are all in pixels, so they are scaled
+            // with the output: the drawing stays the same picture at 400px and
+            // at 4000px, just finer.
+            const k = sizeScale();
 
-            const lineWidth = parseFloat(approximationLineWidth.value);
+            const lineSpacing = parseFloat(approximationLineSpacing.value) * k;
 
-            const displacementStrengthVal = parseFloat(displacementStrength.value);
+            const lineWidth = parseFloat(approximationLineWidth.value) * k;
+
+            const displacementStrengthVal = parseFloat(displacementStrength.value) * k;
 
             const displacementAxisVal = displacementAxis.value;
 
@@ -1622,13 +1307,122 @@
 
             );
 
+            reportSize();
+
         }
 
 
 
+        // ---------------------------------------------------------------
+        // Sizing. This is the part the tool was missing.
+        //
+        // The canvas used to be a fixed 600x600 square that every image was
+        // letterboxed into, so a wide photo drew into a band with dead margins
+        // either side and there was no way to ask for a bigger drawing. Now the
+        // canvas takes the IMAGE's proportions, at whatever output size you
+        // choose, and the element is only ever DISPLAYED scaled to fit — so a
+        // four-thousand-pixel render still sits whole on the screen.
+        // ---------------------------------------------------------------
+        const outputSize   = document.getElementById('outputSize');
+        const outputSizeValue = document.getElementById('outputSizeValue');
+        const stage        = document.getElementById('stage');
+        const outDims      = document.getElementById('outDims');
+        const outZoom      = document.getElementById('outZoom');
+        const emptyHint    = document.getElementById('emptyHint');
+        const dropZone     = document.getElementById('dropZone');
+
+        // Everything that is measured in pixels is measured against a nominal
+        // 1000px drawing, then scaled. That is what keeps the picture identical
+        // when you change the output size instead of turning into a different
+        // one: more resolution, same composition.
+        const NOMINAL = 1000;
+        const sizeScale = () => (parseFloat(outputSize.value) || NOMINAL) / NOMINAL;
+
+        function fitCanvasToImage(){
+            const longEdge = parseFloat(outputSize.value) || NOMINAL;
+            if (!currentImage){
+                interactiveCanvas.width = longEdge;
+                interactiveCanvas.height = longEdge;
+            } else {
+                const ar = currentImage.width / currentImage.height;
+                if (ar >= 1){ interactiveCanvas.width = Math.round(longEdge); interactiveCanvas.height = Math.round(longEdge / ar); }
+                else        { interactiveCanvas.height = Math.round(longEdge); interactiveCanvas.width = Math.round(longEdge * ar); }
+            }
+            currentCanvasWidth  = interactiveCanvas.width;
+            currentCanvasHeight = interactiveCanvas.height;
+        }
+
+        function reportSize(){
+            outDims.textContent = `${interactiveCanvas.width} × ${interactiveCanvas.height} px`;
+            const shown = interactiveCanvas.getBoundingClientRect().width;
+            const pct = interactiveCanvas.width ? Math.round((shown / interactiveCanvas.width) * 100) : 100;
+            outZoom.textContent = pct + '%';
+        }
+
+        const zoomFit = document.getElementById('zoomFit');
+        const zoomActual = document.getElementById('zoomActual');
+        function setZoom(actual){
+            stage.classList.toggle('actual', actual);
+            zoomActual.classList.toggle('on', actual);
+            zoomFit.classList.toggle('on', !actual);
+            reportSize();
+        }
+        zoomFit.addEventListener('click', () => setZoom(false));
+        zoomActual.addEventListener('click', () => setZoom(true));
+        window.addEventListener('resize', reportSize);
+
+        outputSize.addEventListener('input', () => {
+            outputSizeValue.textContent = outputSize.value + ' px';
+            drawDisplaced();
+        });
+
+        // Drag and drop, because this is a tool you feed pictures to.
+        ['dragenter','dragover'].forEach(t => dropZone.addEventListener(t, e => {
+            e.preventDefault(); dropZone.classList.add('over');
+        }));
+        ['dragleave','drop'].forEach(t => dropZone.addEventListener(t, e => {
+            e.preventDefault(); dropZone.classList.remove('over');
+        }));
+        dropZone.addEventListener('drop', e => {
+            const f = e.dataTransfer?.files?.[0];
+            if (f && f.type.startsWith('image/')) loadImageFile(f);
+        });
+
+        function loadImageFile(file){
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    currentImage = img;
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    emptyHint.style.display = 'none';
+                    drawDisplaced();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Save what you are looking at, at full output resolution.
+        document.getElementById('downloadPreview').addEventListener('click', () => {
+            const a = document.createElement('a');
+            a.href = interactiveCanvas.toDataURL('image/png');
+            a.download = `line-displacer-${interactiveCanvas.width}x${interactiveCanvas.height}.png`;
+            document.body.appendChild(a); a.click(); a.remove();
+        });
+
+        document.getElementById('closeSheet').addEventListener('click', () =>
+            document.getElementById('plotterOutput').classList.remove('open'));
+
         drawDisplacedButton.addEventListener('click', drawDisplaced);
 
-        generatePlotterLayersButton.addEventListener('click', generatePlotterLayers);
+        // NB: the button's id is `generatePlotterLayers`, which the function of
+        // the same name shadows — so this has to be looked up explicitly. The
+        // old code referenced `generatePlotterLayersButton`, which never
+        // existed, and the ReferenceError took the initial draw down with it.
+        document.getElementById('generatePlotterLayers')
+                .addEventListener('click', generatePlotterLayers);
 
 
 

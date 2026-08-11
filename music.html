@@ -7,9 +7,9 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=21" />
+<link rel="stylesheet" href="core.css?v=22" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=21" />
+<link rel="stylesheet" href="theme-dazzle.css?v=28" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -150,6 +150,33 @@
   #markers .mk .tip { display: none; position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); background: #000; border: 1px solid var(--line); color: var(--text); font-size: 12px; padding: 5px 9px; border-radius: 7px; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; z-index: 5; pointer-events: none; }
   #markers .mk:hover .tip { display: block; }
 
+  /* A buoy hailing used to throw a callout up over whatever you were reading.
+     Now it runs along the foot of the water as a ticker: the comment goes past
+     once, in its own lane, and covers nothing. */
+  .wave-ticker {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 17px;
+    overflow: hidden; pointer-events: none; z-index: 6;
+    opacity: 0; transition: opacity .3s;
+    background: linear-gradient(180deg, transparent, rgba(0,0,0,.6) 55%);
+  }
+  .wave-ticker.on { opacity: 1; }
+  .wave-ticker span {
+    position: absolute; left: 0; top: 0; white-space: nowrap;
+    font-size: 11.5px; line-height: 17px; color: var(--text);
+    text-shadow: 0 1px 3px #000, 0 0 6px #000;
+  }
+  .wave-ticker span b { color: var(--warn); font-weight: 700; }
+  /* Distance and duration are measured per message, so the speed is the same
+     whether it is three words or thirty. */
+  .wave-ticker.run span { animation: wave-ticker var(--dur, 9s) linear 1; }
+  @keyframes wave-ticker {
+    from { transform: translateX(var(--from, 100%)); }
+    to   { transform: translateX(var(--to, -100%)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wave-ticker.run span { animation: none; transform: translateX(6px); }
+  }
+
   .vol { display: flex; align-items: center; gap: 8px; }
   .vol svg { width: 18px; height: 18px; fill: var(--text-dim); }
   .vol input[type=range] { -webkit-appearance: none; appearance: none; width: 90px; height: 4px; border-radius: 4px; background: var(--wave); outline: none; cursor: pointer; }
@@ -217,6 +244,131 @@
   #refToggle { display: none; }
   body.authed:not(.singlemix) #refToggle { display: inline-flex; }
   @media (max-width: 620px) { .ref-grid { grid-template-columns: 1fr; } }
+
+  /* ---------- Song profile ----------
+     Bandcamp's shape: the library plays straight through, but a track has a
+     page of its own. This one is more detailed — the whole stack, every
+     comment, the links out, and the waveform at a size worth looking at.
+
+     It sits UNDER the dock (z-index 20 against the dock's 30), because the
+     transport stays put: the profile borrows the timeline out of it rather
+     than drawing a second player, so the audio never stops or reloads. */
+  .profile {
+    display: none; position: fixed; inset: 0; z-index: 20; overflow-y: auto;
+    background: radial-gradient(1100px 560px at 50% -8%, #1a1c26 0%, var(--bg) 58%);
+  }
+  body.profiling .profile { display: block; }
+  body.profiling .wrap { display: none; }
+  .pwrap { max-width: 1000px; margin: 0 auto; padding: 20px 20px 300px; }
+  .phead { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .pback {
+    background: var(--bg-soft); border: 1px solid var(--line); color: var(--text-dim);
+    border-radius: 9px; padding: 7px 13px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  }
+  .pback:hover { color: var(--text); border-color: var(--accent); }
+  .phead .pico { background: none; border: 1px solid var(--line); color: var(--text-dim); border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+  .phead .pico:hover { color: var(--text); border-color: var(--accent); }
+
+  .phero { display: flex; gap: 20px; align-items: flex-end; margin-bottom: 20px; }
+  .part {
+    width: 140px; height: 140px; border-radius: 14px; object-fit: cover; flex: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: var(--shadow); cursor: pointer;
+  }
+  .pmeta { min-width: 0; }
+  .pmeta h2 { margin: 0; font-size: 30px; line-height: 1.15; letter-spacing: -.5px; word-wrap: break-word; }
+  .psub { color: var(--text-dim); font-size: 13.5px; margin-top: 5px; }
+  .pchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+
+  /* The borrowed timeline lands here, and gets room to breathe. */
+  .pwave { background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 18px; }
+  .pwave .timeline { display: flex; align-items: center; gap: 14px; }
+  .pwave .time { font-size: 12.5px; }
+
+  .pcols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; align-items: start; margin-bottom: 18px; }
+  .pcard { background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; min-width: 0; }
+  .pcard h3 {
+    margin: 0 0 10px; font-size: 12px; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: .5px; font-weight: 700;
+  }
+  .pcard h3 .pcount { color: var(--text-mute); font-weight: 600; }
+
+  /* The version chooser the dock's little menu could never be. */
+  .pver {
+    display: grid; grid-template-columns: 10px minmax(0,1fr) auto; gap: 11px; align-items: center;
+    padding: 9px 10px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
+  }
+  .pver:hover { background: var(--bg-hover); }
+  .pver.on { border-color: var(--accent); background: rgba(108,92,231,.13); }
+  .pver .pvname { font-weight: 600; display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .pver .pvname .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pver .pvsub { color: var(--text-mute); font-size: 11.5px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .pver .pvlog {
+    color: var(--text-dim); font-size: 12px; margin-top: 5px; white-space: pre-wrap;
+    border-left: 2px solid var(--line); padding-left: 8px; max-height: 4.4em; overflow: hidden;
+  }
+  .pvacts { display: flex; gap: 2px; flex: none; opacity: 0; transition: opacity .15s; }
+  .pver:hover .pvacts, .pver.on .pvacts { opacity: 1; }
+  @media (hover: none) { .pvacts { opacity: .6; } }
+  .pvacts .pv {
+    color: var(--text-mute); text-decoration: none; cursor: pointer;
+    padding: 3px 6px; border-radius: 6px; font-size: 12.5px; line-height: 18px;
+  }
+  .pvacts .pv:hover { color: var(--text); background: var(--bg-row); }
+
+  /* Links out: where the words live, what this is chasing, what it looks like. */
+  .plink { padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .plink:last-child { border-bottom: none; }
+  .plk { color: var(--text-mute); font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em; font-weight: 800; margin-bottom: 5px; }
+  .plv { font-size: 13px; word-break: break-all; }
+  .plv.none { color: var(--text-mute); }
+  .plrow { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+  .plrow input {
+    flex: 1; min-width: 130px; background: var(--field); border: 1px solid var(--line); color: var(--text);
+    border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 12.5px; outline: none;
+  }
+  .plrow input:focus { border-color: var(--accent); background: var(--field-on); }
+  .plrow .btn, .plrow a.btn {
+    border: 1px solid var(--line); background: var(--bg-row); color: var(--text-dim);
+    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 12px; font-weight: 600;
+    cursor: pointer; text-decoration: none; display: inline-flex; align-items: center;
+  }
+  .plrow .btn:hover, .plrow a.btn:hover { color: var(--text); border-color: var(--accent); }
+  .phint { color: var(--text-mute); font-size: 11.5px; margin-top: 6px; line-height: 1.5; }
+
+  /* The comments drawer's own body, moved in whole — same composer, same
+     threads, same handlers, just not in a 46vh drawer any more. */
+  .pcomments .pad { padding: 0 !important; max-width: none !important; }
+  .pcomments .clist { max-height: none; }
+
+  /* Every row carries a ghost of its own waveform behind the words — the shape
+     of the song, at a glance, before you play it. Faint enough to read the
+     title straight through. */
+  .song .swave {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    opacity: .16; pointer-events: none; z-index: 0;
+  }
+  .song:hover .swave, .song.active .swave { opacity: .3; }
+  .song .meta, .song .idx, .song .right, .song .sart,
+  .song .sopen, .song .scpy, .song .sdel, .song .editctl { position: relative; z-index: 1; }
+
+  /* A song title opens the song, the way it does on a Bandcamp track listing:
+     the row plays, the title opens its own page. Deliberately NOT called
+     `door` — that class belongs to the landing page's big music-note and
+     paintbrush panels, and the dazzle theme gives those a striped header bar
+     and 42px of padding, which every song title inherited. */
+  .song .title.titlelink { cursor: pointer; }
+  .song .title.titlelink:hover { text-decoration: underline; text-underline-offset: 3px; }
+  #nowTitle.titlelink { cursor: pointer; }
+  #nowTitle.titlelink:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+  @media (max-width: 760px) {
+    .pcols { grid-template-columns: 1fr; }
+    .phero { flex-direction: column; align-items: flex-start; gap: 14px; }
+    .part { width: 108px; height: 108px; }
+    .pmeta h2 { font-size: 24px; }
+    .pwrap { padding: 16px 14px 300px; }
+  }
 
   /* ---------- Lyrics ---------- */
   .lyr-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
@@ -326,10 +478,17 @@
     padding: 2px 6px; border-radius: 6px; cursor: pointer; transition: opacity .12s;
   }
   .song:hover .scpy, .song:hover .sopen { opacity: 1; }
-  .song .sopen:hover { color: var(--text); background: var(--bg-soft); }
-  @media (hover: none) { .song .sopen { opacity: .55; } }
   .song .scpy:hover { color: var(--text); background: var(--bg-soft); }
   @media (hover: none) { .song .scpy { opacity: .55; } }
+  /* ▤ is the door into the song's own page, and the same button as "open it
+     without playing" — that page opens paused. It is the main way in, so it
+     does not hide until hover the way the share link does. */
+  .song .sopen {
+    opacity: 1; font-size: 18px; line-height: 1;
+    padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px;
+    color: var(--text-dim);
+  }
+  .song .sopen:hover { color: var(--text); background: var(--bg-soft); border-color: var(--accent); }
   body.authed:not(.shared):not(.singlemix) .song .sdel { display: block; opacity: 0; transition: opacity .12s; }
   body.authed:not(.shared):not(.singlemix) .song:hover .sdel { opacity: 1; }
   .song .sdel:hover { color: #ff6b6b; background: var(--bg-soft); }
@@ -616,6 +775,50 @@
     </div>
   </div>
 
+  <!-- Song profile: one song on a page of its own. The waveform and the
+       comment composer are not built here — they are moved in from the dock
+       when this opens, and moved back when it closes, so there is exactly one
+       player and exactly one set of comment handlers on this page, ever. -->
+  <div class="profile" id="profile">
+    <div class="pwrap">
+      <div class="phead">
+        <button class="pback" id="pBack" title="Back to the library (esc)">← Library</button>
+        <span style="flex:1"></span>
+        <button class="pico" id="pPrevSong" title="Previous song in the stack">↑</button>
+        <button class="pico" id="pNextSong" title="Next song in the stack">↓</button>
+        <button class="pico" id="pShare" title="Copy a link to this song">🔗</button>
+      </div>
+
+      <div class="phero">
+        <img class="part" id="pArt" alt="" />
+        <div class="pmeta">
+          <h2 id="pTitle">—</h2>
+          <div class="psub" id="pSub"></div>
+          <div class="pchips" id="pChips"></div>
+        </div>
+      </div>
+
+      <div class="pwave" id="pWave"></div>
+
+      <div class="pcols">
+        <section class="pcard">
+          <h3>Versions <span class="pcount" id="pVerCount"></span></h3>
+          <div id="pVers"></div>
+        </section>
+        <section class="pcard">
+          <h3>Links</h3>
+          <div id="pLinks"></div>
+        </section>
+      </div>
+
+      <!-- No heading of its own: the drawer's body brings one, and that one
+           says which version you are commenting on. -->
+      <section class="pcard pcomments">
+        <div id="pCommentHost"></div>
+      </section>
+    </div>
+  </div>
+
   <!-- Dock: changelog drawer + comments drawer + transport -->
   <div class="dock">
     <div class="drawer" id="vlogDrawer">
@@ -731,52 +934,157 @@
             <div class="wavewrap" id="wavewrap">
               <canvas id="wake" aria-hidden="true"></canvas>
               <div id="markers"></div>
+              <!-- What the buoys are saying, one at a time, along the foot -->
+              <div class="wave-ticker" id="waveTicker" aria-hidden="true"><span id="waveTickerText"></span></div>
               <!-- Lakehorse only (see theme-dazzle.css): a dazzle-painted boat
                    riding the playhead, where the swell is breaking. -->
               <div id="boat" aria-hidden="true">
-                <!-- Plan view: bow to the right, pointing down the track. The
-                     deck is dazzle-painted, which is the whole point of seeing
-                     it from above. -->
-                <svg viewBox="0 0 34 16">
+                <!-- A dazzle cruiser, seen from above with the bow to the
+                     right, running down the track. Warship proportions — nine
+                     lengths to the beam, a raked bow, turrets fore and aft —
+                     and the disruptive scheme painted as hard chevrons rather
+                     than an even hatch, which is what dazzle actually was: not
+                     concealment but bold shapes that break up a hull's line and
+                     make its heading hard to read. -->
+                <svg viewBox="0 0 50 22">
                   <defs>
-                    <pattern id="dzl" width="4" height="4" patternTransform="rotate(115)" patternUnits="userSpaceOnUse">
-                      <rect width="4" height="4" fill="#fff"/><rect width="1.9" height="4" fill="#08080a"/>
-                    </pattern>
+                    <clipPath id="hullClip">
+                      <path d="M4 11 L44.5 11 L47.5 8.6 L47.5 12.2 C47.5 15.2 45.6 16.6 42 16.6
+                               L8.5 16.6 C5.6 16.6 4 15.4 4 13.4 Z"/>
+                    </clipPath>
+                    <clipPath id="ssClip"><rect x="17" y="4" width="12" height="7"/></clipPath>
                   </defs>
-                  <path d="M2 3.6 H21 C27 3.6 31.4 6.2 32.6 8 C31.4 9.8 27 12.4 21 12.4 H2 Z"
-                        fill="url(#dzl)" stroke="#08080a" stroke-width="1.5"
+
+                  <!-- HULL, seen from the side and a little above: sheer line
+                       along the deck, raked stem at the bow, counter stern. -->
+                  <path d="M4 11 L44.5 11 L47.5 8.6 L47.5 12.2 C47.5 15.2 45.6 16.6 42 16.6
+                           L8.5 16.6 C5.6 16.6 4 15.4 4 13.4 Z"
+                        fill="#fff" stroke="#08080a" stroke-width="1.1"
                         stroke-linejoin="round" paint-order="stroke fill"/>
-                  <path d="M2 3.6 H21 C27 3.6 31.4 6.2 32.6 8 C31.4 9.8 27 12.4 21 12.4 H2 Z"
-                        fill="none" stroke="#fff" stroke-width=".8"/>
-                  <rect x="9" y="6" width="8" height="4" rx="1" fill="#08080a" stroke="#fff" stroke-width=".7"/>
-                  <path d="M17.5 8 H23" stroke="#fff" stroke-width=".7"/>
+
+                  <!-- The scheme: bold bands raked at opposing angles, so no two
+                       adjacent shapes agree on which way she is heading. That is
+                       what dazzle was for — not hiding a ship, but making her
+                       course and speed hard to read. -->
+                  <g clip-path="url(#hullClip)" fill="#08080a">
+                    <path d="M6.5 10 L9.5 10 L6.5 18 L3.5 18 Z"/>
+                    <path d="M13 10 L15 10 L18.5 18 L16.5 18 Z"/>
+                    <path d="M20.5 10 L24 10 L20.5 18 L17 18 Z"/>
+                    <path d="M28 10 L30 10 L33 18 L31 18 Z"/>
+                    <path d="M34.5 10 L38 10 L35 18 L31.5 18 Z"/>
+                    <path d="M42 10 L44 10 L46.5 18 L44.5 18 Z"/>
+                  </g>
+
+                  <!-- SUPERSTRUCTURE: bridge block, funnel and the tripod mast
+                       that makes a warship read as a warship in silhouette. -->
+                  <path d="M18 10.8 L18 6.4 L21 6.4 L21 4.8 L25.5 4.8 L25.5 6.4 L28 6.4 L28 10.8 Z"
+                        fill="#fff" stroke="#08080a" stroke-width=".85" stroke-linejoin="round"/>
+                  <g clip-path="url(#ssClip)" fill="#08080a">
+                    <path d="M19.4 4 L20.6 4 L19 11 L17.8 11 Z"/>
+                    <path d="M24 4 L25.4 4 L26.8 11 L25.4 11 Z"/>
+                  </g>
+                  <!-- funnel, raked back -->
+                  <path d="M29.4 10.8 L30.2 6.6 L32.6 6.6 L32.8 10.8 Z"
+                        fill="#08080a" stroke="#08080a" stroke-width=".7" stroke-linejoin="round"/>
+                  <path d="M30.3 7.4 H32.5" stroke="#fff" stroke-width=".6"/>
+                  <!-- tripod mast and yard -->
+                  <g stroke="#08080a" stroke-width=".75" stroke-linecap="round" fill="none">
+                    <path d="M23 4.8 L23 0.8"/>
+                    <path d="M21 3.4 H25.2"/>
+                    <path d="M23 2.2 L21.4 4.8 M23 2.2 L24.6 4.8"/>
+                  </g>
+
+                  <!-- MAIN BATTERY: two turrets forward, one aft, barrels out -->
+                  <g fill="#fff" stroke="#08080a" stroke-width=".75" stroke-linejoin="round">
+                    <path d="M33.6 10.8 L34.4 8.9 L38.4 8.9 L39 10.8 Z"/>
+                    <path d="M39.8 10.8 L40.5 9.3 L43.6 9.3 L44.1 10.8 Z"/>
+                    <path d="M8.8 10.8 L9.5 8.9 L13.5 8.9 L14.1 10.8 Z"/>
+                  </g>
+                  <g stroke="#08080a" stroke-width=".7" stroke-linecap="round">
+                    <path d="M38.2 9.4 L42.4 8.6 M38.2 10.2 L42.4 9.5"/>
+                    <path d="M43.4 9.7 L46.6 9.1"/>
+                    <path d="M13.2 9.4 L17.4 8.6 M13.2 10.2 L17.4 9.5"/>
+                  </g>
+
+                  <!-- boot-topping at the waterline, and the bow wave she pushes -->
+                  <path d="M4.6 15.2 C14 16.1 34 16.1 46.8 14.4"
+                        fill="none" stroke="#08080a" stroke-width=".8"/>
+                  <path d="M46.4 16.4 C48.2 16.8 49.2 17.4 49.6 18.2
+                           M3.6 16.4 C2 16.9 1 17.6 .6 18.6"
+                        fill="none" stroke="#fff" stroke-width=".9" stroke-linecap="round" opacity=".85"/>
                 </svg>
               </div>
               <!-- …and the horse below it: same playhead, opposite side of the
                    waterline, diving as the trough deepens. -->
               <div id="horse" aria-hidden="true">
-                <!-- Dazzle-striped like a zebra that went to war. Its own finer
-                     pattern than the boat's, so the legs still read as striped
-                     at this size, and a hard dark outline so the silhouette
-                     stands off the white foam. -->
-                <svg viewBox="0 0 30 20">
+                <!-- A horse swimming, seen from above and behind the ship: the
+                     head and neck are up and out of the water at the bow end,
+                     the barrel is awash, and the legs are mid-stroke and
+                     splayed the way a swimming horse's are. Striped in its own
+                     finer scheme than the ship — the same disruptive idea at a
+                     smaller scale, so the legs still read as striped at this
+                     size — over a hard dark outline that holds the silhouette
+                     against white foam. -->
+                <svg viewBox="0 0 34 26">
                   <defs>
-                    <pattern id="dzh" width="2.6" height="2.6" patternTransform="rotate(115)" patternUnits="userSpaceOnUse">
-                      <rect width="2.6" height="2.6" fill="#fff"/><rect width="1.2" height="2.6" fill="#08080a"/>
+                    <pattern id="dzh" width="2.4" height="2.4" patternTransform="rotate(118)" patternUnits="userSpaceOnUse">
+                      <rect width="2.4" height="2.4" fill="#fff"/><rect width="1.05" height="2.4" fill="#08080a"/>
                     </pattern>
+                    <!-- The surface, as a real edge: anything that sinks past
+                         y=17 is clipped away, so a part going under genuinely
+                         goes under instead of just sliding down the picture. -->
+                    <clipPath id="hWater"><rect x="-4" y="-6" width="42" height="23"/></clipPath>
                   </defs>
-                  <g fill="url(#dzh)" stroke="#08080a" stroke-width="1.2"
-                     stroke-linejoin="round" stroke-linecap="round" paint-order="stroke fill">
-                    <path d="M7.2 8.6 C4.6 9.0 3.2 11.0 2.6 13.4"
-                          fill="none" stroke="#ffffff" stroke-width="1.9"/>
-                    <rect x="8.2"  y="11.2" width="1.9" height="6.4" rx="0.95"/>
-                    <rect x="11.4" y="11.4" width="1.9" height="6.2" rx="0.95"/>
-                    <rect x="15.2" y="11.2" width="1.9" height="6.4" rx="0.95"/>
-                    <rect x="18.0" y="10.6" width="1.9" height="6.6" rx="0.95"/>
-                    <ellipse cx="13.6" cy="9.2" rx="6.4" ry="3.5"/>
-                    <path d="M17.6 7.4 L21.2 3.0 L24.6 2.2 L27.8 4.6 L25.4 6.4 L21.4 6.6 L20.2 9.6 Z"/>
-                    <path d="M22.6 2.8 L23.0 0.9 L24.0 2.4 Z"/>
+
+                  <g clip-path="url(#hWater)">
+                    <!-- The quarters. Rises and falls out of phase with the
+                         head, which is how a swimming horse actually moves:
+                         one end up while the other is under, and every so often
+                         the whole back breaks clear. -->
+                    <g class="hrump">
+                      <path d="M4.4 15.4 C6.0 12.6 9.4 11.2 13.4 11.2 C17.0 11.2 19.6 12.0 21.4 13.4
+                               C19.2 15.0 16.0 15.9 12.4 16.1 C9.0 16.3 6.4 16.0 4.4 15.4 Z"
+                            fill="url(#dzh)" stroke="#08080a" stroke-width="1.05"
+                            stroke-linejoin="round" paint-order="stroke fill"/>
+                    </g>
+
+                    <!-- Neck and head in near-profile, the way a swimming horse
+                         carries them: nose up, throat clear of the water, the
+                         neck driving down into it at the shoulder. -->
+                    <g class="hhead">
+                      <path d="M18.6 14.2 C19.4 11.2 20.6 8.6 22.4 6.4
+                               C23.4 5.2 24.6 4.2 26.0 3.4 L28.6 2.0
+                               C29.6 1.5 30.6 1.8 31.0 2.7 C31.4 3.6 31.0 4.5 30.0 5.0
+                               L28.0 6.0 C26.6 6.8 25.6 7.8 24.8 9.2
+                               C23.8 11.0 23.2 13.0 23.0 15.2 Z"
+                            fill="url(#dzh)" stroke="#08080a" stroke-width="1.05"
+                            stroke-linejoin="round" paint-order="stroke fill"/>
+                      <!-- muzzle, ears and eye -->
+                      <path d="M28.6 2.0 C29.8 1.2 30.9 1.2 31.6 2.0 C32.2 2.7 32.0 3.6 31.2 4.2"
+                            fill="#fff" stroke="#08080a" stroke-width=".7" stroke-linejoin="round"/>
+                      <path d="M27.2 2.6 L27.0 0.5 L28.6 1.8 Z" fill="#fff" stroke="#08080a"
+                            stroke-width=".6" stroke-linejoin="round"/>
+                      <path d="M25.4 3.6 L25.0 1.6 L26.6 2.9 Z" fill="#fff" stroke="#08080a"
+                            stroke-width=".6" stroke-linejoin="round"/>
+                      <circle cx="28.0" cy="3.6" r=".5" fill="#08080a"/>
+                      <!-- mane, laid over by the water -->
+                      <path d="M25.2 5.0 C23.8 5.6 22.6 6.8 21.8 8.4 M23.6 7.6 C22.4 8.4 21.6 9.6 21.2 11.2
+                               M22.4 10.4 C21.4 11.2 20.8 12.4 20.6 13.8"
+                            fill="none" stroke="#fff" stroke-width=".7" stroke-linecap="round"/>
+                    </g>
                   </g>
+
+                  <!-- The surface itself stays put while the animal moves
+                       through it: the wake it drags, and the water closing over
+                       whatever just went under. -->
+                  <path d="M4.6 13.8 C2.8 13.4 1.4 13.6 0.4 14.4"
+                        fill="none" stroke="#fff" stroke-width="1.1" stroke-linecap="round" opacity=".75"/>
+                  <path d="M5.0 16.6 C3.2 16.8 1.8 17.4 0.8 18.4"
+                        fill="none" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity=".55"/>
+                  <path d="M17.4 16.4 C15.0 17.2 12.0 17.5 8.6 17.2"
+                        fill="none" stroke="#fff" stroke-width=".9" stroke-linecap="round" opacity=".6"/>
+                  <path d="M24.6 16.2 C22.6 16.9 20.4 17.1 18.4 16.8"
+                        fill="none" stroke="#fff" stroke-width=".8" stroke-linecap="round" opacity=".5"/>
                 </svg>
               </div>
             </div>
@@ -793,7 +1101,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=21"></script>
+<script src="core.js?v=22"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -840,7 +1148,15 @@ let readyByVer = [];
 // known until after the gate, and a theme reshapes the wave through CSS
 // variables (Lakehorse's dazzle theme turns the bars into round-crested swell).
 const num = (v, dflt) => { const n = parseFloat(cssVar(v)); return isFinite(n) ? n : dflt; };
-const WAVE_H = 56;
+// How tall the water is. A variable rather than a constant because the song
+// profile borrows this same player and gives it room: everything downstream —
+// the depth gradient, the boat's rise and the horse's dive — is measured
+// against it, so growing the wave grows all of it together.
+const DOCK_WAVE_H = 56;
+// On a phone the timeline's clock labels take a third of the row, so the same
+// depth would make the water taller than it is wide.
+const profWaveH = () => (innerWidth < 620 ? 104 : 168);
+let WAVE_H = DOCK_WAVE_H;
 
 // Water, not spectrum. The fill is a vertical gradient rather than a flat
 // colour, so a bar only picks up the bands it is tall enough to reach: quiet
@@ -935,19 +1251,163 @@ function oceanRender(channels, ctx){
   drawSide(ctx, bottom, w, h, mid, -1, scale);
 }
 
+// ---------- The water as linework ----------
+// The other way to draw a wave, and the way Hokusai did: not a filled mass but
+// a stack of fine contour lines, every one of them following the surface —
+// bunched tight where the swell rises, fanning out as they fall away into the
+// trough — with the crest breaking into foam.
+//
+// Everything here is drawn from the same envelope the filled renderer uses, so
+// the shape of the water is identical; only the way it is inked changes. The
+// waterline down the middle stays, which is what keeps the boat above it and
+// the horse below it making sense.
+
+// One line, smoothed the same way the filled surface is: quadratic curves
+// through the midpoints rather than a point per column, so it reads as a drawn
+// stroke and not a plot.
+function inkLine(ctx, yAt, cols, dx){
+  ctx.beginPath();
+  ctx.moveTo(0, yAt(0));
+  for (let i = 1; i < cols; i++){
+    const cx = (i - 1) * dx + dx / 2;
+    ctx.quadraticCurveTo((i - 1) * dx, yAt(i - 1), cx, (yAt(i - 1) + yAt(i)) / 2);
+  }
+  ctx.lineTo((cols - 1) * dx, yAt(cols - 1));
+  ctx.stroke();
+}
+
+// `seed` decorrelates the drawing of the two sides. The SHAPE either side of
+// the waterline is honest — left channel above, right channel below — so a
+// centred mix looks very nearly symmetrical and a panned one visibly is not.
+// But if the linework itself were also identical the whole thing would read as
+// a folded mirror image, which is the one thing water never looks like. The
+// seed shifts the wobble and the foam scatter, not the water.
+function lineSide(ctx, env, w, h, mid, dir, scale, seed){
+  const cols = env.length, dx = w / (cols - 1);
+  const surf = (i) => mid - dir * env[i] * scale;
+  const depth = Math.abs(mid);
+  // One contour per ~6 device pixels of water. Deliberately dense: on a retina
+  // screen that is a hairline every three CSS pixels, which is what makes it
+  // read as drawn linework rather than as a handful of tidy curves.
+  const N = Math.max(4, Math.round(depth / 6));
+  // A deterministic scatter, so a redraw at a new size lands the same linework
+  // and the same foam in the same places rather than reshuffling the sea.
+  const rnd = (a, b) => { const x = Math.sin(a * 127.1 + b * 311.7 + seed * 74.7) * 43758.5453; return x - Math.floor(x); };
+
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  // ---- the contours ----
+  for (let k = 0; k < N; k++){
+    const t = k / (N - 1 || 1);
+    // Bunch the lines up near the surface, and jitter each one's depth a little
+    // so the spacing bands the way drawn linework does instead of stepping
+    // evenly like a gradient ramp.
+    const e = Math.min(1, Math.pow(t, 1.4) + (rnd(k, 9) - 0.5) * 0.045);
+    // Two harmonics of wobble, dying out towards both the surface and the
+    // waterline: perfectly parallel contours stop reading as drawing.
+    const ph = rnd(k, 3) * 6.28;
+    const wob = (i) => (Math.sin(i * 0.105 + ph) * 0.62 + Math.sin(i * 0.038 + ph * 1.7) * 0.38)
+                       * depth * 0.05 * e * (1 - e * 0.65);
+    const yAt = (i) => { const s = surf(i); return s + e * (mid - s) + dir * wob(i); };
+    // The surface is the firmest stroke; the ones beneath it fade back, which
+    // is what gives the stack its depth.
+    ctx.globalAlpha = k === 0 ? 1 : 0.32 + 0.5 * (1 - t) * (0.7 + rnd(k, 5) * 0.5);
+    ctx.lineWidth = k === 0 ? Math.max(1.3, depth * 0.026) : Math.max(0.8, depth * 0.014);
+    inkLine(ctx, yAt, cols, dx);
+  }
+  ctx.globalAlpha = 1;
+
+  // ---- the break ----
+  // Where the swell runs near the limit it stops being linework and becomes a
+  // solid mass — the white cap. How deep the mass goes is how far past the
+  // threshold the audio got, so the caps break exactly where it is loudest and
+  // the quiet passages stay as open drawing.
+  const T = 0.58;
+  const capAt = (i) => (env[i] <= T ? 0 : ((env[i] - T) / (1 - T)) * depth * 0.42);
+  let run = null;
+  const spans = [];
+  for (let i = 0; i < cols; i++){
+    if (capAt(i) > 0.6){ if (!run) run = [i, i]; else run[1] = i; }
+    else if (run){ spans.push(run); run = null; }
+  }
+  if (run) spans.push(run);
+
+  spans.forEach(([a, b]) => {
+    if (b - a < 1) return;
+    ctx.beginPath();
+    ctx.moveTo(a * dx, surf(a));
+    for (let i = a + 1; i <= b; i++) ctx.lineTo(i * dx, surf(i));
+    for (let i = b; i >= a; i--) ctx.lineTo(i * dx, surf(i) + dir * capAt(i));
+    ctx.closePath();
+    ctx.fill();
+
+    // Foam. Hokusai drew a break as a cluster of small curls coming off the
+    // crest, not as a hard edge — so the mass is fringed with rings and a
+    // scatter of spray thrown clear of the water.
+    ctx.lineWidth = Math.max(0.8, depth * 0.015);
+    const r0 = Math.max(0.9, depth * 0.05);
+    for (let i = a; i <= b; i += Math.max(1, Math.round((b - a) / 9))){
+      const x = i * dx, y = surf(i);
+      const n = 3 + Math.floor(rnd(i, 1) * 4);
+      for (let c = 0; c < n; c++){
+        const rr = r0 * (0.4 + rnd(i, c) * 0.8);
+        const ox = (rnd(i, c + 20) - 0.5) * r0 * 4.5;
+        const oy = rnd(i, c + 40) * r0 * 2.6 + r0 * 0.3;
+        ctx.beginPath();
+        ctx.arc(x + ox, y - dir * oy, rr, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      // spray, thrown clear
+      for (let c = 0; c < 3; c++){
+        const ox = (rnd(i, c + 60) - 0.5) * r0 * 7;
+        const oy = r0 * (2.2 + rnd(i, c + 80) * 3.4);
+        ctx.beginPath();
+        ctx.arc(x + ox, y - dir * oy, Math.max(0.5, r0 * 0.16), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  });
+}
+
+function lineWaveRender(channels, ctx){
+  const w = ctx.canvas.width, h = ctx.canvas.height, mid = h / 2;
+  // Fewer columns than the filled renderer: every column here is drawn N times
+  // over, once per contour, so this is where the cost lives.
+  const cols = Math.max(24, Math.min(460, Math.floor(w / 4)));
+  const top = envelope(channels[0], cols);
+  const bottom = envelope(channels[1] || channels[0], cols);
+  const peak = Math.max(...top, ...bottom) || 1;
+  const scale = (mid - h * 0.09) / peak;          // room for the foam to break above the crest
+  ctx.clearRect(0, 0, w, h);
+  // WaveSurfer hands this the wave (or progress) colour as a fill; the drawing
+  // is mostly strokes, so take the ink from it.
+  ctx.strokeStyle = ctx.fillStyle;
+  // Left channel above the waterline, right channel below, each drawn from its
+  // own envelope with its own linework. Centred material comes out very nearly
+  // symmetrical; anything panned visibly leans.
+  lineSide(ctx, top, w, h, mid, 1, scale, 1);
+  lineSide(ctx, bottom, w, h, mid, -1, scale, 7.31);
+}
+
 const waveOpts = () => {
   const caps = num('--wave-caps', 0) === 1;
+  const lines = num('--wave-lines', 0) === 1;      // drawn water, not filled
   return {
     height: WAVE_H,
-    ...(caps ? { renderFunction: oceanRender } : {}),
+    ...(lines ? { renderFunction: lineWaveRender }
+              : caps ? { renderFunction: oceanRender } : {}),
     // Ahead of the playhead it is still water — same depth gradient, dark at
     // the waterline and lifting towards the surface — but no foam: the crest
     // tops out grey. Behind the playhead the swell has broken (below).
-    waveColor: caps
-      ? waveFill('#5e626c', '#4b4e57', '#2b2e35', '#181a1f')
+    // The line style takes flat ink instead of a gradient: a gradient down a
+    // hairline stroke just muddies it. Unplayed water is drawn in a dim grey,
+    // so the caps only break white once the playhead has been through.
+    waveColor: lines ? '#464b57'
+      : caps ? waveFill('#5e626c', '#4b4e57', '#2b2e35', '#181a1f')
       : cssVar('--wave'),
-    progressColor: caps
-      ? waveFill('#ffffff', '#c8cbd3', '#5f636e', '#3a3d45')
+    progressColor: lines ? '#ffffff'
+      : caps ? waveFill('#ffffff', '#c8cbd3', '#5f636e', '#3a3d45')
       : cssVar('--wave-prog'),
     cursorColor: '#ffffff', cursorWidth: 1,
     barWidth: num('--bar-w', 2), barGap: num('--bar-gap', 2), barRadius: num('--bar-radius', 3),
@@ -1076,6 +1536,10 @@ function applyDeepLink(){
   }
   buildOrder(i);
   openSong(i, false, vi); // opened paused — browsers block autoplay on load anyway
+  // ?d=1 — a link to the song's own page rather than to the player behind it
+  try {
+    if (new URLSearchParams(location.search).get('d') && !singleMix) openProfile(i);
+  } catch {}
 }
 
 
@@ -1090,6 +1554,10 @@ function normalize(data){
         id: v.id || null, created_at: v.created_at || null,
         name: v.name || 'Version', src: publicUrl(v.src), date: v.date || '',
         changelog: v.changelog || '', changes: Array.isArray(v.changes) ? v.changes : null,
+        // Worked out once, by whoever uploaded the mix, and stored on the row —
+        // so nobody else has to download and decode a whole song to draw a
+        // thumbnail of it.
+        peaks: Array.isArray(v.peaks) ? v.peaks : null,
       }));
     else if (s.src)
       // legacy flat shape (one src, no versions array) — no version row exists,
@@ -1109,6 +1577,13 @@ function normalize(data){
       artist: s.artist || '',
       album: (s.album || '').trim() || null,   // grouping; falls back to band name
       cover: publicUrl(s.cover),
+      // Song-level attachments. These have to be carried through explicitly:
+      // this builds a NEW object rather than spreading the server's, so
+      // anything not named here is dropped on every load — which is exactly
+      // how an attached reference used to survive until you refreshed.
+      link: s.link || null,
+      reference: s.reference || null,
+      lyrics: s.lyrics || null,
       versions,
     };
   }).filter(Boolean);
@@ -1145,15 +1620,16 @@ function renderList() {
         <span class="ec danger" data-act="trash" title="Move “${esc(s.title)}” to the trash">🗑</span>
       </div>`
     : `<div class="right" data-dur="${i}"></div>
-      <div class="sopen" title="Open “${esc(s.title)}” without playing — waveform, versions and comments">▤</div>
+      <div class="sopen" title="Open “${esc(s.title)}” — its own page, without playing: the stack, the comments and the links (d)">▤</div>
       <div class="scpy" title="Copy share link to “${esc(s.title)}” — the whole stack">🔗</div>
       ${s.folder ? `<div class="sdel" title="Move “${esc(s.title)}” to the trash">🗑</div>` : ''}`;
     return `
     <div class="song ${n>1?'stacked':''}" data-i="${i}">
+      <canvas class="swave" data-wave="${i}" aria-hidden="true"></canvas>
       <div class="idx"><span class="num">${i+1}</span><span class="bars"><span></span><span></span><span></span></span></div>
       ${(() => { const a = artOf(s); return a ? `<img class="sart" src="${esc(a.src)}" alt="" loading="lazy" title="${esc(a.title)}" />` : ''; })()}
       <div class="meta">
-        <div class="title">${esc(s.title)}</div>
+        <div class="title${editing ? '' : ' titlelink'}">${esc(s.title)}</div>
         <div class="sub">
           ${s.artist ? `<span>${esc(s.artist)}</span>` : ''}
           ${n>1 ? `<span class="badge">⌥ ${n} versions</span>` : `<span class="badge dim">1 version</span>`}
@@ -1163,6 +1639,7 @@ function renderList() {
       ${tail}
     </div>`;
   }).join('');
+  requestAnimationFrame(fillRowWaves);   // the ghost waveform behind each row
   $('list').querySelectorAll('.song').forEach(el => {
     el.addEventListener('click', (e) => {
       const i = Number(el.dataset.i);
@@ -1177,9 +1654,10 @@ function renderList() {
       if (e.target.closest('.sdel')) return;
       const cp = e.target.closest('.scpy');
       if (cp){ copyText(shareUrl(songs[i]), cp); return; }
-      // ▤ opens the song silently: the stack, the waveform and the comments,
-      // with nothing playing. Anywhere else on the row still plays it.
-      if (e.target.closest('.sopen')){ buildOrder(i); openSong(i, false); return; }
+      // The title and ▤ are the same door, the way a Bandcamp track listing
+      // works: the row plays the song, the title opens the song's own page —
+      // which opens paused, so it is also "open it without playing".
+      if (e.target.closest('.sopen') || e.target.closest('.title')){ openProfile(i); return; }
       playSong(i);
     });
     const del = el.querySelector('.sdel');
@@ -1189,6 +1667,100 @@ function renderList() {
     });
   });
 }
+
+// ---------- The ghost waveform behind each row ----------
+// The shape of a song, before you play it. Decoding a whole mix for a thumbnail
+// is not cheap, so the peaks are worked out once per mix and kept — in memory
+// for this page, and in localStorage for the next visit — and the rows are
+// filled in one at a time in the background rather than all at once, so a
+// library never blocks the page while it draws itself.
+const peaksMem = new Map();          // src -> number[]
+const PEAK_N = 240;
+
+async function peaksFor(src, ver){
+  if (peaksMem.has(src)) return peaksMem.get(src);
+  // Already computed by whoever uploaded it: nothing to do.
+  if (ver && Array.isArray(ver.peaks) && ver.peaks.length){
+    peaksMem.set(src, ver.peaks);
+    return ver.peaks;
+  }
+  const key = 'mp_pk1_' + src;
+  try {
+    const cached = localStorage.getItem(key);
+    if (cached){ const p = JSON.parse(cached); peaksMem.set(src, p); return p; }
+  } catch {}
+
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  const ac = new AC();
+  try {
+    const buf = await (await fetch(src)).arrayBuffer();
+    const audio = await ac.decodeAudioData(buf);
+    const data = audio.getChannelData(0);
+    const step = Math.max(1, Math.floor(data.length / PEAK_N));
+    const out = [];
+    for (let i = 0; i < PEAK_N; i++){
+      let m = 0;
+      // every 17th sample is plenty for a thumbnail and keeps this quick
+      for (let j = i * step, end = Math.min(data.length, j + step); j < end; j += 17){
+        const v = Math.abs(data[j]); if (v > m) m = v;
+      }
+      out.push(+m.toFixed(3));
+    }
+    const peak = Math.max(...out) || 1;
+    const norm = out.map(v => +(v / peak).toFixed(3));
+    peaksMem.set(src, norm);
+    try { localStorage.setItem(key, JSON.stringify(norm)); } catch {}   // quota: fine to lose
+    // Having paid for the decode, hand the result to the band so no one else
+    // has to. Best effort — an old schema or a shared view just skips it.
+    if (ver && ver.id && isAuthed(curBand) && !document.body.classList.contains('shared')){
+      libRpc('set_version_peaks', { vid: ver.id, pk: norm }).catch(() => {});
+    }
+    return norm;
+  } catch { return null; }
+  finally { try { ac.close(); } catch {} }
+}
+
+function paintRowWave(cv, peaks){
+  const r = cv.getBoundingClientRect();
+  if (!r.width || !peaks) return;
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  cv.width = Math.round(r.width * dpr);
+  cv.height = Math.round(r.height * dpr);
+  const c = cv.getContext('2d');
+  const w = cv.width, h = cv.height, mid = h / 2;
+  c.clearRect(0, 0, w, h);
+  c.fillStyle = cssVar('--wave-prog') || '#fff';
+  const bw = w / peaks.length;
+  peaks.forEach((v, i) => {
+    const bh = Math.max(dpr, v * (h * 0.86));
+    c.fillRect(i * bw, mid - bh / 2, Math.max(dpr, bw * 0.62), bh);
+  });
+}
+
+let waveFillRun = 0;
+async function fillRowWaves(){
+  const run = ++waveFillRun;
+  const canvases = [...document.querySelectorAll('.song .swave')];
+  for (const cv of canvases){
+    if (run !== waveFillRun) return;                 // the list re-rendered
+    const s = songs[Number(cv.dataset.wave)];
+    const ver = s && s.versions[0];
+    const src = ver && ver.src;
+    if (!src) continue;
+    // already known? paint immediately. otherwise decode, then paint.
+    const p = peaksMem.get(src) || await peaksFor(src, ver);
+    if (run !== waveFillRun) return;
+    if (p) paintRowWave(cv, p);
+  }
+}
+window.addEventListener('resize', () => {
+  document.querySelectorAll('.song .swave').forEach(cv => {
+    const s = songs[Number(cv.dataset.wave)];
+    const src = s && s.versions[0] && s.versions[0].src;
+    if (src && peaksMem.has(src)) paintRowWave(cv, peaksMem.get(src));
+  });
+});
 
 // ---------- Edit mode (pencil): reorder / rename / stack / unstack / trash ----------
 let editing = false;
@@ -1487,7 +2059,9 @@ function switchVersion(vi){
     $('durTime').textContent = fmt(to.getDuration());
     $('curTime').textContent = fmt(to.getCurrentTime());
     updateNow(); renderVersions(); renderMarkers(); renderVlog();
-    if ($('drawer').classList.contains('open')) renderComments();
+    // The comment list is version-scoped, so it has to follow the swap wherever
+    // it currently is: in the drawer, or on the song's own page.
+    if (profiling || $('drawer').classList.contains('open')) renderComments();
   };
   if (readyByVer[vi] === true) doSwap();
   else { renderVersions(); to.once('ready', doSwap); } // chip pulses until buffered
@@ -1526,6 +2100,7 @@ function renderVersions(){
   const dd = $('verdrop');
   if (!activeSong){ dd.style.display = 'none'; dd.classList.remove('open'); return; }
   dd.style.display = '';
+  if (profiling) renderProfileVersions();     // the same stack, laid out flat
   const ver = activeSong.versions[activeVer];
   $('verDot').className = dotCls(activeVer);
   $('verName').textContent = ver.name;
@@ -1623,8 +2198,10 @@ const artOf = (song) => (song && song.folder) ? artFor[song.folder] : null;
 
 function updateNow(){
   if (!activeSong) return;
+  if (profiling) renderProfile();      // the profile follows the song, not the other way round
   const ver = activeSong.versions[activeVer];
   $('nowTitle').textContent = activeSong.title;
+  $('nowTitle').classList.toggle('titlelink', !singleMix);
   $('nowArtist').textContent = [activeSong.artist, ver.name].filter(Boolean).join(' · ');
   const cover = $('nowCover');
   // Linked artwork IS this track's cover. Anything set on the song row itself
@@ -1875,11 +2452,20 @@ function moveRiders(w){
     boat.style.setProperty('--heading', turn.toFixed(1) + 'deg');
   }
   if (horse){
-    // Swimming in the wake, a little astern and a beat behind the turns.
-    const back = wakeTrail[Math.max(0, wakeTrail.length - 9)];
+    // Swimming well astern, and a good beat behind the turns — it answers the
+    // helm late, the way anything under its own power does behind a ship.
+    const back = wakeTrail[Math.max(0, wakeTrail.length - 20)];
+    let hy = back ? back.y : y;
+    if (plan){
+      // …and it swings wider than she does. A horse cannot hold a line the way
+      // a rudder can, so its deviation off the waterline is exaggerated —
+      // clamped so it never swims out through the top or the bottom.
+      const mid = WAVE_H / 2;
+      hy = Math.max(5, Math.min(WAVE_H - 5, mid + (hy - mid) * 1.35));
+    }
     horse.style.opacity = '1';
-    horse.style.left = (plan ? Math.max(0, prog - 0.012) : prog) * 100 + '%';
-    horse.style.top = (plan ? (back ? back.y : y) : swellTop(w, prog, -1)) + 'px';
+    horse.style.left = (plan ? Math.max(0, prog - 0.03) : prog) * 100 + '%';
+    horse.style.top = (plan ? hy : swellTop(w, prog, -1)) + 'px';
   }
 
   if (plan){
@@ -1932,16 +2518,44 @@ function hailBuoys(t){
     if (!el.classList.contains('hailed') && mt <= t && mt > lastHailT - 0.4){
       el.classList.add('hailed', 'calling');
       setTimeout(() => el.classList.remove('calling'), 4200);
+      const tip = el.querySelector('.tip');
+      if (tip) runTicker(tip.textContent);
     }
   });
   lastHailT = t;
 }
+
+// Send one message across the foot of the water. The run is measured rather
+// than guessed — the container's width plus the message's own — so it always
+// travels at the same reading pace whether it is three words or thirty, and a
+// long comment simply takes longer to go by. A new hail replaces whatever was
+// still running.
+const TICKER_SPEED = 150;            // pixels a second
+function runTicker(text){
+  const bar = $('waveTicker'), span = $('waveTickerText');
+  if (!bar || !span || !text) return;
+  span.textContent = text;
+  bar.classList.remove('run', 'on');
+  void bar.offsetWidth;                       // restart the animation
+  const dist = bar.clientWidth + span.scrollWidth;
+  // Floor so a one-word comment does not flick past; ceiling so a long one
+  // cannot hold the lane for half the song.
+  const secs = Math.min(16, Math.max(4, dist / TICKER_SPEED));
+  span.style.setProperty('--from', bar.clientWidth + 'px');
+  span.style.setProperty('--to', -span.scrollWidth + 'px');
+  span.style.setProperty('--dur', secs.toFixed(1) + 's');
+  bar.classList.add('run', 'on');
+  clearTimeout(tickerOff);
+  tickerOff = setTimeout(() => bar.classList.remove('on', 'run'), secs * 1000 + 400);
+}
+let tickerOff = null;
 
 function renderComments(){
   const list = activeSong ? commentsForActiveVersion() : [];
   const ver = activeSong ? activeSong.versions[activeVer] : null;
   const verName = ver ? ver.name : '';
   $('cCount').textContent = list.length;
+  if (profiling && activeSong){ renderProfileChips(); renderProfileVersions(); }
   $('cdlBtn').disabled = !activeSong || !rootsFor(activeSong.id).length;
   $('cdrawerHint').textContent = activeSong ? `on “${activeSong.title}”${verName ? ` · ${verName}` : ''}` : '';
   if (!activeSong){ $('clist').innerHTML = `<div class="cempty">Play a song to leave comments.</div>`; return; }
@@ -2096,11 +2710,15 @@ $('cdlBtn').onclick = downloadComments;
 // it floats on the surface — the marker sits at the height of the swell at its
 // own timestamp, not on a fixed line — and calls out what it says as the ship
 // goes past. Everywhere else it stays the plain 💬 tick it has always been.
+// Orange, because that is what a real one is and because it is the one thing
+// out here that is not the ship's own black and white — a comment should be
+// findable at a glance against all that dazzle.
 const BUOY_SVG = `<svg class="buoy" viewBox="0 0 16 22" aria-hidden="true">
-  <path d="M8 0.5 V6" stroke="#fff" stroke-width="1.2"/>
-  <circle cx="8" cy="1.6" r="1.7" fill="#fff"/>
-  <path d="M3.2 8 H12.8 L11 17 H5 Z" fill="url(#dzl)" stroke="#08080a" stroke-width="1.1"
+  <path d="M8 0.5 V6.4" stroke="#ff8a1f" stroke-width="1.3"/>
+  <circle cx="8" cy="1.5" r="1.8" fill="#ff8a1f" stroke="#08080a" stroke-width=".5"/>
+  <path d="M3.2 8 H12.8 L11 17 H5 Z" fill="#ff8a1f" stroke="#08080a" stroke-width="1.1"
         stroke-linejoin="round" paint-order="stroke fill"/>
+  <path d="M3.6 11.4 H12.4 M4.3 14.2 H11.7" stroke="#08080a" stroke-width="1.1"/>
   <path d="M2.4 17.2 H13.6" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>
 </svg>`;
 
@@ -2893,6 +3511,285 @@ function openLyrics(open){
 }
 $('lyricToggle').onclick = () => openLyrics(!$('lyricDrawer').classList.contains('open'));
 
+// ---------- Song profile ----------
+// Bandcamp's shape, with more in it: the library plays straight through, but a
+// song also has a page of its own. What makes it cheap is that none of it is a
+// copy — the timeline (and with it the waveform, the buoys, the boat and the
+// horse) and the comment composer are MOVED here out of the dock, then moved
+// back on the way out. One WaveSurfer per version for the life of the song, no
+// second download, no second set of handlers to keep in step, and the audio
+// carries on playing while the page opens around it.
+let profiling = false;
+let waveHome = null, cmtHome = null;   // where the borrowed pieces go back to
+let urlBeforeProfile = null;
+
+function borrowForProfile(){
+  const tl = $('wavewrap').closest('.timeline');
+  if (tl && !waveHome){
+    waveHome = { parent: tl.parentNode, next: tl.nextSibling };
+    $('pWave').appendChild(tl);
+  }
+  const pad = $('drawer').querySelector('.pad');
+  if (pad && !cmtHome){
+    cmtHome = { parent: pad.parentNode, next: pad.nextSibling };
+    $('pCommentHost').appendChild(pad);
+  }
+}
+function returnFromProfile(){
+  const tl = $('pWave').querySelector('.timeline');
+  if (tl && waveHome) waveHome.parent.insertBefore(tl, waveHome.next);
+  const pad = $('pCommentHost').querySelector('.pad');
+  if (pad && cmtHome) cmtHome.parent.insertBefore(pad, cmtHome.next);
+  waveHome = cmtHome = null;
+}
+
+// Grow the water, and everything measured against it grows too: the depth
+// gradient, the boat's rise, the horse's dive. WaveSurfer keeps its decoded
+// peaks through this, so it is a redraw and not a reload.
+function setWaveHeight(h){
+  if (WAVE_H === h) return;
+  WAVE_H = h;
+  const o = waveOpts();
+  wsByVer.forEach(w => {
+    if (!w) return;
+    try { w.setOptions({ height: o.height, waveColor: o.waveColor, progressColor: o.progressColor }); } catch {}
+  });
+  wakeTrail = [];
+  renderMarkers();
+}
+
+function openProfile(i){
+  if (singleMix || !songs.length) return;
+  const idx = (i === undefined || i === null) ? activeSongIndex : i;
+  if (idx === -1 || !songs[idx]) return;
+  if (idx !== activeSongIndex){ buildOrder(idx); openSong(idx, false); }
+  if (!profiling){
+    profiling = true;
+    urlBeforeProfile = location.search;
+    document.body.classList.add('profiling');
+    // the drawers are about to lose their contents — and this page is all of
+    // what they were showing anyway
+    openDrawer(false); openVlog(false); openLyrics(false);
+    borrowForProfile();
+    setWaveHeight(profWaveH());
+    window.scrollTo(0, 0);
+  }
+  renderProfile();
+  markProfileUrl(true);
+}
+
+function closeProfile(){
+  if (!profiling) return;
+  profiling = false;
+  document.body.classList.remove('profiling');
+  returnFromProfile();
+  setWaveHeight(DOCK_WAVE_H);
+  markProfileUrl(false);
+  renderList();
+  if (activeSongIndex !== -1) highlight(activeSongIndex);
+  // renderList wiped the duration cells — restore the active one
+  const w = curWS();
+  if (!editing && w && readyByVer[activeVer] === true){
+    const cell = document.querySelector(`.right[data-dur="${activeSongIndex}"]`);
+    if (cell) cell.textContent = fmt(w.getDuration());
+  }
+}
+
+// The page has an address, so it can be sent. Closing puts back exactly the
+// query the library was on, rather than leaving a song hanging in the bar.
+function markProfileUrl(on){
+  try {
+    const u = new URL(location.href);
+    if (on && activeSong){
+      if (curBand) u.searchParams.set('b', curBand);
+      u.searchParams.set('s', activeSong.folder || activeSong.title);
+      u.searchParams.delete('v');
+      u.searchParams.set('d', '1');
+      history.replaceState(null, '', u.pathname + '?' + u.searchParams.toString());
+    } else {
+      // Put back the query the library was on — minus the flag, even if the
+      // link that opened this page carried it. Otherwise closing the page and
+      // reloading would open it straight back up.
+      const back = new URLSearchParams(urlBeforeProfile || '');
+      back.delete('d');
+      const q = back.toString();
+      history.replaceState(null, '', u.pathname + (q ? '?' + q : ''));
+    }
+  } catch {}
+}
+
+function renderProfile(){
+  if (!profiling || !activeSong) return;
+  const s = activeSong;
+  const art = artOf(s);
+  const cover = s.cover || (art && art.src);
+  const el = $('pArt');
+  if (cover){
+    el.src = cover; el.style.display = '';
+    el.title = art ? `${art.title} — open in Sn'art` : '';
+    el.style.cursor = art ? 'pointer' : 'default';
+  } else el.style.display = 'none';
+
+  $('pTitle').textContent = s.title;
+  $('pSub').textContent = [s.artist, s.album].filter(Boolean).join(' · ');
+  renderProfileChips();
+  renderProfileVersions();
+  renderProfileLinks();
+}
+
+// Kept separate from the rest of the header because the comment pool arrives
+// after the page does: the chips have to be able to catch up on their own,
+// without rebuilding the links panel out from under a half-typed address.
+function renderProfileChips(){
+  if (!profiling || !activeSong) return;
+  const s = activeSong;
+  const art = artOf(s);
+  const cc = countComments(s.id);
+  const n = s.versions.length;
+  $('pChips').innerHTML =
+      `<span class="badge">${n} version${n === 1 ? '' : 's'}</span>`
+    + (cc ? `<span class="badge dim">💬 ${cc} comment${cc === 1 ? '' : 's'}</span>` : '')
+    + (s.lyrics ? `<span class="badge dim">📝 lyrics</span>` : '')
+    + (s.reference ? `<span class="badge dim">🎧 reference</span>` : '')
+    + (art ? `<span class="badge dim">🎨 ${esc(art.title)}</span>` : '');
+}
+
+// The chooser the dock's little menu could never be: every version with its
+// date, its length, what changed in it and how much of the conversation is
+// hanging off it — all readable at once instead of one line at a time.
+function renderProfileVersions(){
+  if (!profiling || !activeSong) return;
+  const s = activeSong;
+  $('pVerCount').textContent = s.versions.length;
+  const roots = commentsFor(s.id).filter(c => !c.parentId);
+  $('pVers').innerHTML = s.versions.map((v, vi) => {
+    const w = wsByVer[vi];
+    const dur = (readyByVer[vi] === true && w) ? fmt(w.getDuration()) : '';
+    const cn = roots.filter(c => c.versionId === v.id).length;
+    const sub = [v.date || '', dur, cn ? `💬 ${cn}` : ''].filter(Boolean).join(' · ');
+    return `
+    <div class="pver ${vi === activeVer ? 'on' : ''}" data-vi="${vi}"
+         title="${readyByVer[vi] === 'failed' ? esc(v.name) + ' failed to load — click to retry'
+                                              : 'Switch to ' + esc(v.name) + ' — keeps the playback position'}">
+      <span class="${dotCls(vi)}"></span>
+      <div style="min-width:0">
+        <div class="pvname"><span class="nm">${esc(v.name)}</span>${vi === 0 ? '<span class="latest">LATEST</span>' : ''}</div>
+        ${sub ? `<div class="pvsub">${esc(sub)}</div>` : ''}
+        ${v.changelog ? `<div class="pvlog">${esc(v.changelog)}</div>` : ''}
+      </div>
+      <div class="pvacts">
+        <span class="pv" data-act="play" title="Play ${esc(v.name)} from the top">▶</span>
+        <span class="pv" data-act="share" title="Copy a link to ${esc(v.name)} — plays without a password">🔗</span>
+        <span class="pv" data-act="audio" title="Copy a direct link to the audio file">🎵</span>
+        <a class="pv" href="${esc(v.src)}" download="${esc(s.title)} — ${esc(v.name)}${esc(extOf(v.src))}"
+           title="Download ${esc(v.name)}">⬇</a>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+$('pVers').addEventListener('click', (e) => {
+  const row = e.target.closest('.pver');
+  if (!row || !activeSong) return;
+  const vi = Number(row.dataset.vi);
+  const v = activeSong.versions[vi];
+  if (!v) return;
+  const act = e.target.closest('[data-act]');
+  if (act && act.dataset.act === 'share'){ copyText(shareUrl(activeSong, v), act); return; }
+  if (act && act.dataset.act === 'audio'){ copyText(audioUrl(v), act); return; }
+  if (e.target.closest('a.pv')) return;                    // the download link
+  if (vi !== activeVer) switchVersion(vi);
+  if (act && act.dataset.act === 'play'){
+    const go = () => { const w = wsByVer[vi]; if (w) { w.setTime(0); w.play(); } };
+    readyByVer[vi] === true ? go() : setTimeout(go, 350);
+  }
+});
+
+const shortUrl = (u) => {
+  try { const x = new URL(u); return x.hostname.replace(/^www\./, '') + (x.pathname === '/' ? '' : x.pathname); }
+  catch { return u; }
+};
+
+// Where the rest of this song lives. The words are a link rather than a
+// document: the band already writes them somewhere, and the honest answer to
+// "where are the lyrics" is usually an address.
+function renderProfileLinks(){
+  if (!profiling || !activeSong) return;
+  const s = activeSong;
+  const owner = document.body.classList.contains('authed') && !document.body.classList.contains('shared');
+  const art = artOf(s);
+  const ref = s.reference;
+  $('pLinks').innerHTML = `
+    <div class="plink">
+      <div class="plk">Lyrics</div>
+      ${s.lyrics
+        ? `<a class="plv" href="${esc(s.lyrics)}" target="_blank" rel="noopener noreferrer">${esc(shortUrl(s.lyrics))} ↗</a>`
+        : `<div class="plv none">No link yet</div>`}
+      ${owner ? `<div class="plrow">
+        <input type="url" id="pLyricUrl" placeholder="https://…" maxlength="2000" value="${esc(s.lyrics || '')}" />
+        <button class="btn" id="pLyricSave">Save</button>
+        ${s.lyrics ? `<button class="btn" id="pLyricClear">Clear</button>` : ''}
+      </div>` : ''}
+      <div class="phint">Wherever the words actually live — a shared doc, a note, a page. Any http(s) address, and it opens in its own tab.</div>
+    </div>
+
+    <div class="plink">
+      <div class="plk">Reference</div>
+      <div class="plv ${ref ? '' : 'none'}">${ref ? esc(ref.title || shortUrl(ref.src)) : 'Nothing attached'}</div>
+      <div class="plrow"><button class="btn" id="pRefOpen">${ref ? 'Compare against the mixes' : 'Attach a reference'}</button></div>
+    </div>
+
+    ${art ? `<div class="plink">
+      <div class="plk">Artwork</div>
+      <div class="plv">${esc(art.title)}</div>
+      <div class="plrow"><a class="btn" href="art.html?b=${encodeURIComponent(curBand || '')}&s=${encodeURIComponent(art.folder || '')}">Open in Sn'art ↗</a></div>
+    </div>` : ''}
+
+    <div class="plink">
+      <div class="plk">Share</div>
+      <div class="plrow"><button class="btn" id="pShareStack">Copy a link to this song</button></div>
+      <div class="phint">Opens the whole stack, and asks for the band password. A single mix plays without one — that link is on each version's 🔗.</div>
+    </div>`;
+
+  const save = $('pLyricSave'), clear = $('pLyricClear'), inp = $('pLyricUrl');
+  if (save) save.onclick = () => saveLyricsUrl(inp.value.trim());
+  if (clear) clear.onclick = () => { if (confirm('Remove the lyrics link from this song?')) saveLyricsUrl(''); };
+  if (inp) inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter'){ e.preventDefault(); saveLyricsUrl(inp.value.trim()); }
+  });
+  $('pRefOpen').onclick = () => openReference();
+  $('pShareStack').onclick = () => copyText(shareUrl(activeSong), $('pShareStack'));
+}
+
+async function saveLyricsUrl(url){
+  const s = activeSong;
+  if (!s) return;
+  if (url && !/^https?:\/\//i.test(url)){
+    alert('A lyrics link has to start with http:// or https://');
+    return;
+  }
+  try { await libRpc('set_song_lyrics_url', { f: s.folder || s.title, url: url || null }); }
+  catch (err){ alert('Could not save that link: ' + (err.message || err)); return; }
+  s.lyrics = url || null;
+  renderProfile();
+}
+
+$('pBack').onclick = () => closeProfile();
+$('pShare').onclick = () => { if (activeSong) copyText(shareUrl(activeSong), $('pShare')); };
+$('pPrevSong').onclick = () => stepProfile(-1);
+$('pNextSong').onclick = () => stepProfile(1);
+function stepProfile(d){
+  if (activeSongIndex === -1 || !songs.length) return;
+  const i = (activeSongIndex + d + songs.length) % songs.length;
+  buildOrder(i); openSong(i, false); openProfile(i);
+  window.scrollTo(0, 0);
+}
+$('pArt').onclick = () => {
+  const art = activeSong && artOf(activeSong);
+  if (art && curBand)
+    location.href = 'art.html?b=' + encodeURIComponent(curBand) + '&s=' + encodeURIComponent(art.folder || '');
+};
+
 // ---------- To-do (every thread on this song, GitHub-issues style) ----------
 let todoTab = 'open';
 function renderTodo(){
@@ -2968,6 +3865,13 @@ $('todoTabClosed').onclick  = () => { todoTab = 'resolved'; renderTodo(); };
 
 function openDrawer(open){
   if (singleMix) return;   // comments are band-only; the shared-mix view has none
+  // On the song's own page the comments are already there, in full — the
+  // drawer's body is literally the thing sitting in it. Go to it instead.
+  if (profiling && open){
+    $('pCommentHost').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const box = $('cinput'); if (box) box.focus({ preventScroll: true });
+    return;
+  }
   if (open){ $('vlogDrawer').classList.remove('open'); $('vlogToggle').classList.remove('active'); }
   if (open){ $('lyricDrawer').classList.remove('open'); $('lyricToggle').classList.remove('active'); }
   $('drawer').classList.toggle('open', open); $('cToggle').classList.toggle('active', open);
@@ -3350,6 +4254,7 @@ document.addEventListener('keydown', (e) => {
     if (!document.body.classList.contains('locked')) $('gateModal').classList.remove('open');
     if (pickCloser) pickCloser(null);
     else if (editing) setEditing(false);
+    else if (profiling) closeProfile();
     return;
   }
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
@@ -3364,6 +4269,7 @@ document.addEventListener('keydown', (e) => {
     case 'c': openDrawer(!$('drawer').classList.contains('open')); break;
     case 'l': openLyrics(!$('lyricDrawer').classList.contains('open')); break;
     case 'f': openReference(); break;
+    case 'd': profiling ? closeProfile() : openProfile(); break;
     case 'v': openVlog(!$('vlogDrawer').classList.contains('open')); break;
     default:
       // number keys 1-9 switch versions
@@ -3385,7 +4291,13 @@ function setMediaSession(){
   navigator.mediaSession.setActionHandler('nexttrack', () => next(false));
 }
 
-window.addEventListener('resize', renderMarkers);
+// The now-playing title is a door too, same as the one in the list.
+$('nowTitle').addEventListener('click', () => { if (!singleMix && activeSong) openProfile(); });
+
+window.addEventListener('resize', () => {
+  if (profiling) setWaveHeight(profWaveH());   // the water follows the window
+  renderMarkers();
+});
 init();
 </script>
 </body>

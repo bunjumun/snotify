@@ -125,9 +125,11 @@ function applyTheme(band){
 // the ship is facing. Repeating a single stripe pattern gets none of that, so
 // the pattern is generated instead of written by hand.
 //
-// Everything is seeded, so a given surface paints the same way on every load
-// (a page that reshuffles its camouflage on each render is a nightmare), while
-// different surfaces get genuinely different schemes.
+// Everything is seeded, so a surface paints identically for a given seed and
+// different surfaces get genuinely different schemes. The page-level scheme
+// draws fresh seeds on each load (see paintDazzle); the generator itself is
+// deterministic, which is what lets the dazzle workshop reproduce a design
+// from its seed number.
 
 // mulberry32 — small, fast, and identical across browsers for a given seed.
 function rng(seed){
@@ -274,12 +276,18 @@ const dazzleURL = (opts) =>
 
 // Paint the theme's surfaces. The CSS keeps using var(--dazzle) and friends —
 // only what those variables contain changes.
+// A fresh scheme every time the page loads. No two ships in a dazzle fleet
+// were painted alike and none of them were repainted twice the same, so the
+// seeds are drawn at load rather than fixed. The four surfaces still get
+// different seeds from each other, so they never fall into step — it is one
+// ship's worth of scheme, freshly painted, not four copies of one pattern.
 function paintDazzle(){
   const b = document.body.style;
-  b.setProperty('--dazzle',     dazzleURL({ w: 1400, h: 140, seed: 20260810, cuts: 8, scale: 1.1 }));   // 2 tones, full conflict
-  b.setProperty('--dazzle-2',   dazzleURL({ w: 1400, h: 120, seed: 771903,   cuts: 9, scale: 0.72 }));
-  b.setProperty('--dazzle-narrow', dazzleURL({ w: 120, h: 900, seed: 40412,  cuts: 7, scale: 0.9 }));
-  b.setProperty('--dazzle-bg',  dazzleURL({ w: 1600, h: 1000, seed: 5150,    cuts: 11, scale: 2.2,
+  const s = () => (Math.random() * 0xffffffff) >>> 0;
+  b.setProperty('--dazzle',     dazzleURL({ w: 1400, h: 140, seed: s(), cuts: 8, scale: 1.1 }));   // 2 tones, full conflict
+  b.setProperty('--dazzle-2',   dazzleURL({ w: 1400, h: 120, seed: s(), cuts: 9, scale: 0.72 }));
+  b.setProperty('--dazzle-narrow', dazzleURL({ w: 120, h: 900, seed: s(), cuts: 7, scale: 0.9 }));
+  b.setProperty('--dazzle-bg',  dazzleURL({ w: 1600, h: 1000, seed: s(), cuts: 11, scale: 2.2,
                                             ink: 'rgba(255,255,255,.055)', ground: 'rgba(0,0,0,0)' }));
 }
 

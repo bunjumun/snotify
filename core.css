@@ -40,6 +40,17 @@
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+/* iOS Safari inflates text inside narrow blocks — "text autosizing" — and no
+   other engine does it, so it is invisible in any desktop browser. Inflated
+   text widens what each grid item claims as its minimum, the song row's fixed
+   column track overflows, and because the dazzle theme clips that row the
+   number, artwork, title, badges and buttons were all cut away. What was left
+   was the waveform and the hull plate: the only two things in the row that are
+   inset-positioned and so can never overflow. Hence "no titles on iPhone" while
+   every other browser looked perfect.
+   Opting out is the conventional fix, and the reason this line is in every CSS
+   reset ever written. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   margin: 0;
   background: radial-gradient(1200px 600px at 50% -10%, #1a1c26 0%, var(--bg) 55%) fixed;

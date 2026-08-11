@@ -7,7 +7,7 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=28" />
+<link rel="stylesheet" href="core.css?v=29" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
@@ -18,7 +18,14 @@
   .songlist { display: flex; flex-direction: column; gap: 6px; }
   .song {
     position: relative;
-    display: grid; grid-template-columns: 30px auto 1fr auto auto auto auto; align-items: center; gap: 14px;
+    /* Flex, not grid. This row's children are optional — artwork, the version
+       picker, the delete button all come and go — and a grid needs its column
+       list counted by hand to match, which drifts the moment a control is
+       added and overflows the row when it doesn't. A flex row does not care
+       how many children there are: one flexible middle that is allowed to
+       shrink to nothing, everything else its own size. It cannot overflow, so
+       it cannot be clipped away. */
+    display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
     padding: 12px 14px; border-radius: 10px; background: var(--bg-row);
     border: 1px solid transparent; cursor: pointer;
     transition: background .12s, border-color .12s; user-select: none;
@@ -44,7 +51,21 @@
   @keyframes eq { 0%,100%{height:30%} 50%{height:100%} }
   .song.playing .idx .num { display: none; } .song.playing .idx .bars { display: inline-flex; }
 
-  .song .meta { min-width: 0; }
+  /* The one part that gives. Everything else keeps its size; the title column
+     absorbs whatever is left and ellipsises, however wide the screen and
+     however much iOS decides to inflate the type. */
+  /* The title claims a real share of the row and is never the thing that gives
+     way. A flex-basis rather than `auto`: with `auto` the controls take what
+     their content asks for and the title is squeezed to nothing, which is
+     exactly how the row failed on iOS — the words vanished while the buttons
+     stayed. Now the CONTROLS wrap to a second line when the row runs out of
+     width, and the title keeps the first. */
+  .song .meta { flex: 1 1 150px; min-width: 0; }
+  .song .idx, .song .sart { flex: none; }
+  .song .idx { width: 30px; }
+  /* The controls at the end, as one group — so adding or removing one is never
+     again a matter of counting columns somewhere else. */
+  .song .sacts { flex: 0 1 auto; margin-left: auto; display: flex; align-items: center; gap: 10px; }
   .song .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .song .sub { color: var(--text-dim); font-size: 13px; display: flex; gap: 8px; align-items: center; }
   .song .right { color: var(--text-mute); font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -557,7 +578,6 @@
     display: none; color: var(--text-mute); font-size: 14px;
     padding: 2px 7px; border-radius: 6px; cursor: pointer;
   }
-  body.authed:not(.shared):not(.singlemix) .song { grid-template-columns: 30px auto 1fr auto auto auto auto auto; }
   /* Per-song share link (the whole stack) — hover on desktop, dimmed-visible on touch */
   .song .scpy, .song .sopen {
     opacity: 0; color: var(--text-mute); font-size: 13px;
@@ -1791,13 +1811,15 @@ function renderList() {
         <span class="ec" data-act="stack" title="Stack “${esc(s.title)}” into another song as versions">⧉</span>
         <span class="ec danger" data-act="trash" title="Move “${esc(s.title)}” to the trash">🗑</span>
       </div>`
-    : `<div class="right" data-dur="${i}"></div>
-      ${n > 1 ? `<div class="vpick" title="${n} mixes — pick which one to start with">
-         <span class="vn">${n}</span><svg class="vcar" viewBox="0 0 10 6"><path d="M0 0l5 6 5-6z"/></svg>
-       </div>` : ''}
-      <div class="sopen" title="Open “${esc(s.title)}” — its own page, without playing: the stack, the comments and the links (d)">▤</div>
-      <div class="scpy" title="Copy share link to “${esc(s.title)}” — the whole stack">🔗</div>
-      ${s.folder ? `<div class="sdel" title="Delete — one mix, or “${esc(s.title)}” and all of them">🗑</div>` : ''}`;
+    : `<div class="sacts">
+        <div class="right" data-dur="${i}"></div>
+        ${n > 1 ? `<div class="vpick" title="${n} mixes — pick which one to start with">
+           <span class="vn">${n}</span><svg class="vcar" viewBox="0 0 10 6"><path d="M0 0l5 6 5-6z"/></svg>
+         </div>` : ''}
+        <div class="sopen" title="Open “${esc(s.title)}” — its own page, without playing: the stack, the comments and the links (d)">▤</div>
+        <div class="scpy" title="Copy share link to “${esc(s.title)}” — the whole stack">🔗</div>
+        ${s.folder ? `<div class="sdel" title="Delete — one mix, or “${esc(s.title)}” and all of them">🗑</div>` : ''}
+      </div>`;
     return `
     <div class="song ${n>1?'stacked':''}" data-i="${i}">
       <canvas class="swave" data-wave="${i}" aria-hidden="true"></canvas>
@@ -3203,7 +3225,9 @@ function swellTop(w, at, dir){
   return (WAVE_H / 2) * (1 - dir * v);
 }
 function refreshListBadges(){
-  if (!activeSong) return;
+  // No guard on activeSong: the comment pool arrives after the first render,
+  // and waiting for someone to press play meant a freshly loaded library
+  // showed every song with no comment count at all.
   // simplest: re-render the whole list to keep badges accurate
   // (renderList wires its own handlers — nothing extra to attach here)
   const scrollY = window.scrollY; renderList(); highlight(activeSongIndex); window.scrollTo(0, scrollY);

@@ -285,6 +285,11 @@
   }
   .pmeta { min-width: 0; }
   .pmeta h2 { margin: 0; font-size: 30px; line-height: 1.15; letter-spacing: -.5px; word-wrap: break-word; }
+  /* Editable, but quietly: a dotted underline that only turns up under the
+     pointer, so the title reads as a title until you go to change it. */
+  .pmeta h2.renameable { cursor: text; border-bottom: 1px dashed transparent; display: inline-block; }
+  .pmeta h2.renameable:hover { border-bottom-color: var(--text-mute); }
+  .pmeta h2 .inline-edit { font-size: 30px; font-weight: 700; letter-spacing: -.5px; width: 100%; }
   .psub { color: var(--text-dim); font-size: 13.5px; margin-top: 5px; }
   .pchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
 
@@ -323,6 +328,7 @@
     padding: 3px 6px; border-radius: 6px; font-size: 12.5px; line-height: 18px;
   }
   .pvacts .pv:hover { color: var(--text); background: var(--bg-row); }
+  .pvacts .pv.del:hover { color: #ff6b6b; }
 
   /* Links out: where the words live, what this is chasing, what it looks like. */
   .plink { padding: 9px 0; border-bottom: 1px solid var(--line); }
@@ -511,6 +517,10 @@
   .trash-item .btn.danger { background: transparent; color: #ff6b6b; border: 1px solid rgba(255,107,107,.4); }
   .trash-item .btn.danger:hover { background: rgba(255,107,107,.12); }
   .trash-item .btn.danger.armed { background: #ff6b6b; color: #fff; border-color: #ff6b6b; }
+  /* In the delete chooser, the row that takes everything reads as the heavier
+     of the choices before it is clicked, not after. */
+  .trash-item.pick.danger .tname { color: #ff6b6b; }
+  .trash-item.pick.danger:hover { background: rgba(255,107,107,.1); }
 
   /* Edit mode (pencil) — reorder / rename / stack / unstack / trash */
   #editBtn { display: none; }
@@ -780,6 +790,18 @@
       <div class="hint" id="pickHint" style="margin-bottom:10px"></div>
       <div id="pickList"></div>
       <div class="actions"><button class="btn ghost" id="pickCancel">Cancel</button></div>
+    </div>
+  </div>
+
+  <!-- Deleting used to be one unlabelled bin that took the whole stack without
+       asking. It now asks, and it asks the question that actually matters:
+       this mix, or all of them. -->
+  <div class="modal-back" id="delModal">
+    <div class="modal">
+      <h2 id="delTitle">Move to trash</h2>
+      <div class="hint" id="delHint" style="margin-bottom:10px"></div>
+      <div id="delList"></div>
+      <div class="actions"><button class="btn ghost" id="delCancel">Cancel</button></div>
     </div>
   </div>
 
@@ -1630,7 +1652,7 @@ function renderList() {
     : `<div class="right" data-dur="${i}"></div>
       <div class="sopen" title="Open “${esc(s.title)}” — its own page, without playing: the stack, the comments and the links (d)">▤</div>
       <div class="scpy" title="Copy share link to “${esc(s.title)}” — the whole stack">🔗</div>
-      ${s.folder ? `<div class="sdel" title="Move “${esc(s.title)}” to the trash">🗑</div>` : ''}`;
+      ${s.folder ? `<div class="sdel" title="Delete — one mix, or “${esc(s.title)}” and all of them">🗑</div>` : ''}`;
     return `
     <div class="song ${n>1?'stacked':''}" data-i="${i}">
       <canvas class="swave" data-wave="${i}" aria-hidden="true"></canvas>
@@ -1671,7 +1693,7 @@ function renderList() {
     const del = el.querySelector('.sdel');
     if (del) del.addEventListener('click', (e) => {
       e.stopPropagation();
-      trashSong(songs[Number(el.dataset.i)]);
+      deleteFlow(songs[Number(el.dataset.i)]);
     });
   });
 }
@@ -1836,7 +1858,7 @@ async function songAct(act, i){
       await libRpc('stack_songs', { from_f: key, into_f: into });
       await refreshLibrary();
     } else if (act === 'trash'){
-      await trashSong(s);               // existing flow: archives + republishes
+      await deleteFlow(s);              // asks which, then confirms
     }
   } catch (err){ alert(String(err.message || err)); }
 }
@@ -1857,8 +1879,9 @@ async function verAct(act, vi){
       if (title === null || !title.trim()) return;
       await libRpc('unstack_version', { f: key, ver_name: v.name, new_title: title.trim() });
     } else if (act === 'vtrash'){
-      if (s.versions.length === 1) return songAct('trash', activeSongIndex); // last version = the song
-      await libRpc('trash_version', { f: key, ver_name: v.name });
+      // Same flow as the bin everywhere else, so a delete always confirms and
+      // the last mix always says out loud that it is the song going.
+      return deleteFlow(s, s.versions.length > 1 ? vi : undefined);
     }
     await refreshLibrary();
   } catch (err){ alert(String(err.message || err)); }
@@ -1906,6 +1929,66 @@ function pickSong(title, hint, excludeKey){
     $('pickModal').onclick = (e) => { if (e.target === $('pickModal')) close(null); };
     $('pickModal').classList.add('open');
   });
+}
+
+// ---------- Deleting ----------
+// The bin used to take the whole stack, silently — which is how a song with
+// three mixes on it can disappear because someone meant to drop one of them.
+// Now it asks WHICH first, because that is the question you get wrong, and
+// then confirms the answer. Both ends still land in the trash, not the void.
+function askWhatToDelete(song){
+  return new Promise((resolve) => {
+    const vers = song.versions || [];
+    $('delTitle').textContent = `Delete from “${song.title}”`;
+    $('delHint').textContent = vers.length > 1
+      ? `This song has ${vers.length} mixes. Delete one of them, or the whole song and every mix on it.`
+      : 'This song has one mix, so deleting it deletes the song.';
+    $('delList').innerHTML =
+      (vers.length > 1
+        ? vers.map((v, vi) => `
+          <div class="trash-item pick" data-kind="ver" data-vi="${vi}" style="cursor:pointer">
+            <span class="tname">Just this mix — ${esc(v.name)}</span>
+            <span class="tmeta">${esc(v.date || '')}</span>
+          </div>`).join('')
+        : '')
+      + `<div class="trash-item pick danger" data-kind="song" style="cursor:pointer">
+           <span class="tname">The whole song${vers.length > 1 ? ` — all ${vers.length} mixes` : ''}</span>
+           <span class="tmeta">${esc(song.title)}</span>
+         </div>`;
+    const close = (val) => { $('delModal').classList.remove('open'); resolve(val); };
+    $('delList').querySelectorAll('.pick').forEach(el => el.onclick = () =>
+      close(el.dataset.kind === 'song' ? { kind: 'song' } : { kind: 'ver', vi: Number(el.dataset.vi) }));
+    $('delCancel').onclick = () => close(null);
+    $('delModal').onclick = (e) => { if (e.target === $('delModal')) close(null); };
+    $('delModal').classList.add('open');
+  });
+}
+
+// The bin on a row, and the bin on a mix in the song page, both come through
+// here. `only` skips the chooser for the second one — you already said which.
+async function deleteFlow(song, only){
+  if (!song || !song.folder) return;
+  const vers = song.versions || [];
+  const choice = only !== undefined ? { kind: 'ver', vi: only } : await askWhatToDelete(song);
+  if (!choice) return;
+
+  // One mix left means the mix IS the song; say so rather than emptying a
+  // stack down to nothing behind their back.
+  const wholeSong = choice.kind === 'song' || vers.length <= 1;
+  const v = vers[choice.vi];
+  const ok = wholeSong
+    ? confirm(`Move “${song.title}” and ${vers.length === 1 ? 'its mix' : `all ${vers.length} of its mixes`} to the trash?\n\nYou can put it back from 🗑 Trash.`)
+    : confirm(`Move the mix “${v.name}” to the trash?\n\n“${song.title}” keeps its other ${vers.length - 1} mix${vers.length - 1 === 1 ? '' : 'es'}. You can put it back from 🗑 Trash.`);
+  if (!ok) return;
+
+  try {
+    if (wholeSong) await trashSong(song);
+    else {
+      await libRpc('trash_version', { f: song.folder || song.title, ver_name: v.name });
+      await refreshLibrary();
+      refreshTrash();
+    }
+  } catch (err){ alert('Could not move to trash: ' + (err.message || err)); }
 }
 
 // ---------- Play order ----------
@@ -3638,7 +3721,14 @@ function renderProfile(){
     el.style.cursor = art ? 'pointer' : 'default';
   } else el.style.display = 'none';
 
+  // Renaming lives where the song does. The library has it too, but only
+  // inside edit mode, which is for rearranging a shelf — this is the page you
+  // are on when you decide the working title was never the title.
+  const owner = document.body.classList.contains('authed') && !document.body.classList.contains('shared');
   $('pTitle').textContent = s.title;
+  $('pTitle').classList.toggle('renameable', owner);
+  $('pTitle').title = owner ? 'Click to rename this song' : '';
+
   $('pSub').textContent = [s.artist, s.album].filter(Boolean).join(' · ');
   renderProfileChips();
   renderProfileVersions();
@@ -3669,6 +3759,7 @@ function renderProfileVersions(){
   if (!profiling || !activeSong) return;
   const s = activeSong;
   $('pVerCount').textContent = s.versions.length;
+  const owner = document.body.classList.contains('authed') && !document.body.classList.contains('shared');
   const roots = commentsFor(s.id).filter(c => !c.parentId);
   $('pVers').innerHTML = s.versions.map((v, vi) => {
     const w = wsByVer[vi];
@@ -3686,15 +3777,24 @@ function renderProfileVersions(){
         ${v.changelog ? `<div class="pvlog">${esc(v.changelog)}</div>` : ''}
       </div>
       <div class="pvacts">
+        ${owner ? `<span class="pv" data-act="rename" title="Rename ${esc(v.name)}">✏️</span>` : ''}
         <span class="pv" data-act="play" title="Play ${esc(v.name)} from the top">▶</span>
         <span class="pv" data-act="share" title="Copy a link to ${esc(v.name)} — plays without a password">🔗</span>
         <span class="pv" data-act="audio" title="Copy a direct link to the audio file">🎵</span>
         <a class="pv" href="${esc(v.src)}" download="${esc(s.title)} — ${esc(v.name)}${esc(extOf(v.src))}"
            title="Download ${esc(v.name)}">⬇</a>
+        ${owner ? `<span class="pv del" data-act="trash" title="Move ${esc(v.name)} to the trash">🗑</span>` : ''}
       </div>
     </div>`;
   }).join('');
 }
+
+$('pTitle').addEventListener('click', () => {
+  if (!activeSong || !$('pTitle').classList.contains('renameable')) return;
+  const s = activeSong;
+  inlineRename($('pTitle'), s.title, (v) =>
+    libRpc('rename_song', { f: s.folder || s.title, new_title: v }));
+});
 
 $('pVers').addEventListener('click', (e) => {
   const row = e.target.closest('.pver');
@@ -3703,6 +3803,20 @@ $('pVers').addEventListener('click', (e) => {
   const v = activeSong.versions[vi];
   if (!v) return;
   const act = e.target.closest('[data-act]');
+  if (act && act.dataset.act === 'rename'){
+    // The name only, not the row: replacing the whole row would take the
+    // dot, the date and the changelog down with it.
+    inlineRename(row.querySelector('.pvname .nm'), v.name, (nv) =>
+      libRpc('rename_version', { f: activeSong.folder || activeSong.title, old_name: v.name, new_name: nv }));
+    return;
+  }
+  if (act && act.dataset.act === 'trash'){
+    // Which one was never in doubt here — you pressed the bin on that mix.
+    // The last mix still routes through the chooser, because deleting it is
+    // really deleting the song and that deserves saying out loud.
+    deleteFlow(activeSong, activeSong.versions.length > 1 ? vi : undefined);
+    return;
+  }
   if (act && act.dataset.act === 'share'){ copyText(shareUrl(activeSong, v), act); return; }
   if (act && act.dataset.act === 'audio'){ copyText(audioUrl(v), act); return; }
   if (e.target.closest('a.pv')) return;                    // the download link

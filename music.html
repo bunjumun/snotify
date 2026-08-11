@@ -7,7 +7,7 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=24" />
+<link rel="stylesheet" href="core.css?v=25" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=30" />
 <style>
@@ -341,6 +341,18 @@
   .pvacts .pv:hover { color: var(--text); background: var(--bg-row); }
   .pvacts .pv.del:hover { color: #ff6b6b; }
 
+  /* The star is not a hover action — the count is information you want while
+     you are reading the stack, not something to go hunting for. */
+  .pstar {
+    flex: none; cursor: pointer; user-select: none; font-size: 15px; line-height: 1;
+    color: var(--text-mute); padding: 4px 7px; border-radius: 7px;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .pstar:hover { color: #ffc93c; background: var(--bg-row); }
+  .pstar.on { color: #ffc93c; }
+  .pstar b { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .latest.fav { color: #ffc93c; border-color: rgba(255,201,60,.45); background: rgba(255,201,60,.12); }
+
   /* Links out: where the words live, what this is chasing, what it looks like. */
   .plink { padding: 9px 0; border-bottom: 1px solid var(--line); }
   .plink:last-child { border-bottom: none; }
@@ -570,6 +582,8 @@
     padding: 2px 6px; border-radius: 6px; text-decoration: none;
   }
   .veritem .cpy:hover, .vlog-copy:hover { color: var(--text); background: var(--bg-row); }
+  .veritem .vstar { font-variant-numeric: tabular-nums; }
+  .veritem .vstar:hover, .veritem .vstar.on { color: #ffc93c; }
 
   @media (max-width: 660px) {
     /* The version menu anchors to a mid-row button — pin it to the viewport
@@ -1601,13 +1615,17 @@ function normalize(data){
         // so nobody else has to download and decode a whole song to draw a
         // thumbnail of it.
         peaks: Array.isArray(v.peaks) ? v.peaks : null,
+        // Who would keep this mix. A list of names rather than a count,
+        // because the star has to know whether one of them is yours.
+        stars: Array.isArray(v.stars) ? v.stars : [],
       }));
     else if (s.src)
       // legacy flat shape (one src, no versions array) — no version row exists,
       // so there's no version id to carry; comments there stay on the old path
       versions = [{ id: null, created_at: null,
                     name: s.name || 'Original', src: publicUrl(s.src), date: s.date || '',
-                    changelog: s.changelog || '', changes: Array.isArray(s.changes) ? s.changes : null }];
+                    changelog: s.changelog || '', changes: Array.isArray(s.changes) ? s.changes : null,
+                    stars: [] }];
     else return null;
     versions = versions.filter(v => v.src);
     if (!versions.length) return null;
@@ -1677,6 +1695,8 @@ function renderList() {
           ${s.artist ? `<span>${esc(s.artist)}</span>` : ''}
           ${n>1 ? `<span class="badge">⌥ ${n} versions</span>` : `<span class="badge dim">1 version</span>`}
           ${cc ? `<span class="badge dim">💬 ${cc}</span>` : ''}
+          ${(() => { const f = favouriteIndex(s); return f === -1 ? ''
+              : `<span class="badge fav" title="Most-starred mix — ${esc(starsOf(s.versions[f]).join(', '))}">★ ${esc(s.versions[f].name)}</span>`; })()}
         </div>
       </div>
       ${tail}
@@ -1942,6 +1962,52 @@ function pickSong(title, hint, excludeKey){
     $('pickModal').onclick = (e) => { if (e.target === $('pickModal')) close(null); };
     $('pickModal').classList.add('open');
   });
+}
+
+// ---------- Stars, and the favourite that falls out of them ----------
+// Everyone stars the mixes they would keep. Nobody declares a winner: the mix
+// holding the most stars is simply what the site calls the current favourite,
+// and it moves the moment the stars do. Ties go to whichever sits higher in
+// the stack, because that is the order the band put them in.
+const myName = () => (localStorage.getItem('mp_name') || '').trim();
+const starsOf = (v) => (v && Array.isArray(v.stars) ? v.stars : []);
+const iStarred = (v) => {
+  const me = myName().toLowerCase();
+  return !!me && starsOf(v).some(n => String(n).toLowerCase() === me);
+};
+// Index of the leading mix, or -1 when nobody has starred anything.
+function favouriteIndex(song){
+  let best = -1, most = 0;
+  (song?.versions || []).forEach((v, i) => {
+    const n = starsOf(v).length;
+    if (n > most){ most = n; best = i; }
+  });
+  return best;
+}
+
+async function toggleStar(song, vi){
+  const v = song?.versions?.[vi];
+  if (!v) return;
+  if (!v.id){ alert('This mix predates version ids, so it cannot be starred.'); return; }
+  const me = myName();
+  if (!me){
+    alert('Put your name in the comment box first — a star is signed, like a comment.');
+    return;
+  }
+  const on = !iStarred(v);
+  // Move it now and reconcile after: a star should feel like a switch, not a
+  // round trip. refreshLibrary brings back the authoritative list either way.
+  v.stars = on ? [...starsOf(v), me] : starsOf(v).filter(n => String(n).toLowerCase() !== me.toLowerCase());
+  renderVersions();
+  if (profiling){ renderProfileVersions(); renderProfileChips(); }
+  renderList();
+  try {
+    await libRpc('star_version', { vid: v.id, who: me, on_: on });
+    await refreshLibrary();
+  } catch (err){
+    alert(String(err.message || err));
+    await refreshLibrary();
+  }
 }
 
 // ---------- Deleting ----------
@@ -2231,6 +2297,9 @@ function renderVersions(){
       <span class="ec danger" data-act="vtrash" title="Move “${esc(v.name)}” to the trash">🗑</span>`
       : `
       ${vi===0 ? '<span class="latest">LATEST</span>' : (v.date ? `<span class="vdate">${esc(v.date)}</span>` : '')}
+      <span class="cpy vstar ${iStarred(v) ? 'on' : ''}" data-act="star"
+            title="${iStarred(v) ? 'You starred this mix — click to take it back' : `Star ${esc(v.name)}`}"
+            >${iStarred(v) ? '★' : '☆'}${starsOf(v).length ? starsOf(v).length : ''}</span>
       <span class="cpy" data-act="share" title="Copy share link to ${esc(v.name)} (opens the player)">🔗</span>
       <span class="cpy" data-act="audio" title="Copy direct link to the audio file">🎵</span>
       <a class="dl" href="${esc(v.src)}" download="${esc(activeSong.title)} — ${esc(v.name)}${esc(extOf(v.src))}" title="Download ${esc(v.name)}">⬇</a>`}
@@ -2242,7 +2311,9 @@ function renderVersions(){
   $('verMenu').querySelectorAll('.veritem').forEach(el => {
     el.querySelectorAll('.cpy').forEach(b => b.addEventListener('click', (e) => {
       e.stopPropagation();
-      const v = activeSong.versions[Number(el.dataset.vi)];
+      const vi = Number(el.dataset.vi);
+      if (b.dataset.act === 'star'){ toggleStar(activeSong, vi); return; }
+      const v = activeSong.versions[vi];
       copyText(b.dataset.act === 'audio' ? audioUrl(v) : shareUrl(activeSong, v), b);
     }));
     el.addEventListener('click', (e) => {
@@ -3757,8 +3828,10 @@ function renderProfileChips(){
   const art = artOf(s);
   const cc = countComments(s.id);
   const n = s.versions.length;
+  const fav = favouriteIndex(s);
   $('pChips').innerHTML =
       `<span class="badge">${n} version${n === 1 ? '' : 's'}</span>`
+    + (fav !== -1 ? `<span class="badge fav" title="Most-starred mix — ${esc(starsOf(s.versions[fav]).join(', '))}">★ ${esc(s.versions[fav].name)}</span>` : '')
     + (cc ? `<span class="badge dim">💬 ${cc} comment${cc === 1 ? '' : 's'}</span>` : '')
     + (s.lyrics ? `<span class="badge dim">📝 lyrics</span>` : '')
     + (s.reference ? `<span class="badge dim">🎧 reference</span>` : '')
@@ -3774,6 +3847,7 @@ function renderProfileVersions(){
   $('pVerCount').textContent = s.versions.length;
   const owner = document.body.classList.contains('authed') && !document.body.classList.contains('shared');
   const roots = commentsFor(s.id).filter(c => !c.parentId);
+  const fav = favouriteIndex(s);
   $('pVers').innerHTML = s.versions.map((v, vi) => {
     const w = wsByVer[vi];
     const dur = (readyByVer[vi] === true && w) ? fmt(w.getDuration()) : '';
@@ -3785,10 +3859,15 @@ function renderProfileVersions(){
                                               : 'Switch to ' + esc(v.name) + ' — keeps the playback position'}">
       <span class="${dotCls(vi)}"></span>
       <div style="min-width:0">
-        <div class="pvname"><span class="nm">${esc(v.name)}</span>${vi === 0 ? '<span class="latest">LATEST</span>' : ''}</div>
+        <div class="pvname"><span class="nm">${esc(v.name)}</span>${vi === 0 ? '<span class="latest">LATEST</span>' : ''}${
+          vi === fav ? '<span class="latest fav">★ FAVOURITE</span>' : ''}</div>
         ${sub ? `<div class="pvsub">${esc(sub)}</div>` : ''}
         ${v.changelog ? `<div class="pvlog">${esc(v.changelog)}</div>` : ''}
       </div>
+      ${owner ? `<span class="pstar ${iStarred(v) ? 'on' : ''}" data-act="star"
+         title="${iStarred(v) ? 'You starred this mix — click to take it back'
+                              : `Star ${esc(v.name)} — the most-starred mix is the band's current favourite`}"
+         >${iStarred(v) ? '★' : '☆'}${starsOf(v).length ? `<b>${starsOf(v).length}</b>` : ''}</span>` : ''}
       <div class="pvacts">
         ${owner ? `<span class="pv" data-act="rename" title="Rename ${esc(v.name)}">✏️</span>` : ''}
         <span class="pv" data-act="play" title="Play ${esc(v.name)} from the top">▶</span>
@@ -3816,6 +3895,7 @@ $('pVers').addEventListener('click', (e) => {
   const v = activeSong.versions[vi];
   if (!v) return;
   const act = e.target.closest('[data-act]');
+  if (act && act.dataset.act === 'star'){ toggleStar(activeSong, vi); return; }
   if (act && act.dataset.act === 'rename'){
     // The name only, not the row: replacing the whole row would take the
     // dot, the date and the changelog down with it.

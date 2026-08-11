@@ -80,6 +80,11 @@ header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px;
   padding: 1px 7px; border-radius: 20px;
 }
 .badge.dim { color: var(--text-dim); background: var(--bg-soft); border-color: var(--line); }
+/* Where the stars ended up — never declared, so it never reads as an award. */
+.badge.fav {
+  color: #ffc93c; background: rgba(255,201,60,.12); border-color: rgba(255,201,60,.35);
+  max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* Empty state */
 .empty { margin-top: 18px; padding: 34px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--bg-soft); color: var(--text-dim); }

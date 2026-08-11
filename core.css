@@ -75,7 +75,10 @@ header.app p  { margin: 2px 0 0; color: var(--text-dim); font-size: 13px; }
 header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px; }
 
 .badge {
-  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600;
+  /* Never over two lines — a wrapped "4 versions" doubles the height of every
+     song row on a phone. */
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  font-size: 11px; font-weight: 600;
   color: var(--accent); background: rgba(108,92,231,.14); border: 1px solid rgba(108,92,231,.3);
   padding: 1px 7px; border-radius: 20px;
 }

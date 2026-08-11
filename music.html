@@ -7,9 +7,9 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=27" />
+<link rel="stylesheet" href="core.css?v=28" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=30" />
+<link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -380,14 +380,26 @@
 
   /* Every row carries a ghost of its own waveform behind the words — the shape
      of the song, at a glance, before you play it. Faint enough to read the
-     title straight through. */
+     title straight through.
+
+     The ghost is pushed BEHIND the row rather than the row's contents being
+     lifted above it. Lifting meant eight separate children each carrying
+     `position: relative; z-index: 1` — eight promoted layers per row, purely
+     to clear one decorative canvas — and on iOS Safari they stopped painting
+     altogether: the rows drew their waveform and their plate and nothing
+     else, no number, no artwork, no title, no buttons.
+
+     `isolation: isolate` is the conventional answer. It makes the row its own
+     stacking context, which means the canvas at `z-index: -1` lands above the
+     row's own background and below everything in flow, and cannot escape
+     behind the page the way a negative z-index does when its parent isn't a
+     stacking context. Nothing else in the row needs a z-index at all. */
+  .song { isolation: isolate; }
   .song .swave {
     position: absolute; inset: 0; width: 100%; height: 100%;
-    opacity: .16; pointer-events: none; z-index: 0;
+    opacity: .16; pointer-events: none; z-index: -1;
   }
   .song:hover .swave, .song.active .swave { opacity: .3; }
-  .song .meta, .song .idx, .song .right, .song .sart,
-  .song .sopen, .song .scpy, .song .sdel, .song .editctl { position: relative; z-index: 1; }
 
   /* A song title opens the song, the way it does on a Bandcamp track listing:
      the row plays, the title opens its own page. Deliberately NOT called
@@ -593,8 +605,36 @@
     .vol { display: none; }
     .timeline .time.dur { display: none; }
     .controls { gap: 10px; }
-    .wrap { padding-bottom: 260px; }
+    .wrap { padding-bottom: 210px; }
     header.app .count { display: none; }
+
+    /* `background-attachment: fixed` is a known hazard on iOS Safari: the
+       backdrop is re-composited against every scroll frame, and it is one of
+       the things that pushes the page over the budget where layers stop
+       painting. On a phone the scheme scrolls with the page instead — which is
+       what iOS does with it anyway, badly. */
+    body { background-attachment: scroll, scroll; }
+
+    /* The transport's buttons were wrapping onto three lines and eating a
+       third of the screen. One line that scrolls sideways instead — the same
+       thing the short-viewport rules do, for the same reason. */
+    .now { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .now::-webkit-scrollbar { display: none; }
+    .now .cbtn { flex: none; }
+    /* In a row that scrolls, a shrinkable title shrinks to nothing — the
+       buttons have a width they insist on and the words do not. Give the words
+       a fixed share of the screen and let the buttons scroll past them. */
+    .now .nowtext { flex: 0 0 46vw; }
+
+    /* Thumbable targets. These are 24px hover affordances on a desktop; on a
+       phone there is no hover and a fingertip is about 44px. */
+    .song .sopen, .song .scpy, .song .sdel {
+      min-width: 38px; min-height: 38px; display: grid !important; place-items: center;
+    }
+    .song { gap: 8px; padding: 10px; }
+    /* The share link is the one row action a phone rarely wants and always
+       hits by accident, and it is on the song page anyway. */
+    .song .scpy { display: none !important; }
   }
 
   /* A phone turned sideways is not a small screen — it is a SHORT one. The

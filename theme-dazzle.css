@@ -58,6 +58,13 @@ body[data-theme="dazzle"] {
   background-size: cover, auto;
   background-attachment: fixed;
 }
+/* On a phone the scheme scrolls with the page. `fixed` re-composites the whole
+   backdrop against every scroll frame, which on iOS Safari is both slow and
+   one of the things that pushes a page past the budget where layers quietly
+   stop painting — the song rows losing their titles was exactly that. */
+@media (max-width: 660px) {
+  body[data-theme="dazzle"] { background-attachment: scroll; }
+}
 
 /* The hull band across the top of every page. */
 body[data-theme="dazzle"]::before {

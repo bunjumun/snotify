@@ -115,6 +115,9 @@ function applyTheme(band){
   if (t) document.body.dataset.theme = t;
   else delete document.body.dataset.theme;
   if (t === 'dazzle') paintDazzle();
+  // After the theme, never before: the design settings are read as a
+  // multiplier on whatever palette the theme just laid down.
+  loadDesign(band);
 }
 
 // ---------- Dazzle generator ----------
@@ -301,11 +304,127 @@ function paintDazzle(){
   b.setProperty('--dazzle',     dazzleURL({ w: 1400, h: 140, seed: s(), cuts: 8, scale: 1.1 }));   // 2 tones, full conflict
   b.setProperty('--dazzle-2',   dazzleURL({ w: 1400, h: 120, seed: s(), cuts: 9, scale: 0.72 }));
   b.setProperty('--dazzle-narrow', dazzleURL({ w: 120, h: 900, seed: s(), cuts: 7, scale: 0.9 }));
-  // The page-wide scheme. Stronger than it looks it needs to be, because the
-  // surfaces stacked on top of it — the song rows, the panels, the song page —
-  // are translucent rather than solid, and this has to still read through them.
-  b.setProperty('--dazzle-bg',  dazzleURL({ w: 1600, h: 1000, seed: s(), cuts: 11, scale: 2.2,
-                                            ink: 'rgba(255,255,255,.07)', ground: 'rgba(0,0,0,0)' }));
+  // The page-wide scheme, drawn in translucent white so the page colour carries
+  // it and the surfaces stacked on top can let it through. How strong it is and
+  // how big the plates are belong to the band — see the design settings.
+  const d = design;
+  b.setProperty('--dazzle-bg',  dazzleURL({ w: 1600, h: 1000, seed: s(), cuts: 11,
+                                            scale: num(d.schemeScale, DESIGN_DEFAULTS.schemeScale),
+                                            ink: `rgba(255,255,255,${num(d.schemeInk, DESIGN_DEFAULTS.schemeInk)})`,
+                                            ground: 'rgba(0,0,0,0)' }));
+}
+
+// ---------- Page design ----------
+// A band dresses its own pages: how solid the surfaces are, what the page sits
+// on, what colour things pick out in. There is nothing bespoke underneath —
+// the stylesheets already run on a palette of custom properties, so a setting
+// is applied by writing that same property inline on <body>, where it beats
+// both the base sheet and any theme. Which means these controls reach every
+// surface on every page without a single extra rule being written for them.
+//
+// The settings live against the band in Supabase (see schema-v14) and are read
+// without a password, because paint is not content and the gate has to be
+// wearing the right coat before anyone has typed anything. A copy is kept in
+// localStorage purely so a repeat visit doesn't flash the undressed page while
+// the round trip happens.
+const DESIGN_KEY = (b) => 'mp_design_' + bandSlugOf(b || '');
+const DESIGN_DEFAULTS = {
+  surface:     1,        // how opaque the rows, panels and cards are
+  veil:        0.86,     // how much the song page blacks out what's behind it
+  schemeInk:   0.07,     // strength of the generated background scheme
+  schemeScale: 2.2,      // how big its plates and stripes are
+  accent:      '',       // '' keeps the stylesheet's own
+  bgImage:     '',
+  bgFit:       'cover',  // or 'tile'
+  bgOpacity:   0.5,
+  bgBlur:      0,
+};
+let design = { ...DESIGN_DEFAULTS };
+let designBase = null;                       // the palette as the sheets wrote it
+
+const num = (v, dflt) => (typeof v === 'number' && isFinite(v) ? v : dflt);
+
+// The pristine palette, read once before anything is written over it — after
+// that, reading these back would only return our own edits.
+function captureDesignBase(){
+  const cs = getComputedStyle(document.body);
+  designBase = {};
+  ['--bg', '--bg-soft', '--bg-row', '--bg-hover', '--accent', '--page-veil']
+    .forEach(k => designBase[k] = cs.getPropertyValue(k).trim());
+}
+// Left alone, every setting means "whatever the theme says" — the opacities by
+// removing the property again, and this one by reading the theme's own value,
+// so Reset puts a themed band back to its theme rather than to a number picked
+// here. Unset on the base sheet, where the stylesheet's fallback is the truth.
+const baseVeil = () => {
+  const v = parseFloat(designBase && designBase['--page-veil']);
+  return isFinite(v) ? v : DESIGN_DEFAULTS.veil;
+};
+
+// '#181a22' or 'rgba(20,20,24,.72)' → the same colour at a given alpha, with
+// whatever alpha it already carried folded in so a theme that starts out
+// translucent stays relatively so.
+function atAlpha(colour, a){
+  if (!colour) return colour;
+  const p = dazzlePalette(colour, colour, 2)[0];         // normalised to rgba()
+  const m = p.match(/^rgba\(([^)]+)\)$/);
+  if (!m) return colour;
+  const [r, g, bl, al] = m[1].split(',').map(Number);
+  return `rgba(${r},${g},${bl},${(+(al * a).toFixed(3))})`;
+}
+
+function applyDesign(){
+  if (!designBase) captureDesignBase();
+  const b = document.body.style, d = design;
+
+  const a = Math.max(0.15, Math.min(1, num(d.surface, 1)));
+  ['--bg-soft', '--bg-row', '--bg-hover'].forEach(k => {
+    if (a >= 1) b.removeProperty(k);
+    else b.setProperty(k, atAlpha(designBase[k], a));
+  });
+  b.setProperty('--page-veil', num(d.veil, baseVeil()).toFixed(3));
+
+  if (d.accent) b.setProperty('--accent', d.accent); else b.removeProperty('--accent');
+
+  // The picture sits between the page background and the content, in its own
+  // fixed layer, so its opacity and blur are its own and nothing inherits them.
+  let bg = $('pageBg');
+  if (!bg){
+    bg = document.createElement('div');
+    bg.id = 'pageBg';
+    document.body.prepend(bg);
+  }
+  if (d.bgImage && /^(https?:|data:)/.test(d.bgImage)){
+    bg.style.backgroundImage = `url("${d.bgImage.replace(/"/g, '%22')}")`;
+    bg.style.backgroundSize = d.bgFit === 'tile' ? 'auto' : 'cover';
+    bg.style.backgroundRepeat = d.bgFit === 'tile' ? 'repeat' : 'no-repeat';
+    bg.style.opacity = num(d.bgOpacity, DESIGN_DEFAULTS.bgOpacity);
+    bg.style.filter = num(d.bgBlur, 0) ? `blur(${num(d.bgBlur, 0)}px)` : '';
+    bg.style.display = '';
+  } else {
+    bg.style.display = 'none';
+  }
+
+  if (document.body.dataset.theme === 'dazzle') paintDazzle();
+}
+
+// Read what the band has set: the cached copy immediately so the page is never
+// briefly undressed, then the server's, which is the one that counts.
+async function loadDesign(band){
+  const slug = bandSlugOf(band || '');
+  if (!slug) return;
+  try {
+    const cached = JSON.parse(localStorage.getItem(DESIGN_KEY(slug)) || 'null');
+    if (cached){ design = { ...DESIGN_DEFAULTS, ...cached }; applyDesign(); }
+  } catch {}
+  if (!supaOn()) return;
+  try {
+    const d = await rpc('get_band_design', { b: slug });
+    if (!d || typeof d !== 'object') return;
+    design = { ...DESIGN_DEFAULTS, ...d };
+    localStorage.setItem(DESIGN_KEY(slug), JSON.stringify(d));
+    applyDesign();
+  } catch {}
 }
 
 // ---------- Deep-link routing ----------
@@ -527,6 +646,7 @@ document.body.insertAdjacentHTML('beforeend', `
         <div class="hint" style="margin-bottom:10px">Rewrite this page's wording in place — titles, taglines, the descriptions on the doors.</div>
         <button class="btn ghost" id="adminTextGo" style="width:100%">✎ Edit text on this page</button>
         <button class="btn ghost" id="adminToolsGo" style="width:100%;margin-top:8px">▨ Tools menu — add or remove</button>
+        <button class="btn ghost" id="adminDesignGo" style="width:100%;margin-top:8px">🎨 Page design — colour and opacity</button>
         <div class="hint" style="margin:14px 0 6px;border-top:1px solid var(--line);padding-top:14px">Add another project as a new band library.</div>
         <label>Band name</label>
         <input type="text" id="adminBandTitle" placeholder="e.g. Some Other Band" maxlength="120" />
@@ -937,6 +1057,46 @@ document.body.insertAdjacentHTML('beforeend', `
         <button class="btn primary" id="toolAdminSave">Save menu</button>
       </div>
     </div>
+  </div>
+
+  <!-- Page design (site admin) -->
+  <div class="modal-back" id="designModal">
+    <div class="modal" style="max-width:520px">
+      <h2>Page design</h2>
+      <div class="hint" id="designFor" style="margin-bottom:12px"></div>
+
+      <div class="dz-grid">
+        <label>Surface opacity <span class="dz-val" id="dgSurfaceVal">100%</span>
+          <input type="range" id="dgSurface" min="15" max="100" value="100" /></label>
+        <label>Song page veil <span class="dz-val" id="dgVeilVal">86%</span>
+          <input type="range" id="dgVeil" min="20" max="100" value="86" /></label>
+        <label>Background pattern <span class="dz-val" id="dgInkVal">7%</span>
+          <input type="range" id="dgInk" min="0" max="30" value="7" /></label>
+        <label>Pattern scale <span class="dz-val" id="dgScaleVal">2.2</span>
+          <input type="range" id="dgScale" min="5" max="60" value="22" /></label>
+      </div>
+
+      <label style="margin-top:12px">Background image <span class="hint">optional — an https:// address</span></label>
+      <input type="text" id="dgBgImage" placeholder="https://…  (leave empty for none)" maxlength="600" />
+      <div class="dz-grid" style="margin-top:10px">
+        <label>Image opacity <span class="dz-val" id="dgBgOpacityVal">50%</span>
+          <input type="range" id="dgBgOpacity" min="0" max="100" value="50" /></label>
+        <label>Image blur <span class="dz-val" id="dgBgBlurVal">0px</span>
+          <input type="range" id="dgBgBlur" min="0" max="24" value="0" /></label>
+        <label class="check"><input type="checkbox" id="dgBgTile" /> Tile it instead of filling</label>
+        <label>Accent colour
+          <span class="dz-row"><input type="color" id="dgAccent" value="#6c5ce7" />
+          <button class="btn ghost" id="dgAccentClear" type="button">Default</button></span></label>
+      </div>
+
+      <div class="status err" id="designErr"></div>
+      <div class="status" id="designStatus"></div>
+      <div class="actions">
+        <button class="btn ghost" id="dgReset">Reset all</button>
+        <button class="btn ghost" id="designCancel">Cancel</button>
+        <button class="btn primary" id="designSave">Save for the band</button>
+      </div>
+    </div>
   </div>`);
 
 // --- the dazzle workshop ---
@@ -1186,6 +1346,106 @@ on('toolAdminSave', 'click', async () => {
     $('toolAdminStatus').className = 'status err';
     $('toolAdminStatus').textContent = e.message || 'Could not save.';
   } finally { $('toolAdminSave').disabled = false; }
+});
+
+// --- Page design ---
+// Everything previews on the real page as you drag it — there is no mock-up to
+// disagree with the result. Cancel puts back what was there when the panel
+// opened; Save writes it to the band, so everyone sees it next time they load.
+let designBefore = null;
+
+// setting → [slider, slider steps → the stored value, how it reads on screen]
+const DG = {
+  surface:     ['dgSurface',   v => v / 100, v => Math.round(v * 100) + '%'],
+  veil:        ['dgVeil',      v => v / 100, v => Math.round(v * 100) + '%'],
+  schemeInk:   ['dgInk',       v => v / 100, v => Math.round(v * 100) + '%'],
+  schemeScale: ['dgScale',     v => v / 10,  v => v.toFixed(1)],
+  bgOpacity:   ['dgBgOpacity', v => v / 100, v => Math.round(v * 100) + '%'],
+  bgBlur:      ['dgBgBlur',    v => v,       v => Math.round(v) + 'px'],
+};
+
+function designFromControls(){
+  const d = {};
+  for (const [key, [id, toValue]] of Object.entries(DG)) d[key] = toValue(+$(id).value);
+  d.bgImage = $('dgBgImage').value.trim();
+  d.bgFit   = $('dgBgTile').checked ? 'tile' : 'cover';
+  d.accent  = $('dgAccent').dataset.unset === '1' ? '' : $('dgAccent').value;
+  return d;
+}
+function designToControls(d){
+  $('dgSurface').value    = Math.round(num(d.surface, 1) * 100);
+  $('dgVeil').value       = Math.round(num(d.veil, baseVeil()) * 100);
+  $('dgInk').value        = Math.round(num(d.schemeInk, DESIGN_DEFAULTS.schemeInk) * 100);
+  $('dgScale').value      = Math.round(num(d.schemeScale, DESIGN_DEFAULTS.schemeScale) * 10);
+  $('dgBgOpacity').value  = Math.round(num(d.bgOpacity, DESIGN_DEFAULTS.bgOpacity) * 100);
+  $('dgBgBlur').value     = Math.round(num(d.bgBlur, 0));
+  $('dgBgImage').value    = d.bgImage || '';
+  $('dgBgTile').checked   = d.bgFit === 'tile';
+  $('dgAccent').value        = d.accent || (designBase && designBase['--accent']) || '#6c5ce7';
+  $('dgAccent').dataset.unset = d.accent ? '0' : '1';
+}
+function designLabels(){
+  for (const [, [id, toValue, label]] of Object.entries(DG))
+    $(id + 'Val').textContent = label(toValue(+$(id).value));
+}
+// Drag → the page changes underneath the panel. Nothing is saved yet.
+function designPreview(){
+  design = { ...DESIGN_DEFAULTS, ...designFromControls() };
+  designLabels();
+  applyDesign();
+}
+function openDesign(){
+  if (!curBand){
+    alert('Open a band library first — page design is saved against the band.');
+    return;
+  }
+  if (!designBase) captureDesignBase();
+  designBefore = { ...design };
+  designToControls(design);
+  designLabels();
+  $('designFor').textContent = `Applies to every page of ${curBandTitle || curBand}, for everyone in the band.`;
+  $('designErr').textContent = ''; $('designStatus').textContent = '';
+  $('designModal').classList.add('open');
+}
+function closeDesign(revert){
+  if (revert && designBefore){ design = designBefore; applyDesign(); }
+  designBefore = null;
+  $('designModal').classList.remove('open');
+}
+on('adminDesignGo', 'click', () => { closeAdmin(); openDesign(); });
+['dgSurface','dgVeil','dgInk','dgScale','dgBgOpacity','dgBgBlur','dgBgImage','dgBgTile']
+  .forEach(id => on(id, 'input', designPreview));
+on('dgAccent', 'input', () => { $('dgAccent').dataset.unset = '0'; designPreview(); });
+on('dgAccentClear', 'click', () => {
+  $('dgAccent').dataset.unset = '1';
+  $('dgAccent').value = (designBase && designBase['--accent']) || '#6c5ce7';
+  designPreview();
+});
+on('dgReset', 'click', () => { designToControls({ ...DESIGN_DEFAULTS, veil: baseVeil() }); designPreview(); });
+on('designCancel', 'click', () => closeDesign(true));
+on('designModal', 'click', (e) => { if (e.target === $('designModal')) closeDesign(true); });
+
+on('designSave', 'click', async () => {
+  const d = designFromControls();
+  if (d.bgImage && !/^https?:\/\//i.test(d.bgImage)){
+    $('designErr').textContent = 'A background image has to be an http(s) address.';
+    return;
+  }
+  $('designErr').textContent = '';
+  $('designSave').disabled = true;
+  $('designStatus').className = 'status';
+  $('designStatus').textContent = 'Saving…';
+  try {
+    await libRpc('set_band_design', { d });
+    design = { ...DESIGN_DEFAULTS, ...d };
+    localStorage.setItem(DESIGN_KEY(curBand), JSON.stringify(d));
+    designBefore = null;
+    $('designStatus').textContent = `Saved — live for ${curBandTitle || curBand}.`;
+    setTimeout(() => closeDesign(false), 900);
+  } catch (e) {
+    $('designStatus').className = 'status err';
+    $('designStatus').textContent = e.message || 'Could not save.';
+  } finally { $('designSave').disabled = false; }
 });
 
 // Log out of the current band → back to the home page (band-name entry).

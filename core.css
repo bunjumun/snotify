@@ -48,6 +48,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 a { color: var(--accent); }
+
+/* A band's own backdrop, if it has set one (Site admin → Page design). Its own
+   fixed layer between the page background and the content, so its opacity and
+   blur belong to the picture alone and nothing on the page inherits them. */
+#pageBg {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-position: center;
+}
+
 .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 280px; }
 
 header.app { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
@@ -277,6 +286,13 @@ body.texting .dock { display: none; }
   background: var(--text); cursor: pointer;
 }
 .dz-grid label.check { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 13px; align-self: end; }
+/* A swatch and its "put it back" button, sharing one row under a label. */
+.dz-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.dz-row input[type=color] {
+  width: 40px; height: 28px; padding: 0; flex: none; cursor: pointer;
+  background: none; border: 1px solid var(--line); border-radius: 6px;
+}
+.dz-row .btn { padding: 4px 10px; font-size: 12px; }
 
 /* ---------- Tools manager (admin) ---------- */
 .tool-row {

@@ -358,15 +358,17 @@ body[data-theme="dazzle"] .song .title { letter-spacing: .02em; }
    stacked on it used to be solid, which meant the pattern only ever showed in
    the gaps between things. These are translucent instead, so the dazzle reads
    dimly behind the rows, the panels and the song page — present, but never
-   competing with the words on top of it. */
-body[data-theme="dazzle"] .song { background: rgba(20,20,24,.72); }
-body[data-theme="dazzle"] .song:hover,
-body[data-theme="dazzle"] .song.active { background: rgba(30,30,36,.82); }
-body[data-theme="dazzle"] .pcard { background: rgba(16,16,20,.74); }
-body[data-theme="dazzle"] .profile {
-  background: radial-gradient(1100px 560px at 50% -8%, rgba(26,28,38,.80) 0%, rgba(8,8,10,.76) 58%);
+   competing with the words on top of it.
+
+   Done by restating the palette rather than by naming surfaces, so it reaches
+   every one of them — and so the band's own opacity control, which writes
+   these same properties, has something to multiply. */
+body[data-theme="dazzle"] {
+  --bg-row:   rgba(20,20,24,.72);
+  --bg-hover: rgba(30,30,36,.82);
+  --bg-soft:  rgba(16,16,20,.70);
+  --page-veil: .78;
 }
-body[data-theme="dazzle"] .pwave { background: rgba(16,16,20,.66); }
 
 /* Transport and drawer are decks: stripe bands where they meet the page. */
 body[data-theme="dazzle"] .transport { border-top: none; position: relative; }

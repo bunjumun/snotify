@@ -7,9 +7,9 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=22" />
+<link rel="stylesheet" href="core.css?v=23" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=29" />
+<link rel="stylesheet" href="theme-dazzle.css?v=30" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -258,7 +258,11 @@
      like a different site. This dims it instead of deleting it. */
   .profile {
     display: none; position: fixed; inset: 0; z-index: 20; overflow-y: auto;
-    background: radial-gradient(1100px 560px at 50% -8%, rgba(26,28,38,.90) 0%, rgba(8,8,10,.86) 58%);
+    /* A veil rather than a lid: --page-veil is the band's own setting for how
+       much of the page underneath still shows (see Page design). */
+    background: radial-gradient(1100px 560px at 50% -8%,
+                  rgba(26,28,38,calc(var(--page-veil, .86) * 1.045)) 0%,
+                  rgba(8,8,10,var(--page-veil, .86)) 58%);
     backdrop-filter: blur(1px);
   }
   body.profiling .profile { display: block; }
@@ -1105,7 +1109,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=25"></script>
+<script src="core.js?v=27"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;

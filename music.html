@@ -7,7 +7,7 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=25" />
+<link rel="stylesheet" href="core.css?v=27" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=30" />
 <style>
@@ -77,7 +77,7 @@
   .nowlog:hover { color: var(--text-dim); }
 
   /* Transport */
-  .transport { background: rgba(18,20,27,.94); backdrop-filter: blur(14px); border-top: 1px solid var(--line); box-shadow: var(--shadow); }
+  .transport { background: rgba(18,20,27,.94); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border-top: 1px solid var(--line); box-shadow: var(--shadow); }
   .transport .pad { max-width: 1000px; margin: 0 auto; padding: 10px 20px 14px; }
 
   /* Version dropdown */
@@ -274,7 +274,7 @@
     background: radial-gradient(1100px 560px at 50% -8%,
                   rgba(26,28,38,calc(var(--page-veil, .86) * 1.045)) 0%,
                   rgba(8,8,10,var(--page-veil, .86)) 58%);
-    backdrop-filter: blur(1px);
+    -webkit-backdrop-filter: blur(1px); backdrop-filter: blur(1px);
   }
   body.profiling .profile { display: block; }
   body.profiling .wrap { display: none; }
@@ -596,6 +596,25 @@
     .wrap { padding-bottom: 260px; }
     header.app .count { display: none; }
   }
+
+  /* A phone turned sideways is not a small screen — it is a SHORT one. The
+     transport is a fixed height whatever the width, so in landscape it was
+     taking nearly half the viewport and the song list underneath was reduced
+     to a sliver with no room to show a title. Everything here buys height
+     back: the now-playing row keeps to one line and scrolls its buttons
+     sideways instead of wrapping onto a second, the changelog line steps
+     aside, and the page stops reserving more space than the transport
+     actually takes. */
+  @media (max-height: 500px) {
+    .transport .pad { padding: 6px 14px 8px; }
+    .now { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-bottom: 4px; }
+    .now::-webkit-scrollbar { display: none; }
+    .nowlog { display: none !important; }
+    .now .cbtn { padding: 4px 10px; }
+    .controls { gap: 8px; }
+    .wrap { padding-bottom: 190px; }
+    header.app { margin-bottom: 14px; }
+  }
 </style>
 </head>
 <body class="locked">
@@ -729,9 +748,13 @@
             <option value="new">Newest</option>
             <option value="old">Oldest</option>
             <option value="replies">Most replies</option>
+            <option value="category">By category</option>
           </select>
         </div>
       </div>
+      <!-- Narrow the list to the kinds of note you came here for. Nothing
+           ticked means everything, including notes nobody categorised. -->
+      <div class="tagpick todo-filter" id="todoTags"></div>
       <div class="todo-list" id="todoList"></div>
       <div class="actions"><button class="btn ghost" id="todoClose">Close</button></div>
     </div>
@@ -931,6 +954,10 @@
           <input id="cinput" type="text" placeholder="Leave a comment at this timestamp…" maxlength="280" />
           <button id="caddBtn">Add</button>
         </div>
+        <!-- What kind of note this is. Tick as many as fit, or none — none is
+             what every comment written before this existed carries, and it
+             still reads as a plain note. -->
+        <div class="tagpick" id="cTags"></div>
         <div class="clist" id="clist"></div>
       </div>
     </div>
@@ -2439,12 +2466,29 @@ $('repeatBtn').onclick = () => { repeat = repeat==='off'?'all':repeat==='all'?'o
 // library itself they go through core.js's password-checked RPCs, so a shared
 // single-mix link can play the audio but never reads or writes the comments.
 
+// What kind of note a comment is. The slug is what the database stores and
+// never changes; the label is only what it says on screen, so the wording can
+// be reworded without touching a single row.
+const TAGS = [
+  { id: 'technical',  label: 'Technical audio problem', short: 'technical',  icon: '🔧' },
+  { id: 'production', label: 'Production idea',         short: 'production', icon: '💡' },
+  { id: 'enthusiasm', label: 'Enthusiasm',              short: 'enthusiasm', icon: '🔥' },
+  { id: 'thought',    label: 'Just a thought',          short: 'thought',    icon: '💭' },
+  { id: 'other',      label: 'Other',                   short: 'other',      icon: '•'  },
+];
+const tagById = (id) => TAGS.find(t => t.id === id);
+const tagChips = (tags) => (tags || []).map(id => {
+  const t = tagById(id);
+  return t ? `<span class="tag t-${t.id}" title="${esc(t.label)}">${t.icon} ${esc(t.short)}</span>` : '';
+}).join('');
+
 let commentCache = {};   // song_id -> [comments], mirrors the shared table
 let cReplyTo = null, cEditId = null;   // which thread/comment has an inline compose box open
 const mapRow = (r) => ({ id: r.id, time: r.time_s, text: r.text, name: r.name || '',
                          version: r.version || '', versionId: r.version_id || null,
                          parentId: r.parent_id || null, resolved: !!r.resolved,
                          resolvedBy: r.resolved_by || '', editedAt: r.edited_at ? Date.parse(r.edited_at) : null,
+                         tags: Array.isArray(r.tags) ? r.tags : [],
                          dismissedVersions: r.dismissed_versions || [],
                          at: Date.parse(r.created_at) });
 function commentsFor(id){ return (commentCache[id] || []).slice().sort((a,b)=>a.time-b.time); }
@@ -2490,6 +2534,24 @@ async function loadComments(){
 // Pick up bandmates' new comments whenever a song is opened.
 const refreshSongComments = () => loadComments();
 
+// The categories ticked on the composer, waiting for the next comment.
+let draftTags = [];
+function renderTagPicker(){
+  const el = $('cTags');
+  if (!el) return;
+  el.innerHTML = TAGS.map(t => `
+    <button type="button" class="tagbtn t-${t.id} ${draftTags.includes(t.id) ? 'on' : ''}"
+            data-tag="${t.id}" title="${esc(t.label)}">${t.icon} ${esc(t.label)}</button>`).join('');
+}
+on('cTags', 'click', (e) => {
+  const b = e.target.closest('[data-tag]');
+  if (!b) return;
+  const id = b.dataset.tag;
+  draftTags = draftTags.includes(id) ? draftTags.filter(x => x !== id) : [...draftTags, id];
+  renderTagPicker();
+});
+renderTagPicker();
+
 async function addComment(text, parentId = null){
   if (!activeSong) return;
   if (!isAuthed(curBand)){ showGate(curBand, false); return; }
@@ -2499,13 +2561,32 @@ async function addComment(text, parentId = null){
   const time = w ? w.getCurrentTime() : 0;
   const name = $('cname').value.trim();
   const ver = activeSong.versions[activeVer];
+  // A reply belongs to its thread, so it takes the thread's categories rather
+  // than whatever happens to be ticked in the composer.
+  const tg = parentId ? null : (draftTags.length ? draftTags : null);
   try {
     const row = await libRpc('add_comment', { sid: activeSong.id, time_s: time,
-      txt: text, who: name, ver: ver.name, vid: ver.id, parent_id: parentId });
+      txt: text, who: name, ver: ver.name, vid: ver.id, parent_id: parentId, tg });
     (commentCache[activeSong.id] ||= []).push(mapRow(row));
   } catch (err){ alert('Could not post the comment: ' + (err.message || err)); return; }
-  if (!parentId) $('cinput').value = '';
+  if (!parentId){ $('cinput').value = ''; draftTags = []; renderTagPicker(); }
   renderComments(); renderMarkers(); refreshListBadges();
+}
+
+// Categorising after the fact — a note often only turns out to be a job once
+// somebody reads it back on the to-do list.
+async function setCommentTags(cid, tags){
+  const c = (commentCache[activeSong?.id] || []).find(x => x.id === cid);
+  if (!c) return;
+  const before = c.tags;
+  c.tags = tags;                       // move now, reconcile after
+  renderTodo(); renderComments();
+  try { await libRpc('set_comment_tags', { cid, tg: tags.length ? tags : null }); }
+  catch (err){
+    c.tags = before;
+    alert(String(err.message || err));
+    renderTodo(); renderComments();
+  }
 }
 async function deleteComment(cid){
   if (!activeSong || !isAuthed(curBand)) return;
@@ -2762,7 +2843,7 @@ function renderComments(){
           ${cEditId === c.id
             ? `<div class="cedit"><input type="text" value="${esc(c.text)}" maxlength="280" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`
             : `<div class="txt">${esc(c.text)}</div>`}
-          <div class="who">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}${timeago(c.at)}${c.editedAt ? ' · <span class="edited-tag">edited</span>' : ''} ${carried}${c.resolved ? `<span class="cbadge resolved">✓ resolved</span>` : ''}</div>
+          <div class="who">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}${timeago(c.at)}${c.editedAt ? ' · <span class="edited-tag">edited</span>' : ''} ${carried}${c.resolved ? `<span class="cbadge resolved">✓ resolved</span>` : ''}${tagChips(c.tags)}</div>
           <div class="cactions">
             <span class="act-reply">Reply</span>
             <span class="act-edit">Edit</span>
@@ -4007,9 +4088,32 @@ $('pArt').onclick = () => {
 
 // ---------- To-do (every thread on this song, GitHub-issues style) ----------
 let todoTab = 'open';
+let todoTags = [];                 // categories to narrow to; empty = all of them
+
+function renderTodoFilter(){
+  const el = $('todoTags');
+  if (!el) return;
+  el.innerHTML = TAGS.map(t => `
+    <button type="button" class="tagbtn t-${t.id} ${todoTags.includes(t.id) ? 'on' : ''}"
+            data-tag="${t.id}" title="Show only ${esc(t.label).toLowerCase()}">${t.icon} ${esc(t.short)}</button>`).join('')
+    + (todoTags.length ? `<button type="button" class="tagbtn clear" data-tag="__all">Show all</button>` : '');
+}
+on('todoTags', 'click', (e) => {
+  const b = e.target.closest('[data-tag]');
+  if (!b) return;
+  const id = b.dataset.tag;
+  todoTags = id === '__all' ? []
+    : todoTags.includes(id) ? todoTags.filter(x => x !== id) : [...todoTags, id];
+  renderTodo();
+});
+
 function renderTodo(){
+  renderTodoFilter();
   if (!activeSong){ $('todoList').innerHTML = `<div class="cempty">Play a song to see its to-do list.</div>`; return; }
-  const all = rootsFor(activeSong.id);
+  // Filtering happens before the counts, so "Open (3)" means three of the
+  // notes you are actually looking at, not three of the ones you filtered out.
+  const all = rootsFor(activeSong.id)
+    .filter(c => !todoTags.length || (c.tags || []).some(t => todoTags.includes(t)));
   const open = all.filter(c => !c.resolved), done = all.filter(c => c.resolved);
   $('todoHint').textContent = `on “${activeSong.title}”`;
   $('todoTabOpen').textContent = `Open (${open.length})`;
@@ -4019,14 +4123,23 @@ function renderTodo(){
 
   let rows = todoTab === 'open' ? open : done;
   const sort = $('todoSort').value;
+  // "By category" groups rather than ranks: the order the categories are
+  // listed in is the order they come out in, uncategorised notes last, and
+  // newest first within each group.
+  const catRank = (c) => {
+    const i = TAGS.findIndex(t => (c.tags || []).includes(t.id));
+    return i === -1 ? TAGS.length : i;
+  };
   rows = rows.slice().sort((a, b) =>
-    sort === 'old'     ? a.at - b.at :
-    sort === 'replies' ? repliesFor(activeSong.id, b.id).length - repliesFor(activeSong.id, a.id).length
-                       : b.at - a.at);
+    sort === 'old'      ? a.at - b.at :
+    sort === 'replies'  ? repliesFor(activeSong.id, b.id).length - repliesFor(activeSong.id, a.id).length :
+    sort === 'category' ? (catRank(a) - catRank(b)) || (b.at - a.at)
+                        : b.at - a.at);
 
   if (!rows.length){
-    $('todoList').innerHTML = `<div class="cempty">${todoTab === 'open'
-      ? 'Nothing open — every comment on this song is resolved.'
+    $('todoList').innerHTML = `<div class="cempty">${
+      todoTags.length ? 'Nothing here in those categories.'
+      : todoTab === 'open' ? 'Nothing open — every comment on this song is resolved.'
       : 'Nothing resolved yet.'}</div>`;
     return;
   }
@@ -4050,6 +4163,12 @@ function renderTodo(){
           ${c.resolved && c.resolvedBy ? `<span>resolved by ${esc(c.resolvedBy)}</span>` : ''}
           ${chips}
         </div>
+        <!-- Categorise it now: most notes are only recognisable as a job when
+             somebody reads them back here, long after they were written. -->
+        <div class="tagpick row" data-tagrow="${c.id}">
+          ${TAGS.map(t => `<button type="button" class="tagbtn t-${t.id} ${(c.tags||[]).includes(t.id) ? 'on' : ''}"
+             data-tag="${t.id}" title="${esc(t.label)}">${t.icon} ${esc(t.short)}</button>`).join('')}
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -4059,6 +4178,16 @@ function renderTodo(){
 $('todoList').addEventListener('click', (e) => {
   const row = e.target.closest('.todo-row');
   if (!row || !activeSong) return;
+  // Ticking a category is not "take me to this note" — it stays put.
+  const tagBtn = e.target.closest('.tagpick.row [data-tag]');
+  if (tagBtn){
+    const id = tagBtn.dataset.tag;
+    const c = rootsFor(activeSong.id).find(x => x.id === row.dataset.id);
+    if (!c) return;
+    const has = (c.tags || []).includes(id);
+    setCommentTags(c.id, has ? c.tags.filter(x => x !== id) : [...(c.tags || []), id]);
+    return;
+  }
   const vi = activeSong.versions.findIndex(v => v.id === row.dataset.vid);
   if (vi !== -1 && vi !== activeVer) switchVersion(vi);
   closeTodo();

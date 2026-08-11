@@ -7,7 +7,7 @@
 <meta name="description" content="Sn'art — versioned artwork with comments pinned to a region of the image." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with index.html -->
-<link rel="stylesheet" href="core.css?v=25" />
+<link rel="stylesheet" href="core.css?v=27" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=30" />
 <style>
@@ -31,7 +31,7 @@
   /* Per-piece share link — hover on desktop, dimmed-visible on touch */
   .piece .pcpy {
     position: absolute; top: 8px; right: 8px; opacity: 0; transition: opacity .12s;
-    background: rgba(6,7,10,.7); backdrop-filter: blur(4px); color: var(--text-dim);
+    background: rgba(6,7,10,.7); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); color: var(--text-dim);
     font-size: 13px; padding: 3px 8px; border-radius: 6px; cursor: pointer;
   }
   .piece:hover .pcpy { opacity: 1; }
@@ -136,7 +136,7 @@
   .cmt .t.whole { color: var(--text-mute); font-weight: 600; }
 
   /* ---------- Bottom bar (the stage's equivalent of the transport) ---------- */
-  .artbar { background: rgba(18,20,27,.94); backdrop-filter: blur(14px); border-top: 1px solid var(--line); box-shadow: var(--shadow); }
+  .artbar { background: rgba(18,20,27,.94); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border-top: 1px solid var(--line); box-shadow: var(--shadow); }
   .artbar .pad { max-width: 1000px; margin: 0 auto; padding: 10px 20px 12px; display: flex; align-items: center; gap: 12px; }
   .artbar .bartitle { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .artbar .barsub { color: var(--text-dim); font-size: 13px; white-space: nowrap; }

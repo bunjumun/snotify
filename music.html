@@ -133,7 +133,10 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; min-width: 0;
   }
   .now .sep { color: var(--text-mute); flex: none; }
-  .now .cbtn { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; background: var(--bg-row); border: 1px solid var(--line); color: var(--text-dim); padding: 6px 12px; border-radius: 20px; cursor: pointer; font-size: 13px; }
+  /* The five stay one group. Only the version chooser before them claims the
+     free space, so the group is always right of it and always intact. */
+  .now .nowacts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: none; }
+  .now .cbtn { flex: none; display: inline-flex; align-items: center; gap: 6px; background: var(--bg-row); border: 1px solid var(--line); color: var(--text-dim); padding: 6px 12px; border-radius: 20px; cursor: pointer; font-size: 13px; }
   .now .cbtn:hover { background: var(--bg-hover); color: var(--text); }
   .now .cbtn.active { color: var(--accent); border-color: var(--accent); }
   .now .cbtn svg { width: 15px; height: 15px; fill: currentColor; }
@@ -1023,26 +1026,33 @@
             </button>
             <div class="vermenu" id="verMenu"></div>
           </div>
-          <button class="cbtn" id="vlogToggle" title="Version history / changelog (v)" style="margin-left:0">
+          <!-- One group, so these five stay together and in this order however
+               the row wraps. They used to be five siblings each carrying
+               `margin-left: auto` from .cbtn and each cancelling it with an
+               inline style — and any line break put whichever button landed
+               first on the new line somewhere else entirely. -->
+          <div class="nowacts">
+          <button class="cbtn" id="vlogToggle" title="Version history / changelog (v)">
             <svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 00-9 9H1l3.9 3.9L8.8 12H6a7 7 0 117 7 7 7 0 01-4.9-2L6.7 18.4A9 9 0 1013 3zm-1 5v5l4.25 2.52.75-1.23-3.5-2.08V8H12z"/></svg>
             <span>Log</span>
           </button>
-          <button class="cbtn" id="refToggle" title="Reference — the track this one is chasing (f)" style="margin-left:0">
+          <button class="cbtn" id="refToggle" title="Reference — the track this one is chasing (f)">
             <svg viewBox="0 0 24 24"><path d="M12 3v10.6a4 4 0 10 2 3.4V7h4V3h-6z"/></svg>
             <span>Reference</span>
           </button>
-          <button class="cbtn" id="lyricToggle" title="Lyrics (l)" style="margin-left:0">
+          <button class="cbtn" id="lyricToggle" title="Lyrics (l)">
             <svg viewBox="0 0 24 24"><path d="M4 5h16v2H4V5zm0 4h11v2H4V9zm0 4h16v2H4v-2zm0 4h11v2H4v-2z"/></svg>
             <span>Lyrics</span>
           </button>
-          <button class="cbtn" id="cToggle" title="Comments (c)" style="margin-left:0">
+          <button class="cbtn" id="cToggle" title="Comments (c)">
             <svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 012 2v9a2 2 0 01-2 2H8l-4 4V6a2 2 0 012-2z"/></svg>
             <span id="cCount">0</span>
           </button>
-          <button class="cbtn" id="todoToggle" title="To-do — every open and resolved comment on this song" style="margin-left:0">
+          <button class="cbtn" id="todoToggle" title="To-do — every open and resolved comment on this song">
             <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
             <span>To-do</span>
           </button>
+          </div>
         </div>
 
         <div class="controls">

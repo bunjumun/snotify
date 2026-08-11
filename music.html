@@ -18,7 +18,7 @@
   .songlist { display: flex; flex-direction: column; gap: 6px; }
   .song {
     position: relative;
-    display: grid; grid-template-columns: 30px auto 1fr auto auto auto; align-items: center; gap: 14px;
+    display: grid; grid-template-columns: 30px auto 1fr auto auto auto auto; align-items: center; gap: 14px;
     padding: 12px 14px; border-radius: 10px; background: var(--bg-row);
     border: 1px solid transparent; cursor: pointer;
     transition: background .12s, border-color .12s; user-select: none;
@@ -404,6 +404,40 @@
   }
   .song:hover .swave, .song.active .swave { opacity: .3; }
 
+  /* How many mixes are on this song, as a control rather than a caption. The
+     old "⌥ 5 versions" badge sat in the subtitle taking a title's worth of
+     width to tell you about a choice you had to go elsewhere to make. */
+  .vpick {
+    display: inline-flex; align-items: center; gap: 4px; flex: none; cursor: pointer;
+    padding: 3px 7px 3px 9px; border-radius: 20px;
+    border: 1px solid var(--line); background: var(--bg-row); color: var(--text-dim);
+    font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .vpick:hover { color: var(--text); border-color: var(--accent); }
+  .vpick .vcar { width: 8px; height: 5px; fill: currentColor; opacity: .8; }
+
+  /* The stack itself, anchored under the caret. */
+  .rowvers {
+    position: fixed; z-index: 60; min-width: 230px; max-width: min(360px, 92vw);
+    max-height: 60vh; overflow-y: auto;
+    background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: var(--shadow); padding: 5px;
+  }
+  .rvhead {
+    padding: 5px 9px 7px; margin-bottom: 3px; border-bottom: 1px solid var(--line);
+    color: var(--text-mute); font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .rvitem {
+    display: flex; align-items: center; gap: 7px; width: 100%;
+    background: none; border: 0; border-radius: 7px; padding: 8px 9px;
+    color: var(--text); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer;
+  }
+  .rvitem:hover { background: var(--bg-hover); }
+  .rvname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rvdate { flex: none; color: var(--text-mute); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
   /* A song title opens the song, the way it does on a Bandcamp track listing:
      the row plays, the title opens its own page. Deliberately NOT called
      `door` — that class belongs to the landing page's big music-note and
@@ -523,7 +557,7 @@
     display: none; color: var(--text-mute); font-size: 14px;
     padding: 2px 7px; border-radius: 6px; cursor: pointer;
   }
-  body.authed:not(.shared):not(.singlemix) .song { grid-template-columns: 30px auto 1fr auto auto auto auto; }
+  body.authed:not(.shared):not(.singlemix) .song { grid-template-columns: 30px auto 1fr auto auto auto auto auto; }
   /* Per-song share link (the whole stack) — hover on desktop, dimmed-visible on touch */
   .song .scpy, .song .sopen {
     opacity: 0; color: var(--text-mute); font-size: 13px;
@@ -1758,6 +1792,9 @@ function renderList() {
         <span class="ec danger" data-act="trash" title="Move “${esc(s.title)}” to the trash">🗑</span>
       </div>`
     : `<div class="right" data-dur="${i}"></div>
+      ${n > 1 ? `<div class="vpick" title="${n} mixes — pick which one to start with">
+         <span class="vn">${n}</span><svg class="vcar" viewBox="0 0 10 6"><path d="M0 0l5 6 5-6z"/></svg>
+       </div>` : ''}
       <div class="sopen" title="Open “${esc(s.title)}” — its own page, without playing: the stack, the comments and the links (d)">▤</div>
       <div class="scpy" title="Copy share link to “${esc(s.title)}” — the whole stack">🔗</div>
       ${s.folder ? `<div class="sdel" title="Delete — one mix, or “${esc(s.title)}” and all of them">🗑</div>` : ''}`;
@@ -1770,7 +1807,6 @@ function renderList() {
         <div class="title${editing ? '' : ' titlelink'}">${esc(s.title)}</div>
         <div class="sub">
           ${s.artist ? `<span>${esc(s.artist)}</span>` : ''}
-          ${n>1 ? `<span class="badge">⌥ ${n} versions</span>` : `<span class="badge dim">1 version</span>`}
           ${cc ? `<span class="badge dim">💬 ${cc}</span>` : ''}
           ${(() => { const f = favouriteIndex(s); return f === -1 ? ''
               : `<span class="badge fav" title="Most-starred mix — ${esc(starsOf(s.versions[f]).join(', '))}">★ ${esc(s.versions[f].name)}</span>`; })()}
@@ -1792,6 +1828,8 @@ function renderList() {
         return;                         // edit mode: rows don't start playback
       }
       if (e.target.closest('.sdel')) return;
+      const vp = e.target.closest('.vpick');
+      if (vp){ e.stopPropagation(); openRowVersions(i, vp); return; }
       const cp = e.target.closest('.scpy');
       if (cp){ copyText(shareUrl(songs[i]), cp); return; }
       // The title and ▤ are the same door, the way a Bandcamp track listing
@@ -1806,6 +1844,66 @@ function renderList() {
       deleteFlow(songs[Number(el.dataset.i)]);
     });
   });
+}
+
+// ---------- Starting a song on a particular mix ----------
+// The row used to announce "⌥ 5 versions" and do nothing with it — a label
+// wide enough to shove the title around, telling you about a choice you then
+// had to go somewhere else to make. It is a control now: the count, a caret,
+// and the stack itself one tap away. Picking a mix plays the song from that
+// mix; the row on its own still plays the latest, as it always did.
+let rowVerMenu = null;
+function closeRowVersions(){
+  if (!rowVerMenu) return;
+  rowVerMenu.remove(); rowVerMenu = null;
+  document.removeEventListener('click', closeRowVersions, true);
+  window.removeEventListener('resize', closeRowVersions);
+  window.removeEventListener('scroll', closeRowVersions, true);
+}
+function openRowVersions(i, anchor){
+  const wasOpen = rowVerMenu && rowVerMenu.dataset.i === String(i);
+  closeRowVersions();
+  if (wasOpen) return;                       // a second tap on the same caret closes it
+
+  const s = songs[i];
+  const fav = favouriteIndex(s);
+  const m = document.createElement('div');
+  m.className = 'rowvers';
+  m.dataset.i = String(i);
+  m.innerHTML = `<div class="rvhead">Start “${esc(s.title)}” on…</div>`
+    + s.versions.map((v, vi) => `
+      <button class="rvitem" data-vi="${vi}">
+        <span class="rvname">${esc(v.name)}</span>
+        ${vi === 0 ? '<span class="latest">LATEST</span>' : ''}
+        ${vi === fav ? '<span class="latest fav">★</span>' : ''}
+        <span class="rvdate">${esc(v.date || '')}</span>
+      </button>`).join('');
+  document.body.appendChild(m);
+
+  // Anchored to the caret, then nudged back inside the viewport — a stack of
+  // nine mixes on a short window would otherwise hang off the bottom.
+  const a = anchor.getBoundingClientRect();
+  const w = m.offsetWidth, h = m.offsetHeight;
+  const left = Math.max(8, Math.min(innerWidth - w - 8, a.right - w));
+  const below = a.bottom + 6;
+  m.style.left = left + 'px';
+  m.style.top = (below + h > innerHeight - 8 ? Math.max(8, a.top - h - 6) : below) + 'px';
+
+  m.addEventListener('click', (e) => {
+    const it = e.target.closest('.rvitem');
+    if (!it) return;
+    e.stopPropagation();
+    const vi = Number(it.dataset.vi);
+    closeRowVersions();
+    playSong(i, vi);
+  });
+  // Capture phase, so the click that opened this one doesn't immediately shut it.
+  setTimeout(() => {
+    document.addEventListener('click', closeRowVersions, true);
+    window.addEventListener('resize', closeRowVersions);
+    window.addEventListener('scroll', closeRowVersions, true);
+  }, 0);
+  rowVerMenu = m;
 }
 
 // ---------- The ghost waveform behind each row ----------
@@ -2155,7 +2253,9 @@ function buildOrder(start){
     order=[start,...rest]; pos=0;
   } else { order=songs.map((_,i)=>i); pos=start; }
 }
-function playSong(i){ buildOrder(i); openSong(order[pos], true); }
+// startVer lets the row's version picker open the song on a mix other than the
+// latest; everything else still starts at the top of the stack.
+function playSong(i, startVer = 0){ buildOrder(i); openSong(order[pos], true, startVer); }
 
 // ---------- Open a song: build a wavesurfer per version ----------
 let objectUrls = [];

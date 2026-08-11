@@ -7,7 +7,7 @@
 <meta name="description" content="Sn'art — versioned artwork with comments pinned to a region of the image." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with index.html -->
-<link rel="stylesheet" href="core.css?v=23" />
+<link rel="stylesheet" href="core.css?v=24" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=30" />
 <style>
@@ -1330,9 +1330,13 @@ $('shareBtn').onclick = () => copyLink(
 const INBOX_MAX = 50 * 1024 * 1024;    // Supabase free-tier per-file ceiling (fixed)
 
 function setAddStatus(msg, cls){ const el = $('addStatus'); el.textContent = msg || ''; el.className = 'status' + (cls ? ' ' + cls : ''); }
+// The value is the FOLDER, not the title — the folder is the permanent key the
+// importer matches on, the title is only what the piece is called today. Using
+// the title meant a renamed piece quietly got a second, duplicate piece the
+// next time anyone uploaded a revision to it.
 function fillPieceSelect(){
   const sel = $('addSongSel');
-  sel.innerHTML = pieces.map(p => `<option value="${esc(p.title)}">${esc(p.title)}</option>`).join('')
+  sel.innerHTML = pieces.map(p => `<option value="${esc(p.folder || p.title)}">${esc(p.title)}</option>`).join('')
     + `<option value="__new__">➕ New piece…</option>`;
   if (!pieces.length) sel.value = '__new__';
   syncPieceNew();
@@ -1360,7 +1364,7 @@ function openAdd(){
   setAddStatus('');
   fillPieceSelect();
   fillLinkSelect($('addLinkSel'), activePiece ? (activePiece.link || '') : '');
-  if (activePiece) $('addSongSel').value = activePiece.title;
+  if (activePiece) $('addSongSel').value = activePiece.folder || activePiece.title;
   syncPieceNew();
   const modeEl = $('addMode');
   modeEl.className = 'mode github';
@@ -1376,6 +1380,7 @@ async function doUpload(){
   const files = [...($('addFile').files || [])];
   const sel = $('addSongSel').value;
   const piece = sel === '__new__' ? $('addSongNew').value.trim() : sel;
+  const pieceLabel = (pieces.find(p => (p.folder || p.title) === piece) || {}).title || piece;
   if (!files.length){ setAddStatus('Choose at least one image.', 'err'); return; }
   if (!piece){ setAddStatus('Give the piece a title.', 'err'); return; }
   const multi = files.length > 1;
@@ -1423,7 +1428,7 @@ async function doUpload(){
       try { await libRpc('set_song_link', { f: piece, target: linkTo }); }
       catch { /* the upload worked; a failed link is not worth failing over */ }
     }
-    setAddStatus(`Done ✓ — ${res.imported} revision${res.imported === 1 ? '' : 's'} added to “${piece}”.`, 'ok');
+    setAddStatus(`Done ✓ — ${res.imported} revision${res.imported === 1 ? '' : 's'} added to “${pieceLabel}”.`, 'ok');
     const wasOpen = activePiece && activePiece.title;
     await init();
     if (wasOpen){

@@ -7,7 +7,7 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=23" />
+<link rel="stylesheet" href="core.css?v=24" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=30" />
 <style>
@@ -118,10 +118,21 @@
   }
   .veritem .dl:hover { color: var(--text); background: var(--bg-row); }
 
-  .now { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; min-height: 22px; }
+  /* The buttons on this row don't shrink, so a mid-width window used to push
+     them off the page and leave the song title wrapping one word per line.
+     It wraps as a row instead: the words keep the first line to themselves and
+     the buttons drop underneath when they stop fitting. */
+  .now { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; min-height: 22px; }
   .now .cover { width: 40px; height: 40px; border-radius: 8px; flex: none; object-fit: cover; background: linear-gradient(135deg, var(--accent), var(--accent-2)); display: none; }
-  .now .nowtitle { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .now .nowartist { color: var(--text-dim); font-size: 13px; } .now .sep { color: var(--text-mute); }
+  /* One line, clipped — never a stack of single words. */
+  .now .nowtext { flex: 1 1 220px; min-width: 0; }
+  .now .nowline { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .now .nowtitle { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .now .nowartist {
+    color: var(--text-dim); font-size: 13px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; min-width: 0;
+  }
+  .now .sep { color: var(--text-mute); flex: none; }
   .now .cbtn { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; background: var(--bg-row); border: 1px solid var(--line); color: var(--text-dim); padding: 6px 12px; border-radius: 20px; cursor: pointer; font-size: 13px; }
   .now .cbtn:hover { background: var(--bg-hover); color: var(--text); }
   .now .cbtn.active { color: var(--accent); border-color: var(--accent); }
@@ -914,10 +925,12 @@
       <div class="pad">
         <div class="now">
           <img class="cover" id="nowCover" alt="" />
-          <div style="min-width:0">
-            <span class="nowtitle" id="nowTitle">Nothing playing</span>
-            <span class="sep">·</span>
-            <span class="nowartist" id="nowArtist"></span>
+          <div class="nowtext">
+            <div class="nowline">
+              <span class="nowtitle" id="nowTitle">Nothing playing</span>
+              <span class="sep">·</span>
+              <span class="nowartist" id="nowArtist"></span>
+            </div>
             <div class="nowlog" id="nowLog" title="Open version history (v)"></div>
           </div>
           <div class="verdrop" id="verdrop" style="display:none">
@@ -4123,9 +4136,15 @@ async function prepareForUpload(files, setStatus, wantCompress){
 // --- Modal ---
 function setAddStatus(msg, cls){ const el = $('addStatus'); el.textContent = msg || ''; el.className = 'status' + (cls ? ' ' + cls : ''); }
 
+// The value is the FOLDER, not the title. A song's folder is its permanent
+// key — it names the storage path and it is what the importer matches on —
+// while the title is just what it is called today. Sending the title meant
+// that the moment a song was renamed, uploading a new mix to it quietly
+// created a second song under the new name instead of stacking onto the old
+// one, and the mix you had just added was nowhere in the song you added it to.
 function fillSongSelect(){
   const sel = $('addSongSel');
-  sel.innerHTML = songs.map(s => `<option value="${esc(s.title)}">${esc(s.title)}</option>`).join('')
+  sel.innerHTML = songs.map(s => `<option value="${esc(s.folder || s.title)}">${esc(s.title)}</option>`).join('')
     + `<option value="__new__">➕ New song…</option>`;
   if (!songs.length) sel.value = '__new__';
   syncSongNew();
@@ -4173,14 +4192,23 @@ $('addBtn').onclick = openAdd;
 $('addClose').onclick = closeAdd;
 $('addModal').addEventListener('click', (e) => { if (e.target === $('addModal')) closeAdd(); });
 
-function chosenSongTitle(){
+// The key the upload is filed under. For a new song there is no folder yet,
+// so the typed title becomes one.
+function chosenSongKey(){
   const sel = $('addSongSel').value;
   return sel === '__new__' ? $('addSongNew').value.trim() : sel;
+}
+// …and what to call it when telling someone what just happened.
+function chosenSongLabel(){
+  const key = chosenSongKey();
+  const s = songs.find(x => (x.folder || x.title) === key);
+  return s ? s.title : key;
 }
 
 async function doUpload(){
   let files = [...($('addFile').files || [])];
-  const song = chosenSongTitle();
+  const song = chosenSongKey();
+  const songLabel = chosenSongLabel();
   if (!files.length){ setAddStatus('Choose at least one audio file.', 'err'); return; }
   if (!song){ setAddStatus('Give the song a title.', 'err'); return; }
   const multi = files.length > 1;
@@ -4229,7 +4257,7 @@ async function doUpload(){
     // Import right away rather than waiting on a poller somewhere.
     setAddStatus('Importing…');
     const res = await edgeFn('import-inbox', { band: curBand, pass, song });
-    setAddStatus(`Done ✓ — ${res.imported} mix${res.imported === 1 ? '' : 'es'} added to “${song}”.`, 'ok');
+    setAddStatus(`Done ✓ — ${res.imported} mix${res.imported === 1 ? '' : 'es'} added to “${songLabel}”.`, 'ok');
     await init();
     fillSongSelect();
     $('addFile').value = ''; $('addVerName').value = ''; $('addNote').value = '';

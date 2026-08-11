@@ -59,7 +59,11 @@ a { color: var(--accent); }
 
 .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 280px; }
 
-header.app { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+/* The row of buttons on the right grows with the features; none of them shrink,
+   so past a certain window width they used to run off the page and take a
+   horizontal scrollbar with them. They wrap onto a second line instead. */
+header.app { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 24px; }
+header.app > div:not(.logo):not(.count) { min-width: 0; }
 header.app .logo {
   width: 46px; height: 46px; border-radius: 12px; flex: none;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));

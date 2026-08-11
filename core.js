@@ -146,16 +146,30 @@ function rng(seed){
 // mid grey or two, which is what lets shapes read as separate planes rather
 // than as one flat cutout. `tones` is how many steps sit between the two ends.
 function dazzlePalette(ink, ground, tones){
-  const hex = (c) => {
-    const m = String(c).trim().replace('#','');
-    return m.length === 3 ? m.split('').map(x => parseInt(x+x,16)) : [0,2,4].map(i => parseInt(m.slice(i,i+2),16));
+  // Reads #rgb, #rrggbb and rgb()/rgba() alike, and carries the alpha through.
+  // The page-wide scheme is painted in translucent white so the page colour
+  // shows underneath it; a hex-only reader turned those into NaN, and an
+  // invalid fill in SVG falls back to black — which is why a scheme drawn on
+  // a near-black page could go missing entirely.
+  const parse = (c) => {
+    const s = String(c).trim();
+    const fn = s.match(/^rgba?\(([^)]+)\)$/i);
+    if (fn){
+      const p = fn[1].split(/[,\/\s]+/).filter(Boolean).map(Number);
+      return [p[0]|0, p[1]|0, p[2]|0, p.length > 3 && isFinite(p[3]) ? p[3] : 1];
+    }
+    const m = s.replace('#','');
+    const px = m.length < 6 ? m.split('').map(x => x + x).join('') : m;
+    return [0,2,4].map(i => parseInt(px.slice(i,i+2),16))
+           .concat(px.length >= 8 ? parseInt(px.slice(6,8),16)/255 : 1);
   };
-  const a = hex(ink), b = hex(ground);
+  const a = parse(ink), b = parse(ground);
   const out = [];
   const n = Math.max(2, Math.min(4, tones|0));
   for (let i = 0; i < n; i++){
     const t = i / (n - 1);
-    out.push('#' + a.map((v, j) => Math.round(v + (b[j] - v) * t).toString(16).padStart(2,'0')).join(''));
+    const v = a.map((x, j) => x + (b[j] - x) * t);
+    out.push(`rgba(${Math.round(v[0])},${Math.round(v[1])},${Math.round(v[2])},${(+v[3].toFixed(3))})`);
   }
   return out;                                   // [ink … ground]
 }
@@ -287,8 +301,11 @@ function paintDazzle(){
   b.setProperty('--dazzle',     dazzleURL({ w: 1400, h: 140, seed: s(), cuts: 8, scale: 1.1 }));   // 2 tones, full conflict
   b.setProperty('--dazzle-2',   dazzleURL({ w: 1400, h: 120, seed: s(), cuts: 9, scale: 0.72 }));
   b.setProperty('--dazzle-narrow', dazzleURL({ w: 120, h: 900, seed: s(), cuts: 7, scale: 0.9 }));
+  // The page-wide scheme. Stronger than it looks it needs to be, because the
+  // surfaces stacked on top of it — the song rows, the panels, the song page —
+  // are translucent rather than solid, and this has to still read through them.
   b.setProperty('--dazzle-bg',  dazzleURL({ w: 1600, h: 1000, seed: s(), cuts: 11, scale: 2.2,
-                                            ink: 'rgba(255,255,255,.055)', ground: 'rgba(0,0,0,0)' }));
+                                            ink: 'rgba(255,255,255,.07)', ground: 'rgba(0,0,0,0)' }));
 }
 
 // ---------- Deep-link routing ----------

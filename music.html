@@ -9,7 +9,7 @@
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
 <link rel="stylesheet" href="core.css?v=22" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=28" />
+<link rel="stylesheet" href="theme-dazzle.css?v=29" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -253,9 +253,13 @@
      It sits UNDER the dock (z-index 20 against the dock's 30), because the
      transport stays put: the profile borrows the timeline out of it rather
      than drawing a second player, so the audio never stops or reloads. */
+  /* Translucent rather than solid: the page carries a very faint dazzle across
+     its whole background, and blacking it out entirely made the song page feel
+     like a different site. This dims it instead of deleting it. */
   .profile {
     display: none; position: fixed; inset: 0; z-index: 20; overflow-y: auto;
-    background: radial-gradient(1100px 560px at 50% -8%, #1a1c26 0%, var(--bg) 58%);
+    background: radial-gradient(1100px 560px at 50% -8%, rgba(26,28,38,.90) 0%, rgba(8,8,10,.86) 58%);
+    backdrop-filter: blur(1px);
   }
   body.profiling .profile { display: block; }
   body.profiling .wrap { display: none; }
@@ -1101,7 +1105,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=22"></script>
+<script src="core.js?v=25"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;

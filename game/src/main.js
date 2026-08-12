@@ -14,7 +14,57 @@ import { Game } from './core/Game.js';
 import { CFG } from '../config.js';
 
 const canvas = document.getElementById('c');
-const game = new Game(canvas);
+
+// ------------------------------------------------------------------ preflight
+//
+// Ask before building, because THREE.WebGLRenderer throwing is a dead end and
+// this is a question with a good answer. Plenty of real visitors have no usable
+// WebGL — in-app browsers inside social apps, old Android, desktop Firefox with
+// hardware acceleration switched off — and they arrive by tapping a link on a
+// band's page, which makes them exactly the people worth catching gently.
+function webglOk() {
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    if (!gl) return false;
+    // Hand it straight back. Browsers cap how many live WebGL contexts a page
+    // may hold, and a probe that quietly keeps one is a probe that can cause
+    // the very failure it was checking for.
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The net lives in index.html; never let its absence become the error. */
+function bail(headline, detail) {
+  if (typeof window.__lakehorseBail === 'function') {
+    window.__lakehorseBail(headline, detail);
+  }
+}
+
+if (!webglOk()) {
+  bail(
+    "This browser can't run the water.",
+    'The Swimulator needs WebGL, and this browser either lacks it or has it ' +
+    'switched off. <b>If you opened this inside another app</b> — Instagram, ' +
+    'Facebook, a messages list — open it in Safari or Chrome instead and it ' +
+    'should run.');
+  throw new Error('no webgl');   // stops the rest of this module cold
+}
+
+let game;
+try {
+  game = new Game(canvas);
+} catch (e) {
+  console.error('[lakehorse]', e);
+  bail(
+    'The water would not load.',
+    'Something broke while building the lake. A reload often fixes it — the ' +
+    'site updates in place, and a half-cached update can land like this.');
+  throw e;
+}
 
 // --------------------------------------------------------------- start screen
 

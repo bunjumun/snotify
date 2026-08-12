@@ -584,6 +584,10 @@
   body.authed #artBtn, body.authed #homeBtn { display: inline-flex; }
   body.singlemix #artBtn, body.singlemix #homeBtn, body.singlemix #adminBtn,
   body.singlemix #toolsBtn, body.shared #adminBtn { display: none !important; }
+  /* The game is the exception to "band members only": it's public, and a fan
+     reading this page is exactly who it's for. It still stays out of the
+     stripped-down single-mix view, which is deliberately just the player. */
+  body.singlemix #gameBtn { display: none !important; }
 
   /* Authoring affordances light up for any logged-in band member */
   #addBtn, #projBtn { display: none; }
@@ -781,6 +785,7 @@
       <button class="addbtn" id="shareBtn" title="Copy a share link to everything in this view — the project, or the whole library">🔗</button>
       <button class="addbtn" id="projBtn" title="Make a share link for a hand-picked set of songs">🎞</button>
       <a class="addbtn" id="artBtn" href="art.html" title="Sn'art — this band's artwork, with comments pinned to the picture">🎨 Art</a>
+      <a class="addbtn" id="gameBtn" href="game/" title="Lakehorse Swimulator — the game, scored by these tracks">🐴 Game</a>
       <a class="addbtn" id="homeBtn" href="index.html" title="Sn'Album — the band's home">💿</a>
       <button class="addbtn" id="editBtn" title="Edit — reorder, rename, stack, unstack, trash">✏️</button>
       <button class="addbtn" id="trashBtn" title="Trash — deleted songs are archived here until you confirm permanent deletion">

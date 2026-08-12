@@ -6,7 +6,7 @@
 <title>Lakehorse Swimulator</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐴</text></svg>" />
 <meta name="theme-color" content="#0d2b2e" />
-<meta name="description" content="Ride the kelpie through the wreck of the SS Jupiter. Mind your breath." />
+<meta name="description" content="Ride the kelpie through the wreck of the SS Enias. Mind your breath." />
 
 <!-- Three.js is vendored, not bundled. The repo has no build step and this page
      keeps it that way: an import map points the bare specifier at the committed
@@ -15,6 +15,52 @@
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
 </script>
+
+<!-- The safety net, and it is deliberately a CLASSIC script rather than a
+     module: if src/main.js fails to fetch or parse, no module code runs at all,
+     so a net written inside one would never be strung up. This runs first and
+     runs regardless.
+
+     What it is for: DIVE IN used to stay enabled and simply do nothing when the
+     boot threw — no WebGL, a half-deployed module, a stale cached file. The
+     visitor tapped the big green button and the page sat there forever. That is
+     the worst failure a band's site can have, and it lands hardest in the
+     in-app browsers people arrive from Instagram in. -->
+<script>
+window.__lakehorseBail = function (headline, detail) {
+  var el = document.getElementById('bail');
+  if (!el || !el.classList.contains('hide')) return;   // already bailed
+  document.getElementById('bailHead').textContent = headline;
+  document.getElementById('bailBody').innerHTML = detail;
+  var start = document.getElementById('start');
+  if (start) start.classList.add('bailed');
+  el.classList.remove('hide');
+};
+function bootFailed(e) {
+  // Only boot failures. Once the game is running it handles its own trouble,
+  // and tearing the screen down mid-swim over a stray error would be worse
+  // than the error.
+  if (window.__lakehorse) return;
+  var msg = (e && (e.message || (e.reason && (e.reason.message || e.reason)) ||
+                   (e.error && e.error.message))) || '';
+  if (/webgl/i.test(String(msg))) return;   // main.js says this one better
+  window.__lakehorseBail(
+    'The water would not load.',
+    'Something broke on the way down — often a half-finished update. ' +
+    'A reload usually fixes it.');
+}
+
+// Capture phase, and that is the whole trick: a module that 404s or fails to
+// parse fires `error` at the <script> element, and resource errors do not
+// bubble. A plain window listener never hears the one failure most likely to
+// happen here — a deploy landing while someone has half the old files cached.
+addEventListener('error', bootFailed, true);
+addEventListener('unhandledrejection', bootFailed);
+</script>
+
+<!-- With scripting off the mode picker is empty and DIVE IN is inert, so hide
+     the controls and let the <noscript> in the start screen do the talking. -->
+<noscript><style>#modes,#dive,#loadState,#startNote{display:none}</style></noscript>
 
 <style>
 :root{
@@ -65,6 +111,21 @@ canvas{display:block;width:100%;height:100%}
 #dive:active{transform:translateY(1px)}
 #startNote{color:var(--text-mute);font-size:.75rem;max-width:30rem;line-height:1.5;margin:0}
 #loadState{color:var(--text-mute);font-size:.78rem;min-height:1.2em;margin:0}
+
+/* ---------- When it can't run ----------
+   A dead end still owes the visitor a way onward. They came from a band's
+   website, so the way onward is the band: the record plays in any browser that
+   can't manage WebGL, which is the whole point of sending them there. */
+#start.bailed #modes, #start.bailed #dive,
+#start.bailed #loadState, #start.bailed #startNote{display:none}
+#bail{max-width:32rem;display:flex;flex-direction:column;align-items:center;gap:.85rem}
+#bailHead{font-size:1rem;font-weight:700;letter-spacing:.06em;color:var(--warn);margin:0}
+#bailBody{color:var(--text-dim);font-size:.86rem;line-height:1.6;margin:0}
+#bailOut{display:inline-block;background:var(--weed);color:#04231a;text-decoration:none;
+  border-radius:999px;padding:.8rem 2.2rem;font-weight:700;letter-spacing:.1em;font-size:.9rem;
+  box-shadow:0 6px 30px rgba(125,224,138,.28)}
+#bailReload{background:none;border:1px solid var(--line);color:var(--text-mute);
+  border-radius:999px;padding:.55rem 1.6rem;font:inherit;font-size:.78rem;cursor:pointer}
 
 /* ---------- HUD ---------- */
 #hud{padding:max(.9rem,env(safe-area-inset-top)) .9rem max(.9rem,env(safe-area-inset-bottom))}
@@ -277,7 +338,7 @@ canvas{display:block;width:100%;height:100%}
      behind a real tap, which is the entire reason this screen exists. -->
 <div class="layer on" id="start">
   <h1>LAKEHORSE<span class="sub">S W I M U L A T O R</span></h1>
-  <p class="blurb">An ocean world, no land on it anywhere, and the <em>Jupiter</em> came down here
+  <p class="blurb">An ocean world, no land on it anywhere, and the <em>Enias</em> came down here
      with everyone still aboard. You are not steering — the lakehorse is. You are the diver holding on.</p>
   <div class="modes" id="modes"></div>
   <button id="dive">DIVE IN</button>
@@ -285,6 +346,23 @@ canvas{display:block;width:100%;height:100%}
   <p id="startNote"><kbd>WASD</kbd> or arrows steer · <kbd>Space</kbd> swim · <kbd>Shift</kbd> boost · <kbd>E</kbd> use<br>
      <b>Hold Space to cruise. Tap it to swim — every tap is a kick.</b><br>
      Bluetooth controller and touch also work. Sound on is better.</p>
+
+  <!-- Shown in place of the mode picker when the game can't start. Lives in the
+       HTML rather than being built in JS on purpose — the situations it exists
+       for are the ones where the JS didn't run. -->
+  <div id="bail" class="hide">
+    <p id="bailHead"></p>
+    <p id="bailBody"></p>
+    <a id="bailOut" href="../music.html">HEAR THE RECORD</a>
+    <button id="bailReload" onclick="location.reload()">TRY AGAIN</button>
+  </div>
+
+  <noscript>
+    <p style="color:var(--warn);max-width:30rem;line-height:1.6">
+      The Swimulator needs JavaScript to run. The record doesn't —
+      <a href="../music.html" style="color:var(--weed)">go and hear it instead</a>.
+    </p>
+  </noscript>
 </div>
 
 <!-- Death -->

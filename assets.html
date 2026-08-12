@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Band assets</title>
+<meta name="description" content="Band assets — the lore document, stacked by draft, with one draft live." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>" />
+<link rel="stylesheet" href="core.css?v=29" />
+<link rel="stylesheet" href="theme-dazzle.css?v=31" />
+<style>
+  /* Assets-only surface. Everything shared lives in core.css. */
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--bg-row); border: 1px solid transparent; border-radius: 10px;
+    padding: 18px; cursor: pointer; transition: border-color .12s, background .12s;
+  }
+  .card:hover { background: var(--bg-hover); border-color: var(--accent); }
+  .card .glyph { font-size: 26px; }
+  .card h2 { font-size: 17px; margin: 8px 0 4px; }
+  .card p { color: var(--text-dim); font-size: 13px; margin: 0; }
+  .card .sub { margin-top: 12px; color: var(--text-mute); font-size: 12.5px; font-weight: 600; }
+
+  /* ---------- The document ---------- */
+  .dochead { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .dochead .dtitle { font-weight: 600; font-size: 17px; }
+  .doclayout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .doclayout { grid-template-columns: 1fr; } }
+
+  .stack { background: var(--bg-row); border-radius: 10px; padding: 8px; }
+  .stack .shead {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px 10px;
+    color: var(--text-mute); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  }
+  .draft {
+    display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px;
+    cursor: pointer; border: 1px solid transparent;
+  }
+  .draft:hover { background: var(--bg-hover); }
+  .draft.on { border-color: var(--accent); background: var(--bg-hover); }
+  .draft .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .draft .when { color: var(--text-mute); font-size: 12px; }
+  .draft .live {
+    font-size: 10.5px; font-weight: 800; letter-spacing: .07em; padding: 2px 6px; border-radius: 5px;
+    background: var(--accent-2, #00d0a4); color: #04120e;
+  }
+  .draft .ord { display: flex; flex-direction: column; gap: 1px; }
+  .draft .ord button {
+    background: none; border: 0; color: var(--text-mute); cursor: pointer; line-height: .8;
+    font-size: 11px; padding: 0 2px;
+  }
+  .draft .ord button:hover { color: var(--text); }
+
+  .editor { display: flex; flex-direction: column; gap: 10px; }
+  .editor textarea {
+    width: 100%; min-height: 58vh; resize: vertical; font: 13.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #0a0b0f; color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 14px;
+  }
+  .editor .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .editor .row .grow { flex: 1; }
+  .editor input.nm {
+    background: #0a0b0f; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; min-width: 180px;
+  }
+  .parsed { color: var(--text-mute); font-size: 12.5px; }
+  .parsed b { color: var(--text-dim); }
+
+  #musicBtn, #homeBtn { display: none; }
+  body.authed #musicBtn, body.authed #homeBtn { display: inline-flex; }
+</style>
+</head>
+<body class="locked">
+
+  <!-- Band gate — the same two-step front door as every other page, and the
+       same localStorage entry, so one band password opens all of them. -->
+  <div class="modal-back" id="gateModal">
+    <div class="modal" style="max-width:360px">
+      <h2>📖 Band assets</h2>
+
+      <div id="gateStep1">
+        <div class="hint" style="margin-bottom:6px">Enter your band to continue.</div>
+        <label>Band name</label>
+        <input type="text" id="gateName" autocomplete="off" autocapitalize="none" />
+        <div class="status err" id="gateErr1"></div>
+        <div id="gateSuggest" style="display:none"></div>
+        <div class="actions"><button class="btn primary" id="gateNext">Continue</button></div>
+      </div>
+
+      <div id="gateStep2" style="display:none">
+        <div class="hint" style="margin-bottom:6px">Password for <b id="gateBandLabel"></b>.</div>
+        <label>Band password</label>
+        <input type="password" id="gatePass" autocomplete="off" />
+        <div class="status err" id="gateErr2"></div>
+        <div class="actions">
+          <button class="btn ghost" id="gateBack">Back</button>
+          <button class="btn primary" id="gateGo">Enter</button>
+        </div>
+      </div>
+
+      <div class="hint" style="margin-top:14px;text-align:center">
+        <span class="linky" id="adminOpenLink">Site admin</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <header class="app">
+      <div class="logo">📖</div>
+      <div>
+        <h1 id="collectionTitle">Band assets</h1>
+        <p data-txt="assets.tagline">The written stuff · drafts stacked, one of them live</p>
+      </div>
+      <div class="count" id="assetCount"></div>
+      <a class="addbtn" id="musicBtn" href="music.html" title="The band's music library">🎵 Music</a>
+      <a class="addbtn" id="homeBtn" href="index.html" title="Sn'Album — the band's home">💿</a>
+      <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
+      <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
+    </header>
+
+    <!-- The shelf. One asset for now; the grid is here because there will be
+         more, and a one-item grid costs nothing. -->
+    <div id="shelf">
+      <div class="cards">
+        <div class="card" id="cardLore">
+          <div class="glyph">📖</div>
+          <h2>Lore document</h2>
+          <p>The band's story, in drafts. The one marked live is what the game
+             tells — the fish read it, so promoting a draft rewrites what they say.</p>
+          <div class="sub" id="loreTally">&nbsp;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- The document itself -->
+    <div id="doc" style="display:none">
+      <div class="dochead">
+        <button class="addbtn" id="backBtn">← Band assets</button>
+        <div class="dtitle">Lore document</div>
+        <div class="grow" style="flex:1"></div>
+        <button class="btn ghost" id="newBtn">New draft</button>
+      </div>
+
+      <div class="doclayout">
+        <div class="stack" id="stack">
+          <div class="shead">Drafts <span id="stackCount"></span></div>
+          <div id="drafts"></div>
+        </div>
+
+        <div class="editor">
+          <div class="row">
+            <input class="nm" id="draftName" placeholder="Draft name" />
+            <button class="btn primary" id="saveBtn">Save</button>
+            <button class="btn ghost" id="saveNewBtn">Save as new draft</button>
+            <button class="btn ghost" id="liveBtn">Make live</button>
+            <span class="grow"></span>
+            <span class="status" id="docStatus"></span>
+          </div>
+          <textarea id="body" spellcheck="true"></textarea>
+          <div class="parsed" id="parsed"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="core.js?v=27"></script>
+<script type="module">
+// The parser the GAME uses, imported rather than reimplemented — so what this
+// page reports as "12 exchanges" is what the fish will actually find.
+import { parseExchanges } from './game/src/game/LoreFeed.js';
+
+App.init     = () => init();
+App.onLock   = () => { showShelf(); drafts = []; $('assetCount').textContent = ''; };
+App.onLogout = () => { drafts = []; current = null; };
+
+let drafts = [];          // the stack, in position order
+let current = null;       // the draft open in the editor, or null for a new one
+let dirty = false;
+
+// ---------- Load ----------
+async function init(){
+  try {
+    drafts = (await libRpc('lore_list', {})) || [];
+  } catch (e) {
+    // v19 not applied yet is the common case here, and it should read as a
+    // to-do rather than as a broken page.
+    drafts = [];
+    if (/lore_list/.test(e.message || '')) {
+      say('Run supabase/schema-v19.sql to switch this on.', true);
+    }
+  }
+  $('assetCount').textContent = '1 asset';
+  $('loreTally').textContent = drafts.length
+    ? `${drafts.length} draft${drafts.length === 1 ? '' : 's'} · ${live() ? live().name + ' is live' : 'none live'}`
+    : 'Not written yet';
+  renderDrafts();
+}
+
+const live = () => drafts.find(d => d.active) || null;
+
+function showShelf(){ $('shelf').style.display = ''; $('doc').style.display = 'none'; }
+function showDoc(){ $('shelf').style.display = 'none'; $('doc').style.display = ''; }
+
+function say(msg, isErr){
+  const el = $('docStatus');
+  el.textContent = msg || '';
+  el.className = 'status' + (isErr ? ' err' : ' ok');
+  if (msg) setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
+}
+
+// ---------- The stack ----------
+function renderDrafts(){
+  const box = $('drafts');
+  $('stackCount').textContent = drafts.length ? `(${drafts.length})` : '';
+  if (!drafts.length){
+    box.innerHTML = '<div class="hint" style="padding:8px 10px">No drafts yet. '
+      + 'Start one and the game will read it.</div>';
+    return;
+  }
+  box.innerHTML = '';
+  drafts.forEach((d, i) => {
+    const row = document.createElement('div');
+    row.className = 'draft' + (current && current.id === d.id ? ' on' : '');
+    row.innerHTML =
+      `<span class="ord">
+         <button title="Move up" data-up="${i}">▲</button>
+         <button title="Move down" data-dn="${i}">▼</button>
+       </span>
+       <span class="nm">${esc(d.name)}</span>
+       ${d.active ? '<span class="live">LIVE</span>' : ''}
+       <span class="when">${timeago(d.updated || d.created)}</span>`;
+    row.addEventListener('click', (e) => {
+      if (e.target.dataset.up !== undefined) return move(i, -1);
+      if (e.target.dataset.dn !== undefined) return move(i, 1);
+      open(d);
+    });
+    box.appendChild(row);
+  });
+}
+
+function esc(s){ return String(s || '').replace(/[<>&]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;' }[c])); }
+
+async function move(i, dir){
+  const j = i + dir;
+  if (j < 0 || j >= drafts.length) return;
+  const [row] = drafts.splice(i, 1);
+  drafts.splice(j, 0, row);
+  renderDrafts();
+  try {
+    await libRpc('lore_reorder', { ids: drafts.map(d => d.id) });
+  } catch (e) { say(e.message, true); }
+}
+
+function open(d){
+  if (dirty && !confirm('Discard unsaved changes to this draft?')) return;
+  current = d;
+  $('draftName').value = d.name;
+  $('body').value = d.body || '';
+  dirty = false;
+  reparse();
+  renderDrafts();
+}
+
+// ---------- Editing ----------
+function reparse(){
+  const found = parseExchanges($('body').value);
+  $('parsed').innerHTML = found.length
+    ? `<b>${found.length}</b> exchange${found.length === 1 ? '' : 's'} found — `
+      + `the fish will use ${found.length === 1 ? 'it' : 'them'} in this order. `
+      + `Everything else stays background.`
+    : 'No <b>Q:</b> / <b>A:</b> pairs in this draft, so the game keeps its own '
+      + 'conversation. Prose alone changes nothing.';
+}
+
+async function save(asNew){
+  const name = $('draftName').value.trim() || 'Draft';
+  const body = $('body').value;
+  try {
+    const id = await libRpc('lore_save', {
+      nm: name, body_in: body, vid: asNew ? null : (current ? current.id : null),
+    });
+    dirty = false;
+    say('Saved.');
+    drafts = (await libRpc('lore_list', {})) || [];
+    current = drafts.find(d => d.id === id) || null;
+    renderDrafts();
+  } catch (e) { say(e.message, true); }
+}
+
+async function makeLive(){
+  if (!current) return say('Save this draft first.', true);
+  try {
+    await libRpc('lore_set_active', { vid: current.id });
+    drafts = (await libRpc('lore_list', {})) || [];
+    current = drafts.find(d => d.id === current.id) || current;
+    renderDrafts();
+    say('Live. The game reads this one now.');
+  } catch (e) { say(e.message, true); }
+}
+
+// ---------- Wiring ----------
+on('cardLore', 'click', () => {
+  showDoc();
+  if (!current) {
+    const start = live() || drafts[0];
+    if (start) open(start);
+    else { $('draftName').value = 'First draft'; $('body').value = TEMPLATE; reparse(); }
+  }
+});
+on('backBtn', 'click', () => { showShelf(); });
+on('newBtn', 'click', () => {
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  current = null;
+  $('draftName').value = 'New draft';
+  $('body').value = (live() && live().body) || TEMPLATE;
+  dirty = true; reparse(); renderDrafts();
+});
+on('saveBtn', 'click', () => save(false));
+on('saveNewBtn', 'click', () => save(true));
+on('liveBtn', 'click', makeLive);
+on('body', 'input', () => { dirty = true; reparse(); });
+addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+// A starting point, so the first draft is at parity with what the game already
+// says rather than being an empty box someone has to fill before anything works.
+const TEMPLATE = `LAKEHORSE — the story
+
+Earth is gone. A man who ran a megachurch built a gun the size of a city and
+shot a hole in the sky with it. The survivors were sent out on mining missions
+to start again, and the seam they were sent to was Jupiter.
+
+Anocean and Enias are two defectors from that industrial gold colony
+("Jupiter Gold"). The place reduces its people to numbers and instruments for
+profit ("Currency"). They leave through a liminal portal dimension called The
+Drain ("Down The Drain") and come out in a pure, uninhabited tropical world
+they plan to build a new society in ("Mango Tree World"). It falls apart when
+the two of them cannot agree on one dream ("This Is War"). Their followers take
+up arms and wreck the world they came to save. In the aftermath they separately
+remember how they had kept each other alive ("Alive"). As they reconcile, a
+glowing creature rises out of the water and the ash: the Lakehorse, an
+amphibious horse long thought extinct, drawn to conflict and upheaval, a
+harbinger of revolution and rebirth. It gallops across the ruins and leaves
+greenery behind it. The new world needs new hands ("LV8R").
+
+This is a water bong planet. Weed is the fuel here.
+
+---- EXCHANGES ----
+Everything under here is what the fish say and what the diver says back. Two
+spaces or a | breaks a line. Anything that isn't a Q:/A: pair is background.
+
+Q: You're not from the water. Where do you come from?
+A: A planet called Earth. It is not there any more. | We were sent out mining, to start again. That was the offer.
+
+Q: Planets do not simply stop being there.
+A: A man who ran a megachurch built a gun the size of a city | and shot a hole in the sky with it. That is the whole story.
+
+Q: And nobody stopped him?
+A: He had the money, so he had the pulpit, so he had the gun. | By the time it mattered, arguing with him was heresy.
+
+Q: So they sent you where?
+A: Jupiter. A seam of gold in a place not built for people. | You dug it, or you owed it. Usually both.
+
+Q: You keep saying gold. What is gold?
+A: Something they wanted badly enough to spend people on. | That is the entire definition. There is nothing under it.
+
+Q: Then why would anyone stay?
+A: Nine years on a contract, and they count the years slower than you do. | Up there a man is a number with a job attached to it.
+
+Q: And how does a man fall this far?
+A: The Drain. A hole between one place and the next. | No stars in it. No dark either, which is the part nobody warns you about.
+
+Q: Someone went first. Someone always goes first.
+A: Anocean and Enias. Two of them, out through the gate before it shut. | Everyone who tried it after them got what you are swimming through.
+
+Q: Did the first two find anything?
+A: Somewhere clean, and they named it after a tree. | They had a whole plan for it. Plans last about as long as plans do.
+
+Q: What broke it?
+A: Two dreams, one world, and no give in either of them. | Their own people took up arms over the shape of paradise.
+
+Q: So they died hating each other.
+A: No. When it was all ash they finally said the kind thing — | that they had kept each other alive. Late. But they said it.
+
+Q: And the green one? The one you are holding on to?
+A: She came up out of the water and the ash together, lit from inside. | Nobody called her. Nobody can. She just arrives.
+
+Q: Should I be afraid of her?
+A: She is no drowning-horse, whatever the old stories say. | Where she puts her feet down, it comes back green.
+
+Q: Then why is she HERE?
+A: Look around you and ask me that again. | She only ever turns up where it has already gone wrong.
+
+Q: So what is left to do?
+A: You do not get the new world with the old hands. | That is the whole instruction. That is all of it.
+
+Q: Why do you dive for the weed? It is only a plant.
+A: On this world it is the fuel. Everything here runs on it — | the water, the light, whatever it is you use to talk to me.
+
+Q: Then what were you burning, before you came here?
+A: Something we had to take out of the ground and could never put back. | You grow yours. That is the difference, and it is the only one.
+`;
+</script>
+</body>
+</html>

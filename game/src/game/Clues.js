@@ -42,6 +42,12 @@ import * as THREE from 'three';
 import { CFG } from '../../config.js';
 import { GuideFish } from '../entities/Fish.js';
 import { Chest } from '../entities/Chest.js';
+import { LoreFeed } from './LoreFeed.js';
+
+// Public by design — see supabase/schema-v19.sql. lore_active() serves only the
+// draft the band deliberately promoted, which is why it needs no password.
+const SUPA_URL = 'https://twgukeyoayfqldnojrkg.supabase.co';
+const SUPA_KEY = 'sb_publishable_zIiAxxA5Zk1yRNzignANXA_rEp3vKdG';
 
 const TELLERS = [
   { who: 'A lake trout',   color: 0x8fbf8a },
@@ -72,6 +78,11 @@ export class Clues {
 
     this.chest = new Chest(this._pickSpot(game.rng, game.wreck, game.seabed));
     game.scene.add(this.chest.group);
+
+    // The band's live draft. Whatever it holds wins over the LORE table at the
+    // bottom of this file; that table is the floor, not the source.
+    this.lore = new LoreFeed(CFG.audio.band, SUPA_URL, SUPA_KEY);
+    this.lore.refresh();
   }
 
   /**
@@ -369,7 +380,12 @@ export class Clues {
     // the one who came down from there, so he's the one who'd know — and it
     // gives him the only lines he has in the whole game. The answer lands on a
     // timer in update() so the two of them aren't talking over each other.
-    const l = LORE[this._lore++ % LORE.length];
+    // Live draft if the band has promoted one, the built-in table if not. The
+    // touch() is what keeps a mid-session edit landing: it costs nothing when
+    // the copy in hand is fresh, and never makes the fish wait on a fetch.
+    this.lore.touch(g.time);
+    const lines = this.lore.lines(LORE);
+    const l = lines[this._lore++ % lines.length];
     g.hud.say(l.ask, { who, seconds: 3.8 });
     g.audio?.sfx('fish');
     this._reply = { text: l.say, at: 3.2 };

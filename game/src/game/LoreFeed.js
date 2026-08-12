@@ -85,12 +85,21 @@ export class LoreFeed {
     const doc = await r.json();
     if (!doc || !doc.body) return;          // no draft promoted
 
-    const found = parseExchanges(doc.body);
     this.draftName = doc.name || null;
     this.updated = doc.updated || null;
+
+    // Written exchanges win — they're exact, and exactness is the reason to
+    // write them. Failing that, the prose itself becomes the conversation.
+    const found = parseExchanges(doc.body);
     if (found.length) {
       this.exchanges = found;
       this.source = 'live';
+      return;
+    }
+    const prose = proseExchanges(doc.body);
+    if (prose.length) {
+      this.exchanges = prose;
+      this.source = 'live-prose';
     }
   }
 
@@ -137,6 +146,84 @@ export function parseExchanges(text) {
   }
   flush();
   return out;
+}
+
+/**
+ * Turn plain prose into a conversation.
+ *
+ * The band writes stories, not dialogue trees. A lore document that only counts
+ * when it's been marked up in Q:/A: pairs is a document that will quietly stop
+ * being the source of truth the first time someone writes a paragraph — which
+ * is exactly what happened, so this is the fix: a draft of pure prose still
+ * changes what the game says.
+ *
+ * It works because of WHO is talking. The diver is high, holding onto a horse,
+ * being asked by fish where he came from — a man in that state reciting his own
+ * history a sentence at a time is not a failure of dialogue writing, it's the
+ * scene. So the fish ask open questions (below) and he answers with the next
+ * piece of the document, in order. Keep asking and the story comes out in
+ * sequence, which turns the doc into something you unspool by talking to fish.
+ *
+ * Headings, rules and the front matter are dropped: a fish solemnly reciting
+ * "---- EXCHANGES ----" is the one outcome nobody wants.
+ */
+export function proseExchanges(text, maxChars = 190) {
+  const out = [];
+  let n = 0;
+  for (const para of String(text).split(/\n\s*\n/)) {
+    const clean = para.replace(/\s+/g, ' ').trim();
+    if (!clean) continue;
+    if (isHeading(clean)) continue;
+
+    // Sentence-ish. Splitting on the punctuation keeps quotes and song titles
+    // in brackets intact, which a naive split on '.' would tear apart.
+    const sentences = clean.match(/[^.!?]+[.!?]+["')\]]*|\S[^.!?]*$/g) || [clean];
+    let chunk = '';
+    const push = () => {
+      const s = chunk.trim();
+      chunk = '';
+      if (s.length < 40) return;                  // a fragment isn't an answer
+      out.push({ ask: PROMPTS[n++ % PROMPTS.length], say: tidy(breakLine(s)) });
+    };
+    for (const s of sentences) {
+      if (chunk && (chunk + ' ' + s).length > maxChars) push();
+      chunk += (chunk ? ' ' : '') + s.trim();
+    }
+    push();
+  }
+  return out;
+}
+
+/** Titles, rules, and the all-caps banner lines people put in documents. */
+function isHeading(s) {
+  if (/^[-=_*~#\s]+$/.test(s)) return true;                 // ---- a rule ----
+  if (s.length < 40 && !/[.!?]$/.test(s)) return true;       // a short title
+  if (s === s.toUpperCase() && s.length < 80) return true;   // A BANNER LINE
+  return false;
+}
+
+/**
+ * These are the fish, and they have to work against any sentence at all — so
+ * none of them asks about anything specific. They're the sound of someone
+ * leaning in, which is all they need to be.
+ */
+const PROMPTS = [
+  'You were saying. Go on.',
+  'And then what?',
+  'Say that part again, slower.',
+  'What else do you know?',
+  'Keep talking. Nobody down here is in a hurry.',
+  'That is not the whole of it.',
+  'Tell me the next bit.',
+  'Go on, diver.',
+];
+
+/** One line break near the middle, so a long answer lands in two beats. */
+function breakLine(s) {
+  if (s.length < 96) return s;
+  const mid = Math.floor(s.length / 2);
+  const at = s.lastIndexOf(' ', mid + 24);
+  return at > 24 ? s.slice(0, at) + '  ' + s.slice(at + 1) : s;
 }
 
 /**

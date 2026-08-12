@@ -289,8 +289,8 @@ canvas{display:block;width:100%;height:100%}
 <div class="layer on hide" id="reward">
   <div class="panel">
     <div class="kicker">THE CHEST HELD</div>
-    <h2 id="rwTitle">Mango Tree World</h2>
-    <p>A Lakehorse record, yours to keep. Put your address in and we'll send you
+    <h2 id="rwTitle">Light &amp; Lessons</h2>
+    <p>Lakehorse tracks, yours to keep. Put your address in and we'll send you
        the next one too.</p>
     <form id="rwForm">
       <input type="email" id="rwEmail" placeholder="you@somewhere" autocomplete="email"
@@ -302,7 +302,12 @@ canvas{display:block;width:100%;height:100%}
       <button type="button" id="rwSkip">No thanks — just give me the download</button>
     </form>
     <p id="rwStatus"></p>
-    <button class="btn primary hide" id="rwDownload">DOWNLOAD</button>
+    <!-- One button per track the chest holds, built by RewardScreen. rwDownload
+         is the first of them and stays in the markup so the styling and the
+         single-track case both keep working. -->
+    <div id="rwDownloads">
+      <button class="btn primary hide" id="rwDownload">DOWNLOAD</button>
+    </div>
     <button class="btn" id="rwClose">BACK TO THE WATER</button>
   </div>
 </div>

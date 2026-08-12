@@ -28,12 +28,14 @@
     "  (await libRpc('get_library', {})).songs.flatMap(s =>",
     "    s.versions.map(v => ({ title: s.title, version: v.name, src: v.src })))",
     "",
-    "'treasure' names which track the chest gives away, and is used by BOTH paths.",
-    "It has to match a title in whichever list is live; if it doesn't, the chest",
-    "falls back to track one."
+    "'treasure' names what the chest gives away, and is used by BOTH paths. One",
+    "title or an array of them — the chest can hold several tracks and shows a",
+    "download button per track. Titles have to match the list that's live; any",
+    "that don't are skipped, and if none match at all the chest falls back to",
+    "track one rather than offering nothing."
   ],
   "band": "lakehorse",
-  "treasure": "Mango Tree World",
+  "treasure": ["Light", "Lessons"],
   "tracks": [
     {
       "title": "Mango Tree World",

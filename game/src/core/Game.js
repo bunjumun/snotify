@@ -287,7 +287,7 @@ export class Game {
 
     this.reward = new RewardScreen(this);
     this.logbook = new Logbook(this);
-    this.onChestOpened = () => this.reward.show(this.audio?.treasure ?? null);
+    this.onChestOpened = () => this.reward.show(this.audio?.treasure ?? []);
   }
 
   _initInput() {

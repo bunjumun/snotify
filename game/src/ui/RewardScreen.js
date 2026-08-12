@@ -27,7 +27,9 @@ export class RewardScreen {
     this.email = document.getElementById('rwEmail');
     this.status = document.getElementById('rwStatus');
     this.dl = document.getElementById('rwDownload');
-    this.track = null;
+    this.dls = document.getElementById('rwDownloads') || this.dl.parentElement;
+    /** @type {{title:string,url:string}[]} everything the chest is giving away */
+    this.tracks = [];
 
     this.form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -35,16 +37,19 @@ export class RewardScreen {
     });
     document.getElementById('rwSkip').onclick = () => this._reveal();
     document.getElementById('rwClose').onclick = () => this.hide();
-    this.dl.onclick = (e) => { e.preventDefault(); this._download(); };
   }
 
-  /** @param {{title:string, url:string}|null} track what the chest is giving away */
-  show(track) {
-    this.track = track;
-    document.getElementById('rwTitle').textContent = track?.title || 'Mango Tree World';
+  /**
+   * @param {{title:string,url:string}|{title:string,url:string}[]|null} tracks
+   *   what the chest is giving away — one track or several.
+   */
+  show(tracks) {
+    this.tracks = (Array.isArray(tracks) ? tracks : [tracks]).filter(Boolean);
+
+    document.getElementById('rwTitle').textContent =
+      this.tracks.length ? listNames(this.tracks.map((t) => t.title)) : 'Light & Lessons';
     this.status.textContent = '';
-    this.dl.classList.add('hide');
-    this.dl.textContent = 'DOWNLOAD';
+    this._buildButtons();
     this.form.classList.remove('hide');
     // Someone who has been here before gets the file, not the form again.
     if (this.game.progress.claimed) this._reveal();
@@ -92,9 +97,33 @@ export class RewardScreen {
     this._reveal();
   }
 
+  /**
+   * A button per track. The one in the markup is reused for the first, so a
+   * single-track chest looks and behaves exactly as it always did; any extras
+   * are cloned off it and inherit the same styling.
+   */
+  _buildButtons() {
+    this.buttons = [];
+    // Clear out clones from a previous run — the chest can be reopened.
+    for (const extra of [...this.dls.children]) if (extra !== this.dl) extra.remove();
+
+    const make = (track, el) => {
+      const b = el || this.dl.cloneNode(true);
+      b.removeAttribute('id');
+      b.textContent = this.tracks.length > 1 ? `DOWNLOAD ${track.title.toUpperCase()}` : 'DOWNLOAD';
+      b.classList.add('hide');
+      b.onclick = (e) => { e.preventDefault(); this._download(track, b); };
+      if (!el) this.dls.appendChild(b);
+      this.buttons.push(b);
+    };
+
+    if (!this.tracks.length) { make({ title: '' }, this.dl); return; }
+    this.tracks.forEach((t, i) => make(t, i === 0 ? this.dl : null));
+  }
+
   _reveal() {
     this.form.classList.add('hide');
-    this.dl.classList.remove('hide');
+    for (const b of this.buttons || [this.dl]) b.classList.remove('hide');
     this.game.progress.markClaimed();
   }
 
@@ -102,8 +131,9 @@ export class RewardScreen {
    * Fetch to a blob first. The download attribute is ignored cross-origin, so a
    * plain link to Supabase opens the player in a tab instead of saving the file.
    */
-  async _download() {
-    const t = this.track;
+  async _download(track, btn) {
+    const t = track || this.tracks[0];
+    const el = btn || this.dl;
     if (!t?.url) {
       // No manifest, or it loaded nothing playable. Don't leave a dead button on
       // the last screen of the game — send them where the music actually is.
@@ -111,8 +141,12 @@ export class RewardScreen {
         + '<a href="../music.html?b=lakehorse" style="color:var(--weed)">music page</a>.';
       return;
     }
-    const name = `${t.title || 'Lakehorse'}.m4a`;
-    this.dl.textContent = 'FETCHING…';
+    // Keep the real extension. The library holds mp3s as well as m4as, and a
+    // file saved under the wrong one is a file some players cannot open.
+    const ext = (t.url.split('?')[0].match(/\.(\w{2,4})$/) || [, 'm4a'])[1];
+    const name = `${t.title || 'Lakehorse'}.${ext}`;
+    const label = el.textContent;
+    el.textContent = 'FETCHING…';
     try {
       const r = await fetch(t.url);
       if (!r.ok) throw new Error(String(r.status));
@@ -123,11 +157,17 @@ export class RewardScreen {
       a.download = name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 30000);
-      this.dl.textContent = 'SAVED ✓';
+      el.textContent = 'SAVED ✓';
     } catch {
       // Last resort: open it. Not a download, but not nothing.
       open(t.url, '_blank', 'noopener');
-      this.dl.textContent = 'DOWNLOAD';
+      el.textContent = label;
     }
   }
+}
+
+/** "Light & Lessons", or "Light, Lessons & Currency". */
+function listNames(names) {
+  if (names.length <= 1) return names[0] || '';
+  return names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1];
 }

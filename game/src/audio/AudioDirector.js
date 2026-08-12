@@ -187,7 +187,8 @@ export class AudioDirector {
    */
   async loadMusic() {
     const manifest = await this._readManifest();
-    this._treasureTitle = manifest.treasure || null;
+    // One title or several — the chest can hold more than one track.
+    this._treasureTitles = [manifest.treasure].flat().filter(Boolean);
 
     // Live first. game_tracks() returns the CURRENT top of each stack, so a new
     // mix is in the game on the next load with nothing to remember. music.json
@@ -325,17 +326,25 @@ export class AudioDirector {
   get nowPlaying() { return this.playlist[this.index] || null; }
 
   /**
-   * What the treasure chest gives away. Named by `treasure` in music.json;
-   * otherwise the record's opening track, which is the sane default for an
-   * album where track one is the single.
+   * What the treasure chest gives away — a list, because it can be more than
+   * one track. Named by `treasure` in music.json, which takes a title or an
+   * array of them; otherwise the record's opening track, which is the sane
+   * default for an album where track one is the single.
+   *
+   * Titles that aren't in the running order are skipped rather than faked, so
+   * un-flagging a song from the game can never leave a dead download button on
+   * the last screen of it.
    */
   get treasure() {
-    if (!this.playlist.length) return null;
-    if (this._treasureTitle) {
-      const hit = this.playlist.find((t) => t.title === this._treasureTitle);
-      if (hit) return hit;
+    if (!this.playlist.length) return [];
+    const want = this._treasureTitles;
+    if (want.length) {
+      const hits = want
+        .map((title) => this.playlist.find((t) => t.title === title))
+        .filter(Boolean);
+      if (hits.length) return hits;
     }
-    return this.playlist[0];
+    return [this.playlist[0]];
   }
 
   // ------------------------------------------------------------------ ambience

@@ -464,14 +464,26 @@ export class Clues {
 /**
  * What the fish know, told a fragment at a time and only while you're high.
  *
- * This is the album's own story, and it is kept in step with
- * `lakehorse sim/style assets/lakehorse lore.rtf` — that file is the source of
- * truth and it gets edited, so read it before touching anything here. The arc:
- * Earth is destroyed by a megachurch CEO with a gun big enough to hole the sky,
- * the survivors are sent out mining, Anocean and Enias defect from the gold
- * colony on Jupiter, down through The Drain to Mango Tree World, the utopia they
- * couldn't agree on, and the horse that came up out of the water and the ash
- * afterwards. Each line is a piece; keep asking and the arc assembles itself.
+ * THE SOURCE OF TRUTH IS THE DRAFT MARKED LIVE, not this file and no longer the
+ * RTF in `lakehorse sim/style assets/`. Band assets → Lore document → the draft
+ * carrying the LIVE badge; LoreFeed fetches exactly that one and the fish speak
+ * it instead of the table below.
+ *
+ * Live, NOT newest — the distinction is the whole point of the badge. The band
+ * can have a half-written draft sitting on top of the stack while an older one
+ * is the one the game is allowed to say out loud, and a newer draft means
+ * nothing until somebody presses Make live. `lore_active()` filters on the
+ * active flag for this reason; don't "helpfully" sort by date anywhere.
+ *
+ * What is below is the fallback for when that fetch fails, so it is kept in
+ * step with the live draft rather than inventing its own version. The arc:
+ * Earth is destroyed by a megachurch CEO with a gun big enough to hole the sun,
+ * the survivors are tricked into self-deporting and sent to mine Jupiter Grove
+ * — the gold colony on Jupiter, sold on promises of Jupiter Gold and a sky that
+ * rains diamonds — and four brothers defect down through The Drain to Mango
+ * Tree World, the utopia their own boots rotted. The horse sings them back
+ * together, their ship the Enias fails on the way to rebuild it, and it comes
+ * down here on Anocean. Each line is a piece; keep asking and the arc assembles.
  *
  * The last two are the setting rather than the story: this is a water bong
  * planet and weed is what it runs on, which is why the stations are down here
@@ -488,13 +500,22 @@ const LORE = [
     say: 'A planet called Earth. It is not there any more.<br>We were sent out mining, to start again. That was the offer.' },
 
   { ask: 'Planets do not simply stop being there.',
-    say: 'A man who ran a megachurch built a gun the size of a city<br>and shot a hole in the sky with it. That is the whole story.' },
+    say: 'A man who ran a megachurch built a gun the size of a city<br>and shot a hole in the sun with it. That is the whole story.' },
 
   { ask: 'And nobody stopped him?',
     say: 'He had the money, so he had the pulpit, so he had the gun.<br>By the time it mattered, arguing with him was heresy.' },
 
   { ask: 'So they sent you where?',
-    say: 'Jupiter. A seam of gold in a place not built for people.<br>You dug it, or you owed it. Usually both.' },
+    say: 'Jupiter Grove. A colony on Jupiter, and a seam of gold<br>in a place not built for people. You dug it, or you owed it. Usually both.' },
+
+  { ask: 'A grove. That sounds almost kind.',
+    say: 'It is a sales word. Nothing grows there.<br>They named it for the brochure and we signed under the name.' },
+
+  { ask: 'What did they promise you?',
+    say: 'Jupiter Gold, more than a man could carry.<br>And that it rains diamonds there. True, and it tells you nothing.' },
+
+  { ask: 'Diamonds fall out of the sky and you still left?',
+    say: 'They fall on everybody. That is what makes them worth nothing.<br>A thing is only precious up there if somebody is keeping it from you.' },
 
   { ask: 'You keep saying gold. What is gold?',
     say: 'Something they wanted badly enough to spend people on.<br>That is the entire definition. There is nothing under it.' },
@@ -506,16 +527,22 @@ const LORE = [
     say: 'The Drain. A hole between one place and the next.<br>No stars in it. No dark either, which is the part nobody warns you about.' },
 
   { ask: 'Someone went first. Someone always goes first.',
-    say: 'Anocean and Enias. Two of them, out through the gate before it shut.<br>Everyone who tried it after them got what you are swimming through.' },
+    say: 'Four of them. Brothers, out through the gate before it shut.<br>Everyone who tried it after them got what you are swimming through.' },
 
-  { ask: 'Did the first two find anything?',
+  { ask: 'Did the four find anything?',
     say: 'Somewhere clean, and they named it after a tree.<br>They had a whole plan for it. Plans last about as long as plans do.' },
 
   { ask: 'What broke it?',
-    say: 'Two dreams, one world, and no give in either of them.<br>Their own people took up arms over the shape of paradise.' },
+    say: 'The mangos rotted. Something they carried in on a boot did it.<br>The first rot that world had ever had, and it was theirs.' },
+
+  { ask: 'Surely you could live with a little rot.',
+    say: 'It was never the rot. It was four men arguing whose boot.<br>Their own people took up arms over the answer.' },
 
   { ask: 'So they died hating each other.',
-    say: 'No. When it was all ash they finally said the kind thing —<br>that they had kept each other alive. Late. But they said it.' },
+    say: 'No. The green one came and sang them back together,<br>and they turned round to go and build it again. That is how we got here.' },
+
+  { ask: 'Got here how? This is a lot of water.',
+    say: 'The ship was not up to the crossing. The <i>Enias</i> came down on Anocean.<br>This planet, all bong water, no land on it anywhere.' },
 
   { ask: 'And the green one? The one you are holding on to?',
     say: 'She came up out of the water and the ash together, lit from inside.<br>Nobody called her. Nobody can. She just arrives.' },
@@ -530,7 +557,7 @@ const LORE = [
     say: 'You do not get the new world with the old hands.<br>That is the whole instruction. That is all of it.' },
 
   { ask: 'Why do you dive for the weed? It is only a plant.',
-    say: 'On this world it is the fuel. Everything here runs on it —<br>the water, the light, whatever it is you use to talk to me.' },
+    say: 'On this world it is the fuel. Everything here runs on it.<br>The water, the light, whatever it is you use to talk to me.' },
 
   { ask: 'Then what were you burning, before you came here?',
     say: 'Something we had to take out of the ground and could never put back.<br>You grow yours. That is the difference, and it is the only one.' },

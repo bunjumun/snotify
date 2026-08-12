@@ -327,7 +327,7 @@ export class Game {
    * Both halves matter. Height, because the water column is 100 units and the fog
    * only reaches 80 — spawn mid-water and the player opens the game staring into
    * an empty green void with no cue that anything exists. And heading, because the
-   * first thing anyone should ever see is the Jupiter coming out of the haze.
+   * first thing anyone should ever see is the Enias coming out of the haze.
    */
   _spawnPose() {
     const bow = this.wreck.landmarks.find((l) => l.name === 'the bow');

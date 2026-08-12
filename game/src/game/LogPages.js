@@ -1,4 +1,4 @@
-// The ship's log of the Jupiter.
+// The ship's log of the Enias.
 //
 // Seven slates, scattered across the wreck field, that tell what happened to her
 // if you find enough of them. Collected pages persist forever — this is the one
@@ -6,10 +6,10 @@
 // visitor a reason to come back that isn't a leaderboard.
 //
 // This is not a lake and she was not a boat. It's an ocean world with no land on
-// it, and the Jupiter was an ore hauler out of the colony of the same name, run
+// it, and the Enias was an ore hauler out of Jupiter Grove, the gold colony on Jupiter, run
 // for The Drain by people who had signed away nine years of their lives to dig
-// gold. See the band's own story: Anocean and Enias got out the same way, and
-// this ship is what happened to everyone who tried it after them.
+// gold. Four brothers defected the same way; the Enias is what happened to
+// everyone who tried it after them. The live draft in Band assets is the truth.
 //
 // The voice is the one thing kept from the sea-log it was written as: flat,
 // practical, cargo and weather first, and then not. A captain recording a
@@ -22,7 +22,7 @@ import { LogPage } from '../entities/LogPage.js';
 
 export const ENTRIES = [
   {
-    id: 'p1', title: 'Log of the Jupiter — day 1',
+    id: 'p1', title: 'Log of the Enias — day 1',
     body: `Cleared the yards 0610 with eleven hundred tonnes of ore and forty-one souls.
 The manifest lists both in the same column and nobody at the gate thought that
 was worth a second look. Trim good. Every one of them has signed away nine years.`,

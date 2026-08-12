@@ -8,7 +8,7 @@
 // The format is a heading and the prose under it, which is what a log looks like
 // anyway:
 //
-//   # Log of the Jupiter — day 1
+//   # Log of the Enias — day 1
 //   Cleared the yards 0610 with eleven hundred tonnes of ore and forty-one
 //   souls. The manifest lists both in the same column.
 //

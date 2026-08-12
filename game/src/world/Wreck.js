@@ -1,9 +1,9 @@
-// The SS Jupiter.
+// The SS Enias.
 //
 // Deliberately fictional. Lake Superior's famous wrecks are war graves — the
 // Fitzgerald still holds 29 people and is legally protected — and building a
 // treasure hunt on top of one would be a bad look for a band that plays there.
-// The Jupiter is invented, so the lake's atmosphere is borrowed without borrowing
+// The Enias is invented, so the lake's atmosphere is borrowed without borrowing
 // anyone's grave.
 //
 // Broken in two, the way Superior actually does it: bow section largely intact

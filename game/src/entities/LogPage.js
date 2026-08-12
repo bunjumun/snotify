@@ -1,4 +1,4 @@
-// A page of the Jupiter's log.
+// A page of the Enias's log.
 //
 // Same trick as the baggies: small, dim, and it glints when the lamp crosses it.
 // Finding one is an act of looking rather than an act of arriving, which is the

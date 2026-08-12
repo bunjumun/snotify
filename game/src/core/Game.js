@@ -46,6 +46,7 @@ import { Trip } from '../game/Trip.js';
 import { Intro } from '../game/Intro.js';
 import { Clues } from '../game/Clues.js';
 import { LogPages } from '../game/LogPages.js';
+import { LogFeed } from '../game/LogFeed.js';
 
 import { HUD } from '../ui/HUD.js';
 import { RewardScreen } from '../ui/RewardScreen.js';
@@ -55,6 +56,11 @@ export const State = { TITLE: 'title', PLAY: 'play', PAUSED: 'paused', DEAD: 'de
 
 /** One rider per band member. They only ever come into frame on the bong orbit. */
 const RIDERS = 4;
+
+// Public by design — see supabase/schema-v19.sql. lore_active() serves only the
+// draft the band deliberately promoted, which is why it needs no password.
+const LORE_URL = 'https://twgukeyoayfqldnojrkg.supabase.co';
+const LORE_KEY = 'sb_publishable_zIiAxxA5Zk1yRNzignANXA_rEp3vKdG';
 
 export class Game {
   constructor(canvas) {
@@ -276,6 +282,12 @@ export class Game {
     this.clues = new Clues(this);
     this.logs = new LogPages(this.rng, this.seabed, this.wreck, this.progress);
     this.scene.add(this.logs.group);
+    // The band's live log, if they've promoted one. Placed first with the copy
+    // compiled into the game and re-worded when the fetch lands — a page you
+    // can't reach in the first quarter-second doesn't care which it got, and
+    // this way the placement stays seeded and the game never waits on a server.
+    this.logFeed = new LogFeed(CFG.audio.band, LORE_URL, LORE_KEY);
+    this.logFeed.refresh().then((entries) => this.logs.setEntries(entries));
     this.logs.onFound = (entry, found, total) => {
       this.audio?.sfx('page');
       this.hud.say(

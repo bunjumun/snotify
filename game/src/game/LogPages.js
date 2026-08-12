@@ -74,14 +74,18 @@ export class LogPages {
    * @param {import('../world/Seabed.js').Seabed} seabed
    * @param {import('../world/Wreck.js').Wreck} wreck
    * @param {import('./Progress.js').Progress} progress
+   * @param {{id:string,title:string,body:string}[]} [entries] the band's live
+   *   log from Band assets; the copy compiled in above when there isn't one.
    */
-  constructor(rng, seabed, wreck, progress) {
+  constructor(rng, seabed, wreck, progress, entries = null) {
     this.group = new THREE.Group();
     this.progress = progress;
     this.pages = [];
     this.onFound = null;
+    this.entries = entries && entries.length ? entries : ENTRIES;
 
-    const count = Math.min(CFG.logPages.count, ENTRIES.length);
+    const ENTRIES_ = this.entries;
+    const count = Math.min(CFG.logPages.count, ENTRIES_.length);
     // One per landmark where possible, so the story is told by the wreck rather
     // than sprinkled across open lake. Anything left over goes in the silt.
     const spots = rng.shuffle(wreck.landmarks.slice());
@@ -97,9 +101,26 @@ export class LogPages {
         ({ x, z } = rng.inDisc(CFG.world.radius * 0.7));
       }
       const p = new THREE.Vector3(x, seabed.heightAt(x, z) + 0.5, z);
-      const page = new LogPage(p, ENTRIES[i]);
+      const page = new LogPage(p, ENTRIES_[i]);
       this.pages.push(page);
       this.group.add(page.group);
+    }
+  }
+
+  /**
+   * Swap in the band's live log once it arrives.
+   *
+   * The slates keep the positions they were placed at rather than being placed
+   * again: the placement is seeded, and re-running it after other systems have
+   * drawn from the same generator would move every page and break `?seed=`.
+   * Only the words change, which is all that was ever fetched.
+   */
+  setEntries(entries) {
+    if (!entries || !entries.length) return;
+    this.entries = entries;
+    for (let i = 0; i < this.pages.length; i++) {
+      const e = entries[i % entries.length];
+      if (e) this.pages[i].entry = e;
     }
   }
 
@@ -116,12 +137,12 @@ export class LogPages {
   }
 
   get foundCount() {
-    return ENTRIES.filter((e) => this.progress.data.logPages.includes(e.id)).length;
+    return this.entries.filter((e) => this.progress.data.logPages.includes(e.id)).length;
   }
 
   /** Everything found so far, across every session. */
   found() {
-    return ENTRIES.filter((e) => this.progress.data.logPages.includes(e.id));
+    return this.entries.filter((e) => this.progress.data.logPages.includes(e.id));
   }
 
   blips(out) {

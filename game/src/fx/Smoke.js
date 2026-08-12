@@ -17,7 +17,7 @@
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
 
-const MAX = 240;
+const MAX = 460;   // a hit alone spends a couple of hundred of these
 
 const VERT = `
   attribute float aSize; attribute float aLife; attribute float aSeed;

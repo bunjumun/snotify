@@ -93,8 +93,15 @@ export class Bong {
     this.light.intensity = lit * 260;
   }
 
-  inRange(pos) { return pos.distanceTo(this.position) <= CFG.bong.useRadius; }
-  distanceTo(pos) { return pos.distanceTo(this.position); }
+  inRange(pos) { return this.distanceTo(pos) <= CFG.bong.useRadius; }
+
+  /** Distance to the bowl rather than to the base. See CFG.bong.useHeight. */
+  distanceTo(pos) {
+    const at = this._usePoint || (this._usePoint = new THREE.Vector3());
+    at.copy(this.position);
+    at.y += CFG.bong.useHeight;
+    return pos.distanceTo(at);
+  }
 
   setTrip(v) {
     this.light.distance = CFG.bong.humRadius * 0.5 * (1 + v);

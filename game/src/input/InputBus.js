@@ -35,6 +35,12 @@ export class InputBus {
     this.raw = { steer: { x: 0, y: 0 }, thrust: 0, boost: false, interact: false, lamp: { x: 0, y: 0 } };
 
     this.adapters = [];
+    // Whichever way up someone learned to fly things, they are sure it's the
+    // right way up. Applied HERE rather than in each adapter so one setting
+    // covers the keyboard, the stick and the thumbstick at once, and so the
+    // "positive is nose up" contract stays true everywhere upstream of it.
+    this.invertPitch = false;
+
     this.activeDevice = 'keyboard';
     this._prevInteract = false;
     this._prevThrust = false;
@@ -64,7 +70,7 @@ export class InputBus {
 
     const i = this.intent;
     i.steer.x = curve(clamp1(r.steer.x));
-    i.steer.y = curve(clamp1(r.steer.y));
+    i.steer.y = curve(clamp1(r.steer.y)) * (this.invertPitch ? -1 : 1);
     i.thrust = Math.min(1, Math.max(0, r.thrust));
     i.boost = r.boost;
     i.lamp.x = clamp1(r.lamp.x);

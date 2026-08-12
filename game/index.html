@@ -269,7 +269,7 @@ canvas{display:block;width:100%;height:100%}
   <div class="modes" id="modes"></div>
   <button id="dive">DIVE IN</button>
   <p id="loadState"></p>
-  <p id="startNote"><kbd>WASD</kbd> steer · <kbd>Space</kbd> swim · <kbd>Shift</kbd> boost · <kbd>E</kbd> use · mouse aims the lamp<br>
+  <p id="startNote"><kbd>WASD</kbd> or arrows steer · <kbd>Space</kbd> swim · <kbd>Shift</kbd> boost · <kbd>E</kbd> use<br>
      <b>Hold Space to cruise. Tap it to swim — every tap is a kick.</b><br>
      Bluetooth controller and touch also work. Sound on is better.</p>
 </div>
@@ -327,6 +327,9 @@ canvas{display:block;width:100%;height:100%}
     <label class="row">Quality <select id="setQuality">
       <option value="auto">Auto</option><option value="high">High</option><option value="low">Low</option>
     </select></label>
+    <!-- Whichever way up someone learned to fly things, they are certain it is
+         the right way up. This is cheaper than being right about it. -->
+    <label class="row">Invert up/down <input type="checkbox" id="setInvert"></label>
     <div class="row"><span>Tilt steering</span><button class="btn" id="btnRecentre">RECENTRE</button></div>
     <div class="row"><span>Ship's log</span><button class="btn" id="btnLog">READ <span id="logCount"></span></button></div>
     <button class="btn primary" id="btnResume">RESUME</button>

@@ -415,7 +415,7 @@ export class Game {
     const current = this._current || (this._current = new THREE.Vector3());
     current.copy(this.weather.current).add(this.bounds.force(this.kelpie.position));
 
-    this.kelpie.update(dt, intent, { current });
+    this.kelpie.update(dt, intent, { current, attract: this._bongAttract() });
     this.seabed.clampAbove(this.kelpie.position, 2.0);
 
     // A tail beat throws water. This puff is the receipt for the tap — without
@@ -568,6 +568,37 @@ export class Game {
     aim.x = steer.x * CFG.lamp.aimLead;
     aim.y = -steer.y * CFG.lamp.aimLead * 0.8;
     this.lamp.update(dt, src, this.kelpie.quaternion, aim);
+  }
+
+  /**
+   * What, if anything, is pulling her heading around this frame.
+   *
+   * Only ever a bong you can actually light — being steered at a station you
+   * haven't got the baggies for would be worse than no help at all — and never
+   * during the cinematic. Strength eases as the square of how close you are, so
+   * at the rim it is almost nothing and nobody would call it a tractor beam.
+   *
+   * One frame stale: nearestBong is set further down update(). At sixty frames a
+   * second nobody is going to notice.
+   */
+  _bongAttract() {
+    const b = this.nearestBong;
+    if (!b || this.trip.active) return null;
+    if (!this.progress.hasLighter || !this.stash.canPack) return null;
+    const d = this.nearestBongDistance;
+    if (d > CFG.bong.magnetRadius || d < CFG.bong.useRadius * 0.5) return null;
+    // Only if it's roughly ahead. Being reeled in from behind isn't assistance.
+    const to = this._toBong || (this._toBong = new THREE.Vector3());
+    to.copy(b.position).sub(this.kelpie.position).normalize();
+    if (Math.acos(THREE.MathUtils.clamp(to.dot(this.kelpie.forward), -1, 1)) > CFG.bong.magnetAhead) {
+      return null;
+    }
+    const t = 1 - d / CFG.bong.magnetRadius;   // 0 at the rim, 1 at the bowl
+    const a = this._attract || (this._attract = { point: new THREE.Vector3(), strength: 0 });
+    a.point.copy(b.position);
+    a.point.y += CFG.bong.useHeight;
+    a.strength = CFG.bong.magnetTurn * t;   // linear — see the note on magnetTurn
+    return a;
   }
 
   _updateBongs(dt, intent) {

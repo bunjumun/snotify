@@ -1,28 +1,26 @@
-// Keyboard + mouse.
+// Keyboard.
 //
-// WASD/arrows steer, Space swims, Shift boosts, E uses — and so does the MOUSE,
-// which steers as an absolute stick: its offset from the centre of the canvas is
-// the deflection. No pointer lock. Grabbing the cursor for a game someone opened
-// from a band page is a hostile thing to do, and this doesn't need it.
+// WASD/arrows steer, Space swims, Shift boosts, E uses. That's the whole device.
 //
-// The mouse used to aim the lamp on its own axis. The lamp now points where
-// she's going, which frees the better input device to do the harder job.
+// The mouse does nothing here, and that is deliberate twice over. It briefly
+// aimed the lamp on its own axis, which the lamp no longer needs — it points
+// where she's going. Then it briefly steered as an absolute stick, which meant
+// the kelpie turned whenever the cursor happened not to be centred, including
+// while nobody was touching it. A pointer that steers without being touched is
+// not a control, it's a draught.
 
 export class Keyboard {
   constructor(canvas) {
     this.canvas = canvas;
     this.keys = new Set();
-    this.mouse = { x: 0, y: 0 };
     this._onDown = this._onDown.bind(this);
     this._onUp = this._onUp.bind(this);
-    this._onMove = this._onMove.bind(this);
     this._onBlur = this._onBlur.bind(this);
   }
 
   attach() {
     addEventListener('keydown', this._onDown);
     addEventListener('keyup', this._onUp);
-    addEventListener('mousemove', this._onMove);
     // Losing focus mid-key leaves it stuck down forever otherwise — you tab away
     // holding boost, come back, and the kelpie is still flooring it.
     addEventListener('blur', this._onBlur);
@@ -31,7 +29,6 @@ export class Keyboard {
   detach() {
     removeEventListener('keydown', this._onDown);
     removeEventListener('keyup', this._onUp);
-    removeEventListener('mousemove', this._onMove);
     removeEventListener('blur', this._onBlur);
   }
 
@@ -46,12 +43,6 @@ export class Keyboard {
 
   _onUp(e) { this.keys.delete(e.code); }
   _onBlur() { this.keys.clear(); }
-
-  _onMove(e) {
-    const r = this.canvas.getBoundingClientRect();
-    this.mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1;
-    this.mouse.y = ((e.clientY - r.top) / r.height) * 2 - 1;
-  }
 
   contribute(raw) {
     const k = this.keys;
@@ -68,11 +59,6 @@ export class Keyboard {
     if (k.has('Space')) raw.thrust = Math.max(raw.thrust, 1);
     if (k.has('ShiftLeft') || k.has('ShiftRight')) raw.boost = true;
     if (k.has('KeyE') || k.has('Enter')) raw.interact = true;
-
-    // Absolute stick. Screen Y grows downward, so it's negated: cursor up is
-    // nose up, same as ArrowUp, and cursor right turns right, same as D.
-    raw.steer.x += this.mouse.x;
-    raw.steer.y -= this.mouse.y;
   }
 }
 

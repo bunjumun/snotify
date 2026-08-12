@@ -588,8 +588,38 @@ export class Kelpie {
       }
     }
 
-    // Bank into the turn. Cheap, and it's most of why turning reads as turning.
-    const targetRoll = -this._yawVel * K.bankAmount;
+    // ---- Magnetism ----
+    // Something close enough to matter bends the heading toward itself. Applied
+    // here, to the heading, rather than as a force on the body: a force gets
+    // eaten by the fins biting momentum back onto course, and measurably did.
+    //
+    // It also yields to the stick. Assist that fights a player who is actively
+    // steering isn't assist, it's a disagreement.
+    if (env.attract) {
+      const a = env.attract;
+      const dx = a.point.x - this.position.x;
+      const dz = a.point.z - this.position.z;
+      const dy = a.point.y - this.position.y;
+      const steering = Math.min(1, Math.hypot(intent.steer.x, intent.steer.y));
+      const s = a.strength * (1 - steering * CFG.bong.magnetYield);
+      if (s > 0.001) {
+        const wantYaw = Math.atan2(-dx, -dz);
+        const off = Math.atan2(Math.sin(wantYaw - this.yaw), Math.cos(wantYaw - this.yaw));
+        this.yaw += off * (1 - Math.exp(-s * dt));
+        const wantPitch = THREE.MathUtils.clamp(
+          Math.atan2(dy, Math.hypot(dx, dz)), -K.pitchClamp, K.pitchClamp);
+        this.pitch += (wantPitch - this.pitch) * (1 - Math.exp(-s * 0.7 * dt));
+      }
+    }
+
+    // Bank AWAY from the turn — she leans right going left, and vice versa.
+    //
+    // Banking into it is what an aircraft does and what a fish does, and it was
+    // the obvious choice until you actually ride her: the camera sits on her
+    // back and rolls with her, so an inward bank tips the horizon the wrong way
+    // and the turn reads as sliding rather than turning. Leaning out puts the
+    // horizon where the eye expects it. It's also just what a horse does.
+    const targetRoll = this._yawVel * K.bankAmount;
     this.roll += (targetRoll - this.roll) * (1 - Math.exp(-K.bankSpring * dt));
 
     this.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, this.roll, 'YXZ'));

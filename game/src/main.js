@@ -115,6 +115,14 @@ setQuality.onchange = () => {
 };
 if (setQuality.value !== 'auto') game.setQuality(setQuality.value);
 
+const setInvert = document.getElementById('setInvert');
+setInvert.checked = localStorage.getItem('lakehorse.invert') === '1';
+game.input.invertPitch = setInvert.checked;
+setInvert.onchange = () => {
+  game.input.invertPitch = setInvert.checked;
+  try { localStorage.setItem('lakehorse.invert', setInvert.checked ? '1' : '0'); } catch { /* private mode */ }
+};
+
 document.getElementById('btnRecentre').onclick = () => {
   game.tilt?.recentre();
   game.hud.say('Recentred.', { seconds: 1.5 });

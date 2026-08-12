@@ -82,7 +82,10 @@ export const CFG = {
     pitchRate: 1.4,
     pitchClamp: 1.15,     // ~66°, stops the horizon flipping over
 
-    bankAmount: 0.72,     // how hard yaw rolls the body
+    // 0.72 put her at seventy-six degrees in a sustained turn — practically on
+    // her side. Survivable when the camera watched from behind; not survivable
+    // now the camera rides her back and takes a third of the roll with it.
+    bankAmount: 0.34,     // how hard yaw rolls the body; ~37 deg at full stick
     bankSpring: 5.0,
     headingSpring: 6.5,   // body catching up to intent
     headingDamp: 0.82,
@@ -198,7 +201,40 @@ export const CFG = {
 
   bong: {
     count: 5,
-    useRadius: 4.0,
+    // Generous on purpose. A bong is a station you swim up to, not a pixel you
+    // have to land on — and the reward for reaching it is the best thing in the
+    // game, so making the last two metres the hard part is the wrong place to
+    // put difficulty. The scarcity is in the four baggies, which is where it
+    // belongs.
+    useRadius: 10.0,
+    // And measured to the BOWL, not to the silt the stand is buried in. The
+    // kelpie is clamped two units off the floor and usually swimming higher than
+    // that, so measuring from the base spent most of the radius on the vertical
+    // gap before you were anywhere near it horizontally.
+    useHeight: 2.2,
+    // And they pull, gently. The last twenty metres of lining up on a station is
+    // the least interesting steering in the game and the reward for arriving is
+    // the best thing in it, so the game helps. Eased as the square of how close
+    // you are, so at the rim it is almost nothing and you'd never call it a
+    // tractor beam — you'd just say the bongs are easy to hit.
+    // Wide, because a correction has to START early. At twenty units you only
+    // entered the field at the moment you were already passing, and measurably
+    // nothing happened: 17.2 units closest approach with the help, 17.1 without.
+    magnetRadius: 34,
+    // It bends the HEADING, not the body. A force here does essentially nothing:
+    // the fins bite existing momentum back onto the current course faster than
+    // any gentle sideways shove can move it, and the first cut of this changed
+    // the closest approach by 0.0 units. Turning her instead lets the swimming
+    // model carry her in, which is also what "magnetic" actually feels like.
+    // Linear in distance, not squared. Squared meant it was still doing almost
+    // nothing at fifteen units and only woke up at five, by which point you have
+    // already gone past — the correction has to start EARLY to be a correction.
+    // Still well under the 1.9 rad/s the stick has, so you always win.
+    magnetTurn: 3.0,      // heading spring toward it, rad/s at the bowl
+    magnetYield: 0.75,    // how much active steering switches the help off
+    // Only helps toward something roughly in front. A magnet that reels you in
+    // from behind is not an assist, it's a hand on the tiller.
+    magnetAhead: 1.25,    // radians off the nose, beyond which it lets you go
     humRadius: 55,        // audible through the fog well before it's visible
     hueWhenReady: 0x7de08a,
     hueWhenDark: 0x2c3a38,
@@ -315,8 +351,8 @@ export const CFG = {
   // Underwater smoke does not plume. It hangs, spreads and goes nowhere fast,
   // which is why `rise` is small and the lifetimes are long.
   smoke: {
-    puff: 54,             // particles in the cloud a hit leaves behind
-    trailRate: 30,        // particles/sec at full uTrip
+    puff: 110,            // particles in the cloud a hit leaves behind
+    trailRate: 44,        // particles/sec at full uTrip
     rise: 0.55,           // units/sec it eventually settles into
     life: [5.0, 9.5],     // seconds; long, because it has nowhere to go
   },

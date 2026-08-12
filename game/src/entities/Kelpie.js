@@ -30,6 +30,15 @@ import { CFG } from '../../config.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
+// Four seats. Fractions of girth across and of length along, so they move with
+// any change to her proportions instead of drifting off her back.
+const RIDER_GRIPS = [
+  { x: 0.00, z: 0.10 },   // 0 — the withers, and the one the camera rides
+  { x: -0.80, z: 0.24 },  // 1 — off her left flank
+  { x: 0.80, z: 0.26 },   // 2 — and her right
+  { x: 0.00, z: 0.44 },   // 3 — last, over the hips
+];
+
 export class Kelpie {
   constructor() {
     const P = CFG.palette;
@@ -54,6 +63,8 @@ export class Kelpie {
     this._kickCd = 0;
     this.lift = 0;         // the bong launch, 1 -> 0 over trip.launchTime
     this._ceiling = 0;
+    this._climbTarget = null;
+    this._climbT = 0;
 
     this.forward = new THREE.Vector3(0, 0, -1);
     this._desired = new THREE.Vector3();
@@ -352,10 +363,10 @@ export class Kelpie {
     // Ears.
     for (const s of [-1, 1]) {
       const ear = new THREE.Mesh(
-        this._tint(new THREE.ConeGeometry(0.085, 0.32, 5), CFG.palette.kelpieBody), this.headMat,
+        this._tint(new THREE.ConeGeometry(0.13, 0.52, 5), CFG.palette.kelpieBody), this.headMat,
       );
-      ear.position.set(s * 0.15, 1.44, -0.1);
-      ear.rotation.set(-0.2, 0, s * 0.24);
+      ear.position.set(s * 0.17, 1.56, -0.08);
+      ear.rotation.set(-0.22, 0, s * 0.26);
       headGrp.add(ear);
     }
 
@@ -469,9 +480,16 @@ export class Kelpie {
 
   // ------------------------------------------------------------------ motion
 
-  /** Where the diver's chain anchors — just behind the withers, so +Z. */
-  gripPoint(out) {
-    return out.set(0, CFG.kelpie.girth * 0.55, CFG.kelpie.length * 0.16)
+  /**
+   * Where a rider's chain anchors. Four of them ride her — one per band member —
+   * so they get four grips spread along and across her back rather than all
+   * hanging off the same knot. Rider 0 is at the withers and is the one the
+   * camera rides with.
+   */
+  gripPoint(out, i = 0) {
+    const K = CFG.kelpie;
+    const g = RIDER_GRIPS[i % RIDER_GRIPS.length];
+    return out.set(g.x * K.girth, K.girth * 0.55, K.length * g.z)
       .applyQuaternion(this.quaternion)
       .add(this.position);
   }
@@ -484,15 +502,29 @@ export class Kelpie {
   }
 
   /**
-   * The bong hit: she goes straight up out of the dark and keeps climbing
-   * through the whole orbit. The ceiling is worked out here rather than being a
-   * fixed height, so a bowl smoked in the trench still ends somewhere you can
-   * see and one smoked in open water doesn't push you through the surface.
+   * The bong hit: she comes up out of the dark and keeps climbing through the
+   * whole orbit.
+   *
+   * Given a target — a school of fish overhead — she aims for it and surfaces
+   * through the middle of them. Given nothing, she just goes up. Either way the
+   * ceiling is worked out here rather than fixed, so a bowl smoked in the trench
+   * still ends somewhere you can see and one smoked in open water doesn't push
+   * you through the surface.
+   *
+   * @param {THREE.Vector3|null} target where to come up, usually a school's home
    */
-  blastOff() {
+  blastOff(target = null) {
     const T = CFG.trip;
+    const cap = CFG.world.surfaceY - 10;
     this.lift = 1;
-    this._ceiling = Math.min(CFG.world.surfaceY - 10, this.position.y + T.launchRise);
+    this._climbTarget = target ? target.clone() : null;
+    this._climbT = T.launchSeek;   // hard stop; an unreachable school can't fly her forever
+    this._ceiling = Math.min(cap, target ? target.y : this.position.y + T.launchRise);
+    // Never a descent. If the only thing on offer is below her, go straight up.
+    if (this._ceiling < this.position.y + 8) {
+      this._ceiling = Math.min(cap, this.position.y + T.launchRise);
+      this._climbTarget = null;
+    }
     this.velocity.y += T.launchKick;
   }
 
@@ -517,8 +549,33 @@ export class Kelpie {
     // by a crane. The force goes in below, before the fins bite, so the bite
     // turns it into travel along the new heading instead of fighting it.
     if (this.lift > 0) {
-      this.lift = Math.max(0, this.lift - dt / CFG.trip.launchTime);
-      this.pitch = THREE.MathUtils.lerp(this.pitch, 0.95, 1 - Math.exp(-3.2 * dt));
+      const T = CFG.trip;
+      if (this._climbTarget) {
+        // Aimed at a school: fly to it in three dimensions rather than matching
+        // its altitude and stopping. Matching only the height is how the first
+        // version left her hanging sixty metres short of the fish she was
+        // supposed to be arriving in the middle of.
+        const to = this._tmp.copy(this._climbTarget).sub(this.position);
+        this._climbT -= dt;
+        if (to.length() < T.launchArrive || this._climbT <= 0) {
+          this._climbTarget = null;   // she's in them, or she's out of time
+          this.lift = 0;
+        } else {
+          // Full drive for the whole seek. Decaying it instead left her stalling
+          // out twenty-five units short of the school she was aiming at, which
+          // is close enough to see them and not close enough to be in them.
+          this.lift = 1;
+          const climb = THREE.MathUtils.clamp(Math.atan2(to.y, Math.hypot(to.x, to.z)), -0.35, 1.15);
+          this.pitch = THREE.MathUtils.lerp(this.pitch, climb, 1 - Math.exp(-3.2 * dt));
+          const want = Math.atan2(-to.x, -to.z);
+          const d = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
+          this.yaw += d * (1 - Math.exp(-2.2 * dt));
+        }
+      } else {
+        // Nothing overhead worth arriving in. Just go up.
+        this.lift = Math.max(0, this.lift - dt / T.launchTime);
+        this.pitch = THREE.MathUtils.lerp(this.pitch, 0.95, 1 - Math.exp(-3.2 * dt));
+      }
     }
 
     // Bank into the turn. Cheap, and it's most of why turning reads as turning.
@@ -554,14 +611,22 @@ export class Kelpie {
     this._tmp.copy(this.forward).multiplyScalar(power * intent.thrust * dt);
     this.velocity.add(this._tmp);
 
-    // The climb. Driven as a velocity target rather than added as a force: the
-    // target folds in how much room is left, so she arrives at the ceiling
-    // instead of arriving at it doing thirty and coasting through the surface.
+    // The climb. Driven as a velocity TARGET rather than added as a force — a
+    // force plus a hard ceiling overshoots by everything the momentum is still
+    // carrying, which on the first cut was forty-odd units of it.
     if (this.lift > 0) {
       const T = CFG.trip;
-      const room = Math.max(0, this._ceiling - this.position.y);
-      const target = T.launchClimb * this.lift * Math.min(1, room / T.launchEase);
-      this.velocity.y += (target - this.velocity.y) * (1 - Math.exp(-5 * dt));
+      if (this._climbTarget) {
+        // Along the heading, which is already pointed at the school.
+        const want = T.launchClimb * this.lift;
+        const along = this.velocity.dot(this.forward);
+        this.velocity.addScaledVector(this.forward, (want - along) * (1 - Math.exp(-5 * dt)));
+      } else {
+        // Straight up, easing off as the ceiling comes to meet her.
+        const room = Math.max(0, this._ceiling - this.position.y);
+        const want = T.launchClimb * this.lift * Math.min(1, room / T.launchEase);
+        this.velocity.y += (want - this.velocity.y) * (1 - Math.exp(-5 * dt));
+      }
     }
 
     // Ambient current — weather and the boundary both push through here.
@@ -603,8 +668,8 @@ export class Kelpie {
   setTrip(v) {
     this.uniforms.uTrip.value = v;
     // Mane and eye go bioluminescent through the trip.
-    this.eyeMat.emissiveIntensity = 0.55 + v * 2.4;
-    this.maneMat.emissiveIntensity = v * 1.6;
+    this.eyeMat.emissiveIntensity = 0.55 + v * 4.2;
+    this.maneMat.emissiveIntensity = v * 2.8;
   }
 
   /** Used by Breath when the tank hits zero — she stops swimming and sinks. */
@@ -630,7 +695,7 @@ export class Kelpie {
     this.yaw = yaw; this.pitch = 0; this.roll = 0;
     this._yawVel = this._pitchVel = 0;
     this.surge = 0; this.kickPulse = 0; this._kickCd = 0; this.kicked = false;
-    this.lift = 0;
+    this.lift = 0; this._climbTarget = null; this._climbT = 0;
     this.quaternion.setFromEuler(new THREE.Euler(0, this.yaw, 0, 'YXZ'));
     this.forward.set(0, 0, -1).applyQuaternion(this.quaternion);
     this.group.position.copy(this.position);

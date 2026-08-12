@@ -26,10 +26,17 @@
 // And then there's being high. Sober, one fish talks to you, on a long cooldown,
 // working through the three clues in the order they were written. Under the
 // effects of a bowl, every school in the lake will answer: the clue is the good
-// one, the chest is on the sonar, and once you've had that they start telling you
-// what they know about the horse you're holding onto. That whole window is bought
-// with four baggies and it drains on the same curve as the colour, which is the
-// only reason it can be this generous — it is not a mode, it is a payoff.
+// one, and the chest is on the sonar.
+//
+// After that the lore comes out as a conversation rather than a recital — the
+// fish ask and the DIVER answers, because he is the one who came down from up
+// there and it is the only speaking part he has in the whole game. A fish
+// reciting a band's backstory at you is a plaque. A fish asking a stoned man
+// where he's from, and him telling it, is a scene.
+//
+// That whole window is bought with four baggies and it drains on the same curve
+// as the colour, which is the only reason it can be this generous — it is not a
+// mode, it is a payoff.
 
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
@@ -57,6 +64,9 @@ export class Clues {
     this._volunteered = false;
     this._toldHigh = false;    // the chest clue has been given while high
     this._lore = 0;            // rotates, so the lore doesn't repeat itself
+    this._reply = null;        // the diver's half of an exchange, pending
+    this._lampreyed = false;   // the lamprey gets its one non-answer per trip
+    this._prevTrip = 0;        // for spotting the start of a fresh bowl
     this.tellers = [];         // live guide fish, cleaned up as they expire
 
     this.chest = new Chest(this._pickSpot(game.rng, game.wreck, game.seabed));
@@ -95,6 +105,8 @@ export class Clues {
     this.proximity = false;
     this._volunteered = false;
     this._toldHigh = false;
+    this._reply = null;
+    this._lampreyed = false;
     this._lastBand = -1;
     this.chest.close();
     for (const t of this.tellers) this.game.scene.remove(t.fish.group);
@@ -106,6 +118,23 @@ export class Clues {
   update(dt) {
     const g = this.game;
     this.cooldown = Math.max(0, this.cooldown - dt);
+
+    // The diver answering the question a fish just asked him. Deliberately not
+    // gated on the trip still running — if it has worn off mid-sentence he
+    // still finishes the sentence.
+    if (this._reply) {
+      this._reply.at -= dt;
+      if (this._reply.at <= 0) {
+        g.hud.say(this._reply.text, { who: 'The diver', seconds: 7.5 });
+        this._reply = null;
+      }
+    }
+
+    // A fresh bowl gives the lamprey its one non-answer back. `_toldHigh` is
+    // deliberately NOT reset — the chest hasn't moved, so a later bowl should go
+    // straight to the conversation rather than re-reading you the directions.
+    if (g.trip.value > CFG.clues.highAt && this._prevTrip <= CFG.clues.highAt) this._lampreyed = false;
+    this._prevTrip = g.trip.value;
 
     const dist = this.chest.update(dt, g.kelpie.position);
     this.chest.setTrip(g.trip.value);
@@ -250,22 +279,35 @@ export class Clues {
    */
   _highHint() {
     const g = this.game;
-    const school = g.shoals.nearestSchool(g.kelpie.position, CFG.clues.highRadius);
+    const R = CFG.clues.highRadius;
 
-    // Nothing schooling nearby — fall back to summoning one, so the button is
-    // never dead.
+    // The lamprey is not here to help you and a bowl doesn't change that — but
+    // it gets to say so once per trip and no more. Letting it answer every time
+    // it happens to be the closest thing walls the entire conversation off for
+    // anyone who parks near one, which is a joke that stops being funny on the
+    // second telling.
+    if (!this._lampreyed) {
+      const near = g.shoals.nearestSchool(g.kelpie.position, R);
+      if (near?.sp.role === 'dread') {
+        this._lampreyed = true;
+        this.cooldown = 3;
+        g.hud.say('It turns to face you, and keeps turning.<br>It has nothing to say and all night to not say it.',
+          { who: 'The sea lamprey', seconds: 3.6 });
+        g.audio?.sfx('fish');
+        return;
+      }
+    }
+
+    // Nearest first, but fall through to ANY school rather than giving up. The
+    // blast-off puts fifty units of water between you and the seabed the moment
+    // the bowl lands, so a hard radius here means the conversation dies exactly
+    // when it is supposed to be starting. Being high, you can hear the lot.
+    const talks = (s) => s.sp.role !== 'dread';
+    const school = g.shoals.nearestSchool(g.kelpie.position, R, talks)
+      || g.shoals.nearestSchool(g.kelpie.position, Infinity, talks);
     if (!school) return this.found ? this._afterHint() : this._chestHint();
 
     const who = `A ${school.sp.name}`;
-
-    // The lamprey is not here to help you, and a bowl does not change that.
-    if (school.sp.role === 'dread') {
-      this.cooldown = 2;
-      g.hud.say('It turns to face you and keeps turning.<br>It has nothing to say and all night to not say it.',
-        { who: 'The sea lamprey', seconds: 3.6 });
-      g.audio?.sfx('fish');
-      return;
-    }
 
     if (!this.found && !this._toldHigh) {
       this._toldHigh = true;
@@ -283,8 +325,14 @@ export class Clues {
       return;
     }
 
-    g.hud.say(LORE[this._lore++ % LORE.length], { who, seconds: 8.5 });
+    // A fish asking and the diver answering, rather than a fish reciting. He is
+    // the one who came down from there, so he's the one who'd know — and it
+    // gives him the only lines he has in the whole game. The answer lands on a
+    // timer in update() so the two of them aren't talking over each other.
+    const l = LORE[this._lore++ % LORE.length];
+    g.hud.say(l.ask, { who, seconds: 3.8 });
     g.audio?.sfx('fish');
+    this._reply = { text: l.say, at: 3.2 };
   }
 
   _afterHint() {
@@ -372,38 +420,41 @@ export class Clues {
  * is the point.
  */
 const LORE = [
-  'Two of them came down. Anocean and Enias.<br>' +
-  'Not down the way you came down. Down the way water goes down.',
+  { ask: "You're not from the water. Where do you come from?",
+    say: 'Same place this ship did. A seam in the sky they called Jupiter.<br>You dug it, or you owed it. Usually both.' },
 
-  "Jupiter wasn't a planet to them, it was a seam.<br>" +
-  'A gold mine with a sky over it, and everyone in it owed.',
+  { ask: 'You keep saying gold. What is gold?',
+    say: 'Something they wanted badly enough to spend people on.<br>That is the entire definition. There is nothing under it.' },
 
-  'Up there a person was a number with a job attached.<br>' +
-  'They had a word for what you were worth. You are hearing it.',
+  { ask: 'Then why would anyone stay?',
+    say: 'Nine years on a contract, and they count the years slower than you do.<br>Up there a man is a number with a job attached to it.' },
 
-  'There is a place in between the places. The Drain.<br>' +
-  "You've been nearer to it tonight than you'd like.",
+  { ask: 'And how does a man fall this far?',
+    say: 'The Drain. A hole between one place and the next.<br>No stars in it. No dark either, which is the part nobody warns you about.' },
 
-  'They came out into a clean world and named it after a tree.<br>' +
-  'They had a whole plan for it. Plans last about as long as plans do.',
+  { ask: 'Someone went first. Someone always goes first.',
+    say: 'Anocean and Enias. Two of them, out through the gate before it shut.<br>Everyone who tried it after them got what you are swimming through.' },
 
-  'Two dreams, one world, no give in either of them.<br>' +
-  'Their own people took up arms over the shape of paradise.',
+  { ask: 'Did the first two find anything?',
+    say: 'Somewhere clean, and they named it after a tree.<br>They had a whole plan for it. Plans last about as long as plans do.' },
 
-  'By the time it was all ash they finally said the kind thing —<br>' +
-  "that they'd kept each other alive. Late. But they said it.",
+  { ask: 'What broke it?',
+    say: 'Two dreams, one world, and no give in either of them.<br>Their own people took up arms over the shape of paradise.' },
 
-  'And then she came up. Out of the water and the ash together,<br>' +
-  'lit from the inside. That is the thing you are holding on to.',
+  { ask: 'So they died hating each other.',
+    say: 'No. When it was all ash they finally said the kind thing —<br>that they had kept each other alive. Late. But they said it.' },
 
-  "She's no drowning-horse, whatever your grandmother told you.<br>" +
-  'Where she puts her feet down, it comes back green.',
+  { ask: 'And the green one? The one you are holding on to?',
+    say: 'She came up out of the water and the ash together, lit from inside.<br>Nobody called her. Nobody can. She just arrives.' },
 
-  'She only ever turns up where it has already gone wrong.<br>' +
-  'Look around you. Then ask yourself why she is here.',
+  { ask: 'Should I be afraid of her?',
+    say: 'She is no drowning-horse, whatever the old stories say.<br>Where she puts her feet down, it comes back green.' },
 
-  "You don't get the new world with the old hands.<br>" +
-  'That is the whole instruction. That is all of it.',
+  { ask: 'Then why is she HERE?',
+    say: 'Look around you and ask me that again.<br>She only ever turns up where it has already gone wrong.' },
+
+  { ask: 'So what is left to do?',
+    say: 'You do not get the new world with the old hands.<br>That is the whole instruction. That is all of it.' },
 ];
 
 const PING = [

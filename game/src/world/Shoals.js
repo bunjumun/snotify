@@ -69,11 +69,46 @@ export class Shoals {
    * high, when the rule stops being "one appointed fish" and becomes "whatever
    * is swimming past".
    */
-  nearestSchool(pos, maxDistance = Infinity) {
+  nearestSchool(pos, maxDistance = Infinity, accept = null) {
     let best = null, bestD = maxDistance;
     for (const s of this.schools) {
+      if (accept && !accept(s)) continue;
       const d = s.home.distanceTo(pos);
       if (d < bestD) { bestD = d; best = s; }
+    }
+    return best;
+  }
+
+  /**
+   * A school to blast up into.
+   *
+   * The bong launch used to go straight up into open green, which put fifty
+   * units of water between the player and every fish in the game at the exact
+   * moment the fish become worth talking to. Aiming it at a school instead means
+   * the climb has somewhere to arrive: you come up through the middle of them.
+   *
+   * Never the lamprey. Surfacing into a knot of those is a different game.
+   */
+  schoolAbove(pos, minRise = 8, maxHoriz = 220) {
+    // Two passes: prefer something properly overhead, then settle for anything
+    // that isn't actually below her. The seabed swings thirty units across the
+    // bowl and the bongs sit on it, so "above" is scarcer than it sounds — and
+    // surfacing into empty green is the exact thing this exists to prevent.
+    return this._pickAbove(pos, minRise, maxHoriz)
+        || this._pickAbove(pos, 0, maxHoriz);
+  }
+
+  _pickAbove(pos, minRise, maxHoriz) {
+    let best = null, bestScore = Infinity;
+    for (const s of this.schools) {
+      if (s.sp.role === 'dread') continue;
+      const rise = s.home.y - pos.y;
+      if (rise < minRise) continue;
+      const horiz = Math.hypot(s.home.x - pos.x, s.home.z - pos.z);
+      if (horiz > maxHoriz) continue;
+      // Sideways costs more than upward — the point is a climb, not a commute.
+      const score = horiz + Math.abs(rise - Math.max(16, minRise * 2)) * 0.5;
+      if (score < bestScore) { bestScore = score; best = s; }
     }
     return best;
   }

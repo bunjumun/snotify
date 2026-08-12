@@ -30,9 +30,9 @@ export const CFG = {
   fog: {
     color: 0x2a6f6a,
     near: 4,
-    far: 82,
+    far: 130,             // how far you can see, and therefore how much is drawn
     deepColor: 0x113a42,  // below the thermocline it goes colder and darker
-    stormFar: 46,         // Gales of November pull visibility in this tight
+    stormFar: 70,         // a gale pulls visibility in this tight
   },
 
   // Underwater light is mostly bounce, so the hemisphere does the heavy lifting
@@ -40,12 +40,15 @@ export const CFG = {
   lights: {
     hemiSky: 0x8fe4d2,
     hemiGround: 0x1d453f,
-    hemi: 3.4,
+    // Raised to carry the world on its own now the lamp is off. Underwater light
+    // is overwhelmingly bounce anyway, so pushing the hemisphere and the ambient
+    // is the physically honest way to do it — brighter water, not a brighter sun.
+    hemi: 4.4,
     sunColor: 0xe4fbf0,
-    sun: 2.6,
-    ambient: 0x47908a,
-    ambientIntensity: 1.5,
-    exposure: 1.25,
+    sun: 3.0,
+    ambient: 0x4e9a93,
+    ambientIntensity: 2.0,
+    exposure: 1.28,
   },
 
   // ---------- Kelpie ----------
@@ -96,14 +99,22 @@ export const CFG = {
 
   // ---------- Diver ----------
   // A verlet chain, not an animation. He trails, swings wide on hard turns and
-  // snaps taut on boost, which sells "holding on for dear life" for free — and
-  // the same solver draws his air hose trailing off into the murk.
+  // snaps taut on boost, which sells "holding on for dear life" for free.
+  //
+  // They ride ABOVE her, not behind and below: men who were on her back, can't
+  // stay on, and are now streaming off it on ropes. Hence BUOYANT, not weighted.
+  // A long rope and negative gravity gave a man being dragged along the bottom,
+  // which is a different and much sadder picture.
+  //
+  // The rope can be generous because none of the four is ever in frame while
+  // you're navigating — they only appear when the bong orbit swings out (see
+  // Game._followEntities). Length here buys a better reveal, and costs nothing.
   diver: {
     links: 6,
-    linkLength: 0.95,
-    stiffness: 0.62,      // constraint iterations blend; higher = ropier
-    gravity: -1.1,        // he's weighted; boots down
-    drag: 0.93,
+    linkLength: 0.75,     // ~4.5 units, so the four of them string out on the orbit
+    stiffness: 0.88,      // constraint blend; higher = stiffer, less springy
+    gravity: 0.4,         // he floats — the suit has air in it — but gently
+    drag: 0.965,          // damps the bob. He should ride, not bounce.
     solverIterations: 5,
 
     // Grip. Sustained boost builds strain; past the threshold he lets go and you
@@ -114,9 +125,6 @@ export const CFG = {
     gripRecoverPerSec: 22,  // while not
     regrabRadius: 3.2,
     adriftDrainMult: 1.5,
-
-    hoseLinks: 14,
-    hoseLength: 1.4,
   },
 
   // ---------- Lamp ----------
@@ -132,6 +140,14 @@ export const CFG = {
   // the diver; after, it's a real beam. You don't get told the world got bigger,
   // you watch it happen.
   lamp: {
+    // The beam is back, but it no longer has its own axis. It points where she
+    // is going and leads a little into a turn, so it lights the water you are
+    // about to be in — one less thing to fly. The lens glow stays hidden while
+    // you're navigating (see Game._followEntities): with the camera at the
+    // diver's eyeline the light source is a hand's breadth from the lens, and
+    // the glow sprite there is a dinner plate of blue in the middle of the view.
+    enabled: true,
+    aimLead: 0.5,         // how far the beam leads a turn, 0 = dead ahead
     color: 0xbcd8ff,      // plasma arc — cold blue-white, and it pops off the teal
     dimColor: 0x7f9aa8,   // the dead helmet lamp before a fish brings you fire
     intensity: 950,
@@ -223,7 +239,9 @@ export const CFG = {
     // which is the only reason it can be this generous.
     highAt: 0.08,         // uTrip above which every fish will talk
     highRadius: 75,       // how close a school has to be to be worth asking
-    highCooldown: 4,      // shorter, because the window is short and paid for
+    // Shorter than the sober cooldown because the window is short and paid for,
+    // but long enough that asking again doesn't cut the diver off mid-answer.
+    highCooldown: 6,
   },
 
   // ---------- Fish ----------
@@ -243,7 +261,7 @@ export const CFG = {
     speed: [2.4, 6.5],
     turnRate: 2.2,
     reactTighten: 0.55,   // how much a loud passage pulls a school in
-    cullDistance: 120,    // schools past this stop updating entirely
+    cullDistance: 165,    // schools past this stop updating; keep it > fog.far
   },
 
   // ---------- Ship's log ----------
@@ -261,10 +279,11 @@ export const CFG = {
     riseTime: 0.6,
     holdTime: 10.0,       // exactly one camera revolution
     taperTime: 60.0,
-    orbitRadius: 16,
-    orbitElevation: 4.5,
+    orbitRadius: 21,      // wider than it needs to be, on purpose
+    orbitElevation: 7.0,
     orbitRevolutions: 1,
-    sparkleRate: 260,     // particles/sec at full intensity
+    sparkleRate: 520,     // particles/sec at full intensity
+    sparkleRadius: 14,    // and how far out from her they spawn
 
     // The blast off. A hit fires her straight up out of the dark, and she keeps
     // climbing through the orbit — so the ten seconds you can't steer are spent
@@ -279,7 +298,9 @@ export const CFG = {
     // ceiling is where she actually stops.
     launchKick: 14,       // instant vertical shove on the hit — this is the bang
     launchClimb: 30,      // units/sec she's driven toward while the lift lasts
-    launchTime: 3.2,      // seconds the climb lasts, decaying across them
+    launchTime: 3.2,      // seconds a straight-up climb lasts (x3 when school-bound)
+    launchArrive: 10,     // how close to the school counts as having arrived
+    launchSeek: 8.0,      // seconds she'll chase one before giving up on it
     launchEase: 16,       // units below the ceiling where she starts arriving
     launchSpeed: 22,      // extra speed cap, or the clamp eats the climb
     launchRise: 52,       // how far above the hit she can get
@@ -294,20 +315,44 @@ export const CFG = {
   // Underwater smoke does not plume. It hangs, spreads and goes nowhere fast,
   // which is why `rise` is small and the lifetimes are long.
   smoke: {
-    puff: 26,             // particles in the cloud a hit leaves behind
-    trailRate: 18,        // particles/sec at full uTrip
+    puff: 54,             // particles in the cloud a hit leaves behind
+    trailRate: 30,        // particles/sec at full uTrip
     rise: 0.55,           // units/sec it eventually settles into
     life: [5.0, 9.5],     // seconds; long, because it has nowhere to go
   },
 
   // ---------- Camera ----------
+  // The view is the DIVER'S. He is floating just off her back on a short rope,
+  // so the camera sits at his eyeline and looks out past her head: first person
+  // for him, third person for her, one pose. Nobody has to be told who they are.
+  //
+  // Which is also what makes the bong orbit land. It is the only time the camera
+  // leaves him, and what it reveals as it swings out is how the two of them are
+  // actually arranged — the horse, the rope, the man on the end of it. You have
+  // been looking down that rope the whole game without seeing it.
+  //
+  // The offsets are in HER frame, not his actual verlet position: he bobs, and a
+  // camera bolted to a rope simulation is a camera nobody can look through.
   camera: {
     fov: 68,
     near: 0.1,
     far: 400,
-    followDistance: 13.0,
-    followHeight: 3.6,
-    followSpring: 4.2,
+    // Above and slightly FORWARD of where he floats, so he is behind the lens
+    // rather than in front of it. He buoys up and back on the rope, and every
+    // offset that sat level with him or aft of him ended up either staring at
+    // him or inside his suit. This is his eyeline, a foot in front of the glass.
+    rideHeight: 3.0,      // high enough that she sits in the bottom third
+    rideBack: 1.4,        // forward of where he floats (~2.0), so he is not
+                          // the subject — his shoulder in the corner is plenty
+    rideLookAhead: 16,    // look out this far past her head...
+    rideLookHeight: 1.4,  // ...at about this height. Her back, neck and the back
+                          // of her head take the bottom third; the rest is water
+                          // you are about to swim into, which is the bit that
+                          // matters when visibility is the whole game.
+    // Tighter than a chase camera wants to be. The spring lag is what pulls the
+    // view back off him at speed, and past about 4 that stops being "the ride
+    // has weight" and starts being "why am I watching this man from behind".
+    followSpring: 8.0,
     lookAhead: 4.0,       // bias the look target into velocity
     modeBlendTime: 0.9,   // FOLLOW <-> ORBIT, eased so it never cuts
   },

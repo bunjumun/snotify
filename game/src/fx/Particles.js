@@ -123,7 +123,7 @@ export class Particles {
     // Sparkles.
     if (trip > 0.01) {
       this._acc += CFG.trip.sparkleRate * trip * dt;
-      while (this._acc >= 1) { this._pendingCentre && this.spawnSparkle(this._pendingCentre, 9); this._acc -= 1; }
+      while (this._acc >= 1) { this._pendingCentre && this.spawnSparkle(this._pendingCentre, CFG.trip.sparkleRadius); this._acc -= 1; }
     }
     for (let i = SILT; i < this.N; i++) {
       if (this.life[i] <= 0) continue;

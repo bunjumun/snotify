@@ -6,8 +6,10 @@
 // That gets "holding on for dear life" for roughly the cost of a for-loop, and it
 // stays correct in situations no animator would have thought to cover.
 //
-// The same solver draws his air hose trailing off into the murk, which is free
-// atmosphere and one of the strongest reads in the reference photos.
+// There is no air hose. He had one in an earlier cut, trailing off into the dark
+// toward a tender on the surface — which is a beautiful read in the reference
+// photos and a lie here. There is no boat up there. There is no up there. His air
+// is whatever is in the suit, which is also why he floats.
 //
 // Grip is the mechanic on top: sustained boost builds strain, past the threshold
 // he lets go, and you have to circle back for him while breath keeps draining.
@@ -43,12 +45,16 @@ export class Diver {
     for (let i = 0; i < D.links; i++) this.chain.push(new Point(0, -8, 40 + i * D.linkLength));
     this.chain[0].pinned = true;
 
-    this.hose = [];
-    for (let i = 0; i < D.hoseLinks; i++) this.hose.push(new Point(0, -8, 40 + i * D.hoseLength));
-
     this._tmp = new THREE.Vector3();
     this._tmp2 = new THREE.Vector3();
     this._up = new THREE.Vector3(0, 1, 0);
+    // Scratch for the prone pose. Allocating these per frame is how you hand the
+    // GC a stutter on a phone.
+    this._fwd = new THREE.Vector3();
+    this._down = new THREE.Vector3();
+    this._side = new THREE.Vector3();
+    this._basis = new THREE.Matrix4();
+    this._q = new THREE.Quaternion();
 
     // ---- Materials ----
     this.brassMat = new THREE.MeshStandardMaterial({
@@ -60,7 +66,6 @@ export class Diver {
       color: 0xffffff, map: this._dazzleTexture(), roughness: 0.95,
     });
     this.ropeMat = new THREE.MeshStandardMaterial({ color: 0x4a4237, roughness: 0.9 });
-    this.hoseMat = new THREE.MeshStandardMaterial({ color: 0x3a3630, roughness: 0.85 });
     this.glassMat = new THREE.MeshStandardMaterial({
       color: 0x9fd4d8, roughness: 0.08, metalness: 0.2,
       transparent: true, opacity: 0.55, emissive: 0x1d3f44, emissiveIntensity: 0.5,
@@ -206,13 +211,6 @@ export class Diver {
       this.ropeSegs.push(m);
       this.group.add(m);
     }
-    this.hoseSegs = [];
-    for (let i = 0; i < CFG.diver.hoseLinks - 1; i++) {
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 1, 5), this.hoseMat);
-      m.geometry.translate(0, 0.5, 0);
-      this.hoseSegs.push(m);
-      this.group.add(m);
-    }
   }
 
   /** @param {THREE.Vector3} anchor where the kelpie's grip point is this frame */
@@ -243,18 +241,9 @@ export class Diver {
     this._integrate(this.chain, dt, D.drag, D.gravity);
     for (let it = 0; it < D.solverIterations; it++) this._constrain(this.chain, D.linkLength, D.stiffness);
 
-    // ---- Hose ----
-    // Anchored at the helmet, the far end left free so it wanders off into the
-    // dark. Lighter than the rope so it floats rather than hangs.
     const head = this.chain[this.chain.length - 1];
-    this.hose[0].pos.copy(head.pos);
-    this.hose[0].pinned = true;
-    this._integrate(this.hose, dt, 0.97, 0.35);
-    for (let it = 0; it < 3; it++) this._constrain(this.hose, D.hoseLength, 0.5);
-
-    this._placeBody(head, dt);
+    this._placeBody(head, dt, kelpie);
     this._layRope(this.ropeSegs, this.chain);
-    this._layRope(this.hoseSegs, this.hose);
   }
 
   _integrate(points, dt, drag, gravity) {
@@ -265,7 +254,8 @@ export class Diver {
       p.pos.add(this._tmp);
       p.pos.y += gravity * dt * dt * 60;
       // A little sway so nothing ever hangs perfectly still in moving water.
-      p.pos.x += Math.sin(performance.now() * 0.0011 + p.pos.z) * 0.0016;
+      // Small: this is a man riding, and any more of it reads as a man bobbing.
+      p.pos.x += Math.sin(performance.now() * 0.0011 + p.pos.z) * 0.0006;
     }
   }
 
@@ -281,17 +271,26 @@ export class Diver {
     }
   }
 
-  _placeBody(head, dt) {
+  _placeBody(head, dt, kelpie) {
     this.body.position.copy(head.pos);
 
-    // Face back along the rope — he's being towed, so he looks where he came from
-    // as much as where he's going. Upright-ish because the boots are weighted.
-    const prev = this.chain[this.chain.length - 2];
-    this._tmp.copy(head.pos).sub(prev.pos).normalize();
-    this._tmp2.copy(head.pos).add(this._tmp);
-    this.body.lookAt(this._tmp2);
-    // Weighted boots fight the tow, so blend the roll back toward upright.
-    this.body.rotation.z *= 0.35;
+    // Prone, head first, belly toward her back: a man lying along the top of a
+    // swimming animal, not a man dangling off the back of one. He used to look
+    // back down the rope, which is honest for something being towed and reads as
+    // a corpse the moment he is also floating.
+    //
+    // His model is built upright — local +Y is his head, local +Z is his face —
+    // so the basis puts +Y along her heading and +Z pointing down at her.
+    if (kelpie) {
+      this._fwd.set(0, 0, -1).applyQuaternion(kelpie.quaternion);
+      this._down.set(0, -1, 0).applyQuaternion(kelpie.quaternion);
+      this._side.crossVectors(this._fwd, this._down).normalize();
+      this._basis.makeBasis(this._side, this._fwd, this._down);
+      this._q.setFromRotationMatrix(this._basis);
+      // Slerped, not assigned, so the rope still throws him around a little on a
+      // hard turn instead of welding him to her heading.
+      this.body.quaternion.slerp(this._q, 1 - Math.exp(-7 * dt));
+    }
 
     // Arms strain visibly as grip runs out — the warning before he lets go.
     const strain = 1 - this.grip / CFG.diver.gripMax;
@@ -355,14 +354,10 @@ export class Diver {
     this.attached = true;
     this.adrift = false;
     this.grip = CFG.diver.gripMax;
+    // Up and back from the grip, which is where he actually rides.
     for (let i = 0; i < this.chain.length; i++) {
-      this.chain[i].pos.copy(anchor).add(this._tmp.set(0, -0.2 * i, CFG.diver.linkLength * i));
+      this.chain[i].pos.copy(anchor).add(this._tmp.set(0, 0.3 * i, CFG.diver.linkLength * i));
       this.chain[i].prev.copy(this.chain[i].pos);
-    }
-    for (let i = 0; i < this.hose.length; i++) {
-      this.hose[i].pos.copy(this.chain[this.chain.length - 1].pos)
-        .add(this._tmp.set(0, 0.3 * i, CFG.diver.hoseLength * i));
-      this.hose[i].prev.copy(this.hose[i].pos);
     }
   }
 }

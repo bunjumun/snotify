@@ -231,7 +231,7 @@ export class School {
       if (pd < F.avoidRadius && pd > 0.001) {
         this._acc.addScaledVector(
           this._tmp.divideScalar(pd),
-          W.avoid * (1 - pd / F.avoidRadius),
+          W.avoid * (1 - pd / F.avoidRadius) * (1 - (this._trip || 0) * 0.8),
         );
       }
 
@@ -268,6 +268,12 @@ export class School {
   setTrip(v) {
     // Everything alive picks up a little glow through the sequence.
     this.material.emissiveIntensity = 0.06 + v * 0.7;
+    // And they stop bolting. Sober, fish do not hold formation for a horse;
+    // high, they let you come up through the middle of them — which is the
+    // whole point of aiming the launch at a school, and it's the same rule the
+    // clue system already runs on: while the bowl is working, the lake is
+    // willing.
+    this._trip = v;
   }
 
   dispose() {

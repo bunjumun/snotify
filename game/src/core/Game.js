@@ -53,6 +53,9 @@ import { Logbook } from '../ui/Logbook.js';
 
 export const State = { TITLE: 'title', PLAY: 'play', PAUSED: 'paused', DEAD: 'dead' };
 
+/** One rider per band member. They only ever come into frame on the bong orbit. */
+const RIDERS = 4;
+
 export class Game {
   constructor(canvas) {
     this.canvas = canvas;
@@ -162,8 +165,19 @@ export class Game {
     this.kelpie = new Kelpie();
     this.scene.add(this.kelpie.group);
 
-    this.diver = new Diver();
-    this.scene.add(this.diver.group);
+    // Four riders, one per band member. Only rider 0 has a grip that can fail:
+    // four independent "go back for him" states at once would be a different and
+    // much worse game, and you would never see three of them anyway.
+    //
+    // Each Diver paints its own dazzle at construction, so the four of them come
+    // out in four different patterns for free.
+    this.divers = [];
+    for (let i = 0; i < RIDERS; i++) {
+      const d = new Diver();
+      this.scene.add(d.group);
+      this.divers.push(d);
+    }
+    this.diver = this.divers[0];   // the one the camera, the lamp and the lighter belong to
     this.diver.onLetGo = () => {
       this.hud.say('He lost his grip. Go back for him.', { seconds: 3.2 });
       this.audio?.sfx('grip_lost');
@@ -229,10 +243,20 @@ export class Game {
     this.trip = new Trip();
     this.trip.onStart = () => {
       this.audio?.tripStart();
-      this.bubbles.burst(this.kelpie.position.x, this.kelpie.position.y + 1, this.kelpie.position.z, 40, 1.4);
-      // Straight up out of the dark, and still climbing through the orbit.
-      this.kelpie.blastOff();
-      this.rig.addShake(0.45);
+      // Everything at once. This is the moment the whole run is paid for, and it
+      // costs four baggies — it is allowed to be too much.
+      const k = this.kelpie.position;
+      this.bubbles.burst(k.x, k.y + 1, k.z, 120, 1.6);
+      const h = this._helm || (this._helm = new THREE.Vector3());
+      for (const d of this.divers) {
+        d.helmetPosition(h);
+        this.bubbles.burst(h.x, h.y, h.z, 18, 1.1);
+      }
+      // Up out of the dark and through the middle of a school, if there's one
+      // overhead worth arriving in. Straight up if there isn't.
+      const into = this.shoals.schoolAbove(k);
+      this.kelpie.blastOff(into ? into.home : null);
+      this.rig.addShake(0.85);
     };
     this.trip.onHoldEnd = () => this.audio?.tripTaper();
     this.trip.onEnd = () => this.audio?.tripEnd();
@@ -299,8 +323,10 @@ export class Game {
     const spawn = this._spawnPose();
     this.kelpie.reset(spawn.position, spawn.yaw);
     const anchor = new THREE.Vector3();
-    this.kelpie.gripPoint(anchor);
-    this.diver.reset(anchor);
+    for (let i = 0; i < this.divers.length; i++) {
+      this.kelpie.gripPoint(anchor, i);
+      this.divers[i].reset(anchor);
+    }
     this.rig.snapTo(this.kelpie);
     this.breath.reset();
     this.trip.cancel();
@@ -434,7 +460,9 @@ export class Game {
     // Helmet bubbles: constant trickle, more when working hard.
     const helm = this._helm || (this._helm = new THREE.Vector3());
     this.diver.helmetPosition(helm);
-    this.bubbles.emit(dt, helm.x, helm.y, helm.z, this.kelpie.boosting ? 26 : 9, 0.85);
+    // Heavy while she's climbing — the wake is most of what sells the launch.
+    const rate = this.kelpie.lift > 0 ? 110 : this.kelpie.boosting ? 26 : 9;
+    this.bubbles.emit(dt, helm.x, helm.y, helm.z, rate, 0.85);
 
     // Smoke trails off him for as long as the trip lasts and thins with uTrip,
     // so the comedown is something you can watch drifting behind you.
@@ -501,15 +529,39 @@ export class Game {
 
   _followEntities(dt) {
     const anchor = this._anchor || (this._anchor = new THREE.Vector3());
-    this.kelpie.gripPoint(anchor);
-    this.diver.update(dt, anchor, this.kelpie);
+    for (let i = 0; i < this.divers.length; i++) {
+      this.kelpie.gripPoint(anchor, i);
+      this.divers[i].update(dt, anchor, this.kelpie);
+    }
+
+    // He is not in frame while you're navigating. The camera sits at his eyeline
+    // and his own shoulder has no business blocking the water — visibility is
+    // the whole game. He appears when the orbit swings out, which is what turns
+    // the bong hit into a reveal of who has been carrying you.
+    //
+    // The exception is non-negotiable: once he's adrift you have to be able to
+    // find him, and hiding the thing the player is required to go and collect is
+    // not a camera decision, it's a bug.
+    const showDiver = this.rig.orbitWeight > 0.02 || this.diver.adrift;
+    for (const d of this.divers) d.group.visible = showDiver;
+    // The lens glow goes with him. It marks where the lamp IS, which is worth
+    // seeing when you can see him holding it and is otherwise a plate of blue
+    // light dead centre — the source is a hand's breadth from the lens now. The
+    // beam cone stays either way: that one is the art.
+    if (this.lamp.glow) this.lamp.glow.visible = showDiver;
 
     // The light comes from wherever his hand actually is once he's holding the
     // lighter, so it swings with him — before that, from the dead helmet lamp.
     const src = this._lampSrc || (this._lampSrc = new THREE.Vector3());
     if (this.heldLighter) this.diver.handPosition(src);
     else this.diver.helmetPosition(src);
-    this.lamp.update(dt, src, this.kelpie.quaternion, this.input.intent.lamp);
+    // The beam points where she's going, leading into the turn rather than
+    // being flown separately.
+    const aim = this._lampAim || (this._lampAim = { x: 0, y: 0 });
+    const steer = this.input.intent.steer;
+    aim.x = steer.x * CFG.lamp.aimLead;
+    aim.y = -steer.y * CFG.lamp.aimLead * 0.8;
+    this.lamp.update(dt, src, this.kelpie.quaternion, aim);
   }
 
   _updateBongs(dt, intent) {
@@ -548,10 +600,12 @@ export class Game {
     // The exhale: a cloud where the hit happened, and a smaller one off the
     // helmet, since he's the one who was holding it.
     const b = bong.position;
-    this.smoke.puff(b.x, b.y + 1.3, b.z, CFG.smoke.puff, 1.5);
+    this.smoke.puff(b.x, b.y + 1.3, b.z, CFG.smoke.puff, 1.8);
     const helm = this._helm || (this._helm = new THREE.Vector3());
-    this.diver.helmetPosition(helm);
-    this.smoke.puff(helm.x, helm.y, helm.z, Math.round(CFG.smoke.puff * 0.5), 1.0);
+    for (const d of this.divers) {
+      d.helmetPosition(helm);
+      this.smoke.puff(helm.x, helm.y, helm.z, Math.round(CFG.smoke.puff * 0.3), 1.1);
+    }
 
     this.hud.clearSay();
     this.pad?.rumble(0.6, 400);

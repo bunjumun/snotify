@@ -1,8 +1,12 @@
 // Keyboard + mouse.
 //
-// WASD/arrows steer, Space swims, Shift boosts, E uses. The mouse aims the lamp
-// without pointer lock — the lamp only needs a direction, and grabbing the
-// cursor for a game someone opened from a band page is a hostile thing to do.
+// WASD/arrows steer, Space swims, Shift boosts, E uses — and so does the MOUSE,
+// which steers as an absolute stick: its offset from the centre of the canvas is
+// the deflection. No pointer lock. Grabbing the cursor for a game someone opened
+// from a band page is a hostile thing to do, and this doesn't need it.
+//
+// The mouse used to aim the lamp on its own axis. The lamp now points where
+// she's going, which frees the better input device to do the harder job.
 
 export class Keyboard {
   constructor(canvas) {
@@ -63,8 +67,10 @@ export class Keyboard {
     if (k.has('ShiftLeft') || k.has('ShiftRight')) raw.boost = true;
     if (k.has('KeyE') || k.has('Enter')) raw.interact = true;
 
-    raw.lamp.x += this.mouse.x;
-    raw.lamp.y += this.mouse.y;
+    // Absolute stick. Signs match the keys: cursor up pitches the same way
+    // ArrowUp does, cursor right turns the same way D does.
+    raw.steer.x += this.mouse.x;
+    raw.steer.y += this.mouse.y;
   }
 }
 

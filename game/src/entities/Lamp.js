@@ -60,11 +60,23 @@ export class Lamp {
     this._flick = 1;
     this._t = 0;
 
+    // The lamp is switched off at the world level (CFG.lamp.enabled). The view
+    // now sits at the diver's eyeline, which put the light source a hand's
+    // breadth from the lens — a spotlight and a lens glow right there wash out
+    // exactly the water you are trying to read. The world carries its own light
+    // instead; CFG.lights was raised to pay for it.
+    //
+    // The object stays because its AIM is still live: `beamDir` is what the
+    // baggies and the log slates test against to decide whether you are looking
+    // at them (see glintDot). Sweeping for things still works — it just isn't a
+    // torch beam any more, it's attention.
+    this.enabled = L.enabled !== false;
+
     this.light = new THREE.SpotLight(L.dimColor, L.dimIntensity, L.dimDistance, L.dimAngle, L.penumbra, L.decay);
     this.light.castShadow = false;
     this.target = new THREE.Object3D();
     this.light.target = this.target;
-    scene.add(this.light, this.target);
+    if (this.enabled) scene.add(this.light, this.target);
 
     // ---- Visible beam ----
     this.beamUniforms = {
@@ -86,14 +98,14 @@ export class Lamp {
     }));
     this.beam.renderOrder = 3;
     this.beam.frustumCulled = false;
-    scene.add(this.beam);
+    if (this.enabled) scene.add(this.beam);
 
     // ---- Lens glow ----
     this.glowMat = new THREE.MeshBasicMaterial({
       color: L.dimColor, transparent: true, opacity: 0.5, depthWrite: false, fog: false,
     });
     this.glow = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), this.glowMat);
-    scene.add(this.glow);
+    if (this.enabled) scene.add(this.glow);
 
     this.aim = new THREE.Vector2(0, 0);
     this.beamDir = new THREE.Vector3(0, 0, -1);
@@ -135,6 +147,8 @@ export class Lamp {
       .addScaledVector(this._right, this.aim.x * 0.85)
       .addScaledVector(this._up, -this.aim.y * 0.7)
       .normalize();
+
+    if (!this.enabled) return;   // aim is computed above; the rest is display
 
     this.light.position.copy(origin);
     this.target.position.copy(origin).addScaledVector(this.beamDir, 25);

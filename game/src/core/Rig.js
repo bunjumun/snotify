@@ -52,19 +52,24 @@ export class Rig {
   update(dt, target) {
     const c = CFG.camera;
 
-    // ---- Follow pose ----
-    // Sit behind and above, in the kelpie's own frame so the camera rolls with a
-    // banked turn instead of staying stubbornly world-up.
-    this._back.set(0, c.followHeight, c.followDistance).applyQuaternion(target.quaternion);
+    // ---- Ride pose ----
+    // The diver's eyeline, expressed in the kelpie's own frame so the camera
+    // rolls with a banked turn instead of staying stubbornly world-up. Her frame
+    // rather than his actual chain position, because he is a rope simulation and
+    // a camera bolted to one of those is unusable.
+    this._back.set(0, c.rideHeight, c.rideBack).applyQuaternion(target.quaternion);
     this._v.copy(target.position).add(this._back);
 
     const k = approach(c.followSpring, dt);
     this._followPos.lerp(this._v, k);
 
-    // Look slightly ahead of where they actually are — reads as anticipation and
-    // makes fast movement legible instead of a smear.
-    this._v.copy(target.velocity).multiplyScalar(c.lookAhead * 0.06);
-    this._v.add(target.position);
+    // Look OUT PAST her head, not at her — she sits in the lower frame and the
+    // water ahead gets the middle of it. Plus a bias into velocity, which reads
+    // as anticipation and makes fast movement legible instead of a smear.
+    this._v.set(0, c.rideLookHeight, -c.rideLookAhead)
+      .applyQuaternion(target.quaternion)
+      .add(target.position)
+      .addScaledVector(target.velocity, c.lookAhead * 0.02);
     this._followLook.lerp(this._v, approach(c.followSpring * 1.4, dt));
 
     // ---- Orbit pose ----
@@ -112,10 +117,12 @@ export class Rig {
 
   /** Drop the camera straight into place — used on spawn and on retry. */
   snapTo(target) {
-    this._back.set(0, CFG.camera.followHeight, CFG.camera.followDistance)
-      .applyQuaternion(target.quaternion);
+    const c = CFG.camera;
+    this._back.set(0, c.rideHeight, c.rideBack).applyQuaternion(target.quaternion);
     this._followPos.copy(target.position).add(this._back);
-    this._followLook.copy(target.position);
+    this._followLook.set(0, c.rideLookHeight, -c.rideLookAhead)
+      .applyQuaternion(target.quaternion)
+      .add(target.position);
     this._pos.copy(this._followPos);
     this._look.copy(this._followLook);
     this.camera.position.copy(this._pos);

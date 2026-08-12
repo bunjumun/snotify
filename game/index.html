@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Lakehorse Swimulator</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐴</text></svg>" />
+<meta name="theme-color" content="#0d2b2e" />
+<meta name="description" content="Ride the kelpie through the wreck of the SS Jupiter. Mind your breath." />
+
+<!-- Three.js is vendored, not bundled. The repo has no build step and this page
+     keeps it that way: an import map points the bare specifier at the committed
+     file, so `git push` is still the whole deploy. three.module.min.js imports
+     ./three.core.min.js on its own, which is why both live in vendor/. -->
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+
+<style>
+:root{
+  /* Pulled from the site's core.css so the game reads as part of the family,
+     then tinted toward the water. */
+  --bg:#0d0e12; --text:#e7e9ee; --text-dim:#8b90a0; --text-mute:#5b6072;
+  --line:#262936; --accent:#6c5ce7; --accent-2:#00d0a4; --warn:#ffb454; --err:#ff6b6b;
+  --deep:#04161c; --water:#0d2b2e; --weed:#7de08a; --brass:#b08d4f;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--deep);color:var(--text);
+  font-family:var(--mono); overscroll-behavior:none; touch-action:none}
+canvas{display:block;width:100%;height:100%}
+
+/* Everything overlaying the canvas ignores pointer events unless it needs them,
+   so the game never loses a drag to a HUD element that only wanted to be seen. */
+.layer{position:fixed;inset:0;pointer-events:none;z-index:10}
+.layer.on{pointer-events:auto}
+.hide{display:none !important}
+
+/* ---------- Start screen ---------- */
+#start{background:radial-gradient(ellipse at 50% 35%, #12414a 0%, var(--deep) 70%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:1.4rem;padding:max(1.5rem,env(safe-area-inset-top)) 1.5rem;z-index:40;text-align:center}
+#start h1{margin:0;font-size:clamp(2rem,7vw,3.4rem);letter-spacing:.06em;font-weight:600}
+#start h1 .sub{display:block;font-size:.34em;letter-spacing:.34em;color:var(--text-dim);
+  margin-top:.5rem;font-weight:400}
+#start .blurb{max-width:34rem;color:var(--text-dim);line-height:1.65;font-size:.92rem;margin:0}
+
+.modes{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;max-width:34rem}
+.mode{background:#0e2126;border:1px solid var(--line);color:var(--text-dim);
+  padding:.6rem .95rem;border-radius:10px;font:inherit;font-size:.82rem;cursor:pointer;
+  transition:border-color .15s, color .15s, background .15s; text-align:left; min-width:8.5rem}
+.mode b{display:block;color:var(--text);font-weight:600;letter-spacing:.04em;margin-bottom:.15rem}
+.mode small{color:var(--text-mute);font-size:.76rem}
+.mode:hover{border-color:#3a5f5a;color:var(--text)}
+.mode[aria-checked="true"]{border-color:var(--weed);background:#14312a}
+.mode[aria-checked="true"] small{color:var(--text-dim)}
+/* Chill gets visual priority: a lot of people arriving from the band page want
+   the aquarium, not the challenge. */
+.mode.chill{border-color:#2f6f5e}
+.mode.chill b::after{content:' · 4:20';color:var(--weed);font-weight:400}
+
+#dive{background:var(--weed);color:#04231a;border:0;border-radius:999px;
+  padding:.95rem 3.2rem;font:inherit;font-size:1.05rem;font-weight:700;letter-spacing:.14em;
+  cursor:pointer;box-shadow:0 6px 30px rgba(125,224,138,.28)}
+#dive:active{transform:translateY(1px)}
+#startNote{color:var(--text-mute);font-size:.75rem;max-width:30rem;line-height:1.5;margin:0}
+#loadState{color:var(--text-mute);font-size:.78rem;min-height:1.2em;margin:0}
+
+/* ---------- HUD ---------- */
+#hud{padding:max(.9rem,env(safe-area-inset-top)) .9rem max(.9rem,env(safe-area-inset-bottom))}
+.hud-tl{position:absolute;top:max(.9rem,env(safe-area-inset-top));left:.9rem;
+  display:flex;flex-direction:column;gap:.55rem}
+
+/* Breath. The bar is the game's clock, so it gets the most visual weight and
+   changes colour rather than only length — at a glance, from the corner of the
+   eye, colour reads faster than width. */
+#breathWrap{width:min(38vw,240px)}
+#breathBar{height:9px;background:#0b1f22;border:1px solid #21454a;border-radius:999px;overflow:hidden}
+#breathFill{height:100%;width:100%;background:var(--accent-2);transition:background .4s linear;
+  transform-origin:left center}
+#breathLabel{font-size:.72rem;color:var(--text-dim);letter-spacing:.1em;margin-top:.3rem}
+.warn #breathFill{background:var(--warn)}
+.panic #breathFill{background:var(--err)}
+.panic #breathLabel{color:var(--err)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.panic #breathWrap{animation:pulse .8s ease-in-out infinite}
+
+/* Inventory: four baggie slots and the lighter. Deliberately literal — you
+   should never have to read a number to know if you can pack a bowl. */
+#inv{display:flex;align-items:center;gap:.55rem}
+.slots{display:flex;gap:4px}
+.slot{width:15px;height:19px;border:1px solid #2f5f4e;border-radius:3px;background:#0c231d}
+.slot.full{background:var(--weed);border-color:var(--weed);box-shadow:0 0 9px rgba(125,224,138,.55)}
+#lighter{font-size:1rem;opacity:.25;filter:grayscale(1)}
+#lighter.has{opacity:1;filter:none;text-shadow:0 0 10px rgba(255,180,84,.65)}
+#shake{font-size:.72rem;color:var(--weed);letter-spacing:.06em}
+
+/* Centre prompt — interaction, fish dialogue, objectives. One element, because
+   only one of those things should ever be asking for attention at a time. */
+#prompt{position:absolute;left:50%;bottom:14%;transform:translateX(-50%);
+  background:rgba(4,22,28,.86);border:1px solid #23484c;border-radius:10px;
+  padding:.65rem 1.1rem;font-size:.86rem;line-height:1.5;max-width:min(90vw,32rem);
+  text-align:center;backdrop-filter:blur(6px);opacity:0;transition:opacity .25s}
+#prompt.on{opacity:1}
+#prompt .who{display:block;color:var(--accent-2);font-size:.72rem;letter-spacing:.12em;
+  margin-bottom:.3rem;text-transform:uppercase}
+#prompt kbd{background:#12333a;border:1px solid #2b5a60;border-radius:4px;
+  padding:.08em .4em;font:inherit;font-size:.9em}
+
+.hud-tr{position:absolute;top:max(.9rem,env(safe-area-inset-top));right:.9rem;
+  display:flex;flex-direction:column;align-items:flex-end;gap:.45rem}
+#seed{font-size:.68rem;color:var(--text-mute);letter-spacing:.08em;cursor:pointer;
+  pointer-events:auto;background:none;border:0;font-family:inherit;padding:.2rem}
+#seed:hover{color:var(--text-dim)}
+.iconbtn{pointer-events:auto;background:rgba(4,22,28,.7);border:1px solid #23484c;
+  color:var(--text-dim);border-radius:8px;width:34px;height:34px;font-size:.95rem;
+  cursor:pointer;display:grid;place-items:center;font-family:inherit}
+.iconbtn:hover{color:var(--text);border-color:#356a70}
+.tr-row{display:flex;gap:.45rem}
+#radar{display:block;border-radius:50%;pointer-events:none}
+#radarKey{display:flex;gap:.55rem;font-size:.6rem;color:var(--text-mute);letter-spacing:.04em}
+#radarKey span{display:flex;align-items:center;gap:.22rem}
+#radarKey i{width:6px;height:6px;border-radius:50%;display:block}
+@media (max-width:560px){ #radarKey{display:none} }
+
+/* ---------- Death ---------- */
+#death{background:rgba(2,8,10,.94);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1.2rem;z-index:35;text-align:center;padding:1.5rem}
+#death p{margin:0;color:var(--text-dim);font-size:clamp(.95rem,3vw,1.15rem);letter-spacing:.02em}
+#death h2{margin:0;font-size:clamp(2.4rem,10vw,4.5rem);letter-spacing:.16em;
+  color:var(--err);font-weight:700}
+#death .btns{display:flex;gap:.7rem;flex-wrap:wrap;justify-content:center}
+.btn{background:#12333a;border:1px solid #2b5a60;color:var(--text);border-radius:999px;
+  padding:.7rem 1.7rem;font:inherit;font-size:.9rem;cursor:pointer;letter-spacing:.08em}
+.btn:hover{border-color:var(--accent-2)}
+.btn.primary{background:var(--weed);color:#04231a;border-color:var(--weed);font-weight:700}
+
+/* ---------- Settings / pause ---------- */
+#settings{background:rgba(2,8,10,.9);display:flex;align-items:center;justify-content:center;z-index:38}
+#settings .panel{background:#0b1d21;border:1px solid #23484c;border-radius:14px;
+  padding:1.4rem;width:min(92vw,26rem);display:flex;flex-direction:column;gap:1rem}
+#settings h3{margin:0;font-size:1rem;letter-spacing:.1em}
+.row{display:flex;align-items:center;justify-content:space-between;gap:1rem;font-size:.84rem;
+  color:var(--text-dim)}
+.row input[type=range]{flex:1;accent-color:var(--weed);max-width:11rem}
+.row select{background:#12333a;border:1px solid #2b5a60;color:var(--text);border-radius:7px;
+  padding:.35rem .5rem;font:inherit;font-size:.82rem}
+
+/* ---------- Touch controls ---------- */
+#touch{z-index:20}
+#stick{position:absolute;left:0;bottom:0;width:45%;height:52%}
+#stickBase,#stickKnob{position:absolute;border-radius:50%;border:1px solid rgba(125,224,138,.35);
+  opacity:0;transition:opacity .18s}
+#stickBase{width:124px;height:124px;margin:-62px 0 0 -62px}
+#stickKnob{width:52px;height:52px;margin:-26px 0 0 -26px;background:rgba(125,224,138,.22)}
+#touch.active #stickBase,#touch.active #stickKnob{opacity:1}
+.tbtn{position:absolute;pointer-events:auto;border-radius:50%;border:1px solid rgba(125,224,138,.35);
+  background:rgba(4,22,28,.55);color:var(--text-dim);display:grid;place-items:center;
+  font-family:inherit;font-size:.72rem;letter-spacing:.06em}
+#tThrust{right:1.2rem;bottom:5.5rem;width:82px;height:82px}
+#tBoost{right:6.5rem;bottom:1.5rem;width:62px;height:62px}
+#tUse{right:1.6rem;bottom:1.5rem;width:62px;height:62px}
+.tbtn:active{background:rgba(125,224,138,.25);color:var(--text)}
+
+/* ---------- Debug ---------- */
+#debug{position:absolute;left:.9rem;bottom:.9rem;font-size:.66rem;color:var(--text-mute);
+  line-height:1.5;white-space:pre;background:rgba(2,8,10,.6);padding:.5rem .6rem;border-radius:6px}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<!-- HUD -->
+<div class="layer" id="hud">
+  <div class="hud-tl">
+    <div id="breathWrap">
+      <div id="breathBar"><div id="breathFill"></div></div>
+      <div id="breathLabel">BREATH</div>
+    </div>
+    <div id="inv">
+      <div class="slots" id="slots"></div>
+      <span id="lighter" title="Lighter">🔥</span>
+      <span id="shake" class="hide">SHAKE</span>
+    </div>
+  </div>
+  <div class="hud-tr">
+    <button id="seed" title="Copy this run's seed">seed —</button>
+    <div class="tr-row">
+      <button class="iconbtn" id="btnSettings" title="Settings">⚙</button>
+      <button class="iconbtn" id="btnHint" title="Ask a fish">🐟</button>
+    </div>
+    <canvas id="radar" title="Sonar — heading up"></canvas>
+    <div id="radarKey">
+      <span><i style="background:#7de08a"></i>bong</span>
+      <span><i style="background:#b6e88a"></i>baggie</span>
+      <span><i style="background:#6fd8e0"></i>fish</span>
+    </div>
+  </div>
+  <div id="prompt"></div>
+</div>
+
+<!-- Touch controls, shown only when a touch is detected -->
+<div class="layer on hide" id="touch">
+  <div id="stick"><div id="stickBase"></div><div id="stickKnob"></div></div>
+  <button class="tbtn" id="tThrust">SWIM</button>
+  <button class="tbtn" id="tBoost">BOOST</button>
+  <button class="tbtn" id="tUse">USE</button>
+</div>
+
+<!-- Start screen. This button is the single user gesture that unlocks the
+     AudioContext AND requests iOS motion permission — both are hard-gated
+     behind a real tap, which is the entire reason this screen exists. -->
+<div class="layer on" id="start">
+  <h1>LAKEHORSE<span class="sub">S W I M U L A T O R</span></h1>
+  <p class="blurb">The wreck of the <em>SS&nbsp;Jupiter</em> lies somewhere in the green dark of Lake
+     Superior. You are not steering — the kelpie is. You are the diver holding on.</p>
+  <div class="modes" id="modes"></div>
+  <button id="dive">DIVE IN</button>
+  <p id="loadState"></p>
+  <p id="startNote"><kbd>WASD</kbd> steer · <kbd>Space</kbd> swim · <kbd>Shift</kbd> boost · <kbd>E</kbd> use · mouse aims the lamp<br>
+     Bluetooth controller and touch also work. Sound on is better.</p>
+</div>
+
+<!-- Death -->
+<div class="layer on hide" id="death">
+  <p>Time to quit the band and get a real job.</p>
+  <h2>DREAM OVER</h2>
+  <div class="btns">
+    <button class="btn primary" id="btnRetry">RETRY</button>
+    <button class="btn" id="btnMenu">MENU</button>
+  </div>
+</div>
+
+<!-- Settings -->
+<div class="layer on hide" id="settings">
+  <div class="panel">
+    <h3>SETTINGS</h3>
+    <label class="row">Music <input type="range" id="volMusic" min="0" max="1" step="0.01"></label>
+    <label class="row">Effects <input type="range" id="volSfx" min="0" max="1" step="0.01"></label>
+    <label class="row">Ambience <input type="range" id="volAmb" min="0" max="1" step="0.01"></label>
+    <label class="row">Difficulty <select id="setDiff"></select></label>
+    <label class="row">Quality <select id="setQuality">
+      <option value="auto">Auto</option><option value="high">High</option><option value="low">Low</option>
+    </select></label>
+    <div class="row"><span>Tilt steering</span><button class="btn" id="btnRecentre">RECENTRE</button></div>
+    <button class="btn primary" id="btnResume">RESUME</button>
+  </div>
+</div>
+
+<div id="debug" class="hide"></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

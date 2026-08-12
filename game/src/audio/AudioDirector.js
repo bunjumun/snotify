@@ -1,0 +1,461 @@
+// Audio.
+//
+// Graph:
+//
+//        ┌─ musicBus ─┐
+//   in ──┼─ sfxBus   ─┼──► phaser ──► lowpass ──► reverb ──► master ──► out
+//        └─ ambBus   ─┘       ▲           ▲
+//                          (uTrip)     (uTrip, breath, depth)
+//
+// Two decisions worth knowing about:
+//
+// 1. Music streams through an <audio> element and a MediaElementAudioSourceNode
+//    rather than fetch + decodeAudioData. The mixes are ~10 MB and Supabase
+//    serves them `cache-control: no-cache`, so decoding up front would mean a ten
+//    megabyte wait before a single note on every single load. An element streams
+//    and starts in a second — and MediaElementSource still gives us the full
+//    graph, so the phaser, the lowpass and the ducking all work on it exactly as
+//    they would on a decoded buffer. It needs crossOrigin='anonymous', and the
+//    bucket already returns access-control-allow-origin: *.
+//
+// 2. Every sound effect is synthesised. No SFX files ship at all, which keeps the
+//    game tiny and means it is never silent while waiting on a network.
+
+import { CFG } from '../../config.js';
+
+// The same public bucket S'music uses. Inlined rather than imported from core.js
+// so the game's boot doesn't depend on the site's shared layer loading first —
+// it's four lines, and the coupling isn't worth it.
+const SUPA_URL = 'https://twgukeyoayfqldnojrkg.supabase.co';
+function publicUrl(p) {
+  if (!p) return null;
+  if (/^(https?:|data:|blob:)/.test(p)) return p;
+  return `${SUPA_URL}/storage/v1/object/public/tracks/`
+    + p.replace(/^tracks\//, '').split('/').map(encodeURIComponent).join('/');
+}
+
+export class AudioDirector {
+  constructor() {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    this.ctx = new Ctx();
+    this.ok = true;
+    this.react = { low: 0, mid: 0, high: 0 };
+    this.layers = {};        // name -> {el, src, gain}
+    this.current = null;
+    this._heartbeat = null;
+    this._t = 0;
+
+    const c = this.ctx;
+
+    // ---- Master ----
+    this.master = c.createGain();
+    this.master.gain.value = 0.9;
+    this.master.connect(c.destination);
+
+    // ---- Reverb ----
+    this.reverb = c.createConvolver();
+    this.reverb.buffer = this._impulse(CFG.audio.reverb.seconds, CFG.audio.reverb.decay);
+    this.reverbWet = c.createGain();
+    this.reverbWet.gain.value = CFG.audio.reverb.wet;
+    this.reverb.connect(this.reverbWet).connect(this.master);
+
+    // ---- The choke ----
+    // Open by default so the record plays clean. It only closes when breath drops
+    // under 20% — at which point the music going muffled and distant IS the
+    // warning, and it lands far harder than a permanent underwater filter ever did.
+    this.lowpass = c.createBiquadFilter();
+    this.lowpass.type = 'lowpass';
+    this.lowpass.frequency.value = CFG.audio.lowpass.open;
+    this.lowpass.Q.value = CFG.audio.lowpass.q;
+    this.lowpass.connect(this.master);
+    this.lowpass.connect(this.reverb);
+
+    // ---- Phaser ----
+    this._buildPhaser();
+
+    // ---- Buses ----
+    this.buses = {};
+    for (const name of ['music', 'sfx', 'ambience']) {
+      const g = c.createGain();
+      g.gain.value = CFG.audio.volumes[name];
+      g.connect(this.phaserIn);
+      this.buses[name] = g;
+    }
+
+    // ---- Analyser ----
+    // Tapped off the music bus, not inserted in series, so it can never colour
+    // the signal. This is what makes the kelp sway and the god-rays pulse.
+    this.analyser = c.createAnalyser();
+    this.analyser.fftSize = CFG.audio.analyser.fftSize;
+    this.analyser.smoothingTimeConstant = CFG.audio.analyser.smoothing;
+    this.buses.music.connect(this.analyser);
+    this._freq = new Uint8Array(this.analyser.frequencyBinCount);
+
+    this._startAmbience();
+  }
+
+  /**
+   * Six cascaded allpass stages with an LFO sweeping them together, mixed against
+   * the dry signal. Wet amount is driven by uTrip, so it swells with the rainbow
+   * and bleeds out over the same sixty-second taper — sound and picture are the
+   * same number, not two things kept in sync.
+   */
+  _buildPhaser() {
+    const c = this.ctx;
+    const P = CFG.audio.phaser;
+
+    this.phaserIn = c.createGain();
+    this.dry = c.createGain();
+    this.wet = c.createGain();
+    this.wet.gain.value = 0;
+
+    this.phaserIn.connect(this.dry).connect(this.lowpass);
+
+    let node = this.phaserIn;
+    this.stages = [];
+    for (let i = 0; i < P.stages; i++) {
+      const ap = c.createBiquadFilter();
+      ap.type = 'allpass';
+      ap.frequency.value = P.baseFreq * (1 + i * 0.35);
+      ap.Q.value = 0.6;
+      node.connect(ap);
+      node = ap;
+      this.stages.push(ap);
+    }
+    node.connect(this.wet).connect(this.lowpass);
+
+    // Feedback around the chain is what turns a mild sweep into a proper whoosh.
+    this.feedback = c.createGain();
+    this.feedback.gain.value = P.feedback;
+    node.connect(this.feedback).connect(this.stages[0]);
+
+    this.lfo = c.createOscillator();
+    this.lfo.frequency.value = P.rateHz;
+    this.lfoDepth = c.createGain();
+    this.lfoDepth.gain.value = P.depth;
+    this.lfo.connect(this.lfoDepth);
+    for (const s of this.stages) this.lfoDepth.connect(s.frequency);
+    this.lfo.start();
+  }
+
+  /** Noise burst with an exponential decay — a serviceable room without an IR file. */
+  _impulse(seconds, decay) {
+    const rate = this.ctx.sampleRate;
+    const len = Math.max(1, Math.floor(rate * seconds));
+    const buf = this.ctx.createBuffer(2, len, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+      }
+    }
+    return buf;
+  }
+
+  /** MUST be called from inside a user gesture — browsers block audio otherwise. */
+  async unlock() {
+    if (this.ctx.state === 'suspended') {
+      try { await this.ctx.resume(); } catch { this.ok = false; }
+    }
+    return this.ok;
+  }
+
+  // ------------------------------------------------------------------- music
+
+  /**
+   * Reads game/music.json — the hand-curated list of tracks that are public.
+   * @returns {Promise<number>} how many layers actually loaded
+   */
+  async loadMusic() {
+    let manifest;
+    try {
+      const r = await fetch(new URL('../../music.json', import.meta.url));
+      manifest = await r.json();
+    } catch {
+      return 0;
+    }
+    const tracks = (manifest.tracks || []).filter((t) => t && t.src);
+    if (!tracks.length) return 0;
+
+    let loaded = 0;
+    for (const t of tracks) {
+      const layer = t.layer || 'calm';
+      if (this.layers[layer]) continue;
+      try {
+        this.layers[layer] = this._makeLayer(publicUrl(t.src), t);
+        loaded++;
+      } catch { /* one bad track shouldn't take the rest down */ }
+    }
+
+    // Any empty layer falls back to the calm bed, so one track is a complete
+    // soundtrack and extra tracks simply make it richer.
+    const fallback = this.layers.calm || Object.values(this.layers)[0];
+    if (fallback) {
+      for (const name of ['calm', 'tension', 'trip']) {
+        if (!this.layers[name]) this.layers[name] = fallback;
+      }
+      this.setLayer('calm');
+    }
+    return loaded;
+  }
+
+  _makeLayer(url, meta) {
+    const el = new Audio();
+    el.crossOrigin = 'anonymous';   // required, and the bucket already sends ACAO:*
+    el.loop = true;
+    el.preload = 'auto';
+    el.src = url;
+
+    const src = this.ctx.createMediaElementSource(el);
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0;
+    src.connect(gain).connect(this.buses.music);
+    return { el, src, gain, meta, playing: false };
+  }
+
+  /** Crossfade to a mood. Same element for every layer is fine — gains do the work. */
+  setLayer(name, fade = 2.2) {
+    const next = this.layers[name];
+    if (!next) return;
+    // Layers can legitimately share a track (one song fills all three moods), so
+    // record the name even when there's nothing to crossfade — otherwise the
+    // caller keeps asking for the switch on every single frame.
+    this.layerName = name;
+    if (this.current === next) return;
+    const now = this.ctx.currentTime;
+
+    if (this.current && this.current !== next) {
+      this.current.gain.gain.cancelScheduledValues(now);
+      this.current.gain.gain.setTargetAtTime(0, now, fade / 3);
+    }
+    next.gain.gain.cancelScheduledValues(now);
+    next.gain.gain.setTargetAtTime(1, now, fade / 3);
+
+    if (!next.playing) {
+      next.playing = true;
+      next.el.play().catch(() => { /* autoplay policy or a dead URL; stay quiet */ });
+    }
+    this.current = next;
+    this.layerName = name;
+  }
+
+  // ------------------------------------------------------------------ ambience
+
+  /** A filtered-noise bed plus a low drone. Costs nothing and is never silent. */
+  _startAmbience() {
+    const c = this.ctx;
+    const len = c.sampleRate * 4;
+    const buf = c.createBuffer(1, len, c.sampleRate);
+    const d = buf.getChannelData(0);
+    // Brown-ish noise: integrating white noise tilts it toward the low end,
+    // which is what moving water actually sounds like.
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+      d[i] = last * 3.2;
+    }
+    const noise = c.createBufferSource();
+    noise.buffer = buf;
+    noise.loop = true;
+
+    const nf = c.createBiquadFilter();
+    nf.type = 'lowpass';
+    nf.frequency.value = 420;
+    const ng = c.createGain();
+    ng.gain.value = 0.5;
+    noise.connect(nf).connect(ng).connect(this.buses.ambience);
+    noise.start();
+
+    // A slow drone under it, so the lake has a pitch as well as a texture.
+    const osc = c.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 48;
+    const og = c.createGain();
+    og.gain.value = 0.1;
+    osc.connect(og).connect(this.buses.ambience);
+    osc.start();
+
+    const lfo = c.createOscillator();
+    lfo.frequency.value = 0.06;
+    const lg = c.createGain();
+    lg.gain.value = 0.05;
+    lfo.connect(lg).connect(og.gain);
+    lfo.start();
+  }
+
+  // ----------------------------------------------------------------------- sfx
+
+  /** Synthesised one-shots. No files, no loading, no 404s. */
+  sfx(name) {
+    if (!this.ok) return;
+    const c = this.ctx;
+    const t = c.currentTime;
+    const out = this.buses.sfx;
+
+    const tone = (freq, dur, type = 'sine', vol = 0.3, glideTo = null) => {
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t);
+      if (glideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1, glideTo), t + dur);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(out);
+      o.start(t); o.stop(t + dur + 0.05);
+    };
+
+    const noise = (dur, freq, vol = 0.25) => {
+      const len = Math.floor(c.sampleRate * dur);
+      const b = c.createBuffer(1, len, c.sampleRate);
+      const d = b.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      const s = c.createBufferSource();
+      s.buffer = b;
+      const f = c.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = freq;
+      const g = c.createGain();
+      g.gain.value = vol;
+      s.connect(f).connect(g).connect(out);
+      s.start(t);
+    };
+
+    switch (name) {
+      case 'baggie':      tone(520, 0.16, 'triangle', 0.25, 880); break;
+      case 'lighter':     noise(0.35, 2600, 0.3); tone(120, 0.4, 'sawtooth', 0.18, 60); break;
+      case 'fish':        tone(700, 0.3, 'sine', 0.16, 460); break;
+      case 'warn':        tone(220, 0.5, 'triangle', 0.2, 160); break;
+      case 'grip_lost':   noise(0.4, 300, 0.35); tone(90, 0.5, 'square', 0.14, 50); break;
+      case 'grip_regain': tone(320, 0.2, 'sine', 0.18, 520); break;
+      case 'bong':        this._bong(); break;
+      default: break;
+    }
+  }
+
+  /** Bubbling draw, then the exhale. */
+  _bong() {
+    const c = this.ctx;
+    const t = c.currentTime;
+    for (let i = 0; i < 22; i++) {
+      const o = c.createOscillator();
+      const g = c.createGain();
+      const at = t + i * 0.055 + Math.random() * 0.02;
+      o.type = 'sine';
+      o.frequency.setValueAtTime(180 + Math.random() * 320, at);
+      o.frequency.exponentialRampToValueAtTime(90 + Math.random() * 90, at + 0.1);
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(0.16, at + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.12);
+      o.connect(g).connect(this.buses.sfx);
+      o.start(at); o.stop(at + 0.18);
+    }
+  }
+
+  heartbeat(on) {
+    if (on && !this._heartbeat) {
+      this._heartbeat = setInterval(() => {
+        const c = this.ctx, t = c.currentTime;
+        for (const [off, vol] of [[0, 0.4], [0.16, 0.26]]) {
+          const o = c.createOscillator(); const g = c.createGain();
+          o.type = 'sine';
+          o.frequency.setValueAtTime(64, t + off);
+          o.frequency.exponentialRampToValueAtTime(36, t + off + 0.16);
+          g.gain.setValueAtTime(0, t + off);
+          g.gain.linearRampToValueAtTime(vol, t + off + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + off + 0.2);
+          o.connect(g).connect(this.buses.sfx);
+          o.start(t + off); o.stop(t + off + 0.3);
+        }
+      }, 900);
+    } else if (!on && this._heartbeat) {
+      clearInterval(this._heartbeat);
+      this._heartbeat = null;
+    }
+  }
+
+  // ---------------------------------------------------------------------- trip
+
+  tripStart() {
+    this.sfx('bong');
+    this.setLayer('trip', 1.2);
+  }
+
+  tripTaper() { /* the camera is coming home; uTrip does the rest in update() */ }
+
+  tripEnd() { this.setLayer('calm', 4); }
+
+  death() {
+    this.heartbeat(false);
+    const now = this.ctx.currentTime;
+    this.master.gain.setTargetAtTime(0.15, now, 0.6);
+    this.lowpass.frequency.setTargetAtTime(180, now, 0.8);
+  }
+
+  duck(on) {
+    const now = this.ctx.currentTime;
+    this.master.gain.setTargetAtTime(on ? 0.25 : 0.9, now, 0.12);
+  }
+
+  setVolume(bus, v) {
+    const g = this.buses[bus];
+    if (g) g.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+  }
+
+  // -------------------------------------------------------------------- update
+
+  /**
+   * @param {{panic:number, belowThermo:number, trip:number, speed:number}} s
+   */
+  update(dt, s) {
+    if (!this.ok) return;
+    this._t += dt;
+    const A = CFG.audio;
+    const now = this.ctx.currentTime;
+
+    // ---- The one value ----
+    // Phaser wet and the filter sweep both ride uTrip, so they bloom and fade
+    // exactly with the picture.
+    const trip = s.trip || 0;
+    this.wet.gain.setTargetAtTime(trip * A.phaser.maxWet, now, 0.08);
+    this.dry.gain.setTargetAtTime(1 - trip * 0.45, now, 0.08);
+
+    // The choke. Wide open until breath falls under `chokeBelow`, then it closes
+    // toward `panic` as the tank empties. The trip cancels it outright, because a
+    // bong refills you and the sequence should never sound strangled.
+    const frac = s.breathFraction ?? 1;
+    const choke = clamp01((A.lowpass.chokeBelow - frac) / A.lowpass.chokeBelow) * (1 - trip);
+    // Interpolate in LOG space. Pitch is logarithmic, so a linear ramp from 20kHz
+    // to 380Hz spends almost its entire travel in the inaudible top octaves and
+    // then collapses at the very end — you hear nothing, then everything. Going
+    // exponential puts the halfway point at ~2.7kHz, where it's actually audible.
+    let cutoff = A.lowpass.open * Math.pow(A.lowpass.panic / A.lowpass.open, choke);
+    if (trip > 0.01) {
+      // Wobble through the trip — the "whoa" in the middle of the sequence.
+      cutoff *= 1 + Math.sin(this._t * 2.1) * 0.18 * trip;
+    }
+    this.lowpass.frequency.setTargetAtTime(Math.max(120, cutoff), now, 0.12);
+    this.choke = choke;
+
+    // ---- Music layer follows the run ----
+    if (!this.layerName || this.layerName !== 'trip' || trip < 0.02) {
+      const want = trip > 0.02 ? 'trip' : (choke > 0.05 ? 'tension' : 'calm');
+      if (want !== this.layerName) this.setLayer(want);
+    }
+
+    // ---- Analyser ----
+    this.analyser.getByteFrequencyData(this._freq);
+    const n = this._freq.length;
+    this.react.low = avg(this._freq, 0, Math.floor(n * 0.08)) / 255;
+    this.react.mid = avg(this._freq, Math.floor(n * 0.08), Math.floor(n * 0.35)) / 255;
+    this.react.high = avg(this._freq, Math.floor(n * 0.35), n) / 255;
+  }
+}
+
+function lerp(a, b, t) { return a + (b - a) * Math.min(1, Math.max(0, t)); }
+function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+function avg(arr, from, to) {
+  let s = 0;
+  for (let i = from; i < to; i++) s += arr[i];
+  return to > from ? s / (to - from) : 0;
+}

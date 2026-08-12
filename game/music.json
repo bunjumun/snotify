@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "Which Lakehorse tracks the game plays, and which mood each one covers.",
+    "",
+    "This file is the game's ONLY public audio surface. S'music's real library sits",
+    "behind get_library(band, password), and the game is a public page — shipping",
+    "that password in the source would hand anyone who views it the keys to the",
+    "unreleased mixes. So instead: you list here, by hand, the tracks you're happy",
+    "for the whole internet to hear. Nothing else is reachable from the game.",
+    "",
+    "'src' is the object path inside the public 'tracks' bucket in Supabase — the",
+    "same path S'music stores, with or without the leading 'tracks/'. Upload a mix",
+    "through S'music as normal, then paste its path here.",
+    "",
+    "layer: 'calm'    the default bed",
+    "       'tension' fades in under 30s of breath",
+    "       'trip'    plays through the bong sequence",
+    "Any layer with no track falls back to the calm one, so a single track works",
+    "fine and more tracks just make it richer."
+  ],
+  "band": "lakehorse",
+  "tracks": [
+    {
+      "title": "Mango Tree World",
+      "version": "Mix 7-9-26",
+      "src": "lakehorse/Mango Tree World/Mix 7-9-26.m4a",
+      "layer": "calm"
+    }
+  ]
+}

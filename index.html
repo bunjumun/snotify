@@ -26,6 +26,8 @@
     box-shadow: 0 8px 24px rgba(108,92,231,.32);
   }
   .door.art .glyph { background: linear-gradient(135deg, #e0567a, var(--warn)); box-shadow: 0 8px 24px rgba(224,86,122,.3); }
+  /* Lake water, so the game door reads as its own place at a glance. */
+  .door.game .glyph { background: linear-gradient(135deg, #12706b, #7de08a); box-shadow: 0 8px 24px rgba(18,112,107,.34); }
   .door h2 { margin: 0; font-size: 21px; letter-spacing: -.2px; }
   .door p { margin: 6px 0 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.5; }
   .door .tally { margin-top: 14px; color: var(--text-mute); font-size: 12.5px; font-weight: 600; }
@@ -81,6 +83,7 @@
       <div class="count" id="bandCount"></div>
       <a class="addbtn" id="musicBtn" href="music.html" title="S'notify — the band's music">🎵 Music</a>
       <a class="addbtn" id="artBtn" href="art.html" title="Sn'art — the band's artwork">🎨 Art</a>
+      <a class="addbtn" id="gameBtn" href="game/" title="Lakehorse Swimulator — the game">🐴 Game</a>
       <button class="addbtn" id="toolsBtn" title="Graphic tools">▨ Tools ▾</button>
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
       <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
@@ -103,6 +106,14 @@
         <p data-txt="door.art.blurb">Artwork, stacked by revision. Comment on a part of the picture by
            boxing it — or draft the edit you mean by drawing over it.</p>
         <div class="tally" id="tallyArt">&nbsp;</div>
+      </a>
+
+      <a class="door game" id="doorGame" href="game/">
+        <div class="glyph">🐴</div>
+        <h2 data-txt="door.game.title">Lakehorse Swimulator</h2>
+        <p data-txt="door.game.blurb">Ride the kelpie through the wreck of the SS Jupiter. You're only the
+           diver holding on. Mind your breath — and the record plays while you swim.</p>
+        <div class="tally" id="tallyGame">&nbsp;</div>
       </a>
     </div>
   </div>

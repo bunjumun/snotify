@@ -34,6 +34,35 @@ import { CFG } from '../../config.js';
 // it's four lines, and the coupling isn't worth it.
 const SUPA_URL = 'https://twgukeyoayfqldnojrkg.supabase.co';
 const SUPA_KEY = 'sb_publishable_zIiAxxA5Zk1yRNzignANXA_rEp3vKdG';   // publishable — safe to ship
+/**
+ * A few milliseconds of silence as a data: URI, built rather than pasted in as
+ * a wall of base64 so it can be read and checked. Its only job is to give an
+ * <audio> element something valid to play during the tap that unlocks sound —
+ * see _ensureDecks(). Cached after the first call; the bytes never change.
+ */
+let _silent = null;
+function silentWav(ms = 50) {
+  if (_silent) return _silent;
+  const rate = 8000, n = Math.ceil((rate * ms) / 1000);
+  const buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+  const tag = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  tag(0, 'RIFF'); v.setUint32(4, 36 + n, true); tag(8, 'WAVE');
+  tag(12, 'fmt '); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);        // PCM
+  v.setUint16(22, 1, true);        // mono
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate, true);     // byte rate: 8-bit mono, so == sample rate
+  v.setUint16(32, 1, true);        // block align
+  v.setUint16(34, 8, true);        // bits per sample
+  tag(36, 'data'); v.setUint32(40, n, true);
+  const bytes = new Uint8Array(buf);
+  bytes.fill(128, 44);             // 8-bit PCM silence sits at 128, not 0
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  _silent = `data:audio/wav;base64,${btoa(s)}`;
+  return _silent;
+}
+
 function publicUrl(p) {
   if (!p) return null;
   if (/^(https?:|data:|blob:)/.test(p)) return p;
@@ -168,12 +197,46 @@ export class AudioDirector {
     return buf;
   }
 
-  /** MUST be called from inside a user gesture — browsers block audio otherwise. */
+  /**
+   * MUST be called from inside a user gesture — browsers block audio otherwise.
+   *
+   * Resuming the context is only half of it, and the missing half is why the
+   * game was silent on phones. On iOS the permission is granted per MEDIA
+   * ELEMENT, not per page: an <audio> element has to have had play() called on
+   * it during a real gesture before anything may start it programmatically
+   * later. The decks used to be built inside loadMusic(), which runs off the
+   * back of two network fetches — so by the time they existed the tap was long
+   * over, every play() was rejected by autoplay policy, and _play()'s catch
+   * swallowed it. Silence, and not one line in the console.
+   *
+   * So the decks are built and primed HERE, and deliberately before the first
+   * await: user activation does not reliably survive an await on iOS, so
+   * anything that needs the gesture has to happen in the same synchronous turn
+   * as the tap itself.
+   */
   async unlock() {
+    this._ensureDecks();          // synchronous, and must stay that way
     if (this.ctx.state === 'suspended') {
       try { await this.ctx.resume(); } catch { this.ok = false; }
     }
     return this.ok;
+  }
+
+  /**
+   * Build the two decks once, and hand each a moment of silence so iOS marks it
+   * as user-started. Idempotent: loadMusic() calls it too, in case audio was
+   * unlocked some other way.
+   */
+  _ensureDecks() {
+    if (this.decks.length) return;
+    this.decks = [this._makeDeck(), this._makeDeck()];
+    const quiet = silentWav();
+    for (const d of this.decks) {
+      d.el.src = quiet;
+      // Called synchronously inside the gesture — that call is the whole point,
+      // not whether it resolves. Changing src afterwards keeps the permission.
+      d.el.play().then(() => d.el.pause()).catch(() => { /* not an iOS device */ });
+    }
   }
 
   // ------------------------------------------------------------------- music
@@ -214,7 +277,7 @@ export class AudioDirector {
     if (CFG.audio.playlist.shuffle) this.playlist = shuffled(this.playlist);
     if (!this.playlist.length) return 0;
 
-    this.decks = [this._makeDeck(), this._makeDeck()];
+    this._ensureDecks();          // normally already built and primed by unlock()
     this._play(0);
     return this.playlist.length;
   }

@@ -100,25 +100,52 @@ const MODE_BLURB = {
 
 buildModes();
 
+// The audio engine is built NOW, on page load, not on the tap.
+//
+// It used to be imported inside the DIVE IN handler, and that quietly broke the
+// thing the handler exists for. `await import(...)` on a cold load is a network
+// fetch, and a tap's permission to make noise does not survive an await on iOS —
+// by the time the module landed the gesture was spent, every play() was refused,
+// and the phone stayed silent with nothing in the console to say why.
+//
+// Constructing an AudioContext outside a gesture is fine: it simply comes up
+// suspended, which is what unlock() resumes. So the whole engine is standing by
+// before the visitor has finished reading the start screen, and the handler can
+// unlock it synchronously.
+const audioReady = import('./audio/AudioDirector.js')
+  .then(({ AudioDirector }) => new AudioDirector())
+  .catch((e) => { console.warn('[lakehorse] audio unavailable, continuing silent', e); return null; });
+
+let audio = null;
+audioReady.then((a) => { audio = a; });
+
 let started = false;
-diveBtn.addEventListener('click', async () => {
+diveBtn.addEventListener('click', () => {
   if (started) return;
   started = true;
   diveBtn.disabled = true;
   loadState.textContent = 'flooding the chamber…';
 
-  // Audio MUST be unlocked synchronously inside this handler.
-  await bootAudio();
+  // First statement, no await in front of it: this is the only moment the
+  // browser will let us turn the sound on. unlock() is built to do its
+  // gesture-bound work before its own first await for the same reason.
+  audio?.unlock();
 
+  // Everything else can take its time. The game does not wait on the network to
+  // start — Game treats `audio` as optional throughout, so it attaches late
+  // without a special case.
+  bootAudio();
   startEl.classList.add('hide');
   game.start();
 });
 
 async function bootAudio() {
   try {
-    const { AudioDirector } = await import('./audio/AudioDirector.js');
-    const audio = new AudioDirector();
-    await audio.unlock();          // resume the context — needs this gesture
+    const audio = await audioReady;
+    if (!audio) return;
+    // Normally a no-op — the tap above already did it. This is the path where
+    // the module was still in flight when the button was pressed.
+    await audio.unlock();
     game.audio = audio;
     wireVolumes(audio);
 
@@ -126,7 +153,12 @@ async function bootAudio() {
     // button skips: the pill stays on screen now, and a label you can brush
     // past that silently changes the song is a trap rather than a control.
     audio.onTrack = (t, i, n) => game.hud.nowPlaying(t, i, n);
-    document.getElementById('npSkip').onclick = (e) => { e.stopPropagation(); audio.skip(); };
+    // Optional chaining because a missing button must cost you the button, not
+    // the album: this used to throw straight past loadMusic() into the catch
+    // below, which then reported "audio unavailable" for a control that isn't
+    // load-bearing.
+    const skipBtn = document.getElementById('npSkip');
+    if (skipBtn) skipBtn.onclick = (e) => { e.stopPropagation(); audio.skip(); };
 
     // Tracks stream in behind the game rather than holding up the dive; the
     // procedural bed covers the gap so it's never silent.

@@ -88,6 +88,12 @@ export class AudioDirector {
     this.onTrack = null;     // (track, index, total) => void — the HUD listens
     this._advancing = false;
     this._heartbeat = null;
+    this._hbWanted = false;  // panic says heartbeat; the pause menu only mutes it
+    this._fails = 0;         // consecutive tracks that wouldn't load
+    // Set properly by loadMusic(), but the chest can be opened before the
+    // manifest has landed and `treasure` must not throw on the payoff screen.
+    this._treasureTitles = [];
+    this.treasureName = null;
     this._t = 0;
 
     const c = this.ctx;
@@ -133,7 +139,11 @@ export class AudioDirector {
     this.analyser = c.createAnalyser();
     this.analyser.fftSize = CFG.audio.analyser.fftSize;
     this.analyser.smoothingTimeConstant = CFG.audio.analyser.smoothing;
-    this.buses.music.connect(this.analyser);
+    // Fed from the deck gains in _makeDeck(), NOT from the music bus — the bus
+    // carries the listener's volume slider, and tapping downstream of it means
+    // turning the music down also stops the kelp swaying and the god-rays
+    // pulsing. The deck gain is the crossfade, which is exactly what we want to
+    // see: whatever is actually playing, at full scale, however loud it is.
     this._freq = new Uint8Array(this.analyser.frequencyBinCount);
 
     this._startAmbience();
@@ -331,13 +341,16 @@ export class AudioDirector {
     const gain = this.ctx.createGain();
     gain.gain.value = 0;
     src.connect(gain).connect(this.buses.music);
+    gain.connect(this.analyser);   // pre-fader tap; see the note in the constructor
 
     // Backstop. If a track's duration never resolves — a stream, a container the
     // browser won't measure — the crossfade window in update() never opens, and
     // without this the record would simply stop at the end of track one.
     el.addEventListener('ended', () => this._advance());
     // A dead URL shouldn't end the album either; skip to the next one.
-    el.addEventListener('error', () => { if (this.playlist.length > 1) this._advance(); });
+    el.addEventListener('error', () => this._trackFailed());
+    // Proof one actually started, which is what clears the failure count.
+    el.addEventListener('playing', () => { this._fails = 0; });
 
     return { el, src, gain };
   }
@@ -354,7 +367,12 @@ export class AudioDirector {
     // a song with a second copy of the same song is worse than a clean loop.
     next.el.loop = this.playlist.length === 1;
     next.el.src = track.url;
-    next.el.currentTime = 0;
+    // A fresh src already starts at zero, so this is belt and braces — but on a
+    // element that hasn't loaded metadata yet some WebKit builds throw
+    // InvalidStateError rather than storing a pending seek, and an exception
+    // here would jump straight over the play() below and leave _advancing stuck
+    // true, which stops the record for the rest of the session.
+    try { next.el.currentTime = 0; } catch { /* seek before metadata; harmless */ }
     next.el.play().catch(() => { /* autoplay policy or a dead URL; stay quiet */ });
 
     next.gain.gain.cancelScheduledValues(now);
@@ -377,6 +395,24 @@ export class AudioDirector {
     if (this._advancing || this.playlist.length < 2) return;
     this._advancing = true;
     this._play((this.index + 1) % this.playlist.length, CFG.audio.playlist.crossfade);
+  }
+
+  /**
+   * A track that wouldn't load moves the record on — but only while there is
+   * somewhere to move to. Without the count, a running order whose URLs have all
+   * gone bad (a renamed bucket, a mix pulled from the game) turns into a loop:
+   * every error advances, every advance loads another dead URL and errors, and
+   * the thing spins through the playlist as fast as the network can refuse it,
+   * flashing a new title card each time. The count is cleared by the `playing`
+   * event, so one good track puts the full budget back.
+   */
+  _trackFailed() {
+    if (this.playlist.length < 2) return;
+    if (++this._fails >= this.playlist.length) {
+      console.warn('[lakehorse] no track in the running order would load — running on the procedural bed');
+      return;
+    }
+    this._advance();
   }
 
   /**
@@ -539,6 +575,12 @@ export class AudioDirector {
   }
 
   heartbeat(on) {
+    this._hbWanted = on;
+    this._beat(on);
+  }
+
+  /** Start or stop the timer without changing whether panic still wants it. */
+  _beat(on) {
     if (on && !this._heartbeat) {
       this._heartbeat = setInterval(() => {
         const c = this.ctx, t = c.currentTime;
@@ -581,9 +623,16 @@ export class AudioDirector {
     this.master.gain.setTargetAtTime(0.9, this.ctx.currentTime, 0.4);
   }
 
+  /**
+   * The pause menu. It also silences the heartbeat, which otherwise thumps away
+   * behind the settings panel forever: breath doesn't drain while paused, so the
+   * panic state never changes, and the state CHANGE is the only thing that would
+   * have switched it off. Resuming restores it only if breath is still low.
+   */
   duck(on) {
     const now = this.ctx.currentTime;
     this.master.gain.setTargetAtTime(on ? 0.25 : 0.9, now, 0.12);
+    this._beat(on ? false : this._hbWanted);
   }
 
   setVolume(bus, v) {

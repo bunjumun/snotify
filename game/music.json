@@ -1,6 +1,11 @@
 {
   "_comment": [
-    "Which Lakehorse tracks the game plays, and which mood each one covers.",
+    "The record the game plays, in the order it should play.",
+    "",
+    "Every track here is played start to finish, crossfading into the next, and",
+    "the list loops when it reaches the end. The game does NOT switch songs to",
+    "match what's happening on screen — a bong phases whatever is playing and",
+    "drowning muffles it, but the album runs straight through underneath.",
     "",
     "This file is the game's ONLY public audio surface. S'music's real library sits",
     "behind get_library(band, password), and the game is a public page — shipping",
@@ -10,21 +15,40 @@
     "",
     "'src' is the object path inside the public 'tracks' bucket in Supabase — the",
     "same path S'music stores, with or without the leading 'tracks/'. Upload a mix",
-    "through S'music as normal, then paste its path here.",
+    "through S'music as normal, then paste its path here. To find the paths for",
+    "your other songs, open your S'music page, sign in, and run this in the",
+    "browser console:",
     "",
-    "layer: 'calm'    the default bed",
-    "       'tension' fades in under 30s of breath",
-    "       'trip'    plays through the bong sequence",
-    "Any layer with no track falls back to the calm one, so a single track works",
-    "fine and more tracks just make it richer."
+    "  (await libRpc('get_library', {})).songs.flatMap(s =>",
+    "    s.versions.map(v => ({ title: s.title, version: v.name, src: v.src })))",
+    "",
+    "Order is the running order. Add, remove or reorder freely — nothing else in",
+    "the game needs changing, and a single track is a complete soundtrack.",
+    "",
+    "The three below are the newest mix of each song as of 11 Aug 2026. Swapping",
+    "one for a different version is a one-line edit: change 'src' to that",
+    "version's path and 'version' to whatever you want the title card to read.",
+    "",
+    "'treasure' names which track the chest gives away. It has to match a title",
+    "in the list; if it doesn't, the chest falls back to track one."
   ],
   "band": "lakehorse",
+  "treasure": "Mango Tree World",
   "tracks": [
     {
       "title": "Mango Tree World",
-      "version": "Mix 7-9-26",
-      "src": "lakehorse/Mango Tree World/Mix 7-9-26.m4a",
-      "layer": "calm"
+      "version": "Final Mix 8-10-26 a",
+      "src": "lakehorse/Mango Tree World/Mango Tree World FINAL MIX 8-10-26 a.mp3"
+    },
+    {
+      "title": "Jupiter Gold",
+      "version": "4-26-26",
+      "src": "lakehorse/Jupiter Gold/JupiterGold 4-26-26.mp3"
+    },
+    {
+      "title": "Currency",
+      "version": "New verse rewrite, bass fixed",
+      "src": "lakehorse/Currency (No Main Vox)/Currency NEW VERSE REWRITE BASS FIXED.mp3"
     }
   ]
 }

@@ -159,6 +159,7 @@ async function init(){
     const art = await libRpc('get_library', { k: 'art' });
     tally('tallyArt', ((art && art.songs) || []).length, 'piece', 'pieces');
   } catch { $('tallyArt').innerHTML = '&nbsp;'; }
+  gameTally();
 
   document.title = curBandTitle + " · Sn'Album";
   $('bandLine').innerHTML = `Signed in as <b>${esc(curBandTitle)}</b>.`;
@@ -170,6 +171,22 @@ async function init(){
 }
 function tally(id, n, one, many){
   $(id).textContent = n ? `${n} ${n === 1 ? one : many}` : 'Nothing here yet';
+}
+
+// The game keeps its own progress in localStorage on this origin, so the door
+// can report it without the game or the database being involved at all.
+function gameTally(){
+  let d;
+  try { d = JSON.parse(localStorage.getItem('lakehorse.progress') || 'null'); } catch { d = null; }
+  if (!d || !d.runs){ $('tallyGame').textContent = 'Not dived yet'; return; }
+  const bits = [];
+  if (d.chestFound && d.bestTime != null){
+    const s = Math.round(d.bestTime);
+    bits.push(`Chest found in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
+  }
+  if (d.logPages && d.logPages.length) bits.push(`${d.logPages.length}/7 of the log`);
+  if (!bits.length) bits.push(`${d.runs} dive${d.runs === 1 ? '' : 's'}`);
+  $('tallyGame').textContent = bits.join(' · ');
 }
 
 init();

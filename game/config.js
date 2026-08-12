@@ -173,6 +173,61 @@ export const CFG = {
     hueWhenDark: 0x2c3a38,
   },
 
+  // ---------- The chest ----------
+  // Seeded, so ?seed= reproduces where it is. It is never placed in open water:
+  // the anchors are all next to something you'd have gone to look at anyway, so
+  // finding it feels like having explored rather than having been given a number.
+  chest: {
+    openRadius: 4.5,
+    glowRadius: 26,       // how close before it starts showing itself at all
+    beaconRadius: 9,      // and where it stops being subtle about it
+  },
+
+  // ---------- Clues ----------
+  // Three stages, coarse to fine, each one a different fish. Nobody hands you a
+  // waypoint — the fog is the game, and an arrow through it throws that away.
+  //
+  //   0  a bearing and a distance band            "a long way to the north-west"
+  //   1  a landmark it's near                     "in the shadow of the broken boiler"
+  //   2  a proximity ping from the sturgeon       warmer / colder, live
+  //
+  // askCooldown stops the hint button being a substitute for looking, without
+  // ever refusing outright — a fish that won't talk to you is just a locked door.
+  clues: {
+    stages: 3,
+    askCooldown: 12,      // seconds between hints
+    volunteerAt: 0.45,    // Chill/Easy volunteer a hint below this much breath
+    proximityNear: 55,    // the sturgeon's ping starts reading inside this
+    pingInterval: 2.2,
+    guideLifetime: 40,    // a summoned guide fish drifts off after this long
+  },
+
+  // ---------- Fish ----------
+  // Boids, one InstancedMesh per species, so a few hundred fish are a handful of
+  // draw calls. They aren't decoration: schools tighten in loud passages, which is
+  // the most visible thing the analyser does to the world.
+  fish: {
+    // One per species, so the whole roster in world/Species.js actually turns up
+    // — including the three at the end of the list (siscowet, burbot, lamprey)
+    // that a smaller budget would have quietly cut. Low quality halves it.
+    // School sizes come from the species rows, not from here.
+    schools: 9,
+    neighbourRadius: 5.5,
+    separation: 2.0,
+    weights: { separation: 1.5, alignment: 0.55, cohesion: 0.5, home: 0.35, avoid: 2.6 },
+    avoidRadius: 11,      // how close the kelpie gets before a school breaks
+    speed: [2.4, 6.5],
+    turnRate: 2.2,
+    reactTighten: 0.55,   // how much a loud passage pulls a school in
+    cullDistance: 120,    // schools past this stop updating entirely
+  },
+
+  // ---------- Ship's log ----------
+  logPages: {
+    count: 7,
+    pickupRadius: 3.0,
+  },
+
   // ---------- The trip ----------
   // uTrip (0..1) is the spine of the whole sequence. Post-processing, sparkles,
   // the audio phaser, the lowpass sweep, the camera orbit and the kelpie's mane
@@ -251,13 +306,17 @@ export const CFG = {
   audio: {
     band: 'lakehorse',
 
-    // Which track drives which layer. These are matched against version/song
-    // names returned by get_game_tracks; first substring hit wins, and anything
-    // unmatched falls through to the first available track rather than silence.
-    layers: {
-      calm:    'Mango Tree World',
-      tension: null,      // fill in as more mixes get flagged game_ok
-      trip:    null,
+    // The record plays start to finish, in the order music.json lists it, and
+    // then goes round again. It is NOT cut up into calm/tension/trip stems that
+    // swap on game state — a song that jumps to a different song because your
+    // breath dipped is a game using music as a status light. The mood still moves
+    // (the phaser on a bong, the lowpass as you drown), but it moves as an effect
+    // over whatever is playing, so a listener hears the album rather than a
+    // soundtrack reacting to them.
+    playlist: {
+      crossfade: 6,       // seconds of overlap between one track and the next
+      shuffle: false,     // running order is the band's, not a shuffle's
+      nowPlayingFor: 7,   // how long the title card stays up on a change
     },
 
     // The song is the point — it's the band's own record. Effects sit under it,

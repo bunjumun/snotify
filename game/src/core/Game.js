@@ -25,6 +25,7 @@ import { Flora } from '../world/Flora.js';
 import { Bounds } from '../world/Bounds.js';
 import { Thermocline } from '../world/Thermocline.js';
 import { Weather } from '../world/Weather.js';
+import { Shoals } from '../world/Shoals.js';
 
 import { Kelpie } from '../entities/Kelpie.js';
 import { Diver } from '../entities/Diver.js';
@@ -42,8 +43,12 @@ import { Breath, BreathState } from '../game/Breath.js';
 import { Stash } from '../game/Stash.js';
 import { Trip } from '../game/Trip.js';
 import { Intro } from '../game/Intro.js';
+import { Clues } from '../game/Clues.js';
+import { LogPages } from '../game/LogPages.js';
 
 import { HUD } from '../ui/HUD.js';
+import { RewardScreen } from '../ui/RewardScreen.js';
+import { Logbook } from '../ui/Logbook.js';
 
 export const State = { TITLE: 'title', PLAY: 'play', PAUSED: 'paused', DEAD: 'dead' };
 
@@ -52,7 +57,8 @@ export class Game {
     this.canvas = canvas;
     this.state = State.TITLE;
     this.audio = null;          // set by main.js once the context is unlocked
-    this.time = 0;
+    this.time = 0;              // wall clock, never reset — animations read this
+    this.runSeconds = 0;        // this run only, for the chest's best time
 
     this.difficulty = new Difficulty();
     this.progress = new Progress();
@@ -93,7 +99,12 @@ export class Game {
     this.renderer.toneMappingExposure = CFG.lights.exposure;
     this.renderer.setClearColor(CFG.fog.color, 1);
 
-    this.quality = CFG.quality.default === 'auto' ? this._guessQuality() : CFG.quality.default;
+    // Read the saved setting HERE rather than only in main.js, because some of
+    // what quality governs — how many schools of fish the lake gets — is decided
+    // when the world is built and can't be changed afterwards.
+    let want = CFG.quality.default;
+    try { want = localStorage.getItem('lakehorse.quality') || want; } catch { /* private mode */ }
+    this.quality = want === 'auto' ? this._guessQuality() : want;
   }
 
   /** Cheap heuristic up front; the frame sampler in update() can demote later. */
@@ -141,6 +152,9 @@ export class Game {
 
     this.weather = new Weather(this.rng);
     this.bounds = new Bounds();
+
+    this.shoals = new Shoals(this.rng, this.seabed, this.quality);
+    this.scene.add(this.shoals.group);
   }
 
   _initEntities() {
@@ -218,6 +232,24 @@ export class Game {
 
     this.rig = new Rig(innerWidth / innerHeight);
     this.intro = new Intro(this);
+
+    // Phase 2: the chest, the fish that know where it is, and the log.
+    // Clues needs the wreck's landmarks and the rig, so it's built last.
+    this.clues = new Clues(this);
+    this.logs = new LogPages(this.rng, this.seabed, this.wreck, this.progress);
+    this.scene.add(this.logs.group);
+    this.logs.onFound = (entry, found, total) => {
+      this.audio?.sfx('page');
+      this.hud.say(
+        `<b>${entry.title}</b> — ${found} of ${total} recovered.<br>` +
+        `<span style="opacity:.7">Read it from the pause screen.</span>`,
+        { seconds: 4.5 },
+      );
+    };
+
+    this.reward = new RewardScreen(this);
+    this.logbook = new Logbook(this);
+    this.onChestOpened = () => this.reward.show(this.audio?.treasure ?? null);
   }
 
   _initInput() {
@@ -267,15 +299,17 @@ export class Game {
     this.trip.cancel();
     this.post.trip = 0;
     this.post.panic = 0;
+    this.runSeconds = 0;      // what markChestFound() records as a best time
     this.progress.countRun();
   }
 
   retry() {
     document.getElementById('death').classList.add('hide');
     this.stash.reset();
+    this.clues.resetRun();
     this.respawn();
     this.state = State.PLAY;
-    this.audio?.setLayer('calm');
+    this.audio?.revive();
   }
 
   die() {
@@ -289,6 +323,7 @@ export class Game {
   togglePause() {
     if (this.state === State.PLAY) {
       this.state = State.PAUSED;
+      this.logbook.refreshCount();
       document.getElementById('settings').classList.remove('hide');
       this.audio?.duck(true);
     } else if (this.state === State.PAUSED) {
@@ -298,6 +333,11 @@ export class Game {
     }
   }
 
+  /**
+   * Everything here is live except the fish: how many schools the lake holds is
+   * fixed when the world is built, so changing quality mid-run affects the
+   * picture immediately and the population on the next load.
+   */
   setQuality(level) {
     this.quality = level;
     this.post.setQuality(level);
@@ -353,8 +393,11 @@ export class Game {
     });
 
     // ---- Pickups and stations ----
+    this.runSeconds += dt;
     this.stash.update(dt, this.time, this.kelpie.position, this.lamp);
+    this.logs.update(dt, this.time, this.kelpie.position, this.lamp);
     this._updateBongs(dt, intent);
+    this.clues.update(dt);
 
     // ---- Trip ----
     this.trip.update(dt);
@@ -365,6 +408,8 @@ export class Game {
     // ---- FX ----
     const react = this.audio?.react ?? { low: 0, mid: 0, high: 0 };
     this.flora.update(dt, react.low, current);
+    // Schools tighten in loud passages — the most visible thing the analyser does.
+    this.shoals.update(dt, this.kelpie.position, react.mid);
     this.godrays.update(dt, react.low, this.weather.lightScale());
     this.bubbles.update(dt, this.time);
     this.particles.update(dt, this.rig.camera.position, this.trip.value);
@@ -418,6 +463,12 @@ export class Game {
     for (const f of this.intro.fish) {
       blips.push({ x: f.group.position.x, z: f.group.position.z, type: 'fish' });
     }
+    for (const t of this.clues.tellers) {
+      blips.push({ x: t.fish.group.position.x, z: t.fish.group.position.z, type: 'fish' });
+    }
+    this.shoals.blips(blips);
+    this.logs.blips(blips);
+    this.clues.blips(blips);
 
     this.hud.radar.setBlips(blips);
     this.hud.radar.draw(dt, this.kelpie.position, this.kelpie.yaw);
@@ -480,6 +531,7 @@ export class Game {
     this.diver.setTrip(v);
     this.lamp.setTrip(v);
     this.godrays.setTrip(v);
+    this.shoals.setTrip(v);
     for (const b of this.bongs) b.setTrip(v);
   }
 
@@ -533,6 +585,11 @@ export class Game {
       `bag    ${this.stash.carried}/${CFG.stash.needed}${this.stash.hasShake ? ' +shake' : ''}\n` +
       `grip   ${this.diver.grip.toFixed(0)}${this.diver.adrift ? ' ADRIFT' : ''}\n` +
       `gale   ${this.weather.intensity.toFixed(2)} (${this.weather.state})\n` +
+      `clue   stage ${this.clues.stage}${this.clues.proximity ? ' +ping' : ''}` +
+      `${this.clues.found ? ' FOUND' : ''} @ ${this.kelpie.position.distanceTo(this.clues.chest.position).toFixed(0)}m\n` +
+      `fish   ${this.shoals.schools.filter((s) => s.active).length}/${this.shoals.schools.length} schools\n` +
+      `log    ${this.logs.foundCount}/${this.logs.pages.length}\n` +
+      `track  ${this.audio?.nowPlaying?.title ?? '—'}\n` +
       `seed   ${this.seed}`,
     );
   }

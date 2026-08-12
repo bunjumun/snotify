@@ -27,6 +27,8 @@ export class HUD {
       seed: document.getElementById('seed'),
       debug: document.getElementById('debug'),
       hint: document.getElementById('btnHint'),
+      np: document.getElementById('np'),
+      npText: document.querySelector('#np .t'),
     };
 
     this.slotEls = [];
@@ -41,6 +43,21 @@ export class HUD {
     this._promptSticky = false;
     this._lastCarried = -1;
     this._lastLighter = null;
+    this._npTimer = 0;
+  }
+
+  /**
+   * Announce a track, then get out of the way. Shown on every change rather than
+   * pinned permanently — it's a band's record and it should say its name, but a
+   * label parked over the water for twenty minutes stops being information.
+   */
+  nowPlaying(track, index, total) {
+    if (!track) return;
+    const of = total > 1 ? ` <span>${index + 1}/${total}</span>` : '';
+    const version = track.version ? ` <span>· ${escapeHtml(track.version)}</span>` : '';
+    this.el.npText.innerHTML = `<b>${escapeHtml(track.title)}</b>${version}${of}`;
+    this.el.np.classList.add('on');
+    this._npTimer = CFG.audio.playlist.nowPlayingFor;
   }
 
   setSeed(seed) {
@@ -104,6 +121,10 @@ export class HUD {
       this._promptTimer -= dt;
       if (this._promptTimer <= 0) this.clearSay();
     }
+    if (this._npTimer > 0) {
+      this._npTimer -= dt;
+      if (this._npTimer <= 0) this.el.np.classList.remove('on');
+    }
   }
 
   setHintAvailable(on) {
@@ -115,4 +136,13 @@ export class HUD {
     this.el.debug.classList.remove('hide');
     this.el.debug.textContent = lines;
   }
+}
+
+// Track titles come from music.json, which the band edits by hand — so they're
+// trusted-ish, but they land in innerHTML and an apostrophe in a song name
+// shouldn't be able to break the HUD.
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
 }

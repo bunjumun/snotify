@@ -71,10 +71,16 @@ async function bootAudio() {
     await audio.unlock();          // resume the context — needs this gesture
     game.audio = audio;
     wireVolumes(audio);
+
+    // The record announces itself on every change, and the pill skips.
+    audio.onTrack = (t, i, n) => game.hud.nowPlaying(t, i, n);
+    document.getElementById('np').onclick = () => audio.skip();
+
     // Tracks stream in behind the game rather than holding up the dive; the
     // procedural bed covers the gap so it's never silent.
     audio.loadMusic().then((n) => {
-      if (!n) console.info('[lakehorse] no game_ok tracks yet — running on the procedural bed');
+      if (!n) console.info('[lakehorse] music.json listed no playable tracks — running on the procedural bed');
+      else console.info(`[lakehorse] running order: ${n} track${n === 1 ? '' : 's'}`);
     }).catch((e) => console.warn('[lakehorse] music load failed', e));
   } catch (e) {
     console.warn('[lakehorse] audio unavailable, continuing silent', e);
@@ -139,9 +145,20 @@ document.getElementById('btnMenu').onclick = () => location.reload();
 
 // ---------------------------------------------------------------------- misc
 
+// Ask a fish. The button is the discoverable route; H is the one you use once
+// you know it's there.
+document.getElementById('btnHint').onclick = () => game.clues.ask();
+
 // Esc pauses; the settings panel doubles as the pause screen.
 addEventListener('keydown', (e) => {
-  if (e.code === 'Escape' && started) game.togglePause();
+  if (e.code === 'Escape' && started) {
+    // Escape backs out of whatever is on top before it touches the game state,
+    // or closing the log would silently unpause underneath it.
+    if (!document.getElementById('logbook').classList.contains('hide')) return game.logbook.hide();
+    if (!document.getElementById('reward').classList.contains('hide')) return game.reward.hide();
+    game.togglePause();
+  }
+  if (e.code === 'KeyH' && started && game.state === 'play') game.clues.ask();
 });
 
 // ?debug shows fps, draw calls, uTrip and the seed. Shift+R from there wipes

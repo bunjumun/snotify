@@ -52,13 +52,28 @@ export const CFG = {
   // Not a flying camera. It has mass, it drags, it banks into turns, and its
   // heading lags the stick on a spring — you're steering a large animal that has
   // its own opinions about where it's going.
+  //
+  // Cruising is deliberately slow. Holding the swim button is a resting swim —
+  // it gets you there eventually. Speed comes from TAPPING it: every press is a
+  // tail beat that shoves you forward and adds to a surge, and the surge bleeds
+  // off the moment you stop working for it. A held button that travels as fast
+  // as a worked one turns a lake into a corridor.
   kelpie: {
-    thrust: 34,
-    boostThrust: 78,
+    thrust: 20,
+    boostThrust: 48,
     drag: 0.86,           // per-second velocity retention; lower = more water
     addedMass: 1.9,       // resistance to changing direction, not just speed
-    maxSpeed: 26,
-    boostMaxSpeed: 44,
+    maxSpeed: 16,         // cruise: what holding the button alone will give you
+    boostMaxSpeed: 27,
+
+    // Tail beats. kickCooldown is not a nerf — a mashed key fires faster than
+    // the physics step, and without a floor a tap becomes a teleport.
+    kickImpulse: 7.5,     // instant push along forward, per beat
+    kickCooldown: 0.15,   // seconds; beats closer together than this don't count
+    kickSurge: 0.4,       // surge gained per beat, capped at 1
+    kickDecay: 0.5,       // surge lost per second — ~1.3 beats/sec holds it full
+    kickSpeedBonus: 15,   // added to maxSpeed at full surge, so worked > held
+    kickThrustBonus: 26,  // and to acceleration, so a surge feels urgent
 
     yawRate: 1.9,         // radians/sec at full stick
     pitchRate: 1.4,
@@ -200,6 +215,15 @@ export const CFG = {
     proximityNear: 55,    // the sturgeon's ping starts reading inside this
     pingInterval: 2.2,
     guideLifetime: 40,    // a summoned guide fish drifts off after this long
+
+    // Sober, one fish talks to you, on a long cooldown, working through the
+    // three clues in order. High, the whole lake is willing: any school nearby
+    // will answer, the clue is the good one, and after that they start telling
+    // you what they know about the horse. It costs a bowl and it wears off,
+    // which is the only reason it can be this generous.
+    highAt: 0.08,         // uTrip above which every fish will talk
+    highRadius: 75,       // how close a school has to be to be worth asking
+    highCooldown: 4,      // shorter, because the window is short and paid for
   },
 
   // ---------- Fish ----------
@@ -241,6 +265,39 @@ export const CFG = {
     orbitElevation: 4.5,
     orbitRevolutions: 1,
     sparkleRate: 260,     // particles/sec at full intensity
+
+    // The blast off. A hit fires her straight up out of the dark, and she keeps
+    // climbing through the orbit — so the ten seconds you can't steer are spent
+    // watching the wreck drop away underneath you instead of watching a camera
+    // circle a stationary horse. `rise` is capped relative to where the hit
+    // happened so a bowl smoked in the trench still ends somewhere you can see,
+    // and one smoked in open water doesn't put you through the surface.
+    // The climb is a velocity TARGET, not a force. A force plus a hard ceiling
+    // overshoots by everything the momentum is still carrying — the first cut of
+    // this launched her ninety-six units on a fifty-two unit budget and nearly
+    // put her through the surface. Steering the velocity instead means the
+    // ceiling is where she actually stops.
+    launchKick: 14,       // instant vertical shove on the hit — this is the bang
+    launchClimb: 30,      // units/sec she's driven toward while the lift lasts
+    launchTime: 3.2,      // seconds the climb lasts, decaying across them
+    launchEase: 16,       // units below the ceiling where she starts arriving
+    launchSpeed: 22,      // extra speed cap, or the clamp eats the climb
+    launchRise: 52,       // how far above the hit she can get
+  },
+
+  // ---------- Smoke ----------
+  // The exhale. A hit leaves a cloud hanging in the water where it happened, and
+  // the pair drag a trail of it for as long as the trip lasts — thinning with
+  // uTrip, so the comedown is something you can watch drift off behind you
+  // rather than only a grade on the lens.
+  //
+  // Underwater smoke does not plume. It hangs, spreads and goes nowhere fast,
+  // which is why `rise` is small and the lifetimes are long.
+  smoke: {
+    puff: 26,             // particles in the cloud a hit leaves behind
+    trailRate: 18,        // particles/sec at full uTrip
+    rise: 0.55,           // units/sec it eventually settles into
+    life: [5.0, 9.5],     // seconds; long, because it has nowhere to go
   },
 
   // ---------- Camera ----------
@@ -360,11 +417,22 @@ export const CFG = {
     waterTop: 0x2e6f6b,
     waterDeep: 0x04161c,
     kelpieBody: 0x1b2b22,
+    // Counter-shading: dark along the back, pale beneath. Kept muted rather than
+    // properly pale because the diver's lamp sits BELOW and BEHIND her — a true
+    // fish-belly white blows straight out every time he looks up at her.
+    kelpieBelly: 0x5d7267,
     kelpieFin: 0x2f5c3a,
     kelpieMane: 0x163327,
     kelpieEye: 0xbfd8c4,
     brass: 0xb08d4f,
     canvas: 0x6b6455,
+
+    // Dazzle, for the diver's suit. Three tones, because two reads as a barcode
+    // and four stops reading as a pattern at all.
+    suitLight: 0xd9d1bc,
+    suitDark: 0x1d2529,
+    suitMid: 0x74877e,
+    suitAdrift: 0x9a8f78,   // multiplied over the pattern once he's lost his grip
     wreckWood: 0x2a2620,
     silt: 0x3d4a44,
     kelp: 0x2b4a33,

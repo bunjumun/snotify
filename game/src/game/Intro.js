@@ -71,7 +71,8 @@ export class Intro {
     this.fish1.carry(this.lighter.group);
 
     g.hud.say(
-      'A bit of shake, no fire, and a lamp with nothing in it.<br>Something is coming.',
+      'A bit of shake, no fire, and a lamp with nothing in it.<br>' +
+      '<span style="opacity:.72">Tap to swim — she kicks each time.</span><br>Something is coming.',
       { seconds: 6 },
     );
     this._nudgeAt = this._t + 22;

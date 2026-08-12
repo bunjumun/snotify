@@ -34,6 +34,7 @@ import { placeBongs } from '../entities/Bong.js';
 
 import { Bubbles } from '../fx/Bubbles.js';
 import { Particles } from '../fx/Particles.js';
+import { Smoke } from '../fx/Smoke.js';
 import { Godrays } from '../fx/Godrays.js';
 import { Post } from '../fx/Post.js';
 
@@ -200,6 +201,9 @@ export class Game {
     this.scene.add(this.particles.group);
     this.particles.setSparkleCentre(this.kelpie.position);
 
+    this.smoke = new Smoke();
+    this.scene.add(this.smoke.group);
+
     this.godrays = new Godrays(this.rng);
     this.scene.add(this.godrays.group);
 
@@ -226,6 +230,9 @@ export class Game {
     this.trip.onStart = () => {
       this.audio?.tripStart();
       this.bubbles.burst(this.kelpie.position.x, this.kelpie.position.y + 1, this.kelpie.position.z, 40, 1.4);
+      // Straight up out of the dark, and still climbing through the orbit.
+      this.kelpie.blastOff();
+      this.rig.addShake(0.45);
     };
     this.trip.onHoldEnd = () => this.audio?.tripTaper();
     this.trip.onEnd = () => this.audio?.tripEnd();
@@ -297,6 +304,7 @@ export class Game {
     this.rig.snapTo(this.kelpie);
     this.breath.reset();
     this.trip.cancel();
+    this.smoke.clear();       // a retry shouldn't begin inside last run's cloud
     this.post.trip = 0;
     this.post.panic = 0;
     this.runSeconds = 0;      // what markChestFound() records as a best time
@@ -342,6 +350,7 @@ export class Game {
     this.quality = level;
     this.post.setQuality(level);
     this.particles.setQuality(level);
+    this.smoke.setQuality(level);
     this.bubbles.setQuality(level);
     this.godrays.setQuality(level);
   }
@@ -382,6 +391,14 @@ export class Game {
     this.kelpie.update(dt, intent, { current });
     this.seabed.clampAbove(this.kelpie.position, 2.0);
 
+    // A tail beat throws water. This puff is the receipt for the tap — without
+    // something leaving the fluke, tapping reads as a button that does nothing.
+    if (this.kelpie.kicked) {
+      const tail = this._tail || (this._tail = new THREE.Vector3());
+      this.kelpie.tailPoint(tail);
+      this.bubbles.burst(tail.x, tail.y, tail.z, 4, 0.45);
+    }
+
     this._followEntities(dt);
 
     // ---- Breath ----
@@ -418,6 +435,14 @@ export class Game {
     const helm = this._helm || (this._helm = new THREE.Vector3());
     this.diver.helmetPosition(helm);
     this.bubbles.emit(dt, helm.x, helm.y, helm.z, this.kelpie.boosting ? 26 : 9, 0.85);
+
+    // Smoke trails off him for as long as the trip lasts and thins with uTrip,
+    // so the comedown is something you can watch drifting behind you.
+    this.smoke.setTrip(this.trip.value);
+    if (this.trip.value > 0.01) {
+      this.smoke.trail(dt, helm.x, helm.y, helm.z, CFG.smoke.trailRate * this.trip.value);
+    }
+    this.smoke.update(dt);
 
     this._applyEnvironment(submersion);
     this.intro.update(dt);
@@ -519,6 +544,15 @@ export class Game {
     this.stash.spend();
     this.breath.fill();
     this.trip.start();
+
+    // The exhale: a cloud where the hit happened, and a smaller one off the
+    // helmet, since he's the one who was holding it.
+    const b = bong.position;
+    this.smoke.puff(b.x, b.y + 1.3, b.z, CFG.smoke.puff, 1.5);
+    const helm = this._helm || (this._helm = new THREE.Vector3());
+    this.diver.helmetPosition(helm);
+    this.smoke.puff(helm.x, helm.y, helm.z, Math.round(CFG.smoke.puff * 0.5), 1.0);
+
     this.hud.clearSay();
     this.pad?.rumble(0.6, 400);
     this.intro.onBongUsed();
@@ -580,6 +614,7 @@ export class Game {
       `calls  ${s.calls}\n` +
       `tris   ${s.triangles}\n` +
       `device ${this.input.activeDevice}\n` +
+      `speed  ${this.kelpie.speed.toFixed(1)}  surge ${this.kelpie.surge.toFixed(2)}\n` +
       `breath ${this.breath.value.toFixed(1)} / ${this.breath.max}\n` +
       `uTrip  ${this.trip.value.toFixed(3)} (${this.trip.phase})\n` +
       `bag    ${this.stash.carried}/${CFG.stash.needed}${this.stash.hasShake ? ' +shake' : ''}\n` +
@@ -589,7 +624,7 @@ export class Game {
       `${this.clues.found ? ' FOUND' : ''} @ ${this.kelpie.position.distanceTo(this.clues.chest.position).toFixed(0)}m\n` +
       `fish   ${this.shoals.schools.filter((s) => s.active).length}/${this.shoals.schools.length} schools\n` +
       `log    ${this.logs.foundCount}/${this.logs.pages.length}\n` +
-      `track  ${this.audio?.nowPlaying?.title ?? '—'}\n` +
+      `track  ${this.audio?.nowPlaying?.title ?? '—'} (${this.audio?.source ?? '—'})\n` +
       `seed   ${this.seed}`,
     );
   }
@@ -598,6 +633,6 @@ export class Game {
 // Frozen so an accidental write during the cinematic can't leak into real input.
 const IDLE_INTENT = Object.freeze({
   steer: Object.freeze({ x: 0, y: 0 }),
-  thrust: 0, boost: false, interact: false,
+  thrust: 0, kick: false, boost: false, interact: false,
   lamp: Object.freeze({ x: 0, y: 0 }),
 });

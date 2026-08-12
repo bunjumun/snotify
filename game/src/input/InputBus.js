@@ -25,6 +25,7 @@ export class InputBus {
     this.intent = {
       steer: { x: 0, y: 0 },  // yaw, pitch: -1..1
       thrust: 0,              // 0..1
+      kick: false,            // rising edge of thrust — one tail beat per press
       boost: false,
       interact: false,        // rising edge only, cleared after one frame
       lamp: { x: 0, y: 0 },   // aim offset, -1..1
@@ -36,6 +37,7 @@ export class InputBus {
     this.adapters = [];
     this.activeDevice = 'keyboard';
     this._prevInteract = false;
+    this._prevThrust = false;
     this._lastActivity = {};
   }
 
@@ -71,6 +73,13 @@ export class InputBus {
     // Edge-trigger: "use" should fire once per press, not once per frame held.
     i.interact = r.interact && !this._prevInteract;
     this._prevInteract = r.interact;
+
+    // Thrust is read as both a level and an edge, because swim is two verbs on
+    // one button: hold it to cruise, tap it to kick. The threshold is what lets
+    // an analogue trigger count as a press at all.
+    const pressed = i.thrust > 0.5;
+    i.kick = pressed && !this._prevThrust;
+    this._prevThrust = pressed;
   }
 
   dispose() {

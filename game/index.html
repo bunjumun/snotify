@@ -253,7 +253,8 @@ canvas{display:block;width:100%;height:100%}
 <!-- Touch controls, shown only when a touch is detected -->
 <div class="layer on hide" id="touch">
   <div id="stick"><div id="stickBase"></div><div id="stickKnob"></div></div>
-  <button class="tbtn" id="tThrust">SWIM</button>
+  <!-- Labelled for the tap, not the hold: holding it is the slow way round. -->
+  <button class="tbtn" id="tThrust">TAP<br>SWIM</button>
   <button class="tbtn" id="tBoost">BOOST</button>
   <button class="tbtn" id="tUse">USE</button>
 </div>
@@ -263,12 +264,13 @@ canvas{display:block;width:100%;height:100%}
      behind a real tap, which is the entire reason this screen exists. -->
 <div class="layer on" id="start">
   <h1>LAKEHORSE<span class="sub">S W I M U L A T O R</span></h1>
-  <p class="blurb">The wreck of the <em>SS&nbsp;Jupiter</em> lies somewhere in the green dark of Lake
-     Superior. You are not steering — the kelpie is. You are the diver holding on.</p>
+  <p class="blurb">An ocean world, no land on it anywhere, and the <em>Jupiter</em> came down here
+     with everyone still aboard. You are not steering — the lakehorse is. You are the diver holding on.</p>
   <div class="modes" id="modes"></div>
   <button id="dive">DIVE IN</button>
   <p id="loadState"></p>
   <p id="startNote"><kbd>WASD</kbd> steer · <kbd>Space</kbd> swim · <kbd>Shift</kbd> boost · <kbd>E</kbd> use · mouse aims the lamp<br>
+     <b>Hold Space to cruise. Tap it to swim — every tap is a kick.</b><br>
      Bluetooth controller and touch also work. Sound on is better.</p>
 </div>
 

@@ -1,0 +1,57 @@
+{
+  "_comment": [
+    "FALLBACK running order. Read this before editing it.",
+    "",
+    "The game asks the database first, via game_tracks() in schema-v18.sql, which",
+    "returns the CURRENT top version of every song flagged game_ok. That is the",
+    "path you want: upload a new mix through S'music and the game is playing it on",
+    "the next load, with nothing to remember and nothing to edit here.",
+    "",
+    "This file is only used when that call returns nothing — v18 not applied yet,",
+    "no songs flagged, or no network. The versions pinned below were the newest of",
+    "each song on 11 Aug 2026 and they do NOT update themselves. Treat anything",
+    "here as possibly stale, because that is exactly what it is.",
+    "",
+    "Every track plays start to finish, crossfading into the next, and the list",
+    "loops at the end. The game does NOT switch songs to match what's happening on",
+    "screen — a bong phases whatever is playing and drowning muffles it, but the",
+    "album runs straight through underneath.",
+    "",
+    "Neither path can reach an unreleased mix by accident. get_library(band,",
+    "password) needs the band password and the game is a public page, so it holds",
+    "no password at all; game_tracks() is public but can only see songs someone",
+    "deliberately ticked. Everything else in the library stays private.",
+    "",
+    "'src' is the object path inside the public 'tracks' bucket, with or without",
+    "the leading 'tracks/'. To read the real paths, open S'music signed in and run:",
+    "",
+    "  (await libRpc('get_library', {})).songs.flatMap(s =>",
+    "    s.versions.map(v => ({ title: s.title, version: v.name, src: v.src })))",
+    "",
+    "'treasure' names what the chest gives away, and is used by BOTH paths. One",
+    "title or an array of them — the chest can hold several tracks and shows a",
+    "download button per track. Titles have to match the list that's live; any",
+    "that don't are skipped, and if none match at all the chest falls back to",
+    "track one rather than offering nothing."
+  ],
+  "band": "lakehorse",
+  "treasure": ["Light", "Lessons"],
+  "treasureName": "LIGHT LESSONS",
+  "tracks": [
+    {
+      "title": "Mango Tree World",
+      "version": "Final Mix 8-10-26 a",
+      "src": "lakehorse/Mango Tree World/Mango Tree World FINAL MIX 8-10-26 a.mp3"
+    },
+    {
+      "title": "Jupiter Gold",
+      "version": "4-26-26",
+      "src": "lakehorse/Jupiter Gold/JupiterGold 4-26-26.mp3"
+    },
+    {
+      "title": "Currency",
+      "version": "New verse rewrite, bass fixed",
+      "src": "lakehorse/Currency (No Main Vox)/Currency NEW VERSE REWRITE BASS FIXED.mp3"
+    }
+  ]
+}

@@ -1,18 +1,31 @@
-// The diver's lamp.
+// The lights.
 //
-// Three parts, and the game needs all three:
+// Six of them, and none of them is a torch you fly. Two are the KELPIE'S EYES,
+// which are the headlights — they point where she is going and lead a little
+// into a turn, so the water you are about to be in is already lit. Four are
+// FLASHLIGHTS, one per diver on the rope behind you. You never see the divers
+// while you're navigating, and that's exactly why their lights work: the beams
+// come past you from behind, they swing as the rope swings, and the world in
+// front of you is lit by four people you can't see. When the bong orbit swings
+// out and reveals them, the light in the scene turns out to have had a source
+// all along.
+//
+// Each light is three parts and the eyes need all three:
 //
 //  1. A SpotLight, which lights surfaces — silt, hull plating, a baggie.
 //  2. A visible BEAM. This is the one that's easy to forget and impossible to do
-//     without: a spotlight in fog lights things but is itself invisible, so the
-//     lamp reads as "some stuff got brighter" rather than as a lamp. Underwater
-//     you see the shaft because the water is full of particulate, so we draw it —
-//     an additive cone that fades along its length.
-//  3. A lens glow, so the source reads even when the beam points away from camera.
+//     without: a spotlight in fog lights things but is itself invisible, so it
+//     reads as "some stuff got brighter" rather than as a lamp. Underwater you
+//     see the shaft because the water is full of particulate, so we draw it —
+//     an additive cone that fades along its length. The eyes get cones; the
+//     helmets don't, because a cone whose apex is behind the camera is a bar of
+//     light across the frame and nothing else.
+//  3. A lens glow, so the source reads even when the beam points away from
+//     camera. Helmets only, and only once you can see who's holding it.
 //
-// It has two states. Before the lighter it's a feeble cold glow that barely
-// reaches past the diver's own boots; after, it's a warm beam that flickers like
-// a flame. That transition is the opening's payoff and it's worth the extra code.
+// Two states throughout. Before the lighter everything is a feeble cold glow
+// that barely reaches past the divers' own boots; after, it's warm and flickers
+// like a flame. That transition is the opening's payoff.
 
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
@@ -52,65 +65,59 @@ const BEAM_FRAG = `
 `;
 
 export class Lamp {
-  constructor(scene) {
+  /**
+   * @param {THREE.Scene} scene
+   * @param {number} riders how many flashlights are on the rope behind her
+   */
+  constructor(scene, riders = 4) {
     const L = CFG.lamp;
 
     this.lit = false;         // has the lighter
     this._litMix = 0;         // eased 0..1 between the two states
     this._flick = 1;
     this._t = 0;
-
-    // The lamp is switched off at the world level (CFG.lamp.enabled). The view
-    // now sits at the diver's eyeline, which put the light source a hand's
-    // breadth from the lens — a spotlight and a lens glow right there wash out
-    // exactly the water you are trying to read. The world carries its own light
-    // instead; CFG.lights was raised to pay for it.
-    //
-    // The object stays because its AIM is still live: `beamDir` is what the
-    // baggies and the log slates test against to decide whether you are looking
-    // at them (see glintDot). Sweeping for things still works — it just isn't a
-    // torch beam any more, it's attention.
     this.enabled = L.enabled !== false;
 
-    this.light = new THREE.SpotLight(L.dimColor, L.dimIntensity, L.dimDistance, L.dimAngle, L.penumbra, L.decay);
-    this.light.castShadow = false;
-    this.target = new THREE.Object3D();
-    this.light.target = this.target;
-    if (this.enabled) scene.add(this.light, this.target);
+    /** @type {{light:THREE.SpotLight,target:THREE.Object3D,base:number,angle:number,yaw:number,pitch:number,beam?:THREE.Mesh,uniforms?:object,glow?:THREE.Mesh}[]} */
+    this.heads = [];
+    // The helmet glows live in one group so the reveal can switch them as a set.
+    this.glow = new THREE.Group();
 
-    // ---- Visible beam ----
-    this.beamUniforms = {
-      uColor: { value: new THREE.Color(L.dimColor) },
-      uStrength: { value: 0.1 },
-      uTime: { value: 0 },
-      uLen: { value: BEAM_LEN },
-    };
-    const cone = new THREE.ConeGeometry(BEAM_LEN * Math.tan(L.angle), BEAM_LEN, 20, 1, true);
-    cone.translate(0, -BEAM_LEN / 2, 0);   // apex to the origin
-    cone.rotateX(Math.PI / 2);             // and point it down -Z
-    this.beam = new THREE.Mesh(cone, new THREE.ShaderMaterial({
-      uniforms: this.beamUniforms,
-      vertexShader: BEAM_VERT,
-      fragmentShader: BEAM_FRAG,
-      transparent: true, depthWrite: false, side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      fog: false,
-    }));
-    this.beam.renderOrder = 3;
-    this.beam.frustumCulled = false;
-    if (this.enabled) scene.add(this.beam);
+    // ---- The eyes. Headlights: narrow, bright, dead ahead, with visible cones.
+    for (let i = 0; i < 2; i++) {
+      this.heads.push(this._makeHead(scene, {
+        base: L.eyeIntensity, angle: L.eyeAngle,
+        // A hair of toe-out, the way headlights are set, so the pair covers more
+        // water than one beam of twice the power would.
+        yaw: (i === 0 ? -1 : 1) * L.eyeToe, pitch: 0,
+        beam: true, glow: false,
+      }));
+    }
 
-    // ---- Lens glow ----
-    this.glowMat = new THREE.MeshBasicMaterial({
-      color: L.dimColor, transparent: true, opacity: 0.5, depthWrite: false, fog: false,
-    });
-    this.glow = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), this.glowMat);
+    // ---- The rope. One per rider, fanned so four beams read as four people
+    // rather than as one hot stripe down the middle of the screen.
+    for (let i = 0; i < riders; i++) {
+      const t = riders > 1 ? (i / (riders - 1)) * 2 - 1 : 0;   // -1..1
+      this.heads.push(this._makeHead(scene, {
+        base: L.helmetIntensity, angle: L.helmetAngle,
+        yaw: t * L.helmetSpread,
+        pitch: (i % 2 ? 1 : -1) * L.helmetSpread * 0.45,
+        beam: false, glow: true,
+      }));
+    }
+
     if (this.enabled) scene.add(this.glow);
+
+    // The first eye is the reference light: it owns the aim, and it's what the
+    // pickups test against in illumination().
+    this.light = this.heads[0].light;
+    this.beam = this.heads[0].beam;
 
     this.aim = new THREE.Vector2(0, 0);
     this.beamDir = new THREE.Vector3(0, 0, -1);
     this._dir = new THREE.Vector3();
     this._tmp = new THREE.Vector3();
+    this._headDir = new THREE.Vector3();
     this._right = new THREE.Vector3();
     this._up = new THREE.Vector3();
     this._fwd = new THREE.Vector3(0, 0, -1);
@@ -119,10 +126,59 @@ export class Lamp {
     this._col = new THREE.Color();
   }
 
+  _makeHead(scene, opt) {
+    const L = CFG.lamp;
+    const head = {
+      base: opt.base, angle: opt.angle, yaw: opt.yaw, pitch: opt.pitch,
+      light: new THREE.SpotLight(L.dimColor, 0, L.dimDistance, opt.angle, L.penumbra, L.decay),
+      target: new THREE.Object3D(),
+    };
+    head.light.castShadow = false;
+    head.light.target = head.target;
+    if (this.enabled) scene.add(head.light, head.target);
+
+    if (opt.beam) {
+      head.uniforms = {
+        uColor: { value: new THREE.Color(L.dimColor) },
+        uStrength: { value: 0.1 },
+        uTime: { value: 0 },
+        uLen: { value: BEAM_LEN },
+      };
+      const cone = new THREE.ConeGeometry(BEAM_LEN * Math.tan(opt.angle), BEAM_LEN, 20, 1, true);
+      cone.translate(0, -BEAM_LEN / 2, 0);   // apex to the origin
+      cone.rotateX(Math.PI / 2);             // and point it down -Z
+      head.beam = new THREE.Mesh(cone, new THREE.ShaderMaterial({
+        uniforms: head.uniforms,
+        vertexShader: BEAM_VERT,
+        fragmentShader: BEAM_FRAG,
+        transparent: true, depthWrite: false, side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        fog: false,
+      }));
+      head.beam.renderOrder = 3;
+      head.beam.frustumCulled = false;
+      if (this.enabled) scene.add(head.beam);
+    }
+
+    if (opt.glow) {
+      head.glowMat = new THREE.MeshBasicMaterial({
+        color: L.dimColor, transparent: true, opacity: 0.5, depthWrite: false, fog: false,
+      });
+      head.glow = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), head.glowMat);
+      this.glow.add(head.glow);
+    }
+    return head;
+  }
+
   /** The moment the fish hands over the lighter. */
   setLit(on) { this.lit = on; }
 
-  update(dt, origin, baseRot, aimIntent) {
+  /**
+   * @param {THREE.Vector3[]} origins one per head, in construction order: the
+   *   two eyes first, then a helmet per rider. Short arrays are tolerated — a
+   *   head with nowhere to be is switched off rather than left at the origin.
+   */
+  update(dt, origins, baseRot, aimIntent) {
     const L = CFG.lamp;
     this._t += dt;
 
@@ -150,33 +206,56 @@ export class Lamp {
 
     if (!this.enabled) return;   // aim is computed above; the rest is display
 
-    this.light.position.copy(origin);
-    this.target.position.copy(origin).addScaledVector(this.beamDir, 25);
-    this.glow.position.copy(origin);
-    this.beam.position.copy(origin);
-    this.beam.quaternion.setFromUnitVectors(this._fwd, this.beamDir);
-
-    // Interpolate every property between the two states.
     const m = this._litMix, f = this._flick;
+    const dimRatio = L.dimIntensity / L.intensity;
     this._col.copy(this._cold).lerp(this._warm, m);
-    this.light.color.copy(this._col);
-    this.light.intensity = THREE.MathUtils.lerp(L.dimIntensity, L.intensity, m) * f;
-    this.light.distance = THREE.MathUtils.lerp(L.dimDistance, L.distance, m);
-    this.light.angle = THREE.MathUtils.lerp(L.dimAngle, L.angle, m);
+    const dist = THREE.MathUtils.lerp(L.dimDistance, L.distance, m);
 
-    this.beamUniforms.uColor.value.copy(this._col);
-    this.beamUniforms.uStrength.value = THREE.MathUtils.lerp(0.10, 0.34, m) * f;
-    this.beamUniforms.uTime.value = this._t;
-    this.beam.scale.setScalar(THREE.MathUtils.lerp(0.5, 1.0, m));
+    for (let i = 0; i < this.heads.length; i++) {
+      const h = this.heads[i];
+      const at = origins[i];
+      if (!at) { h.light.visible = false; if (h.beam) h.beam.visible = false; continue; }
+      h.light.visible = true;
 
-    this.glowMat.color.copy(this._col);
-    this.glowMat.opacity = THREE.MathUtils.lerp(0.35, 0.8, m) * f;
-    this.glow.scale.setScalar(THREE.MathUtils.lerp(0.7, 1.25, m) * f);
+      // Each head looks slightly off the shared aim, so six lights read as six
+      // lights rather than as one over-bright one.
+      this._headDir.copy(this.beamDir)
+        .addScaledVector(this._right, h.yaw)
+        .addScaledVector(this._up, h.pitch)
+        .normalize();
+
+      h.light.position.copy(at);
+      h.target.position.copy(at).addScaledVector(this._headDir, 25);
+      h.light.color.copy(this._col);
+      h.light.intensity = THREE.MathUtils.lerp(h.base * dimRatio, h.base, m) * f;
+      h.light.distance = dist;
+      h.light.angle = THREE.MathUtils.lerp(h.angle * 1.35, h.angle, m);
+
+      if (h.beam) {
+        h.beam.visible = true;
+        h.beam.position.copy(at);
+        h.beam.quaternion.setFromUnitVectors(this._fwd, this._headDir);
+        h.uniforms.uColor.value.copy(this._col);
+        h.uniforms.uStrength.value = THREE.MathUtils.lerp(0.10, L.beamStrength, m) * f;
+        h.uniforms.uTime.value = this._t;
+        h.beam.scale.setScalar(THREE.MathUtils.lerp(0.5, 1.0, m));
+      }
+      if (h.glow) {
+        h.glow.position.copy(at);
+        h.glowMat.color.copy(this._col);
+        h.glowMat.opacity = THREE.MathUtils.lerp(0.35, 0.8, m) * f;
+        h.glow.scale.setScalar(THREE.MathUtils.lerp(0.7, 1.25, m) * f);
+      }
+    }
   }
 
   /**
    * How centred a world point is in the beam, 0..1. Pickups use this to glint
    * when the light finds them — which teaches the lamp without a tooltip.
+   *
+   * Measured off her eyes rather than off all six, because this isn't really a
+   * lighting question: it asks whether the PLAYER is looking at the thing, and
+   * where she's looking is where the headlights point.
    */
   illumination(point) {
     this._tmp.copy(point).sub(this.light.position);
@@ -191,12 +270,16 @@ export class Lamp {
 
   setTrip(v) {
     this._tripBoost = v;
-    this.beamUniforms.uStrength.value *= (1 + v * 0.8);
+    for (const h of this.heads) {
+      if (h.uniforms) h.uniforms.uStrength.value *= (1 + v * 0.8);
+    }
   }
 
   setActive(on) {
-    this.light.visible = on;
+    for (const h of this.heads) {
+      h.light.visible = on;
+      if (h.beam) h.beam.visible = on;
+    }
     this.glow.visible = on;
-    this.beam.visible = on;
   }
 }

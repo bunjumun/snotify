@@ -189,7 +189,7 @@ export class Game {
       this.audio?.sfx('grip_regain');
     };
 
-    this.lamp = new Lamp(this.scene);
+    this.lamp = new Lamp(this.scene, RIDERS);
     this.heldLighter = null;   // set by Intro when a fish hands it over
 
     this.bongs = placeBongs(this.rng, this.seabed);
@@ -254,7 +254,14 @@ export class Game {
       }
       // Up out of the dark and through the middle of a school, if there's one
       // overhead worth arriving in. Straight up if there isn't.
-      const into = this.shoals.schoolAbove(k);
+      // Up out of the dark and through the middle of a school. Overhead first,
+      // then anything that isn't below her, and failing both, the nearest shoal
+      // in the lake at any angle — arriving among fish is the point of the climb
+      // and "there wasn't one directly above you" is a poor reason to lose it.
+      // Once you're there, swimming into them is what starts them talking; see
+      // Clues._swimThrough.
+      const into = this.shoals.schoolAbove(k)
+        || this.shoals.nearestSchool(k, Infinity, (s) => s.sp.role !== 'dread');
       this.kelpie.blastOff(into ? into.home : null);
       this.rig.addShake(0.85);
     };
@@ -550,24 +557,31 @@ export class Game {
     // not a camera decision, it's a bug.
     const showDiver = this.rig.orbitWeight > 0.02 || this.diver.adrift;
     for (const d of this.divers) d.group.visible = showDiver;
-    // The lens glow goes with him. It marks where the lamp IS, which is worth
-    // seeing when you can see him holding it and is otherwise a plate of blue
-    // light dead centre — the source is a hand's breadth from the lens now. The
-    // beam cone stays either way: that one is the art.
+    // The helmet lens glows go with them. They mark where the flashlights ARE,
+    // which is worth seeing when you can see who's holding them and is otherwise
+    // four plates of blue light behind your head. The eyes' beam cones stay
+    // either way: those are the art, and they're hers.
     if (this.lamp.glow) this.lamp.glow.visible = showDiver;
 
-    // The light comes from wherever his hand actually is once he's holding the
-    // lighter, so it swings with him — before that, from the dead helmet lamp.
-    const src = this._lampSrc || (this._lampSrc = new THREE.Vector3());
-    if (this.heldLighter) this.diver.handPosition(src);
-    else this.diver.helmetPosition(src);
-    // The beam points where she's going, leading into the turn rather than
+    // Where the light comes from: her two eyes, then a helmet per rider — and
+    // the lead rider's GLOVE once he's holding the lighter, so the one lamp that
+    // was ever lit by hand still swings with the hand.
+    const srcs = this._lampSrcs || (this._lampSrcs = []);
+    while (srcs.length < 2 + this.divers.length) srcs.push(new THREE.Vector3());
+    this.kelpie.eyePoint(srcs[0], 0);
+    this.kelpie.eyePoint(srcs[1], 1);
+    for (let i = 0; i < this.divers.length; i++) {
+      const at = srcs[2 + i];
+      if (i === 0 && this.heldLighter) this.divers[i].handPosition(at);
+      else this.divers[i].helmetPosition(at);
+    }
+    // Everything points where she's going, leading into the turn rather than
     // being flown separately.
     const aim = this._lampAim || (this._lampAim = { x: 0, y: 0 });
     const steer = this.input.intent.steer;
     aim.x = steer.x * CFG.lamp.aimLead;
     aim.y = -steer.y * CFG.lamp.aimLead * 0.8;
-    this.lamp.update(dt, src, this.kelpie.quaternion, aim);
+    this.lamp.update(dt, srcs, this.kelpie.quaternion, aim);
   }
 
   /**
@@ -586,7 +600,10 @@ export class Game {
     if (!b || this.trip.active) return null;
     if (!this.progress.hasLighter || !this.stash.canPack) return null;
     const d = this.nearestBongDistance;
-    if (d > CFG.bong.magnetRadius || d < CFG.bong.useRadius * 0.5) return null;
+    // Held on almost to the glass. It used to let go at half the use radius,
+    // which was fine when that was five units and is a hole now that contact is
+    // what fires the thing — the help has to last until you actually touch it.
+    if (d > CFG.bong.magnetRadius || d < CFG.bong.hitRadius * 0.6) return null;
     // Only if it's roughly ahead. Being reeled in from behind isn't assistance.
     const to = this._toBong || (this._toBong = new THREE.Vector3());
     to.copy(b.position).sub(this.kelpie.position).normalize();
@@ -596,7 +613,7 @@ export class Game {
     const t = 1 - d / CFG.bong.magnetRadius;   // 0 at the rim, 1 at the bowl
     const a = this._attract || (this._attract = { point: new THREE.Vector3(), strength: 0 });
     a.point.copy(b.position);
-    a.point.y += CFG.bong.useHeight;
+    a.point.y += b.useHeight;
     a.strength = CFG.bong.magnetTurn * t;   // linear — see the note on magnetTurn
     return a;
   }
@@ -608,6 +625,7 @@ export class Game {
     for (const b of this.bongs) {
       b.update(dt, this.time, canUse);
       const d = b.distanceTo(this.kelpie.position);
+      b.plume(dt, this.bubbles, this.smoke, d);
       if (d < nearestD) { nearestD = d; nearest = b; }
     }
     this.nearestBong = nearest;
@@ -618,13 +636,25 @@ export class Game {
     // In range. Say what's missing rather than silently refusing — a station that
     // does nothing when you press use reads as a bug.
     if (!this.progress.hasLighter) {
-      this.hud.say('No fire. You need a lighter.', { seconds: 2 });
+      // Except during the opening. Reaching your first pipe with nothing to
+      // light it is not a mistake to be corrected — it's the scene, and the fish
+      // is already on its way over to say so. Nagging every frame on top of that
+      // just talks over it.
+      if (!(this.intro.active && this.intro.step < 2)) {
+        this.hud.say('No fire. You need a lighter.', { seconds: 2 });
+      }
       return;
     }
     if (!this.stash.canPack) {
       this.hud.say(`Not enough to pack. <b>${this.stash.carried}/${CFG.stash.needed}</b>`, { seconds: 2 });
       return;
     }
+    // Swim into it and it goes off. No button, no stopping, no lining up on the
+    // last two metres — you charge a lit bong and the lit bong happens to you.
+    // E still works, and works from a long way further out, for the approach
+    // that didn't quite connect.
+    if (nearestD <= CFG.bong.hitRadius) return this._useBong(nearest);
+
     this.hud.say('<kbd>E</kbd> to hit it', { seconds: 0.4 });
     if (intent.interact) this._useBong(nearest);
   }

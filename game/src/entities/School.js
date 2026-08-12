@@ -18,11 +18,24 @@
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
 
-/** Stretched, pinched sphere. At fog distance the silhouette is the whole read. */
-function bodyGeometry(sp) {
-  const long = sp.eel ? 4.2 : 1.7;
+/**
+ * Stretched, pinched sphere. At fog distance the silhouette is the whole read.
+ *
+ * Every school gets its own roll of the dice on proportion — longer, deeper,
+ * fatter in the shoulder, more or less tail. Ten species then read as thirty
+ * kinds of fish, and it costs one seeded number per school rather than one
+ * modelled body per fish: the geometry is built once per school either way, so
+ * the variety is free. Distorting what's here beats authoring more of it.
+ */
+function bodyGeometry(sp, rng = null) {
+  const r = rng ? (lo, hi) => rng.float(lo, hi) : () => 1;
+  const stretch = r(0.82, 1.32);      // slender minnow ↔ long-bodied
+  const depth = r(0.82, 1.3);         // slab-sided ↔ deep-bellied
+  const width = r(0.84, 1.22);        // thin ↔ thick through the shoulder
+
+  const long = (sp.eel ? 4.2 : 1.7) * stretch;
   const g = new THREE.SphereGeometry(0.5, sp.eel ? 8 : 10, sp.eel ? 6 : 8);
-  g.scale(sp.eel ? 0.34 : 0.52, sp.eel ? 0.38 : 0.74, long);
+  g.scale((sp.eel ? 0.34 : 0.52) * width, (sp.eel ? 0.38 : 0.74) * depth, long);
 
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) {
@@ -36,7 +49,7 @@ function bodyGeometry(sp) {
   }
   g.computeVertexNormals();
 
-  const tail = new THREE.ConeGeometry(0.34 * sp.size, 0.55, 4);
+  const tail = new THREE.ConeGeometry(0.34 * sp.size * r(0.8, 1.45), 0.55 * r(0.85, 1.35), 4);
   tail.rotateX(-Math.PI / 2);           // point it aft
   tail.scale(0.26, 1, 1);
   tail.translate(0, 0, long * 0.52);
@@ -88,7 +101,7 @@ export class School {
     this._tighten = 0;
     this.active = true;
 
-    const geo = bodyGeometry(sp);
+    const geo = bodyGeometry(sp, rng);
     this.material = new THREE.MeshStandardMaterial({
       color: sp.color,
       roughness: 0.42,
@@ -111,6 +124,18 @@ export class School {
     // these is touched every frame by every neighbour.
     this.pos = [];
     this.vel = [];
+    // And no two fish in the school are the same fish. A per-instance scale is
+    // three numbers on a matrix we already compose every frame, so a shoal of
+    // yearlings and old ones together costs nothing at all — and it's what stops
+    // an InstancedMesh reading as forty copies of one object, which is the only
+    // way instancing ever gives itself away.
+    this.girth = new Float32Array(count);
+    this.stretch = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const s = rng.float(0.72, 1.34);
+      this.girth[i] = s;
+      this.stretch[i] = s * rng.float(0.88, 1.2);
+    }
     for (let i = 0; i < count; i++) {
       const p = new THREE.Vector3(
         home.x + rng.float(-this.radius, this.radius),
@@ -259,6 +284,7 @@ export class School {
       d.position.copy(p);
       this._look.copy(p).add(this.vel[i]);
       d.lookAt(this._look);      // -Z faces travel, which is how the body is built
+      d.scale.set(this.girth[i], this.girth[i], this.stretch[i]);
       d.updateMatrix();
       this.mesh.setMatrixAt(i, d.matrix);
     }

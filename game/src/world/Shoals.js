@@ -80,6 +80,27 @@ export class Shoals {
   }
 
   /**
+   * The school you are currently INSIDE, if any.
+   *
+   * Different question from nearestSchool: not "who is closest" but "whose water
+   * am I in", which is what makes them speak. Swimming through a shoal and
+   * having it say something is the cheapest way to make the lake feel occupied —
+   * you don't have to find the talking fish, you have to swim into fish.
+   *
+   * Never the lamprey. It doesn't talk, and it especially doesn't chat.
+   */
+  schoolAround(pos, slack = 1.25) {
+    let best = null, bestD = Infinity;
+    for (const s of this.schools) {
+      if (s.sp.role === 'dread') continue;
+      const d = s.home.distanceTo(pos);
+      if (d > s.radius * slack || d >= bestD) continue;
+      bestD = d; best = s;
+    }
+    return best;
+  }
+
+  /**
    * A school to blast up into.
    *
    * The bong launch used to go straight up into open green, which put fifty

@@ -52,8 +52,18 @@ export class Stash {
     let guard = 0;
     while (out.length < count && guard++ < count * 40) {
       const { x, z } = rng.inDisc(CFG.world.radius * 0.88);
-      const y = seabed.heightAt(x, z) + rng.float(0.8, 3.4);
-      const p = new THREE.Vector3(x, y, z);
+      const floor = seabed.heightAt(x, z);
+      // Through the whole water column, not just lying in the silt. Weed is what
+      // this planet runs on, so it is everywhere it can be: some of it settled on
+      // the floor, some caught in the middle water, some drifting high enough
+      // that you go UP for it. Keeping it all on the seabed made every run a
+      // vacuum-cleaner pass at a fixed altitude and threw away the one axis this
+      // game has that a map screen doesn't.
+      const roll = rng.float(0, 1);
+      const rise = roll < CFG.stash.floorShare
+        ? rng.float(0.8, 3.4)                                   // settled in the silt
+        : rng.float(CFG.stash.riseLow, CFG.stash.riseHigh);     // adrift in the column
+      const p = new THREE.Vector3(x, floor + rise, z);
       // Spread them so a single sweep of one area can't collect four at once.
       if (out.some((o) => o.distanceTo(p) < 24)) continue;
       out.push(p);

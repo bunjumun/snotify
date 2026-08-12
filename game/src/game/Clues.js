@@ -67,6 +67,7 @@ export class Clues {
     this._reply = null;        // the diver's half of an exchange, pending
     this._lampreyed = false;   // the lamprey gets its one non-answer per trip
     this._prevTrip = 0;        // for spotting the start of a fresh bowl
+    this._chatCd = 0;          // gap between two shoals both having something to say
     this.tellers = [];         // live guide fish, cleaned up as they expire
 
     this.chest = new Chest(this._pickSpot(game.rng, game.wreck, game.seabed));
@@ -107,7 +108,9 @@ export class Clues {
     this._toldHigh = false;
     this._reply = null;
     this._lampreyed = false;
+    this._chatCd = 0;
     this._lastBand = -1;
+    for (const s of this.game.shoals.schools) s._spokeAt = -999;
     this.chest.close();
     for (const t of this.tellers) this.game.scene.remove(t.fish.group);
     this.tellers.length = 0;
@@ -153,6 +156,8 @@ export class Clues {
       }
     }
 
+    this._swimThrough(dt);
+
     if (!this.found && dist <= CFG.chest.openRadius) this._openChest();
 
     // The sturgeon's ping. Only after it has spoken, and only near enough for
@@ -181,6 +186,41 @@ export class Clues {
     }
 
     this.game.hud.setHintAvailable(this.cooldown <= 0 && !this.found);
+  }
+
+  /**
+   * Swim into a shoal while the bowl is working, and it talks to you.
+   *
+   * Nothing to press and nobody to find: you are in their water and you are
+   * high, so they talk. It is how the blast-off pays off — you are fired up out
+   * of the dark into the middle of a school, and it starts asking you questions
+   * before you've pressed anything.
+   *
+   * Sober, they say nothing at all. That silence is the point: the ordinary lake
+   * is a lake, one appointed fish will answer a direct question, and everything
+   * else out there is weather. What a bowl buys is that the whole lake starts
+   * talking — and it can only buy that if it isn't happening anyway.
+   *
+   * Two cooldowns. Per school, so the same shoal doesn't natter while you circle
+   * it; and one global, so two overlapping shoals don't talk over each other.
+   */
+  _swimThrough(dt) {
+    const g = this.game;
+    this._chatCd = Math.max(0, this._chatCd - dt);
+    // Only while the bowl is working. The opening has its own voices.
+    if (g.trip.value <= CFG.clues.highAt) return;
+    if (this._chatCd > 0 || this._reply || g.intro.active) return;
+
+    const school = g.shoals.schoolAround(g.kelpie.position);
+    if (!school) return;
+    if (g.time - (school._spokeAt ?? -999) < CFG.clues.throughCooldown) return;
+    school._spokeAt = g.time;
+
+    // Straight into the lore exchange. Keeps the hint button's cooldown in step
+    // so pressing it right after doesn't cut the diver off mid-answer.
+    this._chatCd = CFG.clues.highCooldown;
+    this.cooldown = CFG.clues.highCooldown;
+    this._highHint();
   }
 
   // ---------------------------------------------------------------------- ask
@@ -408,10 +448,18 @@ export class Clues {
 /**
  * What the fish know, told a fragment at a time and only while you're high.
  *
- * This is the album's own story — Anocean and Enias defecting from the gold
- * colony on Jupiter, down through The Drain, the utopia they couldn't agree on,
- * and the horse that came up out of the water and the ash afterwards. Each line
- * is a piece; keep asking and the arc assembles itself.
+ * This is the album's own story, and it is kept in step with
+ * `lakehorse sim/style assets/lakehorse lore.rtf` — that file is the source of
+ * truth and it gets edited, so read it before touching anything here. The arc:
+ * Earth is destroyed by a megachurch CEO with a gun big enough to hole the sky,
+ * the survivors are sent out mining, Anocean and Enias defect from the gold
+ * colony on Jupiter, down through The Drain to Mango Tree World, the utopia they
+ * couldn't agree on, and the horse that came up out of the water and the ash
+ * afterwards. Each line is a piece; keep asking and the arc assembles itself.
+ *
+ * The last two are the setting rather than the story: this is a water bong
+ * planet and weed is what it runs on, which is why the stations are down here
+ * and why the diver is the one who finds that strange.
  *
  * It sits behind the bong deliberately. The ship's log tells you the sober
  * version — a lake freighter, iron ore, weather — and it is all true. This is the
@@ -421,7 +469,16 @@ export class Clues {
  */
 const LORE = [
   { ask: "You're not from the water. Where do you come from?",
-    say: 'Same place this ship did. A seam in the sky they called Jupiter.<br>You dug it, or you owed it. Usually both.' },
+    say: 'A planet called Earth. It is not there any more.<br>We were sent out mining, to start again. That was the offer.' },
+
+  { ask: 'Planets do not simply stop being there.',
+    say: 'A man who ran a megachurch built a gun the size of a city<br>and shot a hole in the sky with it. That is the whole story.' },
+
+  { ask: 'And nobody stopped him?',
+    say: 'He had the money, so he had the pulpit, so he had the gun.<br>By the time it mattered, arguing with him was heresy.' },
+
+  { ask: 'So they sent you where?',
+    say: 'Jupiter. A seam of gold in a place not built for people.<br>You dug it, or you owed it. Usually both.' },
 
   { ask: 'You keep saying gold. What is gold?',
     say: 'Something they wanted badly enough to spend people on.<br>That is the entire definition. There is nothing under it.' },
@@ -455,6 +512,12 @@ const LORE = [
 
   { ask: 'So what is left to do?',
     say: 'You do not get the new world with the old hands.<br>That is the whole instruction. That is all of it.' },
+
+  { ask: 'Why do you dive for the weed? It is only a plant.',
+    say: 'On this world it is the fuel. Everything here runs on it —<br>the water, the light, whatever it is you use to talk to me.' },
+
+  { ask: 'Then what were you burning, before you came here?',
+    say: 'Something we had to take out of the ground and could never put back.<br>You grow yours. That is the difference, and it is the only one.' },
 ];
 
 const PING = [

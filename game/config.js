@@ -153,11 +153,35 @@ export const CFG = {
     aimLead: 0.5,         // how far the beam leads a turn, 0 = dead ahead
     color: 0xbcd8ff,      // plasma arc — cold blue-white, and it pops off the teal
     dimColor: 0x7f9aa8,   // the dead helmet lamp before a fish brings you fire
-    intensity: 950,
+
+    // Six emitters. Two are her eyes and they are the headlights: narrow, bright
+    // and cone-visible, toed slightly out the way headlights are set. Four are
+    // the riders' flashlights, wider and softer, fanned so they read as four
+    // people on a rope rather than one hot stripe — and with no visible cone,
+    // because they're behind the camera and a cone with its apex behind you is
+    // just a bar of light across the frame.
+    // Not as hot as the old single helmet lamp, and it can't be: that one sat
+    // behind the camera and lit things from behind, while these sit on the front
+    // of her head and point straight at whatever is hovering in front of you. A
+    // guide fish parks five units off the nose, and at 430 it came back as a
+    // white hole in the middle of the screen.
+    eyeIntensity: 300,
+    eyeAngle: 0.34,
+    eyeToe: 0.07,         // radians of toe-out per eye
+    // Deliberately faint. Four of them add up, they come from behind the camera
+    // where nothing occludes them, and the moment they're bright enough to read
+    // as work lights they flatten the fog — which is the whole picture. They are
+    // meant to be a wash you notice when it swings, not a light you navigate by.
+    helmetIntensity: 85,
+    helmetAngle: 0.5,
+    helmetSpread: 0.2,    // how far the four fan apart, radians
+    beamStrength: 0.26,   // the visible shaft, per eye — two of these now
+
+    intensity: 950,       // the reference pair; the ratio below is the dim state
     dimIntensity: 95,
     distance: 66,
     dimDistance: 22,
-    angle: 0.46,          // radians, half-cone
+    angle: 0.46,          // radians, half-cone — the beam cone geometry
     dimAngle: 0.62,       // wider and weaker — a haze, not a beam
     penumbra: 0.6,
     decay: 1.35,          // <2 so the beam carries further than physics would allow
@@ -195,18 +219,38 @@ export const CFG = {
     pickupRadius: 2.6,
     respawnDelay: 6,      // seconds before a taken anchor can reseed
     minPlayerDistance: 45,// don't reseed one in the player's lap
+
+    // Weed is the fuel of this planet and it is not only lying in the silt. A
+    // third of it settles on the floor; the rest is caught anywhere in the water
+    // column, up to well above the wreck. Height above the seabed, in units —
+    // the thermocline sits in the middle of that range, so some of the stash is
+    // deliberately on the cold side of it.
+    floorShare: 0.34,
+    riseLow: 4,
+    riseHigh: 46,
+
     bobAmp: 0.22,
     bobFreq: 1.3,
   },
 
   bong: {
     count: 5,
+    // Big. A station you can see across the fog line and steer at from a long
+    // way out, rather than a bottle on the seabed you have to go looking for at
+    // close range. Scales the whole prop, and useHeight scales with it.
+    scale: 2.1,
+    // Hitting it means HITTING it. Swim into the thing and it goes off — no
+    // button, no stopping, no lining up. The kelpie is 5.2 units nose to tail
+    // and the glass is over 5 tall now, so this is genuinely "you touched it".
+    hitRadius: 5.5,
     // Generous on purpose. A bong is a station you swim up to, not a pixel you
     // have to land on — and the reward for reaching it is the best thing in the
     // game, so making the last two metres the hard part is the wrong place to
     // put difficulty. The scarcity is in the four baggies, which is where it
     // belongs.
-    useRadius: 10.0,
+    // Twice what it was. With contact firing it anyway, E is for the approach
+    // you didn't quite line up — it should be forgiving well before the glass.
+    useRadius: 20.0,
     // And measured to the BOWL, not to the silt the stand is buried in. The
     // kelpie is clamped two units off the floor and usually swimming higher than
     // that, so measuring from the base spent most of the radius on the vertical
@@ -220,7 +264,7 @@ export const CFG = {
     // Wide, because a correction has to START early. At twenty units you only
     // entered the field at the moment you were already passing, and measurably
     // nothing happened: 17.2 units closest approach with the help, 17.1 without.
-    magnetRadius: 34,
+    magnetRadius: 42,
     // It bends the HEADING, not the body. A force here does essentially nothing:
     // the fins bite existing momentum back onto the current course faster than
     // any gentle sideways shove can move it, and the first cut of this changed
@@ -236,6 +280,16 @@ export const CFG = {
     // from behind is not an assist, it's a hand on the tiller.
     magnetAhead: 1.25,    // radians off the nose, beyond which it lets you go
     humRadius: 55,        // audible through the fog well before it's visible
+
+    // The plume. Always running, harder when the thing is packed and lit.
+    // Per second, per bong; see Bong.plume(). Kept modest because five of these
+    // share a pool with the kelpie's wake and a hit's worth of exhale.
+    plumeRadius: 120,     // beyond this the column isn't drawn at all
+    plumeBubbles: 4,
+    plumeBubblesLit: 7,   // added on top, faded in with the light
+    plumeSmoke: 2.5,
+    plumeSmokeLit: 4.5,
+
     hueWhenReady: 0x7de08a,
     hueWhenDark: 0x2c3a38,
   },
@@ -278,6 +332,12 @@ export const CFG = {
     // Shorter than the sober cooldown because the window is short and paid for,
     // but long enough that asking again doesn't cut the diver off mid-answer.
     highCooldown: 6,
+
+    // Swimming into a shoal makes it talk — but only while a bowl is working.
+    // Sober, the schools say nothing; one appointed fish answers the hint button
+    // and that is the whole of it. Per school, so circling one doesn't turn it
+    // into a chatterbox.
+    throughCooldown: 45,
   },
 
   // ---------- Fish ----------
@@ -289,7 +349,13 @@ export const CFG = {
     // — including the three at the end of the list (siscowet, burbot, lamprey)
     // that a smaller budget would have quietly cut. Low quality halves it.
     // School sizes come from the species rows, not from here.
-    schools: 9,
+    //
+    // Past nine it wraps and the commonest five get a second shoal each, which
+    // is what a lake looks like and, more to the point, is what makes swimming
+    // into fish a thing that happens often enough to be a mechanic. They cost a
+    // draw call each and cull at 165 units, and every school rolls its own body
+    // proportions, so the second smelt shoal is not the first one again.
+    schools: 14,
     neighbourRadius: 5.5,
     separation: 2.0,
     weights: { separation: 1.5, alignment: 0.55, cohesion: 0.5, home: 0.35, avoid: 2.6 },

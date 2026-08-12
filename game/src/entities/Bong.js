@@ -19,9 +19,18 @@ export class Bong {
     this.group.rotation.y = rng ? rng.float(0, Math.PI * 2) : 0;
     this.position = this.group.position;
 
+    // Everything below is modelled at 1× and then scaled as one object, so the
+    // proportions are fixed and the size is a single number in config.js.
+    this.scale = CFG.bong.scale;
+    this.group.scale.setScalar(this.scale);
+    /** World-space height of the bowl above the base. Scales with the prop. */
+    this.useHeight = CFG.bong.useHeight * this.scale;
+
     this.ready = false;
     this._lit = 0;
     this.phase = rng ? rng.float(0, Math.PI * 2) : 0;
+    this._bubAcc = rng ? rng.float(0, 1) : 0;   // per-bong, so five don't pulse together
+    this._smokeAcc = rng ? rng.float(0, 1) : 0;
 
     // Glass tube. Encrusted at the base, clear enough up top to catch the lamp.
     this.glassMat = new THREE.MeshStandardMaterial({
@@ -93,13 +102,51 @@ export class Bong {
     this.light.intensity = lit * 260;
   }
 
+  /**
+   * It never stops smoking.
+   *
+   * A thin column of bubbles and smoke leaving the mouthpiece and climbing for
+   * the surface, running whether or not you can use the thing. It costs almost
+   * nothing and it does two jobs: it says "this is lit and waiting" from further
+   * out than the glass is visible, and a rising line is the only vertical
+   * reference in a bowl of green fog — you can read your own depth off it.
+   *
+   * Own accumulators rather than the shared ones inside emit()/trail(), because
+   * those belong to the diver's trail and five bongs taking turns with them
+   * would thin it out.
+   *
+   * @param {number} dist distance to the player, for skipping distant plumes
+   */
+  plume(dt, bubbles, smoke, dist = 0) {
+    if (dist > CFG.bong.plumeRadius) return;
+    const lit = this._lit;
+    const x = this.position.x, z = this.position.z;
+    const y = this.position.y + this.useHeight * 1.15;   // the mouth, not the bowl
+
+    // Wander the column a little so it reads as drifting water rather than a
+    // vertical line of dots.
+    const w = Math.sin(this.phase + performance.now() * 0.0006) * 0.5;
+
+    this._bubAcc += (CFG.bong.plumeBubbles + lit * CFG.bong.plumeBubblesLit) * dt;
+    while (this._bubAcc >= 1) {
+      bubbles?.spawn(x + w, y, z + w * 0.6, 0.5 + lit * 0.5);
+      this._bubAcc -= 1;
+    }
+
+    this._smokeAcc += (CFG.bong.plumeSmoke + lit * CFG.bong.plumeSmokeLit) * dt;
+    while (this._smokeAcc >= 1) {
+      smoke?.spawn(x + w * 0.7, y, z + w * 0.4, 0.55 + lit * 0.45, 0.3);
+      this._smokeAcc -= 1;
+    }
+  }
+
   inRange(pos) { return this.distanceTo(pos) <= CFG.bong.useRadius; }
 
   /** Distance to the bowl rather than to the base. See CFG.bong.useHeight. */
   distanceTo(pos) {
     const at = this._usePoint || (this._usePoint = new THREE.Vector3());
     at.copy(this.position);
-    at.y += CFG.bong.useHeight;
+    at.y += this.useHeight;
     return pos.distanceTo(at);
   }
 

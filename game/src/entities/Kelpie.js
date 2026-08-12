@@ -375,10 +375,14 @@ export class Kelpie {
     this.eyeMat = new THREE.MeshStandardMaterial({
       color: P.kelpieEye, emissive: P.kelpieEye, emissiveIntensity: 0.55, roughness: 0.25,
     });
+    // Kept, because they're the headlights: Lamp hangs a spotlight on each one
+    // and points the pair where she's steering. See eyePoint().
+    this.eyes = [];
     for (const s of [-1, 1]) {
       const eye = new THREE.Mesh(new THREE.SphereGeometry(0.078, 8, 6), this.eyeMat);
       eye.position.set(s * 0.215, 1.16, -0.74);
       headGrp.add(eye);
+      this.eyes.push(eye);
     }
 
     this.head = headGrp;
@@ -502,6 +506,17 @@ export class Kelpie {
     return out.set(0, CFG.kelpie.girth * 0.55, CFG.kelpie.length * 0.12)
       .applyQuaternion(this.quaternion)
       .add(this.position);
+  }
+
+  /**
+   * One eye, in world space. The headlights hang off these, so it reads off the
+   * actual mesh rather than a hardcoded offset — move the head and the beams
+   * move with it, including the bob.
+   *
+   * @param {0|1} i left, then right
+   */
+  eyePoint(out, i) {
+    return this.eyes[i].getWorldPosition(out);
   }
 
   /** The fluke, in world space — where a tail beat throws water from. */

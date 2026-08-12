@@ -3,14 +3,22 @@
 // Four beats, in this order, for a reason:
 //
 //   0  You have weed, no fire, and a lamp that barely reaches your own boots.
-//   1  A fish swims out of the murk carrying a lighter and hands it to you.
-//      The lamp flares. The world visibly gets bigger. That IS the tutorial for
-//      the lamp — nothing has to say "press F to look at things".
-//   2  The same fish tells you what to do with it: there's a pipe, that way.
-//   3  You hit it. Full trip. The payoff lands before any grind is explained.
+//      You are told there's a pipe out there and pointed at it. That's all.
+//   1  You GET to the pipe, and it's useless to you — and that is the moment a
+//      fish comes out of the murk shouting that it'll get the light, and hands
+//      you one. The lamp flares. The world visibly gets bigger. That IS the
+//      tutorial for the lamp — nothing has to say "press F to look at things".
+//   2  It tells you what you're now holding and what it's for.
+//   3  You hit the pipe. Full trip. The payoff lands before any grind does.
 //   4  A second fish explains the four-baggie loop, now that you want another.
 //
-// Beat 3 before beat 4 is the whole trick. Explaining a resource economy to
+// The fish waits at the bong on purpose. Handing someone a lighter before they
+// have found anything to light is a fetch quest with the parts in the wrong
+// order: the want has to exist first. Swimming a long way to a thing you can't
+// use, and having the answer arrive exactly there, is a scene. Being given fire
+// in the first ten seconds is a tooltip.
+//
+// Beat 3 before beat 4 is the same trick again. Explaining a resource economy to
 // someone who has never seen the reward is a chore; explaining it to someone who
 // just watched the screen turn into a rainbow is an offer.
 //
@@ -30,6 +38,7 @@ export class Intro {
     this.active = false;
     this.fish = [];
     this.lighter = null;
+    this._called = false;      // the fish has shouted from the haze
     this._t = 0;
     this._nudgeAt = 0;
     this._handoffAt = 0;
@@ -53,29 +62,43 @@ export class Intro {
     this.step = 0;
     g.lamp.setLit(false);
 
-    // Fish 1 waits out in the haze ahead and closes in once you've had a moment
-    // to notice how little you can see.
-    const k = g.kelpie.position;
-    const fwd = g.kelpie.forward;
-    const p = k.clone().addScaledVector(fwd, 34);
-    p.y = Math.max(g.seabed.heightAt(p.x, p.z) + 6, k.y + 2);
+    // No fish yet. It turns up at the pipe, when you've earned the want — see
+    // the header, and _meetAtBong() below.
+    this.lighter = new Lighter();
+
+    g.hud.say(
+      'A bit of shake, no fire, and a lamp with nothing in it.<br>' +
+      '<span style="opacity:.72">Tap to swim — she kicks each time.</span><br>' +
+      'There\'s a pipe out there somewhere. Start with that.',
+      { seconds: 6 },
+    );
+    this._nudgeAt = this._t + 16;
+  }
+
+  /**
+   * The fish arrives at the pipe, once you have.
+   *
+   * It comes out of the murk off to one side rather than materialising in front
+   * of you, and it comes in far enough out that the shout lands before the fish
+   * is anything more than a shape. The bong is the anchor, not the player, so
+   * arriving at the station from any direction produces the same scene.
+   */
+  _meetAtBong(bong) {
+    const g = this.game;
+    const a = g.rng.float(0, Math.PI * 2);
+    const p = bong.position.clone();
+    p.x += Math.cos(a) * 30;
+    p.z += Math.sin(a) * 30;
+    p.y = Math.max(g.seabed.heightAt(p.x, p.z) + 5, bong.position.y + bong.useHeight + 2);
 
     this.fish1 = new GuideFish(p, { color: 0x8fe0c4, scale: 1.45 });
     this.fish1.approach = true;
     this.fish1.approachFrom = 60;
     this.fish1.standoff = 5.0;
+    this.fish1.carry(this.lighter.group);
     g.scene.add(this.fish1.group);
     this.fish.push(this.fish1);
-
-    this.lighter = new Lighter();
-    this.fish1.carry(this.lighter.group);
-
-    g.hud.say(
-      'A bit of shake, no fire, and a lamp with nothing in it.<br>' +
-      '<span style="opacity:.72">Tap to swim — she kicks each time.</span><br>Something is coming.',
-      { seconds: 6 },
-    );
-    this._nudgeAt = this._t + 22;
+    this._nudgeAt = this._t + 30;
   }
 
   update(dt) {
@@ -89,18 +112,33 @@ export class Intro {
     if (this.lighter) this.lighter.update(dt);
     if (!this.active) return;
 
-    // ---- Beat 1: the handover ----
-    if (this.step === 0 && this.fish1.distanceTo(g.kelpie.position) < 7.5) {
+    // ---- Beat 1: reach the pipe, and the fish turns up carrying the answer ----
+    if (this.step === 0 && !this.fish1 && g.nearestBong
+        && g.nearestBongDistance < CFG.bong.useRadius * 2.2) {
+      this._meetAtBong(g.nearestBong);
+    }
+
+    // It shouts first, from out in the haze where you can't see it yet. That
+    // call is the whole introduction to the fish: something out there is on your
+    // side, it is coming, and it is cheerful about it.
+    if (this.step === 0 && this.fish1 && !this._called
+        && this.fish1.distanceTo(g.kelpie.position) < 24) {
+      this._called = true;
+      g.hud.say("HEY, I'LL GET THE LIGHT!", { who: 'Somewhere in the murk', seconds: 4 });
+      g.audio?.sfx('fish');
+    }
+    if (this.step === 0 && this.fish1 && this.fish1.distanceTo(g.kelpie.position) < 7.5) {
       this._handover();
     }
 
     // ---- Beat 2: where to use it ----
     if (this.step === 1 && this._t >= this._handoffAt) {
       this._advance(2);
-      const bearing = this._bearingTo(g.nearestBong?.position);
+      // You are already standing at the pipe — that's where it found you — so
+      // this beat is about what's in your glove, not about where to go.
       g.hud.say(
         `That arc will light a bowl at any depth. That's the whole trick.<br>` +
-        `There's a pipe ${bearing}. Old thing. Still draws.`,
+        `That one there is an old thing, but it still draws. Go on.`,
         { who: 'A whitefish', seconds: 8 },
       );
       g.audio?.sfx('fish');
@@ -143,7 +181,8 @@ export class Intro {
 
     g.hud.say(
       'It presses a lighter into the diver\'s glove. Not a flint one — a <b>plasma torch</b>.<br>' +
-      'Twin arc. No flame to drown. Burns just fine down here.',
+      'Twin arc. No flame to drown. This lighter will burn even the wettest weed.<br>' +
+      'The dankest dank.',
       { who: 'A whitefish', seconds: 6 },
     );
 
@@ -180,6 +219,10 @@ export class Intro {
     const g = this.game;
     if (this.step === 0 && this.fish1) {
       g.hud.say(`Something is glowing ${this._bearingTo(this.fish1.group.position)}.`, { seconds: 4 });
+    } else if (this.step === 0 && g.nearestBong) {
+      // Before the fish exists, the only thing to point at is the pipe — which
+      // is the whole of beat 0 now.
+      g.hud.say(`There's a pipe ${this._bearingTo(g.nearestBong.position)}. It's humming.`, { seconds: 4 });
     } else if (this.step === 2 && g.nearestBong) {
       g.hud.say(`The pipe is ${this._bearingTo(g.nearestBong.position)}.`, { seconds: 4 });
     } else if (this.step === 3 && this.fish2) {

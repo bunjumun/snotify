@@ -15,6 +15,7 @@ const DEFAULTS = {
   introStep: 0,       // 0 = never played, 4 = tutorial finished
   chestFound: false,
   bestTime: null,     // seconds to find the chest
+  claimed: false,     // they've already been through the reward screen once
   logPages: [],
   runs: 0,
 };
@@ -47,6 +48,10 @@ export class Progress {
     if (this.data.bestTime === null || seconds < this.data.bestTime) this.data.bestTime = seconds;
     this.save();
   }
+
+  /** Asking for the same address on every run is how you lose a mailing list. */
+  get claimed() { return !!this.data.claimed; }
+  markClaimed() { this.data.claimed = true; this.save(); }
 
   addLogPage(id) {
     if (!this.data.logPages.includes(id)) { this.data.logPages.push(id); this.save(); }

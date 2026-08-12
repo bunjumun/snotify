@@ -7,7 +7,13 @@
 //        └─ ambBus   ─┘       ▲           ▲
 //                          (uTrip)     (uTrip, breath, depth)
 //
-// Two decisions worth knowing about:
+// Three decisions worth knowing about:
+//
+// 0. The music is a record, not a soundtrack. Every track in music.json plays in
+//    order, crossfading into the next, and loops at the end. The game never
+//    switches songs to signal your state — mood is applied as an effect (the phaser
+//    on a bong, the lowpass as you drown) over whatever happens to be playing, so
+//    a visitor who came from the band's page hears the album straight through.
 //
 // 1. Music streams through an <audio> element and a MediaElementAudioSourceNode
 //    rather than fetch + decodeAudioData. The mixes are ~10 MB and Supabase
@@ -40,8 +46,12 @@ export class AudioDirector {
     this.ctx = new Ctx();
     this.ok = true;
     this.react = { low: 0, mid: 0, high: 0 };
-    this.layers = {};        // name -> {el, src, gain}
-    this.current = null;
+    this.playlist = [];      // [{title, version, url}] in the band's running order
+    this.index = -1;
+    this.decks = [];         // two of them; see _makeDeck
+    this.deck = 0;           // which one is live
+    this.onTrack = null;     // (track, index, total) => void — the HUD listens
+    this._advancing = false;
     this._heartbeat = null;
     this._t = 0;
 
@@ -163,8 +173,16 @@ export class AudioDirector {
   // ------------------------------------------------------------------- music
 
   /**
-   * Reads game/music.json — the hand-curated list of tracks that are public.
-   * @returns {Promise<number>} how many layers actually loaded
+   * Reads game/music.json and plays it as a record: every track, in the order
+   * the band listed them, crossfading one into the next and looping at the end.
+   *
+   * Two <audio> elements, not one. A MediaElementAudioSourceNode is bound to its
+   * element for life and can't be created twice for the same one, so the decks
+   * are built once up front and only ever have their `src` swapped. That also
+   * gets the crossfade for free: while deck A is finishing, deck B is already
+   * streaming the next track.
+   *
+   * @returns {Promise<number>} how many tracks are in the running order
    */
   async loadMusic() {
     let manifest;
@@ -174,69 +192,108 @@ export class AudioDirector {
     } catch {
       return 0;
     }
-    const tracks = (manifest.tracks || []).filter((t) => t && t.src);
-    if (!tracks.length) return 0;
 
-    let loaded = 0;
-    for (const t of tracks) {
-      const layer = t.layer || 'calm';
-      if (this.layers[layer]) continue;
-      try {
-        this.layers[layer] = this._makeLayer(publicUrl(t.src), t);
-        loaded++;
-      } catch { /* one bad track shouldn't take the rest down */ }
-    }
+    this._treasureTitle = manifest.treasure || null;
+    this.playlist = (manifest.tracks || [])
+      .filter((t) => t && t.src)
+      .map((t) => ({
+        title: t.title || 'Lakehorse',
+        version: t.version || '',
+        url: publicUrl(t.src),
+      }));
+    if (CFG.audio.playlist.shuffle) this.playlist = shuffled(this.playlist);
+    if (!this.playlist.length) return 0;
 
-    // Any empty layer falls back to the calm bed, so one track is a complete
-    // soundtrack and extra tracks simply make it richer.
-    const fallback = this.layers.calm || Object.values(this.layers)[0];
-    if (fallback) {
-      for (const name of ['calm', 'tension', 'trip']) {
-        if (!this.layers[name]) this.layers[name] = fallback;
-      }
-      this.setLayer('calm');
-    }
-    return loaded;
+    this.decks = [this._makeDeck(), this._makeDeck()];
+    this._play(0);
+    return this.playlist.length;
   }
 
-  _makeLayer(url, meta) {
+  _makeDeck() {
     const el = new Audio();
     el.crossOrigin = 'anonymous';   // required, and the bucket already sends ACAO:*
-    el.loop = true;
     el.preload = 'auto';
-    el.src = url;
 
     const src = this.ctx.createMediaElementSource(el);
     const gain = this.ctx.createGain();
     gain.gain.value = 0;
     src.connect(gain).connect(this.buses.music);
-    return { el, src, gain, meta, playing: false };
+
+    // Backstop. If a track's duration never resolves — a stream, a container the
+    // browser won't measure — the crossfade window in update() never opens, and
+    // without this the record would simply stop at the end of track one.
+    el.addEventListener('ended', () => this._advance());
+    // A dead URL shouldn't end the album either; skip to the next one.
+    el.addEventListener('error', () => { if (this.playlist.length > 1) this._advance(); });
+
+    return { el, src, gain };
   }
 
-  /** Crossfade to a mood. Same element for every layer is fine — gains do the work. */
-  setLayer(name, fade = 2.2) {
-    const next = this.layers[name];
-    if (!next) return;
-    // Layers can legitimately share a track (one song fills all three moods), so
-    // record the name even when there's nothing to crossfade — otherwise the
-    // caller keeps asking for the switch on every single frame.
-    this.layerName = name;
-    if (this.current === next) return;
+  /** Put track `i` on the idle deck and crossfade to it. */
+  _play(i, fade = 0.8) {
+    if (!this.playlist.length) return;
+    const track = this.playlist[i];
+    const next = this.decks[this.deck ^ 1];
+    const prev = this.decks[this.deck];
     const now = this.ctx.currentTime;
 
-    if (this.current && this.current !== next) {
-      this.current.gain.gain.cancelScheduledValues(now);
-      this.current.gain.gain.setTargetAtTime(0, now, fade / 3);
-    }
-    next.gain.gain.cancelScheduledValues(now);
-    next.gain.gain.setTargetAtTime(1, now, fade / 3);
+    // A one-track playlist has nothing to cross into but itself, and crossfading
+    // a song with a second copy of the same song is worse than a clean loop.
+    next.el.loop = this.playlist.length === 1;
+    next.el.src = track.url;
+    next.el.currentTime = 0;
+    next.el.play().catch(() => { /* autoplay policy or a dead URL; stay quiet */ });
 
-    if (!next.playing) {
-      next.playing = true;
-      next.el.play().catch(() => { /* autoplay policy or a dead URL; stay quiet */ });
+    next.gain.gain.cancelScheduledValues(now);
+    next.gain.gain.setTargetAtTime(1, now, Math.max(0.05, fade / 3));
+    if (prev !== next) {
+      prev.gain.gain.cancelScheduledValues(now);
+      prev.gain.gain.setTargetAtTime(0, now, Math.max(0.05, fade / 3));
+      // Let the fade finish before stopping it, or the tail gets chopped.
+      const el = prev.el;
+      setTimeout(() => { if (this.decks[this.deck].el !== el) el.pause(); }, fade * 1000 + 400);
     }
-    this.current = next;
-    this.layerName = name;
+
+    this.deck ^= 1;
+    this.index = i;
+    this._advancing = false;
+    if (this.onTrack) this.onTrack(track, i, this.playlist.length);
+  }
+
+  _advance() {
+    if (this._advancing || this.playlist.length < 2) return;
+    this._advancing = true;
+    this._play((this.index + 1) % this.playlist.length, CFG.audio.playlist.crossfade);
+  }
+
+  /**
+   * Watch the live deck for the end of the track. Called from update(), so it
+   * costs two number comparisons a frame and needs no timers to keep in sync.
+   */
+  _pumpPlaylist() {
+    if (this.playlist.length < 2 || this._advancing) return;
+    const el = this.decks[this.deck]?.el;
+    if (!el || !el.duration || !isFinite(el.duration)) return;
+    if (el.duration - el.currentTime <= CFG.audio.playlist.crossfade) this._advance();
+  }
+
+  /** Skip forward — wired to the HUD's track readout. */
+  skip() { if (this.playlist.length > 1) { this._advancing = false; this._advance(); } }
+
+  get nowPlaying() { return this.playlist[this.index] || null; }
+
+  /**
+   * What the treasure chest gives away. Named by `treasure` in music.json;
+   * otherwise the record's opening track, which is the sane default for an
+   * album where track one is the single.
+   */
+  get treasure() {
+    if (!this.playlist.length) return null;
+    if (this._treasureTitle) {
+      const hit = this.playlist.find((t) => t.title === this._treasureTitle);
+      if (hit) return hit;
+    }
+    return this.playlist[0];
   }
 
   // ------------------------------------------------------------------ ambience
@@ -328,6 +385,14 @@ export class AudioDirector {
       case 'warn':        tone(220, 0.5, 'triangle', 0.2, 160); break;
       case 'grip_lost':   noise(0.4, 300, 0.35); tone(90, 0.5, 'square', 0.14, 50); break;
       case 'grip_regain': tone(320, 0.2, 'sine', 0.18, 520); break;
+      // A slate lifted off the bottom: a scrape, then a small clear note.
+      case 'page':        noise(0.22, 1400, 0.16); tone(880, 0.3, 'sine', 0.13, 1320); break;
+      // Iron hinge, then the chord. The one sound in the game allowed to be a
+      // reward rather than information.
+      case 'chest':
+        noise(0.5, 240, 0.22);
+        [262, 392, 523, 659].forEach((f, i) => tone(f, 1.6 - i * 0.1, 'triangle', 0.13));
+        break;
       case 'bong':        this._bong(); break;
       default: break;
     }
@@ -376,20 +441,23 @@ export class AudioDirector {
 
   // ---------------------------------------------------------------------- trip
 
-  tripStart() {
-    this.sfx('bong');
-    this.setLayer('trip', 1.2);
-  }
-
+  // The trip does not change the song. It phases the one already playing and
+  // sweeps the filter across it, both off uTrip — so the record keeps running
+  // through the whole sequence and comes back out the other side where it was.
+  tripStart() { this.sfx('bong'); }
   tripTaper() { /* the camera is coming home; uTrip does the rest in update() */ }
-
-  tripEnd() { this.setLayer('calm', 4); }
+  tripEnd() { /* likewise */ }
 
   death() {
     this.heartbeat(false);
     const now = this.ctx.currentTime;
     this.master.gain.setTargetAtTime(0.15, now, 0.6);
     this.lowpass.frequency.setTargetAtTime(180, now, 0.8);
+  }
+
+  /** Undo death(). The filter recovers on its own in update(); master doesn't. */
+  revive() {
+    this.master.gain.setTargetAtTime(0.9, this.ctx.currentTime, 0.4);
   }
 
   duck(on) {
@@ -437,11 +505,8 @@ export class AudioDirector {
     this.lowpass.frequency.setTargetAtTime(Math.max(120, cutoff), now, 0.12);
     this.choke = choke;
 
-    // ---- Music layer follows the run ----
-    if (!this.layerName || this.layerName !== 'trip' || trip < 0.02) {
-      const want = trip > 0.02 ? 'trip' : (choke > 0.05 ? 'tension' : 'calm');
-      if (want !== this.layerName) this.setLayer(want);
-    }
+    // ---- The record keeps playing ----
+    this._pumpPlaylist();
 
     // ---- Analyser ----
     this.analyser.getByteFrequencyData(this._freq);
@@ -452,8 +517,15 @@ export class AudioDirector {
   }
 }
 
-function lerp(a, b, t) { return a + (b - a) * Math.min(1, Math.max(0, t)); }
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+function shuffled(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 function avg(arr, from, to) {
   let s = 0;
   for (let i = from; i < to; i++) s += arr[i];

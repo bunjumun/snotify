@@ -21,8 +21,13 @@ const COLORS = {
   baggie: '#b6e88a',
   fish: '#6fd8e0',
   chest: '#ffc061',
+  log: '#9ad7ff',
   landmark: '#4b6f78',
 };
+
+// Schools and slates are background detail; bongs, baggies and the chest are
+// things you act on. Size sorts them so a full dish still reads at a glance.
+const SMALL = new Set(['baggie', 'log', 'fish']);
 
 export class Radar {
   constructor(canvas) {
@@ -115,7 +120,7 @@ export class Radar {
       }
 
       const col = COLORS[b.type] || '#8b90a0';
-      const size = clamped ? 1.8 : (b.type === 'baggie' ? 2.1 : 3.2);
+      const size = clamped ? 1.8 : (SMALL.has(b.type) ? 2.1 : 3.2);
       const alpha = clamped ? 0.38 : 1;
 
       ctx.globalAlpha = alpha * (b.strength ?? 1);

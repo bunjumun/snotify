@@ -123,7 +123,7 @@ export class Intro {
 
     if (this._t > this._nudgeAt) {
       this._nudgeAt = this._t + 40;
-      this._nudge();
+      this.nudge();
     }
   }
 
@@ -171,8 +171,11 @@ export class Intro {
     }
   }
 
-  /** Never a waypoint. The fog is the game; an arrow through it throws that away. */
-  _nudge() {
+  /**
+   * Never a waypoint. The fog is the game; an arrow through it throws that away.
+   * Public, because the hint button routes here while the opening is running.
+   */
+  nudge() {
     const g = this.game;
     if (this.step === 0 && this.fish1) {
       g.hud.say(`Something is glowing ${this._bearingTo(this.fish1.group.position)}.`, { seconds: 4 });

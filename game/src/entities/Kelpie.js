@@ -30,15 +30,6 @@ import { CFG } from '../../config.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
-// Four seats. Fractions of girth across and of length along, so they move with
-// any change to her proportions instead of drifting off her back.
-const RIDER_GRIPS = [
-  { x: 0.00, z: 0.10 },   // 0 — the withers, and the one the camera rides
-  { x: -0.80, z: 0.24 },  // 1 — off her left flank
-  { x: 0.80, z: 0.26 },   // 2 — and her right
-  { x: 0.00, z: 0.44 },   // 3 — last, over the hips
-];
-
 export class Kelpie {
   constructor() {
     const P = CFG.palette;
@@ -475,21 +466,40 @@ export class Kelpie {
       );
       this.mane.add(strip);
     }
+
+    // Weed at the nape. She has been down here a long time and things grow on
+    // her — this is the bit that reads as SEAWEED rather than as hair: longer,
+    // thinner, denser, and hung right at the back of the neck where it streams
+    // out behind the skull. The mane shader already lays strands aft with speed,
+    // so at a standstill it drifts and at a sprint it goes flat, for free.
+    for (let i = 0; i < 9; i++) {
+      const w = 0.055 + Math.random() * 0.045;
+      const weed = this._strand(w, Math.random() * 6.28, 8);
+      weed.position.set(
+        (Math.random() - 0.5) * 0.34,
+        1.5 + (Math.random() - 0.5) * 0.3,
+        -2.55 + Math.random() * 0.9,
+      );
+      weed.scale.y = 2.2 + Math.random() * 1.5;
+      weed.rotation.set(
+        -1.28 - Math.random() * 0.22,
+        (Math.random() - 0.5) * 0.8,
+        (Math.random() - 0.5) * 0.55,
+      );
+      this.mane.add(weed);
+    }
+
     this.group.add(this.mane);
   }
 
   // ------------------------------------------------------------------ motion
 
   /**
-   * Where a rider's chain anchors. Four of them ride her — one per band member —
-   * so they get four grips spread along and across her back rather than all
-   * hanging off the same knot. Rider 0 is at the withers and is the one the
-   * camera rides with.
+   * The one knot on her back. All four riders hang off this: the first holds the
+   * rope, and the rest are hitched to each other in a line behind him.
    */
-  gripPoint(out, i = 0) {
-    const K = CFG.kelpie;
-    const g = RIDER_GRIPS[i % RIDER_GRIPS.length];
-    return out.set(g.x * K.girth, K.girth * 0.55, K.length * g.z)
+  gripPoint(out) {
+    return out.set(0, CFG.kelpie.girth * 0.55, CFG.kelpie.length * 0.12)
       .applyQuaternion(this.quaternion)
       .add(this.position);
   }

@@ -333,6 +333,11 @@ export class Diver {
     if (this.onGrab) this.onGrab();
   }
 
+  /** Where the next rider down the line ties on: this one's own body. */
+  hitchPoint(out) {
+    return out.copy(this.chain[this.chain.length - 1].pos);
+  }
+
   /** Helmet position — bubbles stream from here. */
   helmetPosition(out) {
     const head = this.chain[this.chain.length - 1];

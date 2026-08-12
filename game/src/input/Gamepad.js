@@ -69,7 +69,7 @@ export class Gamepad_ {
     const a = btn(B.A);
 
     raw.steer.x += lx;
-    raw.steer.y += ly;
+    raw.steer.y -= ly;   // stick up is negative; nose up is positive
     raw.lamp.x += rx;
     raw.lamp.y += ry;
     if (rt > 0.04) raw.thrust = Math.max(raw.thrust, rt);

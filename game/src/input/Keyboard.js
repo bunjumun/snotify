@@ -58,8 +58,10 @@ export class Keyboard {
     let sx = 0, sy = 0;
     if (k.has('KeyA') || k.has('ArrowLeft')) sx -= 1;
     if (k.has('KeyD') || k.has('ArrowRight')) sx += 1;
-    if (k.has('KeyW') || k.has('ArrowUp')) sy -= 1;
-    if (k.has('KeyS') || k.has('ArrowDown')) sy += 1;
+    // Not inverted. Up is up: intent.steer.y is "positive = nose up", and every
+    // adapter is responsible for handing it over that way round.
+    if (k.has('KeyW') || k.has('ArrowUp')) sy += 1;
+    if (k.has('KeyS') || k.has('ArrowDown')) sy -= 1;
 
     raw.steer.x += sx;
     raw.steer.y += sy;
@@ -67,10 +69,10 @@ export class Keyboard {
     if (k.has('ShiftLeft') || k.has('ShiftRight')) raw.boost = true;
     if (k.has('KeyE') || k.has('Enter')) raw.interact = true;
 
-    // Absolute stick. Signs match the keys: cursor up pitches the same way
-    // ArrowUp does, cursor right turns the same way D does.
+    // Absolute stick. Screen Y grows downward, so it's negated: cursor up is
+    // nose up, same as ArrowUp, and cursor right turns right, same as D.
     raw.steer.x += this.mouse.x;
-    raw.steer.y += this.mouse.y;
+    raw.steer.y -= this.mouse.y;
   }
 }
 

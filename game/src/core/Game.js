@@ -323,9 +323,10 @@ export class Game {
     const spawn = this._spawnPose();
     this.kelpie.reset(spawn.position, spawn.yaw);
     const anchor = new THREE.Vector3();
-    for (let i = 0; i < this.divers.length; i++) {
-      this.kelpie.gripPoint(anchor, i);
-      this.divers[i].reset(anchor);
+    this.kelpie.gripPoint(anchor);
+    for (const d of this.divers) {
+      d.reset(anchor);
+      d.hitchPoint(anchor);   // the next one starts where this one ends
     }
     this.rig.snapTo(this.kelpie);
     this.breath.reset();
@@ -529,8 +530,13 @@ export class Game {
 
   _followEntities(dt) {
     const anchor = this._anchor || (this._anchor = new THREE.Vector3());
+    // In series, not in parallel. One rope off her back, and the four of them
+    // strung along it — the first holds on, everyone else holds the man in
+    // front. It also means rider 0 losing his grip takes the whole line with
+    // him, which is the correct and much funnier outcome.
     for (let i = 0; i < this.divers.length; i++) {
-      this.kelpie.gripPoint(anchor, i);
+      if (i === 0) this.kelpie.gripPoint(anchor);
+      else this.divers[i - 1].hitchPoint(anchor);
       this.divers[i].update(dt, anchor, this.kelpie);
     }
 

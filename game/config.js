@@ -467,7 +467,9 @@ export const CFG = {
     // fish-belly white blows straight out every time he looks up at her.
     kelpieBelly: 0x5d7267,
     kelpieFin: 0x2f5c3a,
-    kelpieMane: 0x163327,
+    // Lighter than her hide on purpose. She reads as a silhouette against bright
+    // water, and weed the same value as the body is weed nobody ever sees.
+    kelpieMane: 0x35664a,
     kelpieEye: 0xbfd8c4,
     brass: 0xb08d4f,
     canvas: 0x6b6455,

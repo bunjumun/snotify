@@ -123,7 +123,7 @@ export class Touch {
 
   contribute(raw) {
     raw.steer.x += this.vec.x;
-    raw.steer.y += this.vec.y;
+    raw.steer.y -= this.vec.y;   // screen Y grows downward; nose up is positive
     if (this.thrust) raw.thrust = Math.max(raw.thrust, 1);
     if (this.boost) raw.boost = true;
     if (this.use) raw.interact = true;

@@ -207,11 +207,6 @@ setInvert.onchange = () => {
   try { localStorage.setItem('lakehorse.invert', setInvert.checked ? '1' : '0'); } catch { /* private mode */ }
 };
 
-document.getElementById('btnRecentre').onclick = () => {
-  game.tilt?.recentre();
-  game.hud.say('Recentred.', { seconds: 1.5 });
-};
-
 function wireVolumes(audio) {
   const map = [
     ['volMusic', 'music'],

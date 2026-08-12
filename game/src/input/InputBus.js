@@ -27,7 +27,7 @@ export class InputBus {
       thrust: 0,              // 0..1
       kick: false,            // rising edge of thrust — one tail beat per press
       boost: false,
-      interact: false,        // rising edge only, cleared after one frame
+      interact: false,        // buffered press — stays live until consumed or stale
       lamp: { x: 0, y: 0 },   // aim offset, -1..1
     };
 
@@ -44,6 +44,7 @@ export class InputBus {
     this.activeDevice = 'keyboard';
     this._prevInteract = false;
     this._prevThrust = false;
+    this._interactAt = -Infinity;   // when `use` was last pressed; see update()
     this._lastActivity = {};
   }
 
@@ -76,9 +77,18 @@ export class InputBus {
     i.lamp.x = clamp1(r.lamp.x);
     i.lamp.y = clamp1(r.lamp.y);
 
-    // Edge-trigger: "use" should fire once per press, not once per frame held.
-    i.interact = r.interact && !this._prevInteract;
+    // "Use" is buffered rather than edge-triggered. Pressing it is a decision
+    // made a frame or two before the game agrees you are in range, and consuming
+    // it on exactly the frame it went down threw that decision away in silence:
+    // press E just short of a bong's radius and nothing happened, which reads as
+    // a broken button rather than as being early. The press now stays live for
+    // bufferMs, so the game can still find something for it to have meant.
+    //
+    // Whoever acts on it must call consumeInteract(). Without that the one press
+    // fires again on every frame left in the window.
+    if (r.interact && !this._prevInteract) this._interactAt = performance.now();
     this._prevInteract = r.interact;
+    i.interact = performance.now() - this._interactAt <= CFG.input.bufferMs;
 
     // Thrust is read as both a level and an edge, because swim is two verbs on
     // one button: hold it to cruise, tap it to kick. The threshold is what lets
@@ -86,6 +96,16 @@ export class InputBus {
     const pressed = i.thrust > 0.5;
     i.kick = pressed && !this._prevThrust;
     this._prevThrust = pressed;
+  }
+
+  /**
+   * Spend the buffered `use` press. Called by whatever acted on it — the buffer
+   * is a window, not a queue, and a window nobody closes is a press that fires
+   * every frame until it expires.
+   */
+  consumeInteract() {
+    this._interactAt = -Infinity;
+    this.intent.interact = false;
   }
 
   dispose() {

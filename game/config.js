@@ -517,6 +517,20 @@ export const CFG = {
     responseCurve: 1.8,   // >1 = fine control near centre
     gamepadDeadzone: 0.12,
 
+    // How long a `use` press stays live waiting for something to use. A press
+    // is a decision made a frame or two before the game agrees you are in
+    // range, and consuming it on exactly the frame it goes down throws that
+    // decision away with no feedback at all, which reads as the button not
+    // working. 110ms sits in the middle of the 80-120ms band that fighting
+    // games and platformers settled on: long enough to catch the early press,
+    // short enough that it can never fire an interaction you have swum past.
+    //
+    // This deliberately does NOT apply to `kick`. See the note in Kelpie.js —
+    // a beat inside the cooldown is dropped rather than queued, and a buffer
+    // wider than the cooldown re-introduces exactly the banked credit that
+    // decision rejects.
+    bufferMs: 110,
+
     // Tilt. iOS needs requestPermission() from inside a user gesture (the DIVE
     // IN button does it) and HTTPS. Neutral is captured on start so the phone
     // can be held at whatever angle is comfortable, and screen.orientation.angle
@@ -548,11 +562,26 @@ export const CFG = {
       crossfade: 6,       // seconds of overlap between one track and the next
       shuffle: false,     // running order is the band's, not a shuffle's
       nowPlayingFor: 7,   // how long the title card stays up on a change
+      // How far ahead of the crossfade the next track is handed to the idle
+      // deck so preload='auto' has somewhere to put it. It must comfortably
+      // exceed `crossfade`: the whole point is that the buffering happens
+      // BEFORE the fade opens, and a value at or under the crossfade would put
+      // the download back in the middle of it, which is what this fixes. Twenty
+      // seconds is enough for a mix to get a head start on mobile data without
+      // holding a second stream open for a meaningful part of every track.
+      preload: 20,
     },
 
     // The song is the point — it's the band's own record. Effects sit under it,
     // never on top of it.
     volumes: { music: 0.85, sfx: 0.38, ambience: 0.22 },
+
+    // Every one-shot is synthesised from fixed numbers, so without this the
+    // tenth baggie is bit-identical to the first and the ear reads exact
+    // repetition as synthetic immediately. A per-invocation pitch multiplier of
+    // ±5% is under a semitone: not heard as a wrong note, only as the same
+    // sound happening twice rather than the same recording played twice.
+    sfxVariance: 0.05,
 
     // The filter is a SIGNAL, not a coating. Running a permanent 800Hz lowpass
     // over the music "sounds underwater" for about ten seconds and then just

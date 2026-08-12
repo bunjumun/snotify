@@ -187,8 +187,10 @@ export class AudioDirector {
    */
   async loadMusic() {
     const manifest = await this._readManifest();
-    // One title or several — the chest can hold more than one track.
+    // One title or several — the chest can hold more than one track — and the
+    // name of the release they belong to, which is what the reward screen says.
     this._treasureTitles = [manifest.treasure].flat().filter(Boolean);
+    this.treasureName = manifest.treasureName || null;
 
     // Live first. game_tracks() returns the CURRENT top of each stack, so a new
     // mix is in the game on the next load with nothing to remember. music.json

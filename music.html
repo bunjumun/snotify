@@ -375,6 +375,23 @@
   .pstar:hover { color: #ffc93c; background: var(--bg-row); }
   .pstar.on { color: #ffc93c; }
   .pstar b { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* In the game, or not. It lives in the mix's own text column, under the name
+     and the changelog, rather than in the action strip on the right — the strip
+     fades in on hover and this is standing information you want while you are
+     reading the stack, not an action you go hunting for. It also kept colliding
+     with the icons there, which is the layout telling you it was in the wrong
+     place. Ticked is loud on purpose: that mix is public. */
+  .pgame {
+    margin-top: 7px; cursor: pointer; user-select: none; display: inline-flex; align-items: center;
+    gap: 5px; padding: 3px 8px; border-radius: 7px; font-size: 10.5px; font-weight: 800;
+    letter-spacing: .06em; color: var(--text-mute); border: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  .pgame:hover { background: var(--bg-row); color: var(--text-dim); }
+  .pgame input { accent-color: #6ee7a8; width: 13px; height: 13px; margin: 0; cursor: pointer; }
+  .pgame.on { color: #6ee7a8; border-color: rgba(110,231,168,.4); background: rgba(110,231,168,.1); }
+  .pgame.err { color: #ff6b6b; border-color: rgba(255,107,107,.45); background: rgba(255,107,107,.12); }
   .latest.fav { color: #ffc93c; border-color: rgba(255,201,60,.45); background: rgba(255,201,60,.12); }
 
   /* Links out: where the words live, what this is chasing, what it looks like. */
@@ -1680,6 +1697,7 @@ async function init() {
     $('artBtn').href  = 'art.html?b='   + encodeURIComponent(curBand);
     $('homeBtn').href = 'index.html?b=' + encodeURIComponent(curBand);
     songs = normalize(payload);
+    loadGameFlags();                 // in the background — the boxes fill in
 
     if (route.project){
       curProject = { slug: payload.slug, name: payload.name, band: payload.band,
@@ -4118,6 +4136,12 @@ function renderProfileVersions(){
           vi === fav ? '<span class="latest fav">★ FAVOURITE</span>' : ''}</div>
         ${sub ? `<div class="pvsub">${esc(sub)}</div>` : ''}
         ${v.changelog ? `<div class="pvlog">${esc(v.changelog)}</div>` : ''}
+        ${owner && v.id ? `<label class="pgame ${gameOk.has(v.id) ? 'on' : ''}" data-act="game"
+           title="${gameOk.has(v.id)
+             ? `${esc(v.name)} is the mix the Lakehorse game plays. Untick to take it out.`
+             : `Put ${esc(v.name)} in the Lakehorse game. One mix per song — ticking this swaps out whichever is in there now. It becomes public: the game is an open page.`}">
+           <input type="checkbox" data-vid="${esc(v.id)}" ${gameOk.has(v.id) ? 'checked' : ''} />
+           <span>🎮 IN GAME</span></label>` : ''}
       </div>
       ${owner ? `<span class="pstar ${iStarred(v) ? 'on' : ''}" data-act="star"
          title="${iStarred(v) ? 'You starred this mix — click to take it back'
@@ -4143,6 +4167,61 @@ $('pTitle').addEventListener('click', () => {
     libRpc('rename_song', { f: s.folder || s.title, new_title: v }));
 });
 
+// ---------- The game checkbox ----------
+// Which mixes the Lakehorse game plays. The flag lives on the VERSION, not the
+// song (see supabase/schema-v20.sql): the game used to follow whatever was on
+// top of a flagged song's stack, which meant reordering a stack silently
+// changed what the public game played — and once published an experiment called
+// "vocal mute idea" that way.
+//
+// One mix per song. Ticking a new one swaps out whichever was in there, which
+// is why these read as radio buttons inside a stack rather than as a free-for-
+// all, and it's what stops the running order growing a duplicate.
+let gameOk = new Set();
+
+async function loadGameFlags(){
+  try {
+    gameOk = new Set(await libRpc('game_flags', {}) || []);
+  } catch {
+    // v20 not applied yet, or offline. No boxes ticked is the honest picture,
+    // and the rest of the page carries on regardless.
+    gameOk = new Set();
+  }
+  if (profiling) renderProfileVersions();
+}
+
+async function setGameOk(v, on, label){
+  const prev = new Set(gameOk);
+  // Optimistic, and exclusive within the stack — the same rule the database
+  // enforces, applied here so the other boxes uncheck as you watch.
+  if (on){
+    for (const other of activeSong.versions) if (other.id) gameOk.delete(other.id);
+    gameOk.add(v.id);
+  } else {
+    gameOk.delete(v.id);
+  }
+  renderProfileVersions();
+  try {
+    await libRpc('set_version_game_ok', { vid: v.id, on_: on });
+  } catch (err) {
+    // Put it back the way it was and say why, on the box itself — a checkbox
+    // that silently springs back is the most confusing thing a checkbox can do.
+    gameOk = prev;
+    renderProfileVersions();
+    const back = $('pVers').querySelector(`.pgame input[data-vid="${v.id}"]`)?.closest('.pgame');
+    if (back){
+      const was = back.querySelector('span').textContent;
+      back.querySelector('span').textContent = /function|schema/i.test(err.message || '')
+        ? 'NEEDS v20' : 'FAILED';
+      back.classList.add('err');
+      setTimeout(() => {
+        const el = $('pVers').querySelector(`.pgame input[data-vid="${v.id}"]`)?.closest('.pgame');
+        if (el){ el.querySelector('span').textContent = was; el.classList.remove('err'); }
+      }, 2600);
+    }
+  }
+}
+
 $('pVers').addEventListener('click', (e) => {
   const row = e.target.closest('.pver');
   if (!row || !activeSong) return;
@@ -4150,6 +4229,16 @@ $('pVers').addEventListener('click', (e) => {
   const v = activeSong.versions[vi];
   if (!v) return;
   const act = e.target.closest('[data-act]');
+  // The game checkbox. Let the box toggle itself, then tell the database — and
+  // don't fall through to switchVersion, because ticking a mix is not the same
+  // gesture as choosing to listen to it.
+  if (act && act.dataset.act === 'game'){
+    e.stopPropagation();
+    const box = act.querySelector('input');
+    if (e.target !== box) return;      // the <label> already forwards the click
+    setGameOk(v, box.checked, act);
+    return;
+  }
   if (act && act.dataset.act === 'star'){ toggleStar(activeSong, vi); return; }
   if (act && act.dataset.act === 'rename'){
     // The name only, not the row: replacing the whole row would take the

@@ -46,8 +46,12 @@ export class RewardScreen {
   show(tracks) {
     this.tracks = (Array.isArray(tracks) ? tracks : [tracks]).filter(Boolean);
 
+    // The RELEASE is what the chest held, not a list of filenames. `treasureName`
+    // in music.json names it; without one, fall back to naming the tracks, which
+    // is right for a chest holding one song.
     document.getElementById('rwTitle').textContent =
-      this.tracks.length ? listNames(this.tracks.map((t) => t.title)) : 'Light & Lessons';
+      this.game.audio?.treasureName
+      || (this.tracks.length ? listNames(this.tracks.map((t) => t.title)) : 'LIGHT LESSONS');
     this.status.textContent = '';
     this._buildButtons();
     this.form.classList.remove('hide');

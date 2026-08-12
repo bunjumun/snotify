@@ -72,9 +72,11 @@ async function bootAudio() {
     game.audio = audio;
     wireVolumes(audio);
 
-    // The record announces itself on every change, and the pill skips.
+    // The record announces itself on every change, and the ⏭ skips. Only the
+    // button skips: the pill stays on screen now, and a label you can brush
+    // past that silently changes the song is a trap rather than a control.
     audio.onTrack = (t, i, n) => game.hud.nowPlaying(t, i, n);
-    document.getElementById('np').onclick = () => audio.skip();
+    document.getElementById('npSkip').onclick = (e) => { e.stopPropagation(); audio.skip(); };
 
     // Tracks stream in behind the game rather than holding up the dive; the
     // procedural bed covers the gap so it's never silent.

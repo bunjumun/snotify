@@ -57,6 +57,7 @@ export class HUD {
     const version = track.version ? ` <span>· ${escapeHtml(track.version)}</span>` : '';
     this.el.npText.innerHTML = `<b>${escapeHtml(track.title)}</b>${version}${of}`;
     this.el.np.classList.add('on');
+    this.el.np.classList.remove('dim');
     this._npTimer = CFG.audio.playlist.nowPlayingFor;
   }
 
@@ -123,7 +124,9 @@ export class HUD {
     }
     if (this._npTimer > 0) {
       this._npTimer -= dt;
-      if (this._npTimer <= 0) this.el.np.classList.remove('on');
+      // It dims rather than leaving. The skip button is the only control over
+      // the record and it should still be there when you want it.
+      if (this._npTimer <= 0) this.el.np.classList.add('dim');
     }
   }
 

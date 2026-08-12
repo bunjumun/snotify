@@ -83,23 +83,31 @@ export class Bong {
     this.group.add(this.light);
   }
 
-  /** @param {boolean} canUse lighter in hand AND four baggies */
-  update(dt, t, canUse) {
+  /**
+   * @param {boolean} canUse lighter in hand AND four baggies
+   * @param {{low:number,mid:number,high:number,kick:number}} [react] the record
+   */
+  update(dt, t, canUse, react = null) {
     this.ready = canUse;
     const target = canUse ? 1 : 0;
     this._lit += (target - this._lit) * Math.min(1, dt * 3.2);
 
-    // Slow breathing pulse when ready — alive, not a blinking waypoint.
+    // Slow breathing pulse when ready — alive, not a blinking waypoint. On top
+    // of that the bowl takes the kick, so a packed bong smoulders in time with
+    // whatever is playing: it's the one object in the world you approach on
+    // purpose, and it should feel like it's waiting for you.
+    const kick = react ? react.kick : 0;
     const pulse = 0.75 + 0.25 * Math.sin(t * 1.7 + this.phase);
     const lit = this._lit * pulse;
+    this._kick = kick;
 
     this.waterMat.emissiveIntensity = 0.2 + lit * 2.6;
     this.waterMat.emissive.setHex(this._lit > 0.02 ? CFG.bong.hueWhenReady : CFG.bong.hueWhenDark);
     this.waterMat.color.setHex(this._lit > 0.02 ? 0x4e8f5e : 0x2c3a38);
     this.glassMat.emissiveIntensity = 0.3 + lit * 0.9;
-    this.bowlMat.emissiveIntensity = lit * 3.0;
+    this.bowlMat.emissiveIntensity = lit * (3.0 + kick * 5.5);
     this.bowlMat.emissive.setHex(0xff7a3a); // the packed bowl smoulders orange
-    this.light.intensity = lit * 260;
+    this.light.intensity = lit * 260 * (1 + kick * 0.5);
   }
 
   /**
@@ -127,13 +135,16 @@ export class Bong {
     // vertical line of dots.
     const w = Math.sin(this.phase + performance.now() * 0.0006) * 0.5;
 
-    this._bubAcc += (CFG.bong.plumeBubbles + lit * CFG.bong.plumeBubblesLit) * dt;
+    // A packed bong exhales harder on the beat, so the column pulses rather
+    // than trickling — visible from further out than the glass is.
+    const beat = 1 + (this._kick || 0) * lit * 1.6;
+    this._bubAcc += (CFG.bong.plumeBubbles + lit * CFG.bong.plumeBubblesLit) * beat * dt;
     while (this._bubAcc >= 1) {
       bubbles?.spawn(x + w, y, z + w * 0.6, 0.5 + lit * 0.5);
       this._bubAcc -= 1;
     }
 
-    this._smokeAcc += (CFG.bong.plumeSmoke + lit * CFG.bong.plumeSmokeLit) * dt;
+    this._smokeAcc += (CFG.bong.plumeSmoke + lit * CFG.bong.plumeSmokeLit) * beat * dt;
     while (this._smokeAcc >= 1) {
       smoke?.spawn(x + w * 0.7, y, z + w * 0.4, 0.55 + lit * 0.45, 0.3);
       this._smokeAcc -= 1;

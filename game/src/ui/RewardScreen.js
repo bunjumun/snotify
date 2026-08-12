@@ -55,8 +55,11 @@ export class RewardScreen {
     this.status.textContent = '';
     this._buildButtons();
     this.form.classList.remove('hide');
-    // Someone who has been here before gets the file, not the form again.
-    if (this.game.progress.claimed) this._reveal();
+    // Only an actual subscriber skips the form. Someone who pressed "no thanks"
+    // last time is not on the list, and hiding the field from them forever
+    // because they once declined is how a mailing list quietly stops growing.
+    // They still get the download either way — the ask is just still there.
+    if (this.game.progress.subscribed) this._reveal();
     this.el.classList.remove('hide');
     this.game.audio?.duck(true);
     if (this.game.state === 'play') this.game.state = 'paused';
@@ -88,6 +91,7 @@ export class RewardScreen {
       });
       if (!r.ok) throw new Error(String(r.status));
       this.status.textContent = "You're on the list.";
+      this.game.progress.markSubscribed();
     } catch {
       // v17 not applied, or offline. Keep it so it isn't simply lost, and don't
       // make it the player's problem.

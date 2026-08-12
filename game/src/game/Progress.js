@@ -16,6 +16,7 @@ const DEFAULTS = {
   chestFound: false,
   bestTime: null,     // seconds to find the chest
   claimed: false,     // they've already been through the reward screen once
+  subscribed: false,  // and they actually left an address while they were there
   logPages: [],
   runs: 0,
 };
@@ -49,9 +50,21 @@ export class Progress {
     this.save();
   }
 
-  /** Asking for the same address on every run is how you lose a mailing list. */
+  /**
+   * Two different facts, and conflating them cost a mailing list.
+   *
+   * `claimed` means they have had the download. `subscribed` means they left an
+   * address. The reward screen used to skip the form for anyone who was
+   * `claimed`, which includes everyone who pressed "no thanks" — so a player who
+   * declined once was never asked again, on any run, forever. Asking a
+   * subscriber for the same address every time is rude; never asking someone who
+   * simply wasn't ready the first time is just leaving it on the floor.
+   */
   get claimed() { return !!this.data.claimed; }
   markClaimed() { this.data.claimed = true; this.save(); }
+
+  get subscribed() { return !!this.data.subscribed; }
+  markSubscribed() { this.data.subscribed = true; this.save(); }
 
   addLogPage(id) {
     if (!this.data.logPages.includes(id)) { this.data.logPages.push(id); this.save(); }

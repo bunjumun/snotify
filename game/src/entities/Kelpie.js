@@ -721,10 +721,30 @@ export class Kelpie {
   }
 
   setTrip(v) {
+    this._trip = v;
     this.uniforms.uTrip.value = v;
-    // Mane and eye go bioluminescent through the trip.
-    this.eyeMat.emissiveIntensity = 0.55 + v * 4.2;
-    this.maneMat.emissiveIntensity = v * 2.8;
+    this._applyGlow();
+  }
+
+  /**
+   * The record, in her.
+   *
+   * Her eyes catch the kick and the mane swells with the mids — she is the one
+   * thing on screen the whole time, so if anything is going to move with the
+   * music it had better be her. Kept small: this is a horse breathing in time,
+   * not a light show strapped to a horse.
+   */
+  setReact(r) {
+    this._kick = r ? r.kick : 0;
+    this._mid = r ? r.mid : 0;
+    this._applyGlow();
+  }
+
+  _applyGlow() {
+    const v = this._trip || 0;
+    const kick = this._kick || 0, mid = this._mid || 0;
+    this.eyeMat.emissiveIntensity = 0.55 + v * 4.2 + kick * 1.6;
+    this.maneMat.emissiveIntensity = v * 2.8 + mid * 0.35;
   }
 
   /** Used by Breath when the tank hits zero — she stops swimming and sinks. */

@@ -31,6 +31,8 @@ import * as THREE from 'three';
 import { CFG } from '../../config.js';
 
 const BEAM_LEN = 40;
+/** Stands in for the analyser before the first frame of audio. */
+const ZERO = { low: 0, mid: 0, high: 0, kick: 0 };
 
 const BEAM_VERT = `
   uniform float uLen;
@@ -90,6 +92,7 @@ export class Lamp {
         // A hair of toe-out, the way headlights are set, so the pair covers more
         // water than one beam of twice the power would.
         yaw: (i === 0 ? -1 : 1) * L.eyeToe, pitch: 0,
+        tint: i === 0 ? L.tintEyeA : L.tintEyeB,
         beam: true, glow: false,
       }));
     }
@@ -102,6 +105,7 @@ export class Lamp {
         base: L.helmetIntensity, angle: L.helmetAngle,
         yaw: t * L.helmetSpread,
         pitch: (i % 2 ? 1 : -1) * L.helmetSpread * 0.45,
+        tint: L.tintHelmet,
         beam: false, glow: true,
       }));
     }
@@ -130,6 +134,8 @@ export class Lamp {
     const L = CFG.lamp;
     const head = {
       base: opt.base, angle: opt.angle, yaw: opt.yaw, pitch: opt.pitch,
+      tint: new THREE.Color(opt.tint ?? L.color),
+      col: new THREE.Color(),
       light: new THREE.SpotLight(L.dimColor, 0, L.dimDistance, opt.angle, L.penumbra, L.decay),
       target: new THREE.Object3D(),
     };
@@ -178,9 +184,10 @@ export class Lamp {
    *   two eyes first, then a helmet per rider. Short arrays are tolerated — a
    *   head with nowhere to be is switched off rather than left at the origin.
    */
-  update(dt, origins, baseRot, aimIntent) {
+  update(dt, origins, baseRot, aimIntent, react = null) {
     const L = CFG.lamp;
     this._t += dt;
+    const r = react || ZERO;
 
     // Ease between dim and lit. Slow enough to be an event you notice.
     const target = this.lit ? 1 : 0;
@@ -211,6 +218,13 @@ export class Lamp {
     this._col.copy(this._cold).lerp(this._warm, m);
     const dist = THREE.MathUtils.lerp(L.dimDistance, L.distance, m);
 
+    // The record, in the light. A kick is a flash with a tail, the mids are the
+    // beam breathing, and the highs push each source further toward its own
+    // colour — so a busy passage is visibly more coloured than a quiet one.
+    // All of it scales with `m`: a dead lamp doesn't dance.
+    const beat = 1 + (r.kick * L.beatKick + r.mid * L.beatMid) * m;
+    const tintAmt = L.tintAmount * m * (1 - L.beatTint * 0.5 + r.high * L.beatTint);
+
     for (let i = 0; i < this.heads.length; i++) {
       const h = this.heads[i];
       const at = origins[i];
@@ -226,8 +240,9 @@ export class Lamp {
 
       h.light.position.copy(at);
       h.target.position.copy(at).addScaledVector(this._headDir, 25);
-      h.light.color.copy(this._col);
-      h.light.intensity = THREE.MathUtils.lerp(h.base * dimRatio, h.base, m) * f;
+      h.col.copy(this._col).lerp(h.tint, tintAmt);
+      h.light.color.copy(h.col);
+      h.light.intensity = THREE.MathUtils.lerp(h.base * dimRatio, h.base, m) * f * beat;
       h.light.distance = dist;
       h.light.angle = THREE.MathUtils.lerp(h.angle * 1.35, h.angle, m);
 
@@ -235,14 +250,14 @@ export class Lamp {
         h.beam.visible = true;
         h.beam.position.copy(at);
         h.beam.quaternion.setFromUnitVectors(this._fwd, this._headDir);
-        h.uniforms.uColor.value.copy(this._col);
-        h.uniforms.uStrength.value = THREE.MathUtils.lerp(0.10, L.beamStrength, m) * f;
+        h.uniforms.uColor.value.copy(h.col);
+        h.uniforms.uStrength.value = THREE.MathUtils.lerp(0.10, L.beamStrength, m) * f * beat;
         h.uniforms.uTime.value = this._t;
         h.beam.scale.setScalar(THREE.MathUtils.lerp(0.5, 1.0, m));
       }
       if (h.glow) {
         h.glow.position.copy(at);
-        h.glowMat.color.copy(this._col);
+        h.glowMat.color.copy(h.col);
         h.glowMat.opacity = THREE.MathUtils.lerp(0.35, 0.8, m) * f;
         h.glow.scale.setScalar(THREE.MathUtils.lerp(0.7, 1.25, m) * f);
       }

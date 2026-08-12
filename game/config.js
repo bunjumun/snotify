@@ -168,6 +168,22 @@ export const CFG = {
     eyeIntensity: 300,
     eyeAngle: 0.34,
     eyeToe: 0.07,         // radians of toe-out per eye
+
+    // Colour. The plasma arc is a cold blue-white and six of them is a lot of
+    // one note, so each source is pulled toward its own hue: her eyes split
+    // green and violet — the green is the same green that's in her — and the
+    // riders' helmets run warm tungsten, which is what actually separates
+    // "hers" from "theirs" when the orbit swings out and shows you both.
+    tintEyeA: 0x74f0c0,   // her left — the green in the mane
+    tintEyeB: 0xa79bff,   // her right — colder, violet
+    tintHelmet: 0xffb877,  // old filament lamps, warm against all that teal
+    tintAmount: 0.6,      // how far from the plasma white each one is pulled
+
+    // And they move with the record. The kick is a transient, so it reads as a
+    // flash on the beat; mid is a level, so it reads as the beam breathing.
+    beatKick: 0.55,       // extra brightness at the top of a hit
+    beatMid: 0.3,         // how much the shaft swells with the mids
+    beatTint: 0.5,        // highs push the colour further from white
     // Deliberately faint. Four of them add up, they come from behind the camera
     // where nothing occludes them, and the moment they're bright enough to read
     // as work lights they flatten the fog — which is the whole picture. They are

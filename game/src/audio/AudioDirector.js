@@ -46,7 +46,12 @@ export class AudioDirector {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     this.ctx = new Ctx();
     this.ok = true;
-    this.react = { low: 0, mid: 0, high: 0 };
+    // low/mid/high are levels. `kick` is a transient — how far the bottom end
+    // has jumped above its own running floor — and it is the one worth having:
+    // a level makes things glow, an onset makes them hit, and everything in the
+    // world that flashes should flash on the beat rather than on the volume.
+    this.react = { low: 0, mid: 0, high: 0, kick: 0 };
+    this._lowFloor = 0;
     this.playlist = [];      // [{title, version, url}] in the band's running order
     this.index = -1;
     this.decks = [];         // two of them; see _makeDeck
@@ -567,6 +572,14 @@ export class AudioDirector {
     this.react.low = avg(this._freq, 0, Math.floor(n * 0.08)) / 255;
     this.react.mid = avg(this._freq, Math.floor(n * 0.08), Math.floor(n * 0.35)) / 255;
     this.react.high = avg(this._freq, Math.floor(n * 0.35), n) / 255;
+
+    // The floor tracks the low band slowly, so a sustained bass note sinks into
+    // it and stops counting while a fresh hit still stands out. Fast attack and
+    // a slow release on the result turns each onset into a flash with a tail,
+    // which is what the lights want — an instantaneous value flickers.
+    this._lowFloor += (this.react.low - this._lowFloor) * 0.045;
+    const hit = clamp01((this.react.low - this._lowFloor) * 3.6);
+    this.react.kick = Math.max(hit, this.react.kick * 0.86);
   }
 }
 

@@ -458,6 +458,7 @@ export class Game {
 
     // ---- FX ----
     const react = this.audio?.react ?? { low: 0, mid: 0, high: 0 };
+    this.kelpie.setReact(react);
     this.flora.update(dt, react.low, current);
     // Schools tighten in loud passages — the most visible thing the analyser does.
     this.shoals.update(dt, this.kelpie.position, react.mid);
@@ -581,7 +582,7 @@ export class Game {
     const steer = this.input.intent.steer;
     aim.x = steer.x * CFG.lamp.aimLead;
     aim.y = -steer.y * CFG.lamp.aimLead * 0.8;
-    this.lamp.update(dt, srcs, this.kelpie.quaternion, aim);
+    this.lamp.update(dt, srcs, this.kelpie.quaternion, aim, this.audio?.react);
   }
 
   /**
@@ -623,7 +624,7 @@ export class Game {
     let nearest = null, nearestD = Infinity;
 
     for (const b of this.bongs) {
-      b.update(dt, this.time, canUse);
+      b.update(dt, this.time, canUse, this.audio?.react);
       const d = b.distanceTo(this.kelpie.position);
       b.plume(dt, this.bubbles, this.smoke, d);
       if (d < nearestD) { nearestD = d; nearest = b; }

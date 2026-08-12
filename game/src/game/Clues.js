@@ -22,6 +22,14 @@
 // baggies, whoever turns up talks about baggies instead — because a player about
 // to hit DREAM OVER through bad luck rather than bad play should have somewhere
 // to turn, and that costs nothing to offer.
+//
+// And then there's being high. Sober, one fish talks to you, on a long cooldown,
+// working through the three clues in the order they were written. Under the
+// effects of a bowl, every school in the lake will answer: the clue is the good
+// one, the chest is on the sonar, and once you've had that they start telling you
+// what they know about the horse you're holding onto. That whole window is bought
+// with four baggies and it drains on the same curve as the colour, which is the
+// only reason it can be this generous — it is not a mode, it is a payoff.
 
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
@@ -47,6 +55,8 @@ export class Clues {
     this._ping = 0;
     this._lastBand = -1;
     this._volunteered = false;
+    this._toldHigh = false;    // the chest clue has been given while high
+    this._lore = 0;            // rotates, so the lore doesn't repeat itself
     this.tellers = [];         // live guide fish, cleaned up as they expire
 
     this.chest = new Chest(this._pickSpot(game.rng, game.wreck, game.seabed));
@@ -84,6 +94,7 @@ export class Clues {
     this.found = false;
     this.proximity = false;
     this._volunteered = false;
+    this._toldHigh = false;
     this._lastBand = -1;
     this.chest.close();
     for (const t of this.tellers) this.game.scene.remove(t.fish.group);
@@ -158,11 +169,21 @@ export class Clues {
       g.intro.nudge();
       return;
     }
-    this.cooldown = CFG.clues.askCooldown;
 
     // Lifeline first. Being told where the treasure is while you suffocate would
     // be a joke at the player's expense.
-    if (this._needsBaggies()) return this._stashHint();
+    if (this._needsBaggies()) {
+      this.cooldown = CFG.clues.askCooldown;
+      return this._stashHint();
+    }
+
+    // High: ask whatever is swimming past, on a short leash.
+    if (g.trip.value > CFG.clues.highAt) {
+      this.cooldown = CFG.clues.highCooldown;
+      return this._highHint();
+    }
+
+    this.cooldown = CFG.clues.askCooldown;
     if (this.found) return this._afterHint();
     return this._chestHint();
   }
@@ -216,6 +237,54 @@ export class Clues {
       `I have been in this water longer than the boat has.<br>` +
       `Stay near me and I'll tell you when you're close. ${d < CFG.clues.proximityNear
         ? `You already are.` : `You are not, yet.`}`);
+  }
+
+  /**
+   * High. Ask whatever happens to be swimming past.
+   *
+   * The first answer is the good clue — bearing, landmark and the live ping all
+   * at once, which sober takes three separate fish and three cooldowns to earn.
+   * After that they talk about the horse, because the lore is the other half of
+   * what a bowl buys you and because a band's game should hand over the band's
+   * story somewhere.
+   */
+  _highHint() {
+    const g = this.game;
+    const school = g.shoals.nearestSchool(g.kelpie.position, CFG.clues.highRadius);
+
+    // Nothing schooling nearby — fall back to summoning one, so the button is
+    // never dead.
+    if (!school) return this.found ? this._afterHint() : this._chestHint();
+
+    const who = `A ${school.sp.name}`;
+
+    // The lamprey is not here to help you, and a bowl does not change that.
+    if (school.sp.role === 'dread') {
+      this.cooldown = 2;
+      g.hud.say('It turns to face you and keeps turning.<br>It has nothing to say and all night to not say it.',
+        { who: 'The sea lamprey', seconds: 3.6 });
+      g.audio?.sfx('fish');
+      return;
+    }
+
+    if (!this.found && !this._toldHigh) {
+      this._toldHigh = true;
+      this.stage = Math.max(this.stage, 2);
+      this.proximity = true;
+      this._lastBand = -1;
+      this._ping = 0;
+      const c = this.chest.position;
+      const { landmark } = g.wreck.nearestLandmark(c);
+      g.hud.say(
+        `Everything down here is talking at once, and it all agrees.<br>` +
+        `The box is ${bearing(g.kelpie.position, c)}, by <b>${landmark ? landmark.name : 'the wreck'}</b>.`,
+        { who, seconds: 8 });
+      g.audio?.sfx('fish');
+      return;
+    }
+
+    g.hud.say(LORE[this._lore++ % LORE.length], { who, seconds: 8.5 });
+    g.audio?.sfx('fish');
   }
 
   _afterHint() {
@@ -274,18 +343,68 @@ export class Clues {
 
   blips(out) {
     if (this.found) return out;
-    const d = this.game.kelpie.position.distanceTo(this.chest.position);
-    // Only on the sonar once the sturgeon has spoken, and even then it fades in
-    // with proximity — you get told "something is over there", not where it is.
-    if (this.proximity && d < CFG.clues.proximityNear * 1.4) {
-      out.push({
-        x: this.chest.position.x, z: this.chest.position.z, type: 'chest',
-        strength: THREE.MathUtils.clamp(1 - d / (CFG.clues.proximityNear * 1.4), 0.25, 1),
-      });
-    }
+    // The chest is on the sonar only while a hit is still working, and it fades
+    // out on the same curve as the colour. That makes it the one thing you can't
+    // get by looking — it costs a bowl — and it stops the radar from becoming a
+    // waypoint you can stand still and read. When it starts to go, you go.
+    const trip = this.game.trip.value;
+    if (trip <= 0.02) return out;
+    out.push({
+      x: this.chest.position.x, z: this.chest.position.z, type: 'chest',
+      strength: THREE.MathUtils.clamp(trip, 0.2, 1),
+    });
     return out;
   }
 }
+
+/**
+ * What the fish know, told a fragment at a time and only while you're high.
+ *
+ * This is the album's own story — Anocean and Enias defecting from the gold
+ * colony on Jupiter, down through The Drain, the utopia they couldn't agree on,
+ * and the horse that came up out of the water and the ash afterwards. Each line
+ * is a piece; keep asking and the arc assembles itself.
+ *
+ * It sits behind the bong deliberately. The ship's log tells you the sober
+ * version — a lake freighter, iron ore, weather — and it is all true. This is the
+ * other true thing, and you only get at it in the other state. That's not a
+ * gimmick: it is the one piece of content in the game whose delivery mechanism
+ * is the point.
+ */
+const LORE = [
+  'Two of them came down. Anocean and Enias.<br>' +
+  'Not down the way you came down. Down the way water goes down.',
+
+  "Jupiter wasn't a planet to them, it was a seam.<br>" +
+  'A gold mine with a sky over it, and everyone in it owed.',
+
+  'Up there a person was a number with a job attached.<br>' +
+  'They had a word for what you were worth. You are hearing it.',
+
+  'There is a place in between the places. The Drain.<br>' +
+  "You've been nearer to it tonight than you'd like.",
+
+  'They came out into a clean world and named it after a tree.<br>' +
+  'They had a whole plan for it. Plans last about as long as plans do.',
+
+  'Two dreams, one world, no give in either of them.<br>' +
+  'Their own people took up arms over the shape of paradise.',
+
+  'By the time it was all ash they finally said the kind thing —<br>' +
+  "that they'd kept each other alive. Late. But they said it.",
+
+  'And then she came up. Out of the water and the ash together,<br>' +
+  'lit from the inside. That is the thing you are holding on to.',
+
+  "She's no drowning-horse, whatever your grandmother told you.<br>" +
+  'Where she puts her feet down, it comes back green.',
+
+  'She only ever turns up where it has already gone wrong.<br>' +
+  'Look around you. Then ask yourself why she is here.',
+
+  "You don't get the new world with the old hands.<br>" +
+  'That is the whole instruction. That is all of it.',
+];
 
 const PING = [
   'Cold. You are wandering.',

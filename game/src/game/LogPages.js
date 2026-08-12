@@ -1,15 +1,20 @@
-// The ship's log of the SS Jupiter.
+// The ship's log of the Jupiter.
 //
 // Seven slates, scattered across the wreck field, that tell what happened to her
 // if you find enough of them. Collected pages persist forever — this is the one
 // thing in the game that accumulates across sessions, which gives a returning
 // visitor a reason to come back that isn't a leaderboard.
 //
-// The Jupiter is invented. Superior's real wrecks hold real people, several are
-// legally protected graves, and putting a cartoon horse and a bong inside one of
-// them would be a genuinely unpleasant thing to do. So she's fictional, and the
-// log is written to sound like the real ones do: flat, practical, weather first,
-// and then not.
+// This is not a lake and she was not a boat. It's an ocean world with no land on
+// it, and the Jupiter was an ore hauler out of the colony of the same name, run
+// for The Drain by people who had signed away nine years of their lives to dig
+// gold. See the band's own story: Anocean and Enias got out the same way, and
+// this ship is what happened to everyone who tried it after them.
+//
+// The voice is the one thing kept from the sea-log it was written as: flat,
+// practical, cargo and weather first, and then not. A captain recording a
+// disaster in the same hand he records tonnage is worth more than any amount of
+// telling the player it was frightening.
 
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
@@ -17,47 +22,49 @@ import { LogPage } from '../entities/LogPage.js';
 
 export const ENTRIES = [
   {
-    id: 'p1', title: 'Log of the SS Jupiter — 4 November',
-    body: `Cleared Two Harbors 0610 with iron ore, 6,900 tons. Glass falling but steady.
-Wind SW light. Crew of twenty-two and the cook's dog, which is not crew but
-eats like it.`,
+    id: 'p1', title: 'Log of the Jupiter — day 1',
+    body: `Cleared the yards 0610 with eleven hundred tonnes of ore and forty-one souls.
+The manifest lists both in the same column and nobody at the gate thought that
+was worth a second look. Trim good. Every one of them has signed away nine years.`,
   },
   {
-    id: 'p2', title: '7 November',
-    body: `Wind backed NE overnight and has not stopped since. Seas on the quarter.
-Mr. Halloran reports the after hatch tarpaulin working loose. Sent two hands.
-They came back wet through and said it is holding. It is not holding.`,
+    id: 'p2', title: 'day 9',
+    body: `They have started calling it a run instead of a haul. I have not corrected them.
+Coordinates for The Drain came off a chart drawn by somebody who never came back
+to say whether it worked. We are going anyway. That is the mood aboard.`,
   },
   {
-    id: 'p3', title: '9 November',
-    body: `Glass at 28.6 and still going. I have not seen it this low on this lake.
-Whitefish Point advises we run for shelter. We are eleven hours from shelter
-and the shelter is upwind.`,
+    id: 'p3', title: 'day 14 — entering',
+    body: `No stars in here. That I was ready for. What I was not ready for is that there
+is no dark either — it is lit and there is nothing doing the lighting.
+Two of the crew will not come out of the hold. I am not ordering them to.`,
   },
   {
-    id: 'p4', title: '10 November — forenoon',
-    body: `Snow. Cannot see the bow from the wheelhouse. Sounding the whistle every
-minute in case there is anyone else foolish enough to be out here.
-No answer. There never is.`,
+    id: 'p4', title: 'day 14 — out the other side',
+    body: `Water. All of it, every heading, curve to curve, and no land anywhere on it.
+The navigator laughed for about four seconds and then had to sit down.
+We are through. We are somewhere. Those are not the same thing.`,
   },
   {
-    id: 'p5', title: '10 November — 1540',
-    body: `Took one over the bow that carried away the forward vent and half the rail.
-Water in number two. Pumps on. Chief says he can hold it if it does not get
-worse. It got worse while he was saying it.`,
+    id: 'p5', title: 'day 14 — 1540',
+    body: `She was built to be caught by a cradle and there is no cradle. We came in flat
+and fast and it made no difference at all — water at that speed is a floor.
+Breach forward. Pumps on. Chief says he can hold it if it does not get worse.
+It got worse while he was saying it.`,
   },
   {
-    id: 'p6', title: '10 November — 1912',
-    body: `We are down by the head and she will not answer the helm. I have told the
-men. They took it better than I did.
-Whoever finds this: she was a good boat and it was not her fault.`,
+    id: 'p6', title: 'day 14 — 1912',
+    body: `We are down by the head and she will not answer. I have told the crew.
+They took it better than I did.
+Whoever finds this: she was a good ship and none of it was her fault.`,
   },
   {
     id: 'p7', title: 'Last page — undated',
-    body: `Something came alongside in the dark and it was not a boat.
-Green, and longer than the hatch, and it looked at me the way a horse does.
-The men say I have been at the medicinal stores. Perhaps. It is still there.
-It is still there and it is waiting for the water to be quiet.`,
+    body: `Something came alongside in the dark and it was not a ship.
+Green, and longer than the hold, and lit from the inside like nothing is meant
+to be. It looked at me the way a horse does.
+The crew say I have been at the medical stores. Perhaps. It is still out there.
+It is still out there and it is waiting for the water to go quiet.`,
   },
 ];
 

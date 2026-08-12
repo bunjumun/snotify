@@ -11,6 +11,10 @@
 //
 // Grip is the mechanic on top: sustained boost builds strain, past the threshold
 // he lets go, and you have to circle back for him while breath keeps draining.
+//
+// The suit is dazzle-camouflaged, painted procedurally in _dazzleTexture(). It's
+// the site's own livery, it's period-correct for a wreck, and practically it
+// makes the one thing you have to keep track of legible in eighty units of murk.
 
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
@@ -50,7 +54,11 @@ export class Diver {
     this.brassMat = new THREE.MeshStandardMaterial({
       color: P.brass, roughness: 0.34, metalness: 0.85,
     });
-    this.canvasMat = new THREE.MeshStandardMaterial({ color: P.canvas, roughness: 0.95 });
+    // White base: the dazzle texture carries the colour, and `color` is left
+    // free to tint the whole suit when he goes adrift.
+    this.canvasMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff, map: this._dazzleTexture(), roughness: 0.95,
+    });
     this.ropeMat = new THREE.MeshStandardMaterial({ color: 0x4a4237, roughness: 0.9 });
     this.hoseMat = new THREE.MeshStandardMaterial({ color: 0x3a3630, roughness: 0.85 });
     this.glassMat = new THREE.MeshStandardMaterial({
@@ -60,6 +68,67 @@ export class Diver {
 
     this._buildBody();
     this._buildRopes();
+  }
+
+  /**
+   * Dazzle camouflage, painted once into a canvas and used as the suit's map.
+   *
+   * Dazzle never hid a ship. It broke up the cues you'd use to read a hull's
+   * heading and speed, which is a good joke on a man being towed backwards
+   * through fog on the end of a rope, and it puts the only high-contrast thing
+   * in the lake on the character you most need to keep track of.
+   *
+   * The pattern is panels of parallel stripes at deliberately conflicting
+   * angles — it's the disagreement between neighbouring panels that does the
+   * work, so the panels are irregular, sheared, and never share a slope with
+   * the one beside them. The wrap seam down his back isn't hidden either: on a
+   * dazzle pattern one more hard edge just reads as one more panel, which makes
+   * this the one place a seam is free.
+   */
+  _dazzleTexture() {
+    const S = 256;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const g = cv.getContext('2d');
+    const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
+    const P = CFG.palette;
+
+    g.fillStyle = hex(P.suitLight);
+    g.fillRect(0, 0, S, S);
+
+    let x = -S * 0.1;
+    let panel = 0;
+    while (x < S) {
+      const w = S * (0.11 + Math.random() * 0.17);
+      const skew = (Math.random() - 0.5) * S * 0.4;   // panels aren't rectangles
+      g.save();
+      g.beginPath();
+      g.moveTo(x, 0);
+      g.lineTo(x + w, 0);
+      g.lineTo(x + w + skew, S);
+      g.lineTo(x + skew, S);
+      g.closePath();
+      g.clip();
+
+      // Slope flips hard between neighbours. That contrast IS the camouflage;
+      // a consistent angle would just be a deck chair.
+      g.translate(x + w / 2, S / 2);
+      g.rotate((panel % 2 ? 1 : -1) * (0.5 + Math.random() * 0.7));
+      g.fillStyle = hex(panel % 3 === 2 ? P.suitMid : P.suitDark);
+      const band = 6 + Math.random() * 13;
+      for (let y = -S; y < S; y += band * 2) g.fillRect(-S, y, S * 2, band);
+      g.restore();
+
+      x += w;
+      panel++;
+    }
+
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(2, 1.4);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    return tex;
   }
 
   _buildBody() {
@@ -229,7 +298,9 @@ export class Diver {
     for (let i = 0; i < this.arms.length; i++) {
       this.arms[i].rotation.x = -1.15 - strain * 0.45;
     }
-    this.canvasMat.color.setHex(this.adrift ? 0x55503f : CFG.palette.canvas);
+    // Adrift, the dazzle goes muddy — he stops being the brightest thing down
+    // here at exactly the moment you need to find him.
+    this.canvasMat.color.setHex(this.adrift ? CFG.palette.suitAdrift : 0xffffff);
   }
 
   _layRope(segs, points) {

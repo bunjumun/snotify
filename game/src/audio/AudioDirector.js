@@ -33,6 +33,7 @@ import { CFG } from '../../config.js';
 // so the game's boot doesn't depend on the site's shared layer loading first —
 // it's four lines, and the coupling isn't worth it.
 const SUPA_URL = 'https://twgukeyoayfqldnojrkg.supabase.co';
+const SUPA_KEY = 'sb_publishable_zIiAxxA5Zk1yRNzignANXA_rEp3vKdG';   // publishable — safe to ship
 function publicUrl(p) {
   if (!p) return null;
   if (/^(https?:|data:|blob:)/.test(p)) return p;
@@ -185,16 +186,17 @@ export class AudioDirector {
    * @returns {Promise<number>} how many tracks are in the running order
    */
   async loadMusic() {
-    let manifest;
-    try {
-      const r = await fetch(new URL('../../music.json', import.meta.url));
-      manifest = await r.json();
-    } catch {
-      return 0;
-    }
-
+    const manifest = await this._readManifest();
     this._treasureTitle = manifest.treasure || null;
-    this.playlist = (manifest.tracks || [])
+
+    // Live first. game_tracks() returns the CURRENT top of each stack, so a new
+    // mix is in the game on the next load with nothing to remember. music.json
+    // pins filenames, which are stale the day after they're written — it's the
+    // fallback for before v18 is applied, and for when the network isn't there.
+    const live = await this._liveTracks();
+    this.source = live.length ? 'live' : 'manifest';
+
+    this.playlist = (live.length ? live : manifest.tracks || [])
       .filter((t) => t && t.src)
       .map((t) => ({
         title: t.title || 'Lakehorse',
@@ -207,6 +209,46 @@ export class AudioDirector {
     this.decks = [this._makeDeck(), this._makeDeck()];
     this._play(0);
     return this.playlist.length;
+  }
+
+  /** The static running order that ships with the game. Also holds `treasure`. */
+  async _readManifest() {
+    try {
+      const r = await fetch(new URL('../../music.json', import.meta.url));
+      return await r.json();
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * The newest mix of every song the band has flagged for the game.
+   *
+   * Public by necessity — a page anyone can view can't hold a band password —
+   * and safe because the flag is per song: the function can only ever reach
+   * songs someone deliberately put in the game. See supabase/schema-v18.sql.
+   *
+   * Returns [] on anything at all: a 404 because v18 hasn't been applied yet, a
+   * dead network, a band with nothing flagged. Every one of those falls through
+   * to music.json, so the record still plays.
+   */
+  async _liveTracks() {
+    try {
+      const r = await fetch(`${SUPA_URL}/rest/v1/rpc/game_tracks`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPA_KEY,
+          Authorization: `Bearer ${SUPA_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ b: CFG.audio.band }),
+      });
+      if (!r.ok) return [];
+      const rows = await r.json();
+      return Array.isArray(rows) ? rows.filter((t) => t && t.src) : [];
+    } catch {
+      return [];
+    }
   }
 
   _makeDeck() {

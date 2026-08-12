@@ -64,6 +64,20 @@ export class Shoals {
 
   setTrip(v) { for (const s of this.schools) s.setTrip(v); }
 
+  /**
+   * Nearest school of any kind. Used by the clue system while the player is
+   * high, when the rule stops being "one appointed fish" and becomes "whatever
+   * is swimming past".
+   */
+  nearestSchool(pos, maxDistance = Infinity) {
+    let best = null, bestD = maxDistance;
+    for (const s of this.schools) {
+      const d = s.home.distanceTo(pos);
+      if (d < bestD) { bestD = d; best = s; }
+    }
+    return best;
+  }
+
   /** Nearest school of a given role — the clue system asks for a 'guide'. */
   nearestOfRole(pos, role) {
     let best = null, bestD = Infinity;

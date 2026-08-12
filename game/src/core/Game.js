@@ -439,10 +439,15 @@ export class Game {
 
     // A tail beat throws water. This puff is the receipt for the tap — without
     // something leaving the fluke, tapping reads as a button that does nothing.
+    // The sound is the other half of that receipt and matters more than the
+    // puff: it is the single most frequent action in the game, it is issued on
+    // the frame of the beat, and the ear notices a missing answer long before
+    // the eye does.
     if (this.kelpie.kicked) {
       const tail = this._tail || (this._tail = new THREE.Vector3());
       this.kelpie.tailPoint(tail);
       this.bubbles.burst(tail.x, tail.y, tail.z, 4, 0.45);
+      this.audio?.sfx('kick');
     }
 
     this._followEntities(dt);
@@ -654,12 +659,12 @@ export class Game {
       // is already on its way over to say so. Nagging every frame on top of that
       // just talks over it.
       if (!(this.intro.active && this.intro.step < 2)) {
-        this.hud.say('No fire. You need a lighter.', { seconds: 2 });
+        this._prompt('No fire. You need a lighter.', 2);
       }
       return;
     }
     if (!this.stash.canPack) {
-      this.hud.say(`Not enough to pack. <b>${this.stash.carried}/${CFG.stash.needed}</b>`, { seconds: 2 });
+      this._prompt(`Not enough to pack. <b>${this.stash.carried}/${CFG.stash.needed}</b>`, 2);
       return;
     }
     // Swim into it and it goes off. No button, no stopping, no lining up on the
@@ -668,8 +673,32 @@ export class Game {
     // that didn't quite connect.
     if (nearestD <= CFG.bong.hitRadius) return this._useBong(nearest);
 
-    this.hud.say('<kbd>E</kbd> to hit it', { seconds: 0.4 });
-    if (intent.interact) this._useBong(nearest);
+    this._prompt('<kbd>E</kbd> to hit it', 1.2);
+    if (intent.interact) {
+      // The press is buffered, so it has to be spent or it fires again on every
+      // remaining frame of its window.
+      this.input.consumeInteract();
+      this._useBong(nearest);
+    }
+  }
+
+  /**
+   * Say something that stays true while you stand there, rather than something
+   * that just happened.
+   *
+   * These lines are issued from _updateBongs() on every frame you are in range,
+   * and the prompt slot is a single last-writer-wins element. Refreshing it
+   * every frame meant a standing prompt sat on top of everything else that
+   * wanted to speak — the low-breath warning, fish dialogue, a pickup count.
+   * Circling a bong on an empty tank suppressed the warning outright.
+   *
+   * Only ever issuing into a free slot fixes that without needing priorities.
+   * Anything that speaks keeps its full life, and since the caller is still
+   * asking every frame, the standing prompt returns the moment the slot is free.
+   * A real priority queue on say() is V2 work.
+   */
+  _prompt(text, seconds) {
+    if (!this.hud.saying) this.hud.say(text, { seconds });
   }
 
   _useBong(bong) {

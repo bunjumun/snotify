@@ -179,16 +179,37 @@ let dirty = false;
 
 // ---------- Load ----------
 async function init(){
+  curBand = null;
+
+  // The gate. core.js boots every page by calling App.init() and leaves the
+  // gating to the page itself — miss this and body.locked hides .wrap with
+  // `visibility: hidden`, which is a blank page and no way in. Same three lines
+  // as art.html, and for the same reason.
+  const band = route.band && bandSlugOf(route.band);
+  if (!band){ showGate(null, true); return; }
+  if (!isAuthed(band)){ showGate(band, true); return; }
+
+  curBand = band;
+  applyTheme(curBand);
+  document.body.classList.add('authed');
+  unlockView();
+
   try {
     drafts = (await libRpc('lore_list', {})) || [];
   } catch (e) {
-    // v19 not applied yet is the common case here, and it should read as a
-    // to-do rather than as a broken page.
+    // A stale password is the gate's problem, not this page's.
+    if (isAuthErr(e)){ clearAuth(band); return showGate(band, true); }
+    // Anything else — most likely v19 not applied — should read as a to-do
+    // rather than as a broken page.
     drafts = [];
-    if (/lore_list/.test(e.message || '')) {
-      say('Run supabase/schema-v19.sql to switch this on.', true);
-    }
+    say(e.message || 'Could not load the drafts.', true);
   }
+  // Carry the band through the header links, so leaving this page and coming
+  // back doesn't drop you at the gate again.
+  const b = encodeURIComponent(curBand);
+  $('homeBtn').href = 'index.html?b=' + b;
+  $('musicBtn').href = 'music.html?b=' + b;
+
   $('assetCount').textContent = '1 asset';
   $('loreTally').textContent = drafts.length
     ? `${drafts.length} draft${drafts.length === 1 ? '' : 's'} · ${live() ? live().name + ' is live' : 'none live'}`
@@ -399,6 +420,12 @@ A: On this world it is the fuel. Everything here runs on it — | the water, the
 Q: Then what were you burning, before you came here?
 A: Something we had to take out of the ground and could never put back. | You grow yours. That is the difference, and it is the only one.
 `;
+
+// core.js only calls App.init() on a hashchange, after the gate opens, and on
+// logout — never at load. Every page kicks itself off, and this one has to as
+// well or it sits behind `body.locked` with the gate closed, which looks
+// exactly like an empty page.
+init();
 </script>
 </body>
 </html>

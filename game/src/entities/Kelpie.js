@@ -30,6 +30,17 @@ import { CFG } from '../../config.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
+// Foreleg rest pose. Positive rotation about X swings a downward segment toward
+// -Z, which is forward, so the shoulder reaches ahead and the knee folds back
+// under — a limb carried, not a limb dangling. The animation swings around
+// these rather than replacing them.
+const LEG_BASE = 0.62;
+const KNEE_BASE = -1.32;
+
+// Which way is "lit" across a limb's radius. The diver's lamp rides below and
+// behind her, so the outboard face is the one that catches anything.
+const LIMB_LIT = new THREE.Vector3(0, 0, -1);
+
 export class Kelpie {
   constructor() {
     const P = CFG.palette;
@@ -70,10 +81,11 @@ export class Kelpie {
       uTrip: { value: 0 },
     };
 
-    // White, because the vertex colours carry the whole paint job.
+    // White, because the vertex colours carry the whole paint job. Scaled: the
+    // fish half of her is the half you see most, since the camera rides behind.
     this.bodyMat = this._swimMaterial({
       color: 0xffffff, vertexColors: true, roughness: 0.82, metalness: 0.05,
-    });
+    }, true, 'scales');
     // A skull is rigid. The wave is masked to almost nothing this far forward
     // anyway, but "almost" is enough to make a muzzle swim off a face — so the
     // head gets the same paint and none of the undulation.
@@ -83,12 +95,14 @@ export class Kelpie {
     this.finMat = this._swimMaterial({
       color: P.kelpieFin, roughness: 0.6, metalness: 0.1,
       side: THREE.DoubleSide, transparent: true, opacity: 0.94,
-    });
+    }, true, 'rays');
     this.maneMat = this._maneMaterial();
+    this.barbelMat = this._barbelMaterial();
 
     this._buildBody();
     this._buildHead();
     this._buildFins();
+    this._buildForelegs();
     this._buildMane();
 
     this.group.position.copy(this.position);
@@ -154,13 +168,31 @@ export class Kelpie {
    * lighting and — much more importantly here — its fog, which is doing most of
    * the art direction's work.
    */
-  _swimMaterial(params, wave = true) {
+  _swimMaterial(params, wave = true, skin = 'plain') {
     const K = CFG.kelpie;
     const mat = new THREE.MeshStandardMaterial(params);
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = this.uniforms.uTime;
       shader.uniforms.uSpeed = this.uniforms.uSpeed;
       shader.uniforms.uTrip = this.uniforms.uTrip;
+
+      // Scales and fin rays both need a coordinate to draw against, and a
+      // MeshStandardMaterial with no map never passes UVs through — Three only
+      // declares its own varying when a texture asks for one. So carry our own
+      // rather than depending on which of Three's varyings exists this version.
+      if (skin !== 'plain') {
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', `
+            #include <common>
+            varying vec2 vSkinUv;
+            varying vec3 vSkinPos;
+          `)
+          .replace('#include <begin_vertex>', `
+            #include <begin_vertex>
+            vSkinUv = uv;
+            vSkinPos = position;
+          `);
+      }
 
       if (wave) shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `
@@ -184,6 +216,55 @@ export class Kelpie {
           transformed.y += wave * amp * 0.22 * mask;
         `);
 
+      if (skin !== 'plain') shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `
+          #include <common>
+          varying vec2 vSkinUv;
+          varying vec3 vSkinPos;
+        `);
+
+      // Scales. Rows of rounded scallops, every other row offset by half, which
+      // is the whole trick — a grid reads as tiling, a brick-lay reads as an
+      // animal. Drawn into the colour rather than a normal map because in this
+      // much fog a bump nobody can see costs a texture fetch for nothing.
+      if (skin === 'scales') shader.fragmentShader = shader.fragmentShader
+        .replace('#include <dithering_fragment>', `
+          #include <dithering_fragment>
+          {
+            vec2 suv = vSkinUv * vec2(26.0, 34.0);
+            suv.x += 0.5 * mod(floor(suv.y), 2.0);
+            vec2 f = fract(suv) - 0.5;
+            // Squashed, so a scale is wider than it is tall the way a fish's is.
+            float d = length(vec2(f.x, f.y * 1.35));
+            float edge = smoothstep(0.30, 0.46, d);
+            // Dark in the seam, and a touch brighter at the exposed top lip of
+            // each scale so the rows catch the lamp as she rolls.
+            float lip = smoothstep(0.34, 0.0, d) * smoothstep(-0.1, -0.42, f.y);
+            gl_FragColor.rgb *= 1.0 - edge * 0.30;
+            gl_FragColor.rgb += gl_FragColor.rgb * lip * 0.35;
+          }
+        `);
+
+      // Fin rays, radiating from the root the way they do on a real fin. The
+      // shape geometry's own vertex positions are the polar origin, so this
+      // needs no UV layout and works on every fin regardless of its size.
+      if (skin === 'rays') shader.fragmentShader = shader.fragmentShader
+        .replace('#include <dithering_fragment>', `
+          #include <dithering_fragment>
+          {
+            float ang = atan(vSkinPos.y, vSkinPos.x);
+            float r = length(vSkinPos.xy);
+            float ray = abs(sin(ang * 13.0));
+            // Rays fade in away from the root — they converge there, and drawing
+            // them all the way in just makes a dark blob at the hub.
+            float amt = smoothstep(0.06, 0.5, r);
+            gl_FragColor.rgb *= 1.0 - smoothstep(0.55, 1.0, ray) * 0.42 * amt;
+            // And the membrane thins toward the trailing edge, so the fin ends
+            // in water rather than in a cut line.
+            gl_FragColor.a *= mix(1.0, 0.72, smoothstep(0.3, 1.2, r));
+          }
+        `);
+
       // Trip glow rides the same uTrip everything else does.
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform float uTrip;')
@@ -200,8 +281,173 @@ export class Kelpie {
     };
     // Materials that differ only by injected uniforms still need distinct
     // program cache keys, or Three reuses one compiled shader for all of them.
-    mat.customProgramCacheKey = () => (wave ? 'kelpie-swim' : 'kelpie-rigid');
+    mat.customProgramCacheKey = () => `kelpie-${wave ? 'swim' : 'rigid'}-${skin}`;
     return mat;
+  }
+
+  /**
+   * The barbels: the long curling feelers off her cheeks. In the reference art
+   * they're the single most identifying thing about her — more than the fins,
+   * more than the tail — because they're what says this is not a horse that
+   * happens to be wet.
+   *
+   * They wave from root to tip on their own slow clock, and unlike the mane they
+   * do NOT lie back with speed. A feeler that streams flat is hair; one that
+   * keeps its curl while the mane goes flat behind it reads as something the
+   * animal is holding out into the water on purpose.
+   */
+  _barbelMaterial() {
+    const mat = new THREE.MeshStandardMaterial({
+      color: CFG.palette.kelpieBarbel,
+      roughness: 0.7, metalness: 0.05,
+    });
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = this.uniforms.uTime;
+      shader.uniforms.uSpeed = this.uniforms.uSpeed;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `
+          #include <common>
+          uniform float uTime; uniform float uSpeed;
+          attribute float aRoot;   // 0 at the cheek, 1 at the tip
+          attribute float aPhase;
+        `)
+        .replace('#include <begin_vertex>', `
+          #include <begin_vertex>
+          float t = aRoot * aRoot;                 // pivots at the root
+          float w = uTime * 1.15 + aPhase + aRoot * 4.2;
+          transformed.x += sin(w) * 0.30 * t;
+          transformed.y += cos(w * 0.83 + 1.1) * 0.24 * t;
+          transformed.z += sin(w * 0.61) * 0.16 * t;
+          // A little aft lean at speed, but far less than the mane gets.
+          transformed.z += uSpeed * 0.006 * t;
+        `);
+    };
+    mat.customProgramCacheKey = () => 'kelpie-barbel';
+    return mat;
+  }
+
+  /**
+   * One feeler, swept aft and up from `root` and curling back on itself.
+   * @param {number} s -1 or 1, which side of the head
+   */
+  _barbel(root, s, len, radius, phase) {
+    const pts = [
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(s * 0.30, 0.26, 0.42),
+      new THREE.Vector3(s * 0.54, 0.70, 1.00),
+      new THREE.Vector3(s * 0.50, 1.16, 1.64),
+      new THREE.Vector3(s * 0.20, 1.44, 2.18),
+      new THREE.Vector3(s * -0.10, 1.38, 2.58),
+    ].map((p) => p.multiplyScalar(len));
+
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const geo = new THREE.TubeGeometry(curve, 26, radius, 5, false);
+
+    // TubeGeometry lays u along the curve, so the UV is already the root->tip
+    // parameter and there's nothing to compute.
+    const uv = geo.attributes.uv;
+    const n = geo.attributes.position.count;
+    const rootAttr = new Float32Array(n);
+    for (let i = 0; i < n; i++) rootAttr[i] = uv.getX(i);
+    geo.setAttribute('aRoot', new THREE.BufferAttribute(rootAttr, 1));
+    geo.setAttribute('aPhase', new THREE.BufferAttribute(new Float32Array(n).fill(phase), 1));
+
+    const m = new THREE.Mesh(geo, this.barbelMat);
+    m.position.copy(root);
+    return m;
+  }
+
+  _buildBarbels(headGrp) {
+    for (const s of [-1, 1]) {
+      // The long pair, off the cheek behind the eye.
+      headGrp.add(this._barbel(
+        new THREE.Vector3(s * 0.23, 0.92, -0.46), s, 1.0, 0.028, Math.random() * 6.28));
+      // A shorter, thinner pair from under the jaw, so the cluster has depth
+      // rather than reading as two wires.
+      headGrp.add(this._barbel(
+        new THREE.Vector3(s * 0.13, 0.72, -0.78), s, 0.62, 0.019, Math.random() * 6.28));
+    }
+  }
+
+  /**
+   * Forelegs. She is a horse in front and a fish behind, and without these she
+   * is only ever a fish with a horse's head — the legs are what the eye uses to
+   * decide which animal it is looking at.
+   *
+   * Tucked and bent rather than extended, because that's how a swimming animal
+   * carries limbs it isn't using, and it keeps them inside the silhouette
+   * instead of hanging into the seabed on every low pass.
+   */
+  _buildForelegs() {
+    const K = CFG.kelpie;
+    this.legs = [];
+
+    // Every segment hangs straight down -Y from its own origin and the JOINTS
+    // carry all the rotation. Baking a bend into a segment as well as its joint
+    // applies it twice, and the leg walks itself off the chest.
+    const UPPER = 0.82, LOWER = 0.74;
+
+    for (const s of [-1, 1]) {
+      const leg = new THREE.Group();
+      // Well inside the barrel: the shoulder should disappear into her rather
+      // than being a socket you can see the seam of.
+      leg.position.set(s * 0.44, -0.50, -K.length * 0.33);
+      leg.rotation.x = LEG_BASE;
+
+      // Shaded ACROSS the limb, not along it. Counter-shading down the length
+      // puts belly-pale at the far end of every segment, which turns a leg into
+      // a bone — the light/dark axis on a limb runs round it, not down it.
+      const upperGeo = new THREE.CylinderGeometry(0.185, 0.125, UPPER, 8, 2);
+      upperGeo.translate(0, -UPPER / 2, 0);
+      this._countershade(upperGeo, -0.15, 0.06, LIMB_LIT);
+      leg.add(new THREE.Mesh(upperGeo, this.headMat));
+
+      // The knee sits exactly at the far end of the upper leg, and everything
+      // below it is that group's problem.
+      const knee = new THREE.Group();
+      knee.position.set(0, -UPPER, 0);
+      knee.rotation.x = KNEE_BASE;
+      leg.add(knee);
+
+      const kneeCap = new THREE.Mesh(
+        this._tint(new THREE.SphereGeometry(0.125, 8, 6), CFG.palette.kelpieBody), this.headMat);
+      leg.add(kneeCap);
+      kneeCap.position.set(0, -UPPER, 0);
+
+      const lowerGeo = new THREE.CylinderGeometry(0.10, 0.072, LOWER, 7, 1);
+      lowerGeo.translate(0, -LOWER / 2, 0);
+      this._countershade(lowerGeo, -0.085, 0.03, LIMB_LIT);
+      knee.add(new THREE.Mesh(lowerGeo, this.headMat));
+
+      // Fetlock, then the hoof. The hoof is the darkest thing on her and that is
+      // deliberate: it is the one hard, non-organic shape in the silhouette and
+      // it wants to read as horn, not hide.
+      const fet = new THREE.Mesh(
+        this._tint(new THREE.SphereGeometry(0.088, 7, 6), CFG.palette.kelpieBody), this.headMat);
+      fet.position.set(0, -LOWER, 0);
+      knee.add(fet);
+
+      const hoof = new THREE.Mesh(
+        this._tint(new THREE.CylinderGeometry(0.095, 0.132, 0.21, 8), 0x0a0f0c), this.headMat);
+      hoof.position.set(0, -LOWER - 0.13, 0.015);
+      hoof.rotation.x = 0.2;
+      knee.add(hoof);
+
+      // Feathering: the weed that has taken hold behind the fetlock. Three
+      // strands is enough to break the hard cylinder into something that has
+      // been in the water for years.
+      for (let i = 0; i < 3; i++) {
+        const f = this._strand(0.065, Math.random() * 6.28, 5);
+        f.position.set((Math.random() - 0.5) * 0.13, -LOWER + 0.06, 0.06);
+        f.scale.y = 0.3 + Math.random() * 0.24;
+        f.rotation.set(-0.45 - Math.random() * 0.4, 0, (Math.random() - 0.5) * 0.5);
+        knee.add(f);
+      }
+
+      leg.userData.knee = knee;
+      this.group.add(leg);
+      this.legs.push(leg);
+    }
   }
 
   /**
@@ -384,6 +630,8 @@ export class Kelpie {
       headGrp.add(eye);
       this.eyes.push(eye);
     }
+
+    this._buildBarbels(headGrp);
 
     this.head = headGrp;
     this.group.add(headGrp);
@@ -717,6 +965,26 @@ export class Kelpie {
     if (this.fluke) {
       this.fluke.rotation.z = Math.sin(this.uniforms.uTime.value * (2.2 + this.speed * 0.055) + 1.4)
         * (0.18 + this.speed * 0.018 + this.kickPulse * 0.5);
+    }
+
+    // The forelegs paddle, out of phase with each other so she never looks like
+    // she's hopping. At rest it's a slow tread that keeps her from going
+    // statuesque when you stop; a kick throws them both back at once, which is
+    // what a horse does when it lunges and what sells the beat from the front
+    // of the animal as well as the back.
+    if (this.legs) {
+      const t = this.uniforms.uTime.value;
+      const swing = 0.16 + this.speed * 0.012;
+      for (let i = 0; i < this.legs.length; i++) {
+        const leg = this.legs[i];
+        const ph = i * Math.PI;   // opposite sides, opposite strokes
+        leg.rotation.x = LEG_BASE + Math.sin(t * 1.6 + ph) * swing - this.kickPulse * 0.42;
+        leg.rotation.z = Math.sin(t * 1.1 + ph) * 0.06;
+        // The knee closes as the leg comes forward and opens as it reaches back,
+        // so the fold tracks the stroke instead of being a fixed bend.
+        leg.userData.knee.rotation.x = KNEE_BASE + Math.sin(t * 1.6 + ph + 0.9) * swing * 1.4
+          + this.kickPulse * 0.5;
+      }
     }
   }
 

@@ -137,6 +137,9 @@ export class Particles {
     this.geo.attributes.position.needsUpdate = true;
     this.geo.attributes.aLife.needsUpdate = true;
     this.geo.attributes.aColor.needsUpdate = true;
+    // As in Smoke.js and Bubbles.js: aSize uploads once, empty, and every
+    // sparkle after that draws at the clamp floor without this.
+    this.geo.attributes.aSize.needsUpdate = true;
   }
 
   /** Where sparkles should orbit — the kelpie, during a trip. */

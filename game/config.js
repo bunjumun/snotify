@@ -437,6 +437,17 @@ export const CFG = {
     trailRate: 44,        // particles/sec at full uTrip
     rise: 0.55,           // units/sec it eventually settles into
     life: [5.0, 9.5],     // seconds; long, because it has nowhere to go
+    // Strength of the flow field that folds the cloud. Sampled by position, so
+    // neighbours move together and it billows instead of fizzing. Push this too
+    // far and the smoke starts swimming; 1.5 is about where it stops looking
+    // like weather and starts looking like it was blown out of something.
+    swirl: 1.35,
+    // Max turn rate of a sprite about its own centre, radians/sec, signed.
+    spin: 1.1,
+    // How much screen area one puff covers. Smoke only reads as a volume when
+    // its sprites overlap each other; below about 3 this goes back to looking
+    // like scattered dust however many of them there are.
+    spread: 4.8,
   },
 
   // ---------- Camera ----------
@@ -584,7 +595,13 @@ export const CFG = {
     // properly pale because the diver's lamp sits BELOW and BEHIND her — a true
     // fish-belly white blows straight out every time he looks up at her.
     kelpieBelly: 0x5d7267,
-    kelpieFin: 0x2f5c3a,
+    // The fins are the one place the reference lets real colour in: the membrane
+    // is a bright sea-green against an otherwise near-black animal, and the dark
+    // rays are drawn into it by the shader rather than modelled.
+    kelpieFin: 0x3d8a55,
+    // Near-black, and flatter than the hide. The feelers read as silhouette at
+    // every distance, which is the only way a wire that thin survives the fog.
+    kelpieBarbel: 0x101a14,
     // Lighter than her hide on purpose. She reads as a silhouette against bright
     // water, and weed the same value as the body is weed nobody ever sees.
     kelpieMane: 0x35664a,

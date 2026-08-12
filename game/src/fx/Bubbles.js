@@ -114,6 +114,10 @@ export class Bubbles {
     }
     this.geo.attributes.position.needsUpdate = true;
     this.geo.attributes.aLife.needsUpdate = true;
+    // Sizes change every spawn and the buffer is empty on the frame it first
+    // uploads, so without this every bubble draws at the clamp floor. See the
+    // same fix and the longer note in Smoke.js.
+    this.geo.attributes.aSize.needsUpdate = true;
   }
 
   setQuality(level) {

@@ -36,9 +36,11 @@ The page-weight baseline deserves its own note. Three.js is vendored once at `ve
 
 ## Where we are
 
-**Phase 1 of 8, in progress** (aaabench phase order: 0 pillars, 1 metrics, 2 blockout, 3 greybox, 4 set dressing, 5 lighting, 6 audio and effects, 7 optimization, 8 polish). The feel pass is complete; Phase 1b, the audio work, is what stands between here and the gate.
+**Phase 1 of 8, and 1b is done** (aaabench phase order: 0 pillars, 1 metrics, 2 blockout, 3 greybox, 4 set dressing, 5 lighting, 6 audio and effects, 7 optimization, 8 polish). The feel pass and the audio pass have both landed. **What now stands between here and Phase 2 is the gate itself: freezing the `config.js` movement numbers.** Nothing else.
 
 The hard ordering rule: **movement metrics must be settled and frozen before world layout work begins.** Changing how far the kelpie travels per second invalidates every distance, sightline and placement built against it. Phase 2 does not start until Phase 1 is gated.
+
+Worth being precise about what the gate covers, because 1b did move numbers: `stash.pickupRadius` and `logPages.pickupRadius` grew, and those are *placement* numbers rather than *movement* ones. Nothing about how far she travels per second changed. The gate is still clean.
 
 ### Posted live, 2026-08-13
 
@@ -46,7 +48,35 @@ Merged to `main` as `f9c532f` and served at `https://bunjumun.github.io/snotify/
 
 Verified on the live origin rather than locally, because the one thing worth proving in production was the save separation: a dive on the deployed page wrote `lakehorse.v2.progress` at one run while `lakehorse.progress` sat untouched at eleven, with a lighter and a claim on it. 60 fps, 53 requests, 361K over the wire, no console errors, and the boot bail net stayed down.
 
-**Being live does not close Phase 1.** The audio work below is still what stands between here and the gate. The door is up so the build can be played, not because it is finished.
+**Being live does not close Phase 1.** The door is up so the build can be played, not because it is finished.
+
+### Phase 1b: audio, 2026-08-13
+
+The spine of it: `Game.js` handed `AudioDirector.update()` six values every frame and the method read **two**. `position`, `panic`, `belowThermo` and `speed` had been computed and thrown away since the fork, which is exactly why the lake had no direction, the heart never raced, the cold layer was silent and going fast sounded like drifting. All four answer for themselves now, and the JSDoc names what each is for. **If a value arrives in that method, something in it is accountable for the value.**
+
+- **Spatialisation, and the listener is the kelpie.** Pillar 2 decides it, and it is also the steadier answer: the rig is a spring behind her and `Rig.update()` runs *after* the audio call, so listening from the camera would pan against a pose that is both laggy and a frame stale. Hand-rolled from a gain, a lowpass and a stereo panner rather than a `PannerNode`, whose listener API is split across browsers (`positionX` as an AudioParam on some, the deprecated `setPosition` on others) on a game whose whole distribution property is working first time in a phone's in-app browser. `sfx()` points its local `out` at the head, so **every case in the switch got placed without the switch changing**.
+  - **No `at` means centred and unattenuated**, and that default is the meaningful one: the sound is happening *to* you rather than near you. The tail beat is her own fluke, the warning is your own lungs, the chest chord is a reward being handed over.
+  - **Only the diver is placed.** He is the one thing in the lake that persists at a distance and makes noise, so "go back for him" is now a direction as well as an instruction. The fish deliberately are not: their lines arrive with on-screen dialogue addressed to you, and panning a voice against its own subtitle reads as a bug.
+  - Measured: pan caps at ±0.75, gain is flat inside 14 units, and a sound at the fog line (130) is silent and filtered to 700 Hz. **Known limit:** directly behind pans to 0, same as directly ahead. That is inherent to stereo without HRTF and was accepted rather than missed.
+- **The cold layer muffles the lake, not the record.** Its filter is wired across ambience and SFX only; music skips it entirely. Reusing the existing lowpass would have collided head-on with the drowning cue, which is the one thing `config.js` is emphatic about: *when you hear the record go muffled, you are drowning.* Two states cannot share one signal. Measured at full submersion: lake 20000 → 1101 Hz, bed to 0.46, **music bus unmoved at 0.85**, and the choke still lands on 381 Hz at an empty tank exactly as before. This was the last of the layer's three cues.
+- **The heart speeds up.** Was a fixed 900 ms interval at fixed pitch and level, so the first moment of panic and the last breath were identical, and it ran on the wall clock rather than the audio clock. A self-rescheduling timeout reads panic at the top of each beat. Measured **54 / 93 / 132 bpm** across the band.
+- **Speed has a sound**, squared so drifting is properly silent and the rush has to be earned. On the ambience bus, so it is the lake rather than the animal and the cold layer muffles it with everything else.
+- **Ducking**, as volume automation, because Web Audio's compressor has no sidechain input to key off. `chest`, `page`, `warn` and `grip_lost` dip the record to 0.55 and it recovers. **`kick` emphatically does not**, and that omission is the whole difference between ducking that works and ducking that ruins the album: it fires several times a second at the rate people actually swim. Verified `kick` and `thud` leave the music bus at 1.000.
+- **Playlist preload**, ported from V1 at last, and it carried a bug V1 had already fixed and this build had not: `ended`/`error` were ungated, so a **draining** deck reaching its own natural end advanced a second time and cut the incoming track off after one crossfade. Both gate on `live()` now.
+- **Phaser `maxWet` 0.85 → 0.6.** At 0.85 the sweep ate the mids for the whole hold, and washing out the band's own record for ten seconds is the opposite of what pillar 3 asks for.
+- **Rumble, rebuilt.** One `CFG.input.rumble.scale` over every one-shot rather than five retuned call sites, because what those encode is their weight *relative* to each other and that judgement was worth keeping. Plus the record in your hands, driven by the analyser's onset rather than its level so it lands on the beat instead of buzzing through loud passages. **A one-shot owns the motors outright while it plays**, because `playEffect` replaces the running effect instead of mixing with it, and without that arbitration a music re-arm would cut a seabed slam in half.
+- **The bong is a visualiser.** `Post` read `uTrip` and a clock, so the most psychedelic ten seconds in the game were indifferent to the track playing underneath them. `uReact` and `uKick` are gated **inside the existing `uTrip` branches**, so a game that is not tripping pays nothing at all. Sparkles burst on the beat through the accumulator that was already there. Verified live at uReact 0.87 and uKick 0.79 mid-sequence.
+
+### Bigger things to aim for, 2026-08-13
+
+- **The stash is mason jars.** A baggie was half a unit tall inside a pickup radius of 2.6, so the collision was five times the size of the thing drawn. Jars are about 2.2 units and the radius moved with them to 4.0: grab range is now 3.6× the object's half-size where it was 10.4×. Log slates got the same treatment and are now about the size of a board a diver would actually have written on.
+  - **Glass earns back what size gives away.** A jar is harder to spot at distance than a baggie, being mostly transparent and taking the fog's colour, and easier to spot with the lamp, because glass throws a highlight back where a pouch just goes pale. Opacity rides the glint alongside emissive, since brightening a transparent thing alone only makes a pale shape paler. Finding them is still an act of looking.
+  - **The lighter deliberately did not grow.** It looks like it belongs on the list until you check how it is acquired: a fish carries it over and hands it into the diver's glove, so it is never aimed at. Scaling it would only have put a giant lighter in his hand.
+  - Cost: one extra mesh per jar, three rather than two, all sharing one geometry set. Measured with 14 jars: 74 draw calls, 51K triangles, 60 fps median.
+- **E to smoke is gone, and this retires a Phase 1 feature.** There were two ways to do one thing and the unused one was the one being advertised: the prompt sat on screen during exactly the approach that was already about to trigger contact. Verified live: 18.6 units out with a lit bowl shows no prompt, and 2.0 units fires the sequence with no key pressed.
+  - **`useGraceMs` and the coyote grace went with it.** Phase 1 recorded them as landed and verified, and this reverses that deliberately rather than by accident: the grace only ever existed to forgive a *press*, so with no press there was nothing left for it to do.
+  - The touch USE button came off too. On a phone a control you can press and get no answer from reads as the game being broken rather than the button being spare. BOOST moved into the corner it vacated, which is the easier one-handed reach anyway.
+  - **`input.bufferMs` survives with nothing consuming it**, annotated as such at its declaration. The machinery is correct and tested and the next thing worth pressing a button at will want it. If nothing arrives, it and the `InputBus` interact plumbing should be removed together rather than one at a time.
 
 ### Done
 
@@ -84,13 +114,21 @@ Verified on the live origin rather than locally, because the one thing worth pro
 
 All seven items from `docs/v1-handoff.md` landed on the original build in commit `f28d750`. **The two builds have now diverged deliberately**, and the overlap is not free:
 
-- V1 got the **playlist preload fix**. V2 has not: it is still listed under Phase 1b below and must be done here separately.
-- Both got input buffering and the kick sound, arrived at independently rather than shared.
+- V1 got the **playlist preload fix** first. This build has it now, ported in Phase 1b along with a deck-gating bug V1 did not have.
+- Both got input buffering and the kick sound, arrived at independently rather than shared. The buffering has since been retired here and not there, which no longer matters: V1 is archived and receives nothing.
+
+The divergence is closed as a live concern. Nothing needs reconciling in both directions any more, because only one of the two is still played.
 
 ### Next, in order
 
-1. Phase 1b audio: spatialization, the four parameters `Game.js` sends to `AudioDirector.update()` every frame that it never reads (including the thermocline muffle a comment promises and nothing implements, which is now the last of the layer's three cues still missing), **the playlist preload V1 already has**, ducking, heartbeat scaling.
-2. **Gate:** freeze `config.js` movement numbers. Only then Phase 2.
+1. **Gate:** freeze the `config.js` movement numbers. This is the only thing left in Phase 1.
+2. Phase 2, blockout, which the gate exists to protect.
+
+Worth carrying forward rather than rediscovering:
+
+- **Any continuous audio or camera cue goes through a floor, not an accumulation.** `Rig.sustain()` exists because trauma decays linearly and `addShake(rate * dt)` therefore cannot hold a level. The same instinct produced `_dip()` and the thermo filter: a state is a target to sit at, an event is something to add.
+- **Two states must not share one signal.** The choke means drowning; the cold layer needed its own filter rather than a share of that one. Any future "muffle" proposal answers to this first.
+- **Placement grew, movement did not.** If Phase 2 starts and something feels mis-spaced, the pickup radii moved on 2026-08-13 and the movement numbers did not.
 
 ---
 

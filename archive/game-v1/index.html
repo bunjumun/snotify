@@ -13,13 +13,14 @@
      file, so `git push` is still the whole deploy. three.module.min.js imports
      ./three.core.min.js on its own, which is why both live in vendor/.
 
-     V2 borrows the original game's copy rather than shipping a second one. It is
-     740K, three fifths of the whole payload, and anyone arriving here from the
-     other door already has it cached. The cost of the arrangement is a real
-     dependency in the other direction: game/vendor/ is now load-bearing for two
-     pages, so the two folders are removed together or not at all. -->
+     This build is archived and otherwise frozen. This line is the one exception,
+     and it is not a change of heart: vendor/ used to sit inside this folder while
+     the rebuild reached sideways into it, which made a frozen folder load-bearing
+     for a live page. Moving it to the repo root is what allowed this one to be
+     archived at all. Repointed rather than handed its own copy, so the archive
+     still runs instead of becoming 740K of files that no longer do. -->
 <script type="importmap">
-{ "imports": { "three": "../game/vendor/three.module.min.js" } }
+{ "imports": { "three": "../../vendor/three.module.min.js" } }
 </script>
 
 <!-- The safety net, and it is deliberately a CLASSIC script rather than a
@@ -351,7 +352,7 @@ canvas{display:block;width:100%;height:100%}
   <button id="dive">DIVE IN</button>
   <p id="loadState"></p>
   <p id="startNote"><kbd>WASD</kbd> or arrows steer · <kbd>Space</kbd> swim · <kbd>Shift</kbd> boost · <kbd>E</kbd> use<br>
-     <b>Tap Space for one tail beat. Hold it to boost. Every beat costs air.</b><br>
+     <b>Hold Space to cruise. Tap it to swim — every tap is a kick.</b><br>
      Bluetooth controller and touch also work. Sound on is better.</p>
 
   <!-- Shown in place of the mode picker when the game can't start. Lives in the
@@ -435,7 +436,9 @@ canvas{display:block;width:100%;height:100%}
     <!-- Whichever way up someone learned to fly things, they are certain it is
          the right way up. This is cheaper than being right about it. -->
     <label class="row">Invert up/down <input type="checkbox" id="setInvert"></label>
-    <div class="row"><span>Tilt steering</span><button class="btn" id="btnRecentre">RECENTRE</button></div>
+    <!-- Tilt steering is written (src/input/Tilt.js) but not registered, so the
+         RECENTRE button that used to sit here recentred nothing and said it had
+         worked. It comes back with tilt itself, and not before. -->
     <div class="row"><span>Ship's log</span><button class="btn" id="btnLog">READ <span id="logCount"></span></button></div>
     <button class="btn primary" id="btnResume">RESUME</button>
   </div>

@@ -21,12 +21,9 @@
 // momentum is steered gradually toward the new heading instead of teleporting
 // there. That last one is most of why it feels like water.
 //
-// Speed is a tail beat, not a switch, and one button carries both gears. A TAP
-// is a single beat: it shoves you forward, adds to a surge, and the surge bleeds
-// away as soon as you stop working, so tapping is how you move slowly and place
-// yourself precisely. HOLDING the same button past kelpie.holdToBoost commits
-// her to working the tail continuously, which is the fast way across open water
-// and the expensive one. See the kick and translation blocks in update().
+// Speed is a tail beat, not a switch. Holding swim is a resting cruise; every
+// tap is a kick that shoves you forward and builds a surge, and the surge bleeds
+// away as soon as you stop working. See the kick block in update().
 
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
@@ -66,8 +63,6 @@ export class Kelpie {
     this.kicked = false;   // true for the one frame a beat lands, for FX
     this.kickPulse = 0;    // decays from 1; drives the visible tail snap
     this._kickCd = 0;
-    this._holdFor = 0;     // seconds the swim button has been down; past
-                           // holdToBoost a tap has become a hold
     this.lift = 0;         // the bong launch, 1 -> 0 over trip.launchTime
     this._ceiling = 0;
     this._climbTarget = null;
@@ -911,17 +906,7 @@ export class Kelpie {
     }
 
     // ---- Translation ----
-    // Hold to boost. The timer only runs while the button is actually down, and
-    // any release zeroes it, so a rapid series of taps can never accumulate its
-    // way into a sprint the player didn't ask for — which is the whole reason
-    // tapping stays usable as a slow, deliberate gear.
-    //
-    // The dedicated boost input still works and skips the wait. It costs nothing
-    // to keep, and a player who has found Shift or a shoulder button should not
-    // have it taken away because the swim button learned a second trick.
-    const down = intent.thrust > 0.05;
-    this._holdFor = down ? this._holdFor + dt : 0;
-    this.boosting = down && (intent.boost || this._holdFor >= K.holdToBoost);
+    this.boosting = intent.boost && intent.thrust > 0.05;
     const power = (this.boosting ? K.boostThrust : K.thrust) + this.surge * K.kickThrustBonus;
     const maxSpeed = (this.boosting ? K.boostMaxSpeed : K.maxSpeed)
       + this.surge * K.kickSpeedBonus + this.lift * CFG.trip.launchSpeed;

@@ -84,7 +84,6 @@
       <a class="addbtn" id="musicBtn" href="music.html" title="S'notify — the band's music">🎵 Music</a>
       <a class="addbtn" id="artBtn" href="art.html" title="Sn'art — the band's artwork">🎨 Art</a>
       <a class="addbtn" id="gameBtn" href="game/" title="Lakehorse Swimulator — the game">🐴 Game</a>
-      <a class="addbtn" id="gameV2Btn" href="game-v2/" title="Lakehorse Swimulator V 2 — the rebuild">🐴 V 2</a>
       <a class="addbtn" id="assetsBtn" href="assets.html" title="Band assets — the lore document">📖 Assets</a>
       <button class="addbtn" id="toolsBtn" title="Graphic tools">▨ Tools ▾</button>
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
@@ -110,24 +109,19 @@
         <div class="tally" id="tallyArt">&nbsp;</div>
       </a>
 
+      <!-- One door again. The rebuild used to sit beside the original so both
+           could stay up; it has now replaced it AT the original's path, so every
+           link anyone has ever shared still lands on a game, and lands on the
+           better one. The keys stay door.game.* on purpose: the band has their
+           own wording stored against that key, and renaming it would have thrown
+           their copy away to no benefit. -->
       <a class="door game" id="doorGame" href="game/">
         <div class="glyph">🐴</div>
         <h2 data-txt="door.game.title">Lakehorse Swimulator</h2>
         <p data-txt="door.game.blurb">Ride the kelpie through the wreck of the SS Enias. You're only the
-           diver holding on. Mind your breath — and the record plays while you swim.</p>
+           diver holding on. Tap for a tail beat, hold to boost, and every beat costs you air.
+           The record plays while you swim.</p>
         <div class="tally" id="tallyGame">&nbsp;</div>
-      </a>
-
-      <!-- The rebuild. Its own door rather than a version switch on the one
-           above, because both stay up: the original keeps every link anyone has
-           ever shared, and this one is free to change underneath it. Same
-           .door.game styling on purpose, so the two read as the same place. -->
-      <a class="door game" id="doorGameV2" href="game-v2/">
-        <div class="glyph">🐴</div>
-        <h2 data-txt="door.gameV2.title">Lakehorse Swimulator V 2</h2>
-        <p data-txt="door.gameV2.blurb">The same wreck, rebuilt. One button now: tap for a single tail
-           beat, hold it to boost. Every beat costs you air, so going slow is how you go far.</p>
-        <div class="tally" id="tallyGameV2">&nbsp;</div>
       </a>
 
       <a class="door assets" id="doorAssets" href="assets.html">
@@ -190,8 +184,7 @@ async function init(){
       ? `${dr.length} draft${dr.length === 1 ? '' : 's'}` + (on ? ` · ${on.name} is live` : ' · none live')
       : 'Nothing written yet';
   } catch { $('tallyAssets').textContent = 'Not set up yet'; }
-  gameTally('lakehorse.progress', 'tallyGame');
-  gameTally('lakehorse.v2.progress', 'tallyGameV2');
+  gameTally('lakehorse.v2.progress', 'tallyGame');
 
   document.title = curBandTitle + " · Sn'Album";
   $('bandLine').innerHTML = `Signed in as <b>${esc(curBandTitle)}</b>.`;
@@ -209,9 +202,13 @@ function tally(id, n, one, many){
 // The game keeps its own progress in localStorage on this origin, so the door
 // can report it without the game or the database being involved at all.
 //
-// Two builds, two keys, two doors. V2 namespaces everything under lakehorse.v2
-// precisely so this can report them apart: sharing a key would have each game
-// overwriting the other's dives and both doors telling the same story.
+// The key is lakehorse.v2.*, which now reads as a historical accident rather
+// than a version: the prefix was minted when two builds were up at once and
+// needed to stop overwriting each other's dives. Only one build is live now, but
+// renaming the key would wipe the progress of everyone who has played it, so it
+// stays. Anyone's older dives are still parked under lakehorse.* and are
+// deliberately left alone; adopting them is a one-time migration that belongs
+// with save versioning, not with a folder move.
 function gameTally(key, into){
   let d;
   try { d = JSON.parse(localStorage.getItem(key) || 'null'); } catch { d = null; }

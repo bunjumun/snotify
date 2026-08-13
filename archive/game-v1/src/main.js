@@ -12,7 +12,6 @@
 
 import { Game } from './core/Game.js';
 import { CFG } from '../config.js';
-import { KEYS } from './core/Keys.js';
 
 const canvas = document.getElementById('c');
 
@@ -192,25 +191,20 @@ setDiff.onchange = () => {
 };
 
 const setQuality = document.getElementById('setQuality');
-setQuality.value = localStorage.getItem(KEYS.quality) || 'auto';
+setQuality.value = localStorage.getItem('lakehorse.quality') || 'auto';
 setQuality.onchange = () => {
   const v = setQuality.value;
-  localStorage.setItem(KEYS.quality, v);
+  localStorage.setItem('lakehorse.quality', v);
   game.setQuality(v === 'auto' ? game._guessQuality() : v);
 };
 if (setQuality.value !== 'auto') game.setQuality(setQuality.value);
 
 const setInvert = document.getElementById('setInvert');
-setInvert.checked = localStorage.getItem(KEYS.invert) === '1';
+setInvert.checked = localStorage.getItem('lakehorse.invert') === '1';
 game.input.invertPitch = setInvert.checked;
 setInvert.onchange = () => {
   game.input.invertPitch = setInvert.checked;
-  try { localStorage.setItem(KEYS.invert, setInvert.checked ? '1' : '0'); } catch { /* private mode */ }
-};
-
-document.getElementById('btnRecentre').onclick = () => {
-  game.tilt?.recentre();
-  game.hud.say('Recentred.', { seconds: 1.5 });
+  try { localStorage.setItem('lakehorse.invert', setInvert.checked ? '1' : '0'); } catch { /* private mode */ }
 };
 
 function wireVolumes(audio) {
@@ -221,12 +215,12 @@ function wireVolumes(audio) {
   ];
   for (const [id, bus] of map) {
     const el = document.getElementById(id);
-    const saved = localStorage.getItem(KEYS.vol(bus));
+    const saved = localStorage.getItem(`lakehorse.vol.${bus}`);
     el.value = saved !== null ? saved : CFG.audio.volumes[bus];
     audio.setVolume(bus, parseFloat(el.value));
     el.oninput = () => {
       audio.setVolume(bus, parseFloat(el.value));
-      localStorage.setItem(KEYS.vol(bus), el.value);
+      localStorage.setItem(`lakehorse.vol.${bus}`, el.value);
     };
   }
 }

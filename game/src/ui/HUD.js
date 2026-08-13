@@ -111,13 +111,6 @@ export class HUD {
     this._promptTimer = opts.sticky ? Infinity : (opts.seconds ?? 3.5);
   }
 
-  /**
-   * Is the prompt slot occupied? There is only one of them, and a caller that
-   * speaks every frame needs a way to ask rather than simply overwriting
-   * whatever was there. See Game._prompt().
-   */
-  get saying() { return this._promptTimer > 0; }
-
   clearSay() {
     this.el.prompt.classList.remove('on');
     this._promptTimer = 0;

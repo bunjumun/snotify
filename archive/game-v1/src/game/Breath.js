@@ -5,14 +5,6 @@
 // the diver is adrift — so every choice that makes you faster or bolder also
 // makes you shorter of time, which is the whole shape of the loop.
 //
-// The tank empties two ways, and the difference matters. A RATE bills you for a
-// state you are in: being deep, being adrift, swimming hard. A SPEND bills you
-// for a thing you just did, and right now that means a boosted tail beat. The
-// split exists because taxing the boost purely as a rate charged the wrong verb:
-// the kelpie's speed comes from tapping, so a rider gliding on a full surge was
-// paying the same as one hammering the button. Effort you can see now costs air
-// you can see leave, at the moment it happens.
-//
 // Warnings escalate across three senses at once rather than one: the bar changes
 // colour, the vignette closes, the audio filter tightens, and a heartbeat comes
 // up underneath. Any one of them alone is a UI element; together they're dread.
@@ -71,22 +63,6 @@ export class Breath {
     this._setState(next);
 
     if (next === BreathState.EMPTY && this.onEmpty) { this.onEmpty(); this.onEmpty = null; }
-  }
-
-  /**
-   * A discrete charge for something you just did, as opposed to the per-second
-   * rates in update(). Boosted tail beats are billed through here.
-   *
-   * Empties the tank the same way a rate can, including firing onEmpty, because
-   * a sprint that runs you out on the last beat has to end the run exactly as
-   * drifting out of air does — anything else and the fail state depends on which
-   * arithmetic got you there.
-   */
-  spend(seconds) {
-    if (this.empty || seconds <= 0) return;
-    this.value = Math.max(0, this.value - seconds);
-    this._reevaluate();
-    if (this.empty && this.onEmpty) { this.onEmpty(); this.onEmpty = null; }
   }
 
   /** Baggies top up; the bong refills outright. Never overfills the tank. */

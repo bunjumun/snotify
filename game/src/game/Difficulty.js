@@ -14,8 +14,9 @@
 // anyone who picks anything up is effectively unkillable.
 
 import { CFG, modeCfg } from '../../config.js';
+import { KEYS } from '../core/Keys.js';
 
-const KEY = 'lakehorse.difficulty';
+const KEY = KEYS.difficulty;
 
 export class Difficulty {
   constructor() {

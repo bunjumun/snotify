@@ -1,4 +1,3 @@
-import { KEYS } from '../core/Keys.js';
 // What's in the box.
 //
 // A download of Mango Tree World, offered for an email address — and offered
@@ -97,9 +96,9 @@ export class RewardScreen {
       // v17 not applied, or offline. Keep it so it isn't simply lost, and don't
       // make it the player's problem.
       try {
-        const pending = JSON.parse(localStorage.getItem(KEYS.pendingSignups) || '[]');
+        const pending = JSON.parse(localStorage.getItem('lakehorse.pendingSignups') || '[]');
         if (!pending.includes(email)) pending.push(email);
-        localStorage.setItem(KEYS.pendingSignups, JSON.stringify(pending));
+        localStorage.setItem('lakehorse.pendingSignups', JSON.stringify(pending));
       } catch { /* private mode */ }
       this.status.textContent = 'Saved. Here it is either way.';
     }

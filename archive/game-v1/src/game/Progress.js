@@ -1,4 +1,3 @@
-import { KEYS } from '../core/Keys.js';
 // What survives a death, and what survives closing the tab.
 //
 // The lighter is the important one. Finding it is the opening's whole first beat,
@@ -9,7 +8,7 @@ import { KEYS } from '../core/Keys.js';
 // Everything here is best-effort. Private browsing throws on localStorage writes,
 // and a game on a band's website should shrug that off rather than break.
 
-const KEY = KEYS.progress;
+const KEY = 'lakehorse.progress';
 
 const DEFAULTS = {
   hasLighter: false,

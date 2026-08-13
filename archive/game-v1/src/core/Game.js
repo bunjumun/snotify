@@ -51,7 +51,6 @@ import { LogFeed } from '../game/LogFeed.js';
 import { HUD } from '../ui/HUD.js';
 import { RewardScreen } from '../ui/RewardScreen.js';
 import { Logbook } from '../ui/Logbook.js';
-import { KEYS } from './Keys.js';
 
 export const State = { TITLE: 'title', PLAY: 'play', PAUSED: 'paused', DEAD: 'dead' };
 
@@ -70,11 +69,6 @@ export class Game {
     this.audio = null;          // set by main.js once the context is unlocked
     this.time = 0;              // wall clock, never reset — animations read this
     this.runSeconds = 0;        // this run only, for the chest's best time
-
-    // The station you were last in range of, and when. See the coyote-time note
-    // in _updateBongs(): a press counts for a moment after you have drifted off.
-    this._graceBong = null;
-    this._graceAt = -Infinity;
 
     this.difficulty = new Difficulty();
     this.progress = new Progress();
@@ -119,7 +113,7 @@ export class Game {
     // what quality governs — how many schools of fish the lake gets — is decided
     // when the world is built and can't be changed afterwards.
     let want = CFG.quality.default;
-    try { want = localStorage.getItem(KEYS.quality) || want; } catch { /* private mode */ }
+    try { want = localStorage.getItem('lakehorse.quality') || want; } catch { /* private mode */ }
     this.quality = want === 'auto' ? this._guessQuality() : want;
   }
 
@@ -167,15 +161,6 @@ export class Game {
     this.scene.add(this.thermocline.group);
 
     this.weather = new Weather(this.rng);
-    // Weather has carried these two hooks since it was written and nothing had
-    // ever assigned them. This is the arrival: the lake picks a direction and
-    // leans, and you get one surge of warning before the fog closes. There is no
-    // matching cue on `onEnd` because a gale letting go is an absence, not an
-    // event, and the eight-second ramp out already reads as one.
-    this.weather.onStart = () => {
-      this.rig.addShake(CFG.weather.onsetTrauma);
-      this.pad?.rumble(0.45, 260);
-    };
     this.bounds = new Bounds();
 
     this.shoals = new Shoals(this.rng, this.seabed, this.quality);
@@ -449,74 +434,26 @@ export class Game {
     const current = this._current || (this._current = new THREE.Vector3());
     current.copy(this.weather.current).add(this.bounds.force(this.kelpie.position));
 
-    // Two continuous sources of unease, both HELD at a floor rather than topped
-    // up per frame. Bounds.strain had been computed since the boundary was
-    // written, carrying a comment saying it was for cues at the edge, and nothing
-    // read it until Phase 1 — at which point it was read and still did nothing,
-    // because `addShake(rate * dt)` cannot hold a level against a linear decay.
-    // See Rig.sustain() for why. So this is the cue actually arriving: a rising
-    // unease as the current leans harder, so pushing at the edge of the lake
-    // feels like being pushed back rather than like drifting into treacle.
-    if (this.bounds.strain > 0.05) {
-      this.rig.sustain(this.bounds.strain * CFG.world.strainTrauma);
-    }
-
-    // The gale's buffet, the same way. Off the current's actual magnitude rather
-    // than off `intensity`, because the current already pulses: the shake and the
-    // shove are then the same water, and the camera surges with the gusts instead
-    // of humming flat underneath them.
-    const buffet = this.weather.current.length() / CFG.weather.currentForce;
-    if (buffet > 0.02) this.rig.sustain(buffet * CFG.weather.galeTrauma);
-
     this.kelpie.update(dt, intent, { current, attract: this._bongAttract() });
-
-    // Hitting the floor is an event, not a clamp. clampAbove() reports whether it
-    // had to move her, and that report used to be dropped on the ground: you
-    // could fly nose-first into the silt at full speed and get nothing back. No
-    // jolt, no sound, no cost, she simply stopped descending. Read the closing
-    // speed before the clamp, because after it the velocity is still pointing
-    // down through a floor she is no longer inside.
-    const closing = -this.kelpie.velocity.y;
-    if (this.seabed.clampAbove(this.kelpie.position, 2.0)) this._hitSeabed(closing);
+    this.seabed.clampAbove(this.kelpie.position, 2.0);
 
     // A tail beat throws water. This puff is the receipt for the tap — without
     // something leaving the fluke, tapping reads as a button that does nothing.
-    //
-    // The beat also costs air, and both come off the same event on purpose. The
-    // puff IS the price: you watch the breath you just spent leave the fluke, so
-    // the tank never drops for a reason you did not see happen. Charged before
-    // breath.update() below, so a beat and the rate it was taken under settle in
-    // the same frame.
+    // The sound is the other half of that receipt and matters more than the
+    // puff: it is the single most frequent action in the game, it is issued on
+    // the frame of the beat, and the ear notices a missing answer long before
+    // the eye does.
     if (this.kelpie.kicked) {
       const tail = this._tail || (this._tail = new THREE.Vector3());
       this.kelpie.tailPoint(tail);
-      this.breath.spend(CFG.breath.kickCost);
-      this.bubbles.burst(tail.x, tail.y, tail.z, 5, 0.5);
-      // Louder from a standing start than mid-sprint: the same beat is more work
-      // when there's no momentum under it, and the ear already expects that.
-      this.audio?.sfx('kick', { force: 1 - Math.min(1, this.kelpie.speed / 20) });
+      this.bubbles.burst(tail.x, tail.y, tail.z, 4, 0.45);
+      this.audio?.sfx('kick');
     }
 
     this._followEntities(dt);
 
     // ---- Breath ----
     const submersion = this.thermocline.submersion(this.kelpie.position.y);
-
-    // The layer takes the light and speeds the drain the moment you pass it, and
-    // it did both as silent ramps: the most consequential line in the water was
-    // the one thing you could cross without noticing. Down through it knocks,
-    // back up through it lets go. Latched inside Thermocline, so hanging at the
-    // boundary weighing up the trench costs nothing.
-    const crossed = this.thermocline.crossing(this.kelpie.position.y);
-    if (crossed > 0) {
-      this.rig.addShake(CFG.thermocline.crossTrauma);
-      this.audio?.sfx('cold_in');
-      this.pad?.rumble(0.35, 180);
-    } else if (crossed < 0) {
-      this.rig.addShake(CFG.thermocline.riseTrauma);
-      this.audio?.sfx('cold_out');
-    }
-
     this.breath.update(dt, {
       boosting: this.kelpie.boosting,
       belowThermo: submersion,
@@ -616,37 +553,6 @@ export class Game {
     this.hud.radar.draw(dt, this.kelpie.position, this.kelpie.yaw);
   }
 
-  /**
-   * She met the floor. `speed` is how fast she was closing on it.
-   *
-   * The silt absorbs rather than bounces, because she is half a tonne of animal
-   * meeting mud and not a ball. Losing the horizontal speed as well as the fall
-   * is the part that sells it: a crash that only cancels your descent leaves you
-   * skating along the bottom at full pelt, which reads as a bug.
-   *
-   * Hit-stop only for the hard half of the range. On a graze it would register as
-   * a dropped frame rather than as weight, and a stutter the player can't explain
-   * is worse than no feedback at all.
-   */
-  _hitSeabed(speed) {
-    const I = CFG.impact;
-    if (speed < I.minSpeed) return;
-    const f = Math.min(1, (speed - I.minSpeed) / (I.hardSpeed - I.minSpeed));
-
-    this.kelpie.velocity.y = 0;
-    this.kelpie.velocity.multiplyScalar(1 - I.absorb * f);
-
-    this.rig.addShake(I.trauma * f);
-    if (f > 0.5) this.loop.hitStop(I.hitStop * f, I.hitStopScale);
-    this.audio?.sfx('thud', { force: f });
-    this.pad?.rumble(0.55 * f, 140);
-
-    // From her belly rather than her centre, so the cloud comes off the ground
-    // she actually touched.
-    const p = this.kelpie.position;
-    this.smoke.puff(p.x, p.y - 1.4, p.z, Math.round(I.silt * f) + 2, I.siltSize * (0.5 + f));
-  }
-
   _followEntities(dt) {
     const anchor = this._anchor || (this._anchor = new THREE.Vector3());
     // In series, not in parallel. One rope off her back, and the four of them
@@ -743,24 +649,7 @@ export class Game {
     this.nearestBong = nearest;
     this.nearestBongDistance = nearestD;
 
-    // Coyote time for stations. Having just drifted out of range, the one you
-    // were at stays usable for a moment. You committed to the press while you
-    // were in range, and the current carrying you out in between is not a mistake
-    // worth punishing — without this, a press at the very edge of the radius is
-    // eaten and nothing explains why.
-    //
-    // The grace only ever answers a real button press. Neither the prompt nor the
-    // swim-into-it path fires from out here, because both of those are about
-    // being at the station rather than about having asked for it.
-    const inRange = !!nearest && nearestD <= CFG.bong.useRadius;
-    if (inRange) { this._graceBong = nearest; this._graceAt = this.time; }
-    const graced = !inRange
-      && this._graceBong
-      && (this.time - this._graceAt) <= CFG.input.useGraceMs / 1000;
-
-    if (this.trip.active || (!inRange && !graced)) return;
-
-    const target = inRange ? nearest : this._graceBong;
+    if (this.trip.active || !nearest || nearestD > CFG.bong.useRadius) return;
 
     // In range. Say what's missing rather than silently refusing — a station that
     // does nothing when you press use reads as a bug.
@@ -769,28 +658,47 @@ export class Game {
       // light it is not a mistake to be corrected — it's the scene, and the fish
       // is already on its way over to say so. Nagging every frame on top of that
       // just talks over it.
-      if (inRange && !(this.intro.active && this.intro.step < 2)) {
-        this.hud.say('No fire. You need a lighter.', { seconds: 2 });
+      if (!(this.intro.active && this.intro.step < 2)) {
+        this._prompt('No fire. You need a lighter.', 2);
       }
       return;
     }
     if (!this.stash.canPack) {
-      if (inRange) {
-        this.hud.say(`Not enough to pack. <b>${this.stash.carried}/${CFG.stash.needed}</b>`, { seconds: 2 });
-      }
+      this._prompt(`Not enough to pack. <b>${this.stash.carried}/${CFG.stash.needed}</b>`, 2);
       return;
     }
     // Swim into it and it goes off. No button, no stopping, no lining up on the
     // last two metres — you charge a lit bong and the lit bong happens to you.
     // E still works, and works from a long way further out, for the approach
     // that didn't quite connect.
-    if (inRange && nearestD <= CFG.bong.hitRadius) return this._useBong(nearest);
+    if (nearestD <= CFG.bong.hitRadius) return this._useBong(nearest);
 
-    if (inRange) this.hud.say('<kbd>E</kbd> to hit it', { seconds: 0.4 });
+    this._prompt('<kbd>E</kbd> to hit it', 1.2);
     if (intent.interact) {
+      // The press is buffered, so it has to be spent or it fires again on every
+      // remaining frame of its window.
       this.input.consumeInteract();
-      this._useBong(target);
+      this._useBong(nearest);
     }
+  }
+
+  /**
+   * Say something that stays true while you stand there, rather than something
+   * that just happened.
+   *
+   * These lines are issued from _updateBongs() on every frame you are in range,
+   * and the prompt slot is a single last-writer-wins element. Refreshing it
+   * every frame meant a standing prompt sat on top of everything else that
+   * wanted to speak — the low-breath warning, fish dialogue, a pickup count.
+   * Circling a bong on an empty tank suppressed the warning outright.
+   *
+   * Only ever issuing into a free slot fixes that without needing priorities.
+   * Anything that speaks keeps its full life, and since the caller is still
+   * asking every frame, the standing prompt returns the moment the slot is free.
+   * A real priority queue on say() is V2 work.
+   */
+  _prompt(text, seconds) {
+    if (!this.hud.saying) this.hud.say(text, { seconds });
   }
 
   _useBong(bong) {

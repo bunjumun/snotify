@@ -27,7 +27,7 @@ export class InputBus {
       thrust: 0,              // 0..1
       kick: false,            // rising edge of thrust — one tail beat per press
       boost: false,
-      interact: false,        // rising edge, held live for input.bufferMs
+      interact: false,        // buffered press — stays live until consumed or stale
       lamp: { x: 0, y: 0 },   // aim offset, -1..1
     };
 
@@ -44,14 +44,8 @@ export class InputBus {
     this.activeDevice = 'keyboard';
     this._prevInteract = false;
     this._prevThrust = false;
+    this._interactAt = -Infinity;   // when `use` was last pressed; see update()
     this._lastActivity = {};
-
-    // Own clock, advanced by dt in update(). Deliberately not performance.now():
-    // the buffer has to live on the same time base as the simulation, or a
-    // hit-stop would let a buffered press expire during a freeze the player is
-    // watching rather than participating in.
-    this._clock = 0;
-    this._interactAt = -Infinity;
   }
 
   add(adapter) {
@@ -68,18 +62,7 @@ export class InputBus {
     if (this.activeDevice !== name) this.activeDevice = name;
   }
 
-  /**
-   * Spend the buffered "use". Call this the moment something acts on it, or the
-   * one press keeps being true for the rest of the buffer window and fires at
-   * everything it drifts past.
-   */
-  consumeInteract() {
-    this._interactAt = -Infinity;
-    this.intent.interact = false;
-  }
-
   update(dt) {
-    this._clock += dt;
     const r = this.raw;
     r.steer.x = 0; r.steer.y = 0; r.thrust = 0; r.boost = false; r.interact = false;
     r.lamp.x = 0; r.lamp.y = 0;
@@ -94,14 +77,18 @@ export class InputBus {
     i.lamp.x = clamp1(r.lamp.x);
     i.lamp.y = clamp1(r.lamp.y);
 
-    // Edge-trigger: "use" should fire once per press, not once per frame held.
-    // The edge is stamped rather than consumed on the spot, and stays live for
-    // input.bufferMs, so a press made just before you were in range still counts.
-    // Whoever acts on it calls consumeInteract(), which is what stops one press
-    // firing repeatedly for the whole window.
-    if (r.interact && !this._prevInteract) this._interactAt = this._clock;
+    // "Use" is buffered rather than edge-triggered. Pressing it is a decision
+    // made a frame or two before the game agrees you are in range, and consuming
+    // it on exactly the frame it went down threw that decision away in silence:
+    // press E just short of a bong's radius and nothing happened, which reads as
+    // a broken button rather than as being early. The press now stays live for
+    // bufferMs, so the game can still find something for it to have meant.
+    //
+    // Whoever acts on it must call consumeInteract(). Without that the one press
+    // fires again on every frame left in the window.
+    if (r.interact && !this._prevInteract) this._interactAt = performance.now();
     this._prevInteract = r.interact;
-    i.interact = (this._clock - this._interactAt) <= CFG.input.bufferMs / 1000;
+    i.interact = performance.now() - this._interactAt <= CFG.input.bufferMs;
 
     // Thrust is read as both a level and an edge, because swim is two verbs on
     // one button: hold it to cruise, tap it to kick. The threshold is what lets
@@ -109,6 +96,16 @@ export class InputBus {
     const pressed = i.thrust > 0.5;
     i.kick = pressed && !this._prevThrust;
     this._prevThrust = pressed;
+  }
+
+  /**
+   * Spend the buffered `use` press. Called by whatever acted on it — the buffer
+   * is a window, not a queue, and a window nobody closes is a press that fires
+   * every frame until it expires.
+   */
+  consumeInteract() {
+    this._interactAt = -Infinity;
+    this.intent.interact = false;
   }
 
   dispose() {

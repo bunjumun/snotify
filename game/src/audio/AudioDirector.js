@@ -87,7 +87,6 @@ export class AudioDirector {
     this.deck = 0;           // which one is live
     this.onTrack = null;     // (track, index, total) => void — the HUD listens
     this._advancing = false;
-    this._armed = null;      // {index, deck} — the next track, already buffering
     this._heartbeat = null;
     this._hbWanted = false;  // panic says heartbeat; the pause menu only mutes it
     this._fails = 0;         // consecutive tracks that wouldn't load
@@ -344,57 +343,16 @@ export class AudioDirector {
     src.connect(gain).connect(this.buses.music);
     gain.connect(this.analyser);   // pre-fader tap; see the note in the constructor
 
-    const deck = { el, src, gain };
-    // Both listeners below speak only for the deck that is actually on air. Two
-    // of the three decks states are not the record and must not move it:
-    // an ARMED deck is silently buffering the next track, and a DRAINING deck is
-    // finishing its fade under the one that replaced it. Left ungated, the armed
-    // deck's load error spends the live track's retry budget, and the draining
-    // deck reaches its own natural end a few seconds after the crossfade and
-    // fires `ended` — advancing a second time and cutting the incoming track off
-    // after one crossfade's worth of music.
-    const live = () => this.decks[this.deck] === deck;
-
     // Backstop. If a track's duration never resolves — a stream, a container the
     // browser won't measure — the crossfade window in update() never opens, and
     // without this the record would simply stop at the end of track one.
-    el.addEventListener('ended', () => { if (live()) this._advance(); });
+    el.addEventListener('ended', () => this._advance());
     // A dead URL shouldn't end the album either; skip to the next one.
-    el.addEventListener('error', () => {
-      // A track that fails while merely armed throws away the arm and nothing
-      // else. The crossfade then loads it the old way, and if it fails again it
-      // is the live deck by that point and gets counted exactly once.
-      if (!live()) {
-        if (this._armed && this._armed.deck === deck) this._armed = null;
-        return;
-      }
-      this._trackFailed();
-    });
+    el.addEventListener('error', () => this._trackFailed());
     // Proof one actually started, which is what clears the failure count.
     el.addEventListener('playing', () => { this._fails = 0; });
 
-    return deck;
-  }
-
-  /**
-   * Hand the next track to the idle deck early so preload='auto' has somewhere
-   * to put it — the "arm" half of arm-and-fire.
-   *
-   * Assigning `src` is what starts the download. It used to happen at the exact
-   * instant the fade opened, so preload never had a chance to do anything and
-   * every transition faded up into a track that had not yet received a byte. On
-   * a phone on mobile data that is the worst possible moment to be buffering.
-   * Arming costs one extra open stream for the last `preload` seconds of a
-   * track, and buys a transition that is already in memory when it is needed.
-   */
-  _arm(i) {
-    if (this.playlist.length < 2) return;
-    if (this._armed && this._armed.index === i) return;
-    const deck = this.decks[this.deck ^ 1];
-    const track = this.playlist[i];
-    if (!deck || !track) return;
-    deck.el.src = track.url;
-    this._armed = { index: i, deck };
+    return { el, src, gain };
   }
 
   /** Put track `i` on the idle deck and crossfade to it. */
@@ -408,27 +366,13 @@ export class AudioDirector {
     // A one-track playlist has nothing to cross into but itself, and crossfading
     // a song with a second copy of the same song is worse than a clean loop.
     next.el.loop = this.playlist.length === 1;
-
-    // The "fire" half. If _arm() has already given this deck this track then its
-    // src has been set for `preload` seconds and there is nothing left to do but
-    // start it — deliberately including the seek, since an armed deck has never
-    // played and is already at zero, and reaching into a buffered stream to
-    // prove it would be the one thing this split exists to avoid.
-    //
-    // Everything else falls back to the original behaviour of loading at the
-    // moment of the fade: the first play, a skip to a track nobody armed, or an
-    // arm that was thrown away because it would not load.
-    const armed = this._armed && this._armed.index === i && this._armed.deck === next;
-    this._armed = null;
-    if (!armed) {
-      next.el.src = track.url;
-      // A fresh src already starts at zero, so this is belt and braces — but on a
-      // element that hasn't loaded metadata yet some WebKit builds throw
-      // InvalidStateError rather than storing a pending seek, and an exception
-      // here would jump straight over the play() below and leave _advancing stuck
-      // true, which stops the record for the rest of the session.
-      try { next.el.currentTime = 0; } catch { /* seek before metadata; harmless */ }
-    }
+    next.el.src = track.url;
+    // A fresh src already starts at zero, so this is belt and braces — but on a
+    // element that hasn't loaded metadata yet some WebKit builds throw
+    // InvalidStateError rather than storing a pending seek, and an exception
+    // here would jump straight over the play() below and leave _advancing stuck
+    // true, which stops the record for the rest of the session.
+    try { next.el.currentTime = 0; } catch { /* seek before metadata; harmless */ }
     next.el.play().catch(() => { /* autoplay policy or a dead URL; stay quiet */ });
 
     next.gain.gain.cancelScheduledValues(now);
@@ -479,21 +423,10 @@ export class AudioDirector {
     if (this.playlist.length < 2 || this._advancing) return;
     const el = this.decks[this.deck]?.el;
     if (!el || !el.duration || !isFinite(el.duration)) return;
-    const left = el.duration - el.currentTime;
-    const P = CFG.audio.playlist;
-    if (left <= P.crossfade) this._advance();
-    // Not time to fade yet, but time to start fetching what we will fade into.
-    else if (left <= P.crossfade + P.preload) this._arm((this.index + 1) % this.playlist.length);
+    if (el.duration - el.currentTime <= CFG.audio.playlist.crossfade) this._advance();
   }
 
-  /**
-   * Skip forward — wired to the HUD's track readout.
-   *
-   * A skip goes to the same track the pump would have armed, so a press late in
-   * a track lands on a stream that is already buffered. `_play()` clears the arm
-   * whether it used it or not, so an early skip cannot leave one behind pointing
-   * at a track the record has already gone past.
-   */
+  /** Skip forward — wired to the HUD's track readout. */
   skip() { if (this.playlist.length > 1) { this._advancing = false; this._advance(); } }
 
   get nowPlaying() { return this.playlist[this.index] || null; }
@@ -566,29 +499,34 @@ export class AudioDirector {
 
   // ----------------------------------------------------------------------- sfx
 
-  /** Synthesised one-shots. No files, no loading, no 404s. */
-  sfx(name) {
+  /**
+   * Synthesised one-shots. No files, no loading, no 404s.
+   *
+   * Every case detunes by a few percent per invocation. Without it a repeated
+   * sound is bit-identical every single time, and the ear reads exact repetition
+   * as synthetic faster than it reads any amount of wrong timbre — ten baggies in
+   * a row was ten copies of one waveform. `chest` opts out, because its chord is
+   * the one sound in the game that is a reward rather than information and it
+   * should ring true each time.
+   *
+   * @param {string} name
+   * @param {{force?:number}} [opts] 0..1 strength, where a sound has a range
+   */
+  sfx(name, opts = {}) {
     if (!this.ok) return;
     const c = this.ctx;
     const t = c.currentTime;
     const out = this.buses.sfx;
+    const force = Math.min(1, Math.max(0, opts.force ?? 1));
 
-    // Every case below is built from fixed numbers, which means the tenth baggie
-    // used to be the same waveform as the first — and exact repetition is the
-    // single fastest way to tell an ear it is listening to a machine. One pitch
-    // multiplier is drawn per note and applied to the whole of it, so a glide
-    // keeps the interval it travels; it lives here rather than in the cases so
-    // that every sound gets it without the switch knowing about it.
-    let exact = false;   // set by the one case where repeating exactly IS the point
-    const vary = () => (exact ? 1 : 1 + (Math.random() * 2 - 1) * CFG.audio.sfxVariance);
+    const detune = name === 'chest' ? 1 : 1 + (Math.random() - 0.5) * 0.09;
 
     const tone = (freq, dur, type = 'sine', vol = 0.3, glideTo = null) => {
-      const k = vary();
       const o = c.createOscillator();
       const g = c.createGain();
       o.type = type;
-      o.frequency.setValueAtTime(freq * k, t);
-      if (glideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1, glideTo * k), t + dur);
+      o.frequency.setValueAtTime(freq * detune, t);
+      if (glideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1, glideTo * detune), t + dur);
       g.gain.setValueAtTime(0, t);
       g.gain.linearRampToValueAtTime(vol, t + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -605,7 +543,7 @@ export class AudioDirector {
       s.buffer = b;
       const f = c.createBiquadFilter();
       f.type = 'bandpass';
-      f.frequency.value = freq * vary();
+      f.frequency.value = freq * detune;
       const g = c.createGain();
       g.gain.value = vol;
       s.connect(f).connect(g).connect(out);
@@ -613,27 +551,43 @@ export class AudioDirector {
     };
 
     switch (name) {
-      // The tail beat. The most frequent action in the game had no sound at all,
-      // which made the one thing a player does constantly the one thing the game
-      // never answered. It is water shoved aside by something large, so it is a
-      // body of low noise with a fast decay and not a tone — a tone at this rate
-      // reads as a UI blip and then as tinnitus. It has to sit under the record
-      // and go unnoticed until it is missing.
-      case 'kick':        noise(0.13, 170, 0.13); break;
+      // The tail beat. The most frequent sound in the game by a wide margin and
+      // for a long time the only action with no sound at all, which quietly made
+      // the main verb feel like a button that wasn't wired up.
+      //
+      // Water displaced by something large, so: a low body with a fast decay and
+      // no tone in it. Anything pitched here turns swimming into a UI click, and
+      // anything longer smears into the next beat at the rate people actually
+      // tap. Deliberately quiet. It fires several times a second and the job is
+      // to be felt rather than heard.
+      case 'kick':        noise(0.13, 190 + force * 90, 0.09 + force * 0.05); break;
+
+      // Half a tonne of horse into silt. The thud carries the weight and the
+      // noise carries the cloud; the pitch drop is what makes it read as ground
+      // rather than as another animal.
+      case 'thud':
+        noise(0.28 + force * 0.2, 240, 0.1 + force * 0.22);
+        tone(96, 0.24 + force * 0.16, 'sine', 0.1 + force * 0.16, 44);
+        break;
+
       case 'baggie':      tone(520, 0.16, 'triangle', 0.25, 880); break;
       case 'lighter':     noise(0.35, 2600, 0.3); tone(120, 0.4, 'sawtooth', 0.18, 60); break;
       case 'fish':        tone(700, 0.3, 'sine', 0.16, 460); break;
       case 'warn':        tone(220, 0.5, 'triangle', 0.2, 160); break;
       case 'grip_lost':   noise(0.4, 300, 0.35); tone(90, 0.5, 'square', 0.14, 50); break;
       case 'grip_regain': tone(320, 0.2, 'sine', 0.18, 520); break;
+      // Through the thermocline. Going down is a body-sized slew of cold water
+      // with the pitch falling away under it; coming up is the same shape
+      // released. Both are quiet on purpose — this is a threshold rather than an
+      // impact, and it happens often enough in a run that anything bright would
+      // wear through by the second crossing.
+      case 'cold_in':     noise(0.30, 240, 0.15); tone(150, 0.45, 'sine', 0.11, 70); break;
+      case 'cold_out':    noise(0.20, 380, 0.09); tone(190, 0.30, 'sine', 0.09, 300); break;
       // A slate lifted off the bottom: a scrape, then a small clear note.
       case 'page':        noise(0.22, 1400, 0.16); tone(880, 0.3, 'sine', 0.13, 1320); break;
       // Iron hinge, then the chord. The one sound in the game allowed to be a
-      // reward rather than information — and the one exempt from the pitch
-      // variance above, because a reward chord that lands slightly differently
-      // each time is a chord that was not worth waiting for.
+      // reward rather than information.
       case 'chest':
-        exact = true;
         noise(0.5, 240, 0.22);
         [262, 392, 523, 659].forEach((f, i) => tone(f, 1.6 - i * 0.1, 'triangle', 0.13));
         break;

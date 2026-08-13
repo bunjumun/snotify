@@ -18,6 +18,21 @@ export const CFG = {
     floorY: -60,          // seabed sits around here, displaced by noise
     surfaceY: 40,         // the far-off surface, mostly a light source
     seed: null,           // null = random per run; ?seed= in the URL overrides
+
+    // Trauma HELD while you lean on the boundary, at full strain and scaled by
+    // how hard it is pushing. A hum of unease rather than an impact: large enough
+    // to notice and be annoyed by is exactly right, since being annoyed is the
+    // message.
+    //
+    // Was 0.9 and was inert. It was topped up per second against a linear decay
+    // of 1.2, which cancels any rate under 1.2 to nothing every single frame, and
+    // the cue measured 0.0001 world units of camera offset while looking perfectly
+    // correct in the source. It goes through `Rig.sustain()` now, where the number
+    // is a floor and means something different, hence the retune: 0.40 measures
+    // 0.095 world units of camera displacement, about two thirds of a hard seabed
+    // hit, held for as long as you keep leaning on the edge of the world. Squared
+    // trauma does the rest — half the strain is a quarter the throw.
+    strainTrauma: 0.40,
   },
 
   // Superior is cold, green and close. Visibility is the single biggest lever on
@@ -56,18 +71,32 @@ export const CFG = {
   // heading lags the stick on a spring — you're steering a large animal that has
   // its own opinions about where it's going.
   //
-  // Cruising is deliberately slow. Holding the swim button is a resting swim —
-  // it gets you there eventually. Speed comes from TAPPING it: every press is a
-  // tail beat that shoves you forward and adds to a surge, and the surge bleeds
-  // off the moment you stop working for it. A held button that travels as fast
-  // as a worked one turns a lake into a corridor.
+  // One button, two verbs, told apart by how long you hold it.
+  //
+  // TAP is a single tail beat. One press, one shove, and the surge it adds bleeds
+  // straight back off, so tapping is how you move slowly and precisely: you pick
+  // your way along the wreck one beat at a time and you can stop on a rib.
+  //
+  // HOLD is the boost. Keep the button down past holdToBoost and she settles
+  // into working the tail continuously, which is the only way to cross open water
+  // quickly and the only thing in the game that drains the tank by the second.
+  //
+  // The two never fight, because a press fires its kick on the rising edge before
+  // the hold timer has had a chance to run. Every boost therefore opens with a
+  // real beat rather than with the animal simply accelerating.
   kelpie: {
     thrust: 20,
     boostThrust: 48,
     drag: 0.86,           // per-second velocity retention; lower = more water
     addedMass: 1.9,       // resistance to changing direction, not just speed
-    maxSpeed: 16,         // cruise: what holding the button alone will give you
+    maxSpeed: 16,         // what beats alone, without the hold, will give you
     boostMaxSpeed: 27,
+
+    // How long the button has to stay down before a tap becomes a boost. Short
+    // enough that committing to a sprint doesn't feel delayed, long enough that
+    // deliberate single beats never trip it by accident. Tune this before any
+    // other number here: it is the seam between the game's two speeds.
+    holdToBoost: 0.22,
 
     // Tail beats. kickCooldown is not a nerf — a mashed key fires faster than
     // the physics step, and without a floor a tap becomes a teleport.
@@ -222,9 +251,47 @@ export const CFG = {
     },
   },
 
+  // ---------- Impact ----------
+  // What hitting the floor costs.
+  //
+  // The seabed is the only genuinely hard surface in this game. Everything else
+  // slows you: water, current, the boundary. So it is the only place the kelpie
+  // can be STOPPED by something, and it was doing that silently — the clamp put
+  // her back above the silt and nothing else happened at all.
+  //
+  // Everything below scales off one number, the closing speed, so a graze and a
+  // nose-dive are the same event at two strengths rather than two behaviours with
+  // a threshold between them that the player can feel as a switch.
+  impact: {
+    minSpeed: 6,          // under this it's a landing, not a crash. No reaction.
+    hardSpeed: 26,        // at or past this, everything is at full strength
+    absorb: 0.55,         // fraction of remaining speed eaten by the silt
+    trauma: 0.55,         // camera trauma at a hard hit
+    hitStop: 0.07,        // seconds at a hard hit — about four frames
+    hitStopScale: 0.05,
+    silt: 14,             // particles thrown up at a hard hit
+    siltSize: 1.5,
+  },
+
   breath: {
     idleDrain: 1.0,       // multiplier applied to real seconds
+
+    // The hold. This is the fast way across open water and the only thing that
+    // bills you purely for time, so it is the number that sets how far a lungful
+    // of air will carry you.
     boostDrain: 2.1,
+
+    // What one tail beat takes out of the tank, in seconds of air. Every beat
+    // costs, held or tapped, because the animal is doing the same work either
+    // way — you simply see it charged one beat at a time when you tap.
+    //
+    // Picking your way along at roughly a beat a second costs well under the
+    // hold, which is what makes slow, deliberate swimming the cheap option it
+    // ought to be. Mashing costs MORE than holding, and that is deliberate: if
+    // hammering the button were the efficient way to travel, the hold would be
+    // decoration and every player would arrive at the wreck with a sore thumb.
+    kickCost: 0.35,
+
     warnAt: 30,           // HUD pulse, filter tightens, vignette starts closing
     panicAt: 10,          // heartbeat, desaturation
     sinkSpeed: 5.5,       // how fast the kelpie falls once the tank is empty
@@ -484,6 +551,17 @@ export const CFG = {
     followSpring: 8.0,
     lookAhead: 4.0,       // bias the look target into velocity
     modeBlendTime: 0.9,   // FOLLOW <-> ORBIT, eased so it never cuts
+
+    // Shake, on a trauma model. Callers add trauma and forget; the rig squares
+    // it to get the actual offset, which is the whole trick. Linear shake spends
+    // most of its life in a mushy middle that reads as a loose camera mount,
+    // where squared trauma makes a small knock stay small and a real hit hurt.
+    shake: {
+      decay: 1.2,         // trauma lost per second, linear
+      frequency: 22,      // how fast the noise walks; lower reads as a wobble
+      maxOffset: 0.42,    // world units of displacement at full trauma
+      maxRoll: 0.10,      // radians of roll at full trauma, past which it spins
+    },
   },
 
   // ---------- Thermocline ----------
@@ -498,6 +576,25 @@ export const CFG = {
     depth: -52,
     thickness: 5,
     shimmerSpeed: 0.35,
+
+    // Crossing the layer is an event, and an event needs a latch or it fires on
+    // every frame you spend hovering at the boundary — which is exactly where a
+    // diver deciding whether to go down spends their time. These are positions
+    // in the submersion ramp rather than depths, so the cue moves with `depth`
+    // and `thickness` and never needs retuning alongside them.
+    //
+    // Deliberately far apart: 3.25 units of water you have to genuinely swim
+    // back through before it re-arms, so porpoising the boundary cannot chirp at
+    // you. Anyone determined enough to do it anyway meets the same ceiling the
+    // tail beat has, since trauma clamps at 1 and decays.
+    enterAt: 0.80,        // submersion at which you have committed to the cold
+    exitAt: 0.15,         // ...and at which you are back out of it
+
+    // Down is a shock, up is relief, so they are not the same number. Below the
+    // layer the light goes and the tank drains faster, and the knock going in is
+    // the announcement of that price. Coming back up you already know it.
+    crossTrauma: 0.40,
+    riseTrauma: 0.20,
   },
 
   // ---------- Weather ----------
@@ -509,6 +606,28 @@ export const CFG = {
     rampTime: 8,          // eased in and out, never a snap
     currentForce: 9.5,
     lightDim: 0.45,
+
+    // The leading edge. Fog and light take the whole rampTime to become legible,
+    // which left eight seconds where the lake had already turned and nothing had
+    // said so. This knock is what says it: one surge arriving, about a third of a
+    // second of it. Sized between the clue ping and losing a rider, because it is
+    // news rather than damage.
+    onsetTrauma: 0.35,
+
+    // ...and the buffet under it, held for as long as the gale blows. Read off
+    // the current's actual magnitude rather than off `intensity`, because the
+    // current already pulses: the shake and the shove are then the same water,
+    // and the camera surges with the gusts instead of humming flat underneath
+    // them. Since the offset goes as trauma squared, that pulse is wide — the
+    // lulls are nearly still and the peaks lean on you.
+    //
+    // Below `world.strainTrauma` on purpose. The boundary is a message you are
+    // meant to act on within seconds; a gale is weather you live inside for half
+    // a minute, and it must not turn into nausea. Both go through `Rig.sustain()`,
+    // which takes the larger of the two rather than their sum, so being blown
+    // against the edge of the lake is the worst place to be without ever being
+    // worse than the edge alone.
+    galeTrauma: 0.26,
   },
 
   // ---------- Input ----------
@@ -517,19 +636,24 @@ export const CFG = {
     responseCurve: 1.8,   // >1 = fine control near centre
     gamepadDeadzone: 0.12,
 
-    // How long a `use` press stays live waiting for something to use. A press
-    // is a decision made a frame or two before the game agrees you are in
-    // range, and consuming it on exactly the frame it goes down throws that
-    // decision away with no feedback at all, which reads as the button not
-    // working. 110ms sits in the middle of the 80-120ms band that fighting
-    // games and platformers settled on: long enough to catch the early press,
-    // short enough that it can never fire an interaction you have swum past.
+    // How long a "use" press stays alive looking for something to act on.
     //
-    // This deliberately does NOT apply to `kick`. See the note in Kelpie.js —
-    // a beat inside the cooldown is dropped rather than queued, and a buffer
-    // wider than the cooldown re-introduces exactly the banked credit that
-    // decision rejects.
+    // A press consumed on exactly the frame it happens throws away every press
+    // made slightly early, and the player never experiences that as their own
+    // timing being off. They experience it as the button not working, which is
+    // the single most expensive misreading a control can invite. 110ms is inside
+    // the 80-120ms band where a press feels forgiven rather than replayed.
+    //
+    // Note the tail beat deliberately does NOT get this. A buffered kick would
+    // bank credit against the cooldown, and mashing is supposed to hit a ceiling
+    // rather than queue up. See the kick block in Kelpie.update().
     bufferMs: 110,
+
+    // How long a station stays usable after you have drifted back out of range.
+    // The swimming equivalent of coyote time: you committed to the press while
+    // you were in range, and the water carrying you out in the meantime is not a
+    // mistake worth punishing.
+    useGraceMs: 100,
 
     // Tilt. iOS needs requestPermission() from inside a user gesture (the DIVE
     // IN button does it) and HTTPS. Neutral is captured on start so the phone
@@ -562,26 +686,11 @@ export const CFG = {
       crossfade: 6,       // seconds of overlap between one track and the next
       shuffle: false,     // running order is the band's, not a shuffle's
       nowPlayingFor: 7,   // how long the title card stays up on a change
-      // How far ahead of the crossfade the next track is handed to the idle
-      // deck so preload='auto' has somewhere to put it. It must comfortably
-      // exceed `crossfade`: the whole point is that the buffering happens
-      // BEFORE the fade opens, and a value at or under the crossfade would put
-      // the download back in the middle of it, which is what this fixes. Twenty
-      // seconds is enough for a mix to get a head start on mobile data without
-      // holding a second stream open for a meaningful part of every track.
-      preload: 20,
     },
 
     // The song is the point — it's the band's own record. Effects sit under it,
     // never on top of it.
     volumes: { music: 0.85, sfx: 0.38, ambience: 0.22 },
-
-    // Every one-shot is synthesised from fixed numbers, so without this the
-    // tenth baggie is bit-identical to the first and the ear reads exact
-    // repetition as synthetic immediately. A per-invocation pitch multiplier of
-    // ±5% is under a semitone: not heard as a wrong note, only as the same
-    // sound happening twice rather than the same recording played twice.
-    sfxVariance: 0.05,
 
     // The filter is a SIGNAL, not a coating. Running a permanent 800Hz lowpass
     // over the music "sounds underwater" for about ten seconds and then just

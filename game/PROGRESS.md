@@ -3,7 +3,7 @@
 The continuity document. Anything decided here survives a session ending; anything not written here did not happen.
 
 **Started:** 2026-08-12, forked from `game/` at that date.
-**Lives at:** `game-v2/`, the fifth door on the album page. The original stays live and unchanged at `game/`.
+**Lives at:** `game/`. It took that path over from the original on 2026-08-13; see **V1 archived** below. "V2" now survives only in this document and in the `lakehorse.v2.*` save keys, nowhere a player can see.
 **Working under:** the standards in [aaabench](https://github.com/ukanwat/aaabench), applied to a browser game. See `.claude/skills/ATTRIBUTION.md`.
 
 ---
@@ -30,7 +30,7 @@ Both are gates, not aspirations. Everything added answers to them.
 | Frame rate, mid phone in an in-app browser | 30 fps floor | to be measured |
 | Page weight | no hard cap yet; every addition justified | **1.18 MB** total, of which 740K is Three.js |
 
-The page-weight baseline deserves its own note. V2 shares `game/vendor/three.module.min.js` with the original rather than shipping a second copy, so V2's own cost is measured on what it adds past that shared file: roughly **448K of source, and zero image, mesh or audio files**. Every mesh or texture proposal is measured against that zero.
+The page-weight baseline deserves its own note. Three.js is vendored once at `vendor/` in the repo root rather than shipped per build, so this build's own cost is measured on what it adds past that shared file: roughly **448K of source, and zero image, mesh or audio files**. Every mesh or texture proposal is measured against that zero.
 
 ---
 
@@ -42,7 +42,7 @@ The hard ordering rule: **movement metrics must be settled and frozen before wor
 
 ### Posted live, 2026-08-13
 
-Merged to `main` as `f9c532f` and served at `https://bunjumun.github.io/snotify/game-v2/`. The merge cost the frozen build nothing: `game/` came through byte-identical to what was already deployed, and the only existing file touched was `index.html`, for the door. The V1 handoff commit was already on `main` under a different hash, so the merge carried no duplicate of it.
+Merged to `main` as `f9c532f` and served at `https://bunjumun.github.io/snotify/game-v2/`, **which is no longer the address**: it moved to `/game/` the same day, one section down. The merge cost the frozen build nothing: `game/` came through byte-identical to what was already deployed, and the only existing file touched was `index.html`, for the door. The V1 handoff commit was already on `main` under a different hash, so the merge carried no duplicate of it.
 
 Verified on the live origin rather than locally, because the one thing worth proving in production was the save separation: a dive on the deployed page wrote `lakehorse.v2.progress` at one run while `lakehorse.progress` sat untouched at eleven, with a lighter and a claim on it. 60 fps, 53 requests, 361K over the wire, no console errors, and the boot bail net stayed down.
 
@@ -94,14 +94,18 @@ All seven items from `docs/v1-handoff.md` landed on the original build in commit
 
 ---
 
-## When V1 is archived
+## V1 archived, 2026-08-13
 
-The plan is to archive the original once V2 is stable and posted. Four things have to happen in the right order, and the first one is not optional.
+Done, and done in the order the checklist demanded. V2 did not redirect from the
+original's path, it **took it over**: `/game/` now serves this build, so the links
+already in people's hands open it with no hop and nothing to go stale.
 
-1. **Deal with `game/vendor/` first.** V2's import map points at `../game/vendor/three.module.min.js`. Archiving the folder breaks V2 immediately, with a bare-specifier failure and a blank canvas. Either move `vendor/` to the repo root and repoint both import maps, or copy it back into `game-v2/` and accept the 740K. Do this **before** touching `game/`, and confirm V2 still boots, or the archive takes the live game down with it.
-2. **Redirect `game/`, do not delete it.** That path is the one people have already shared, and it is the reason both builds stayed up in the first place. A one-line meta-refresh or a stub `index.html` pointing at the new path costs nothing and keeps every existing link alive. Deleting it turns them all into 404s.
-3. **Decide about `lakehorse.v2.*`.** The prefix exists to stop two builds sharing one save. With V1 gone it is vestigial but harmless, and renaming it would wipe everyone's progress unless migrated. Leaving it alone is the safe default. If V2 should instead *adopt* a player's V1 progress, that is a deliberate one-time migration and belongs with the Phase 8 save-versioning work, not before it.
-4. **Rename the door.** V2 becomes plain "Lakehorse Swimulator", the old door comes out of `index.html`, and `gameTally()` drops back to a single call. The `door.gameV2.*` site_text keys should be retired or repointed at the same time.
+1. **`vendor/` moved to the repo root first.** V2's import map pointed at `../game/vendor/`, so moving `game/` before dealing with that would have blanked the live canvas with a bare-specifier failure. Three.js now sits at `vendor/` owned by neither build, reached as `../vendor/` from `game/` and `../../vendor/` from the archive. Both files moved together, because `three.module.min.js` imports `./three.core.min.js` relatively. Verified V2 booted from the new path **before** any folder moved.
+2. **`game/` was not redirected, it was replaced.** The original went to `archive/game-v1/`, then V2 moved into `game/`. Its import map was already correct at that depth. A stub was considered and is strictly worse: a redirect is a hop that can rot, and the point was that the shared link simply works.
+3. **`lakehorse.v2.*` left exactly as it is.** With one build live the prefix is vestigial, but renaming it would wipe the progress of everyone who has played. Older V1 dives stay parked under `lakehorse.*`, untouched. Adopting them into V2 is still a deliberate one-time migration belonging with Phase 8 save versioning.
+4. **One door.** The V2 door and its nav button came out; the surviving door keeps `href="game/"` and `gameTally()` is a single call reading `lakehorse.v2.progress`. **The `door.game.*` site_text keys were kept rather than retired**, which reverses what this checklist assumed: the band has their own wording stored against `door.game.blurb`, and renaming the key would have silently thrown their copy away. `door.gameV2.*` had no stored override, so retiring it cost nothing.
+
+**The archive still runs.** It was repointed at the root `vendor/` rather than handed a private copy, so `archive/game-v1/` is a playable build if served rather than 740K of files that no longer resolve. It has no door and nothing links to it.
 
 ---
 
@@ -109,8 +113,8 @@ The plan is to archive the original once V2 is stable and posted. Four things ha
 
 - **Unreal is not the runtime, and cannot be.** Epic dropped HTML5 export at 4.24; UE5's only browser path is Pixel Streaming, a GPU server per concurrent player. The game's distribution property is that a fan taps a link from an in-app browser and is playing in seconds. Unreal may still be used offline as a lookdev reference or an asset bakery, gated on the page-weight budget.
 - **No build step, ever.** `git push` is the whole deploy.
-- **`game/vendor/` is now load-bearing for two pages.** The two folders are removed together or not at all.
-- **The original is frozen.** It stops receiving fixes; known bugs stay live behind its door. Improvements to it are handed off separately in `docs/v1-handoff.md`. Record here anything that lands there, so the two can be reconciled rather than silently drifting.
+- **`vendor/` belongs to the repo, not to a build.** It sits at the root precisely so no build is load-bearing for another. Anything that moves a folder containing an import map has to fix the relative depth to it.
+- **The original is frozen and archived.** It stops receiving fixes and no longer has a door. Its one post-freeze edit is the import map, which was forced by the vendor move and is annotated as such in its own `index.html`. What landed on it before the freeze is in `docs/v1-handoff.md`.
 - **Not adopted from aaabench:** its `HARNESS-RULES.md` operator-blindness rules, which exist to keep an unassisted benchmark run clean and are the opposite of a working session.
 
 ---

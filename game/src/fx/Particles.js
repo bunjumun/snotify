@@ -6,19 +6,12 @@
 //
 // Sparkles share the same pool and shader and only differ in colour and lifetime,
 // spawned at a rate driven by uTrip. Two systems, one draw call.
-//
-// One draw call is why the two populations are interleaved through the buffer
-// instead of sitting in blocks. Quality thins the system by shortening the draw
-// range, and a range can only ever be a prefix — so if the populations were
-// blocked, a shortened prefix would take everything from the first and nothing
-// from the second. Spread them, and any prefix holds both in proportion.
 
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
 
 const SILT = 700;
 const SPARK = 260;
-const N = SILT + SPARK;
 
 const VERT = `
   attribute float aSize; attribute float aLife; attribute vec3 aColor;
@@ -45,6 +38,7 @@ const FRAG = `
 
 export class Particles {
   constructor() {
+    const N = SILT + SPARK;
     this.N = N;
     this.pos = new Float32Array(N * 3);
     this.vel = new Float32Array(N * 3);
@@ -52,35 +46,24 @@ export class Particles {
     this.size = new Float32Array(N);
     this.life = new Float32Array(N);
     this.decay = new Float32Array(N);
+    this.sparkCursor = SILT;
     this._acc = 0;
-
-    // Which slots belong to which population.
-    //
-    // Silt used to own 0..699 and sparkles 700..959, which meant the low quality
-    // setting — a draw range of floor(960 × 0.4) = 384 slots — stopped dead
-    // inside the silt block: no sparkle was ever drawn on low quality, and 316
-    // silt motes were simulated every frame without reaching the screen. Placing
-    // one sparkle at every regular interval among the silt makes any prefix of
-    // the buffer a proportional slice of both.
-    this.siltIdx = new Uint16Array(SILT);
-    this.sparkIdx = new Uint16Array(SPARK);
-    for (let i = 0, silt = 0, spark = 0; i < N; i++) {
-      // How many sparkles should exist by the end of slot i if they were spread
-      // perfectly evenly. When that number moves, this slot is a sparkle.
-      if (Math.floor(((i + 1) * SPARK) / N) > spark) this.sparkIdx[spark++] = i;
-      else this.siltIdx[silt++] = i;
-    }
-    this.siltActive = SILT;
-    this.sparkActive = SPARK;
-    this.sparkCursor = 0;   // an index INTO sparkIdx, not into the buffer
-
-    // Where the camera was last frame, so a quality change can wake silt around
-    // the player rather than around the origin.
-    this.cam = { x: 0, y: 0, z: 0 };
 
     // Silt: scattered through a box that will be re-centred on the camera.
     this.box = 46;
-    this._seedSilt(0, SILT);
+    for (let i = 0; i < SILT; i++) {
+      const i3 = i * 3;
+      this.pos[i3] = (Math.random() - 0.5) * this.box;
+      this.pos[i3 + 1] = (Math.random() - 0.5) * this.box;
+      this.pos[i3 + 2] = (Math.random() - 0.5) * this.box;
+      this.vel[i3] = (Math.random() - 0.5) * 0.22;
+      this.vel[i3 + 1] = (Math.random() - 0.5) * 0.1 - 0.04;
+      this.vel[i3 + 2] = (Math.random() - 0.5) * 0.22;
+      this.size[i] = 0.16 + Math.random() * 0.3;
+      this.life[i] = 0.14 + Math.random() * 0.3;
+      const g = 0.55 + Math.random() * 0.25;
+      this.col[i3] = g * 0.8; this.col[i3 + 1] = g; this.col[i3 + 2] = g * 0.92;
+    }
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
@@ -98,37 +81,10 @@ export class Particles {
     this.count = N;
   }
 
-  /**
-   * Scatter silt slots [from, to) through the box around the camera.
-   *
-   * Called for the whole population at construction, and again for slots a
-   * quality increase brings back: those have not been simulated while they were
-   * outside the draw range, and the wrap in update() only moves a mote one box
-   * width per frame, so one left behind across the lake would take hundreds of
-   * frames to walk home.
-   */
-  _seedSilt(from, to) {
-    for (let n = from; n < to; n++) {
-      const i = this.siltIdx[n];
-      const i3 = i * 3;
-      this.pos[i3] = this.cam.x + (Math.random() - 0.5) * this.box;
-      this.pos[i3 + 1] = this.cam.y + (Math.random() - 0.5) * this.box;
-      this.pos[i3 + 2] = this.cam.z + (Math.random() - 0.5) * this.box;
-      this.vel[i3] = (Math.random() - 0.5) * 0.22;
-      this.vel[i3 + 1] = (Math.random() - 0.5) * 0.1 - 0.04;
-      this.vel[i3 + 2] = (Math.random() - 0.5) * 0.22;
-      this.size[i] = 0.16 + Math.random() * 0.3;
-      this.life[i] = 0.14 + Math.random() * 0.3;
-      const g = 0.55 + Math.random() * 0.25;
-      this.col[i3] = g * 0.8; this.col[i3 + 1] = g; this.col[i3 + 2] = g * 0.92;
-    }
-  }
-
   /** Rainbow motes around the pair during the trip. */
   spawnSparkle(centre, radius) {
-    if (!this.sparkActive) return;
-    const i = this.sparkIdx[this.sparkCursor];
-    this.sparkCursor = (this.sparkCursor + 1) % this.sparkActive;
+    const i = this.sparkCursor;
+    this.sparkCursor = SILT + ((this.sparkCursor - SILT + 1) % SPARK);
     const i3 = i * 3;
     const a = Math.random() * Math.PI * 2;
     const b = Math.acos(2 * Math.random() - 1);
@@ -149,14 +105,10 @@ export class Particles {
   }
 
   update(dt, cameraPos, trip = 0) {
-    this.cam.x = cameraPos.x; this.cam.y = cameraPos.y; this.cam.z = cameraPos.z;
-
-    // Silt wraps around the camera so we're always inside the cloud. Only the
-    // motes inside the draw range are stepped: what is simulated and what is
-    // drawn are now the same set, which is where low quality gets its frames.
+    // Silt wraps around the camera so we're always inside the cloud.
     const half = this.box / 2;
-    for (let n = 0; n < this.siltActive; n++) {
-      const i3 = this.siltIdx[n] * 3;
+    for (let i = 0; i < SILT; i++) {
+      const i3 = i * 3;
       this.pos[i3] += this.vel[i3] * dt;
       this.pos[i3 + 1] += this.vel[i3 + 1] * dt;
       this.pos[i3 + 2] += this.vel[i3 + 2] * dt;
@@ -173,8 +125,7 @@ export class Particles {
       this._acc += CFG.trip.sparkleRate * trip * dt;
       while (this._acc >= 1) { this._pendingCentre && this.spawnSparkle(this._pendingCentre, CFG.trip.sparkleRadius); this._acc -= 1; }
     }
-    for (let n = 0; n < this.sparkActive; n++) {
-      const i = this.sparkIdx[n];
+    for (let i = SILT; i < this.N; i++) {
       if (this.life[i] <= 0) continue;
       const i3 = i * 3;
       this.pos[i3] += this.vel[i3] * dt;
@@ -196,32 +147,6 @@ export class Particles {
 
   setQuality(level) {
     const s = CFG.quality.levels[level]?.particleScale ?? 1;
-    const draw = Math.max(1, Math.floor(this.N * s));
-    this.geo.setDrawRange(0, draw);
-
-    // Both index lists ascend, so the active slots of each population are simply
-    // the ones that fall inside the range. Counting them is what keeps the
-    // simulation and the draw call describing the same particles.
-    const silt = activeCount(this.siltIdx, draw);
-    const spark = activeCount(this.sparkIdx, draw);
-
-    // Slots coming back from dormancy still hold whatever they held when they
-    // went quiet. A sparkle would resume mid-flight from some earlier trip, so
-    // its life is cleared; silt has to be re-scattered, having done no drifting
-    // or wrapping while it was outside the range.
-    for (let n = this.sparkActive; n < spark; n++) this.life[this.sparkIdx[n]] = 0;
-    if (silt > this.siltActive) this._seedSilt(this.siltActive, silt);
-
-    this.siltActive = silt;
-    this.sparkActive = spark;
-    // The cursor walks the active window and must not be left outside it.
-    if (this.sparkCursor >= spark) this.sparkCursor = 0;
+    this.geo.setDrawRange(0, Math.floor(this.N * s));
   }
-}
-
-/** How many of an ascending index list fall inside the draw range. */
-function activeCount(idx, draw) {
-  let n = 0;
-  while (n < idx.length && idx[n] < draw) n++;
-  return n;
 }

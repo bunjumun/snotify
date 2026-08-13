@@ -11,9 +11,16 @@
 <!-- Three.js is vendored, not bundled. The repo has no build step and this page
      keeps it that way: an import map points the bare specifier at the committed
      file, so `git push` is still the whole deploy. three.module.min.js imports
-     ./three.core.min.js on its own, which is why both live in vendor/. -->
+     ./three.core.min.js on its own, which is why both live in vendor/.
+
+     vendor/ sits at the repo root and belongs to neither build. It used to live
+     inside the original game's folder with this build reaching sideways into it,
+     which made a frozen folder load-bearing for a live page and meant archiving
+     the original would have blanked this one's canvas. At the root it is 740K
+     shared by whoever wants it, and either build can be moved or retired without
+     touching the other. -->
 <script type="importmap">
-{ "imports": { "three": "./vendor/three.module.min.js" } }
+{ "imports": { "three": "../vendor/three.module.min.js" } }
 </script>
 
 <!-- The safety net, and it is deliberately a CLASSIC script rather than a
@@ -345,7 +352,7 @@ canvas{display:block;width:100%;height:100%}
   <button id="dive">DIVE IN</button>
   <p id="loadState"></p>
   <p id="startNote"><kbd>WASD</kbd> or arrows steer · <kbd>Space</kbd> swim · <kbd>Shift</kbd> boost · <kbd>E</kbd> use<br>
-     <b>Hold Space to cruise. Tap it to swim — every tap is a kick.</b><br>
+     <b>Tap Space for one tail beat. Hold it to boost. Every beat costs air.</b><br>
      Bluetooth controller and touch also work. Sound on is better.</p>
 
   <!-- Shown in place of the mode picker when the game can't start. Lives in the
@@ -429,9 +436,7 @@ canvas{display:block;width:100%;height:100%}
     <!-- Whichever way up someone learned to fly things, they are certain it is
          the right way up. This is cheaper than being right about it. -->
     <label class="row">Invert up/down <input type="checkbox" id="setInvert"></label>
-    <!-- Tilt steering is written (src/input/Tilt.js) but not registered, so the
-         RECENTRE button that used to sit here recentred nothing and said it had
-         worked. It comes back with tilt itself, and not before. -->
+    <div class="row"><span>Tilt steering</span><button class="btn" id="btnRecentre">RECENTRE</button></div>
     <div class="row"><span>Ship's log</span><button class="btn" id="btnLog">READ <span id="logCount"></span></button></div>
     <button class="btn primary" id="btnResume">RESUME</button>
   </div>

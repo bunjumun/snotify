@@ -40,6 +40,14 @@ The page-weight baseline deserves its own note. V2 shares `game/vendor/three.mod
 
 The hard ordering rule: **movement metrics must be settled and frozen before world layout work begins.** Changing how far the kelpie travels per second invalidates every distance, sightline and placement built against it. Phase 2 does not start until Phase 1 is gated.
 
+### Posted live, 2026-08-13
+
+Merged to `main` as `f9c532f` and served at `https://bunjumun.github.io/snotify/game-v2/`. The merge cost the frozen build nothing: `game/` came through byte-identical to what was already deployed, and the only existing file touched was `index.html`, for the door. The V1 handoff commit was already on `main` under a different hash, so the merge carried no duplicate of it.
+
+Verified on the live origin rather than locally, because the one thing worth proving in production was the save separation: a dive on the deployed page wrote `lakehorse.v2.progress` at one run while `lakehorse.progress` sat untouched at eleven, with a lighter and a claim on it. 60 fps, 53 requests, 361K over the wire, no console errors, and the boot bail net stayed down.
+
+**Being live does not close Phase 1.** The audio work below is still what stands between here and the gate. The door is up so the build can be played, not because it is finished.
+
 ### Done
 
 - **Fork and separation.** `game-v2/` created, sharing the original's vendored Three.js through the import map. All six localStorage keys namespaced to `lakehorse.v2.*` behind a single registry in `src/core/Keys.js`, which also fixes the upstream problem that six keys were spelled out as literals across five files with no owner, so `Progress.reset()` only ever cleared its own blob. Verified: playing V2 writes `lakehorse.v2.progress` and leaves `lakehorse.progress` untouched.

@@ -53,10 +53,25 @@ The hard ordering rule: **movement metrics must be settled and frozen before wor
   - Measured: ten deliberate beats over ten seconds costs **13.5 s** of air against **21.0 s** for ten seconds of holding. Slow travel is the cheap option, which is the point. Mashing costs more than holding, also deliberately.
   - Verified: taps never trip the boost, the hold engages on the first frame past 0.22 s, release resets, `spend()` takes exactly `kickCost`, and an emptied tank fires `onEmpty` exactly once.
 
+- **Phase 1 feel pass** (commit `29b290b`), all numbers from aaabench's `systems.md` and the `game-feel` pack:
+  - **Hit-stop** on `Loop`, scaling what reaches the accumulator rather than `STEP`, so the fixed 1/60 tick is untouched and every spring tuned against it still behaves identically. Verified 60 steps/sec normally against 31 with a half-second stop at 5%. The stop's timer runs on real time, or a 5% stop would take twenty times as long to expire as asked.
+  - **Trauma-model shake.** Offset is trauma squared (measured: half the trauma throws exactly a quarter as far), decay 1.2/s, smooth time-walked noise instead of per-frame `Math.random()`, roll added, accumulates rather than taking a max, cleared by `snapTo`. Also killed the per-frame `Euler` allocation the file's own comment warned against.
+  - **Seabed impact.** `clampAbove()` always reported whether it moved her and the report was discarded, so a full-speed nose-dive into silt produced nothing. Now one closing-speed number scales absorption, trauma, silt, rumble, a thud, and hit-stop for the hard half of the range only.
+  - **`Bounds.strain` finally read.** Computed since the boundary was written, commented as being for cues at the edge, never used by anything until now.
+  - **Buffered use, 110 ms**, plus a 100 ms grace after drifting out of range. Verified live for 117 ms, consumed exactly once, a hold is one press. The tail beat deliberately does not get this: a buffered kick banks credit against the cooldown, and mashing is meant to hit a ceiling.
+  - **The kick has a sound**, the floor has a thud, and every one-shot detunes a few percent per fire. `chest` opts out.
+
+### V1, in parallel
+
+All seven items from `docs/v1-handoff.md` landed on the original build in commit `f28d750`. **The two builds have now diverged deliberately**, and the overlap is not free:
+
+- V1 got the **playlist preload fix**. V2 has not: it is still listed under Phase 1b below and must be done here separately.
+- Both got input buffering and the kick sound, arrived at independently rather than shared.
+
 ### Next, in order
 
-1. Rest of Phase 1: input buffering (80–120 ms) on `interact`, use-grace of ~100 ms, hit-stop via a `timeScale` hook on `Loop`, the trauma-model camera shake and its missing call sites, seabed impact response, the kick SFX, SFX pitch variation.
-2. Phase 1b audio: spatialization, the four parameters `Game.js` sends to `AudioDirector.update()` every frame that it never reads (including the thermocline muffle that a comment promises and nothing implements), playlist preload, ducking, heartbeat scaling.
+1. Finish Phase 1: shake on gale onset and thermocline crossing (seabed and boundary are done).
+2. Phase 1b audio: spatialization, the four parameters `Game.js` sends to `AudioDirector.update()` every frame that it never reads (including the thermocline muffle a comment promises and nothing implements), **the playlist preload V1 already has**, ducking, heartbeat scaling.
 3. **Gate:** freeze `config.js` movement numbers. Only then Phase 2.
 
 ---

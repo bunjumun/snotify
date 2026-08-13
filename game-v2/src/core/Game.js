@@ -167,6 +167,15 @@ export class Game {
     this.scene.add(this.thermocline.group);
 
     this.weather = new Weather(this.rng);
+    // Weather has carried these two hooks since it was written and nothing had
+    // ever assigned them. This is the arrival: the lake picks a direction and
+    // leans, and you get one surge of warning before the fog closes. There is no
+    // matching cue on `onEnd` because a gale letting go is an absence, not an
+    // event, and the eight-second ramp out already reads as one.
+    this.weather.onStart = () => {
+      this.rig.addShake(CFG.weather.onsetTrauma);
+      this.pad?.rumble(0.45, 260);
+    };
     this.bounds = new Bounds();
 
     this.shoals = new Shoals(this.rng, this.seabed, this.quality);
@@ -440,14 +449,24 @@ export class Game {
     const current = this._current || (this._current = new THREE.Vector3());
     current.copy(this.weather.current).add(this.bounds.force(this.kelpie.position));
 
-    // Bounds.strain has been computed since the boundary was written, carrying a
-    // comment saying it was for cues at the edge, and nothing ever read it. This
-    // is that cue: a rising unease as the current leans harder, so pushing at the
-    // edge of the lake feels like being pushed back rather than like drifting
-    // into treacle. Topped up per second rather than set, since trauma decays.
+    // Two continuous sources of unease, both HELD at a floor rather than topped
+    // up per frame. Bounds.strain had been computed since the boundary was
+    // written, carrying a comment saying it was for cues at the edge, and nothing
+    // read it until Phase 1 — at which point it was read and still did nothing,
+    // because `addShake(rate * dt)` cannot hold a level against a linear decay.
+    // See Rig.sustain() for why. So this is the cue actually arriving: a rising
+    // unease as the current leans harder, so pushing at the edge of the lake
+    // feels like being pushed back rather than like drifting into treacle.
     if (this.bounds.strain > 0.05) {
-      this.rig.addShake(this.bounds.strain * CFG.world.strainTrauma * dt);
+      this.rig.sustain(this.bounds.strain * CFG.world.strainTrauma);
     }
+
+    // The gale's buffet, the same way. Off the current's actual magnitude rather
+    // than off `intensity`, because the current already pulses: the shake and the
+    // shove are then the same water, and the camera surges with the gusts instead
+    // of humming flat underneath them.
+    const buffet = this.weather.current.length() / CFG.weather.currentForce;
+    if (buffet > 0.02) this.rig.sustain(buffet * CFG.weather.galeTrauma);
 
     this.kelpie.update(dt, intent, { current, attract: this._bongAttract() });
 
@@ -482,6 +501,22 @@ export class Game {
 
     // ---- Breath ----
     const submersion = this.thermocline.submersion(this.kelpie.position.y);
+
+    // The layer takes the light and speeds the drain the moment you pass it, and
+    // it did both as silent ramps: the most consequential line in the water was
+    // the one thing you could cross without noticing. Down through it knocks,
+    // back up through it lets go. Latched inside Thermocline, so hanging at the
+    // boundary weighing up the trench costs nothing.
+    const crossed = this.thermocline.crossing(this.kelpie.position.y);
+    if (crossed > 0) {
+      this.rig.addShake(CFG.thermocline.crossTrauma);
+      this.audio?.sfx('cold_in');
+      this.pad?.rumble(0.35, 180);
+    } else if (crossed < 0) {
+      this.rig.addShake(CFG.thermocline.riseTrauma);
+      this.audio?.sfx('cold_out');
+    }
+
     this.breath.update(dt, {
       boosting: this.kelpie.boosting,
       belowThermo: submersion,

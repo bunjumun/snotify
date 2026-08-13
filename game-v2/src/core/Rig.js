@@ -156,6 +156,30 @@ export class Rig {
    */
   addShake(amount) { this.trauma = Math.min(1, this.trauma + amount); }
 
+  /**
+   * Hold trauma at a floor for as long as a condition lasts. For ongoing states
+   * — leaning on the boundary, a gale blowing — rather than for events.
+   *
+   * This exists because the obvious approach does not work, and did not work in
+   * shipped code for a while without anyone noticing. Topping trauma up a little
+   * every frame (`addShake(rate * dt)`) reads as the right way to express a
+   * continuous source, and it cannot be: decay here is LINEAR, so a rate under
+   * `shake.decay` is cancelled to nothing every frame and a rate over it climbs
+   * until it hits the clamp. There is no stable middle to tune towards. The
+   * boundary cue was written that way at 0.9 against a decay of 1.2 and measured
+   * a peak camera offset of 0.0001 world units, which is to say none at all.
+   *
+   * A floor gives back the middle: the shake sits at exactly `level` while the
+   * source holds, and decay takes it away on its own once the source lets go, so
+   * nothing has to remember to switch it off. Take the max rather than add,
+   * because two continuous sources are one situation and not two, and because
+   * accumulating a per-frame value is the exact mistake above. One-shots still
+   * add on top through addShake(), so a hit during a gale still lands.
+   *
+   * @param {number} level 0..1, the trauma to hold while this lasts
+   */
+  sustain(level) { if (level > this.trauma) this.trauma = Math.min(1, level); }
+
   /** Drop the camera straight into place — used on spawn and on retry. */
   snapTo(target) {
     this.trauma = 0;

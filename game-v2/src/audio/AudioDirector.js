@@ -576,6 +576,13 @@ export class AudioDirector {
       case 'warn':        tone(220, 0.5, 'triangle', 0.2, 160); break;
       case 'grip_lost':   noise(0.4, 300, 0.35); tone(90, 0.5, 'square', 0.14, 50); break;
       case 'grip_regain': tone(320, 0.2, 'sine', 0.18, 520); break;
+      // Through the thermocline. Going down is a body-sized slew of cold water
+      // with the pitch falling away under it; coming up is the same shape
+      // released. Both are quiet on purpose — this is a threshold rather than an
+      // impact, and it happens often enough in a run that anything bright would
+      // wear through by the second crossing.
+      case 'cold_in':     noise(0.30, 240, 0.15); tone(150, 0.45, 'sine', 0.11, 70); break;
+      case 'cold_out':    noise(0.20, 380, 0.09); tone(190, 0.30, 'sine', 0.09, 300); break;
       // A slate lifted off the bottom: a scrape, then a small clear note.
       case 'page':        noise(0.22, 1400, 0.16); tone(880, 0.3, 'sine', 0.13, 1320); break;
       // Iron hinge, then the chord. The one sound in the game allowed to be a

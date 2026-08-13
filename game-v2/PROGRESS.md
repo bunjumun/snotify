@@ -36,7 +36,7 @@ The page-weight baseline deserves its own note. V2 shares `game/vendor/three.mod
 
 ## Where we are
 
-**Phase 1 of 8, in progress** (aaabench phase order: 0 pillars, 1 metrics, 2 blockout, 3 greybox, 4 set dressing, 5 lighting, 6 audio and effects, 7 optimization, 8 polish).
+**Phase 1 of 8, in progress** (aaabench phase order: 0 pillars, 1 metrics, 2 blockout, 3 greybox, 4 set dressing, 5 lighting, 6 audio and effects, 7 optimization, 8 polish). The feel pass is complete; Phase 1b, the audio work, is what stands between here and the gate.
 
 The hard ordering rule: **movement metrics must be settled and frozen before world layout work begins.** Changing how far the kelpie travels per second invalidates every distance, sightline and placement built against it. Phase 2 does not start until Phase 1 is gated.
 
@@ -57,9 +57,20 @@ The hard ordering rule: **movement metrics must be settled and frozen before wor
   - **Hit-stop** on `Loop`, scaling what reaches the accumulator rather than `STEP`, so the fixed 1/60 tick is untouched and every spring tuned against it still behaves identically. Verified 60 steps/sec normally against 31 with a half-second stop at 5%. The stop's timer runs on real time, or a 5% stop would take twenty times as long to expire as asked.
   - **Trauma-model shake.** Offset is trauma squared (measured: half the trauma throws exactly a quarter as far), decay 1.2/s, smooth time-walked noise instead of per-frame `Math.random()`, roll added, accumulates rather than taking a max, cleared by `snapTo`. Also killed the per-frame `Euler` allocation the file's own comment warned against.
   - **Seabed impact.** `clampAbove()` always reported whether it moved her and the report was discarded, so a full-speed nose-dive into silt produced nothing. Now one closing-speed number scales absorption, trauma, silt, rumble, a thud, and hit-stop for the hard half of the range only.
-  - **`Bounds.strain` finally read.** Computed since the boundary was written, commented as being for cues at the edge, never used by anything until now.
+  - **`Bounds.strain` finally read.** Computed since the boundary was written, commented as being for cues at the edge, never used by anything until now. **Correction: it was read and it still did nothing.** See the `Rig.sustain()` note below.
   - **Buffered use, 110 ms**, plus a 100 ms grace after drifting out of range. Verified live for 117 ms, consumed exactly once, a hold is one press. The tail beat deliberately does not get this: a buffered kick banks credit against the cooldown, and mashing is meant to hit a ceiling.
   - **The kick has a sound**, the floor has a thud, and every one-shot detunes a few percent per fire. `chest` opts out.
+
+- **Phase 1 closed out: the weather and the cold layer announce themselves.**
+  - **Gale onset.** `Weather.onStart` had sat unassigned since the file was written. It is the leading edge now: one knock of 0.35 trauma and a pad rumble, because fog and light take the whole 8 s ramp to become legible and until then the lake had already turned with nothing saying so. `onEnd` is deliberately left unwired, since a gale letting go is an absence rather than an event and the ramp out already reads as one.
+  - **Gale buffet**, held for as long as it blows and read off the current's actual magnitude rather than off `intensity`, so the shake and the shove are the same water. Measured in a live run: the camera breathes between **0.003 and 0.032 world units** across a gust cycle, against 0.140 for a hard seabed hit. Calm water measures nothing.
+  - **Thermocline crossing.** `Thermocline.crossing()` returns +1 going down, -1 coming back up, 0 otherwise. Latched at 0.80 and 0.15 of the submersion ramp, so the 3.25 units of water between the two thresholds have to be genuinely swum before it re-arms. The latch starts `null` and adopts whichever side she spawned on, which is not hypothetical: the first live run spawned at -56.7, below the layer, and correctly opened with no knock. Down knocks 0.40 and plays `cold_in`, up 0.20 and `cold_out`. Verified: 17 cases green driving the class directly, and in the running game exactly one event per genuine crossing, with 600 frames of hovering at the boundary producing none.
+
+- **`Rig.sustain()`, and why the boundary cue was inert.** Phase 1 recorded `Bounds.strain` as finally read. It was read, and it still did nothing, while looking entirely correct in the source.
+  - Trauma decays **linearly**, at 1.2/s. Topping it up per frame with `addShake(rate * dt)` therefore cannot hold a level at all: any rate under 1.2 is cancelled to zero every single frame, and any rate over it climbs until it hits the clamp at 1. There is no stable middle to tune towards. The boundary was written at 0.9 against that 1.2 and measured a peak camera displacement of **0.0001 world units**, which is to say none.
+  - `sustain(level)` raises trauma to a floor instead. It takes the max rather than accumulating, and decay removes it on its own once the source stops, so nothing has to remember to switch it off. One-shots still add on top: a seabed hit during a gale lands at gale plus hit, verified.
+  - **`world.strainTrauma` retuned 0.9 to 0.40**, because as a floor the number means something different. It now measures 0.095 units at full strain, about two thirds of a hard seabed hit, and squared trauma does the rest: half the strain is a quarter of the throw. `weather.galeTrauma` is 0.26, deliberately under it. The two take the larger rather than the sum, so being blown against the edge of the lake is the worst place to be without ever being worse than the edge alone.
+  - Worth generalising: **any continuous cue goes through `sustain()`, and any `addShake(x * dt)` is a bug.** These two were the only instances.
 
 ### V1, in parallel
 
@@ -70,9 +81,8 @@ All seven items from `docs/v1-handoff.md` landed on the original build in commit
 
 ### Next, in order
 
-1. Finish Phase 1: shake on gale onset and thermocline crossing (seabed and boundary are done).
-2. Phase 1b audio: spatialization, the four parameters `Game.js` sends to `AudioDirector.update()` every frame that it never reads (including the thermocline muffle a comment promises and nothing implements), **the playlist preload V1 already has**, ducking, heartbeat scaling.
-3. **Gate:** freeze `config.js` movement numbers. Only then Phase 2.
+1. Phase 1b audio: spatialization, the four parameters `Game.js` sends to `AudioDirector.update()` every frame that it never reads (including the thermocline muffle a comment promises and nothing implements, which is now the last of the layer's three cues still missing), **the playlist preload V1 already has**, ducking, heartbeat scaling.
+2. **Gate:** freeze `config.js` movement numbers. Only then Phase 2.
 
 ---
 

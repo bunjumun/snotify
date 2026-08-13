@@ -19,11 +19,20 @@ export const CFG = {
     surfaceY: 40,         // the far-off surface, mostly a light source
     seed: null,           // null = random per run; ?seed= in the URL overrides
 
-    // Trauma per second at full boundary strain. Small: this is a hum of unease
-    // that builds while you lean on the edge of the world, not an impact. Large
-    // enough to notice and be annoyed by is exactly right, since being annoyed
-    // is the message.
-    strainTrauma: 0.9,
+    // Trauma HELD while you lean on the boundary, at full strain and scaled by
+    // how hard it is pushing. A hum of unease rather than an impact: large enough
+    // to notice and be annoyed by is exactly right, since being annoyed is the
+    // message.
+    //
+    // Was 0.9 and was inert. It was topped up per second against a linear decay
+    // of 1.2, which cancels any rate under 1.2 to nothing every single frame, and
+    // the cue measured 0.0001 world units of camera offset while looking perfectly
+    // correct in the source. It goes through `Rig.sustain()` now, where the number
+    // is a floor and means something different, hence the retune: 0.40 measures
+    // 0.095 world units of camera displacement, about two thirds of a hard seabed
+    // hit, held for as long as you keep leaning on the edge of the world. Squared
+    // trauma does the rest — half the strain is a quarter the throw.
+    strainTrauma: 0.40,
   },
 
   // Superior is cold, green and close. Visibility is the single biggest lever on
@@ -567,6 +576,25 @@ export const CFG = {
     depth: -52,
     thickness: 5,
     shimmerSpeed: 0.35,
+
+    // Crossing the layer is an event, and an event needs a latch or it fires on
+    // every frame you spend hovering at the boundary — which is exactly where a
+    // diver deciding whether to go down spends their time. These are positions
+    // in the submersion ramp rather than depths, so the cue moves with `depth`
+    // and `thickness` and never needs retuning alongside them.
+    //
+    // Deliberately far apart: 3.25 units of water you have to genuinely swim
+    // back through before it re-arms, so porpoising the boundary cannot chirp at
+    // you. Anyone determined enough to do it anyway meets the same ceiling the
+    // tail beat has, since trauma clamps at 1 and decays.
+    enterAt: 0.80,        // submersion at which you have committed to the cold
+    exitAt: 0.15,         // ...and at which you are back out of it
+
+    // Down is a shock, up is relief, so they are not the same number. Below the
+    // layer the light goes and the tank drains faster, and the knock going in is
+    // the announcement of that price. Coming back up you already know it.
+    crossTrauma: 0.40,
+    riseTrauma: 0.20,
   },
 
   // ---------- Weather ----------
@@ -578,6 +606,28 @@ export const CFG = {
     rampTime: 8,          // eased in and out, never a snap
     currentForce: 9.5,
     lightDim: 0.45,
+
+    // The leading edge. Fog and light take the whole rampTime to become legible,
+    // which left eight seconds where the lake had already turned and nothing had
+    // said so. This knock is what says it: one surge arriving, about a third of a
+    // second of it. Sized between the clue ping and losing a rider, because it is
+    // news rather than damage.
+    onsetTrauma: 0.35,
+
+    // ...and the buffet under it, held for as long as the gale blows. Read off
+    // the current's actual magnitude rather than off `intensity`, because the
+    // current already pulses: the shake and the shove are then the same water,
+    // and the camera surges with the gusts instead of humming flat underneath
+    // them. Since the offset goes as trauma squared, that pulse is wide — the
+    // lulls are nearly still and the peaks lean on you.
+    //
+    // Below `world.strainTrauma` on purpose. The boundary is a message you are
+    // meant to act on within seconds; a gale is weather you live inside for half
+    // a minute, and it must not turn into nausea. Both go through `Rig.sustain()`,
+    // which takes the larger of the two rather than their sum, so being blown
+    // against the edge of the lake is the worst place to be without ever being
+    // worse than the edge alone.
+    galeTrauma: 0.26,
   },
 
   // ---------- Input ----------

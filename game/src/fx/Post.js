@@ -13,6 +13,16 @@
 //
 // `uPanic` is the other half: as breath runs out the vignette closes and colour
 // drains, which is the visual half of a cue the audio is making at the same time.
+//
+// `uReact` and `uKick` make the sequence a VISUALISER rather than an animation.
+// For a long time everything above ran on uTrip and a clock, which meant the
+// most psychedelic ten seconds in the game were indifferent to the record
+// playing underneath them: the same swirl at the same rate whether the track was
+// a breakdown or a wall of guitar. They are gated inside the uTrip branches, so
+// a game that is not tripping pays literally nothing for them — the uniforms are
+// uploaded and never read. `uReact` is the low band as a level, for the swell;
+// `uKick` is the onset, for the punch. The distinction is the same one the
+// analyser makes and for the same reason: a level glows, an onset hits.
 
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
@@ -28,6 +38,8 @@ const FRAG = `
   uniform float uTrip;
   uniform float uPanic;
   uniform float uTime;
+  uniform float uReact;   // low band, 0..1 — the swell
+  uniform float uKick;    // bass onset, 0..1 — the punch
   uniform vec2  uResolution;
   varying vec2 vUv;
 
@@ -47,7 +59,10 @@ const FRAG = `
     // extra samples for nothing, so it's branched out entirely.
     vec3 col;
     if (uTrip > 0.004) {
-      float ca = uTrip * 0.006 * (1.0 + 0.5 * sin(uTime * 1.7));
+      // The beat pushes the channels apart. On a bass hit the whole frame
+      // separates for a few milliseconds and snaps back, which is what makes the
+      // sequence read as being ABOUT the song rather than merely during it.
+      float ca = uTrip * 0.006 * (1.0 + 0.5 * sin(uTime * 1.7) + 1.6 * uKick);
       col.r = texture2D(tDiffuse, uv + centred * ca).r;
       col.g = texture2D(tDiffuse, uv).g;
       col.b = texture2D(tDiffuse, uv - centred * ca).b;
@@ -59,18 +74,25 @@ const FRAG = `
     col = mix(col, col * vec3(0.86, 1.04, 1.02), 0.5);
 
     if (uTrip > 0.004) {
-      // Hue cycles round the wheel across the sequence, with a slow ripple across
-      // the frame so the whole screen isn't one flat shifted colour.
-      float ripple = sin(uv.x * 5.0 + uTime * 0.9) * sin(uv.y * 4.0 - uTime * 0.7);
-      col = hueRotate(col, uTrip * (uTime * 0.55 + ripple * 0.5));
+      // Hue cycles round the wheel across the sequence, with a ripple across the
+      // frame so the whole screen isn't one flat shifted colour. The ripple now
+      // BREATHES with the low band: loud passages corrugate the frame, quiet
+      // ones let it go smooth. The hue itself jumps on the beat, so the colour
+      // walks rather than slides.
+      float ripple = sin(uv.x * (5.0 + uReact * 4.0) + uTime * 0.9)
+                   * sin(uv.y * (4.0 + uReact * 3.0) - uTime * 0.7);
+      col = hueRotate(col, uTrip * (uTime * 0.55 + ripple * (0.5 + uReact * 0.6) + uKick * 0.5));
 
       float lum = dot(col, vec3(0.299, 0.587, 0.114));
-      col = mix(vec3(lum), col, 1.0 + uTrip * 1.35);           // saturation
-      col += smoothstep(0.55, 1.0, lum) * uTrip * 0.32;         // cheap bloom-ish glow
+      // Saturation and glow both punch on the onset. The glow is the one that
+      // sells it: a bass hit blooms the highlights for an instant, so the wreck
+      // and the god-rays flare on the beat.
+      col = mix(vec3(lum), col, 1.0 + uTrip * (1.35 + uKick * 0.9));
+      col += smoothstep(0.55 - uKick * 0.2, 1.0, lum) * uTrip * (0.32 + uKick * 0.55);
 
       // Edge shimmer, so movement leaves a faint trail of colour.
       float edge = length(vec2(dFdx(lum), dFdy(lum)));
-      col += edge * uTrip * 1.6 * vec3(0.6, 0.9, 1.0);
+      col += edge * uTrip * (1.6 + uKick * 1.4) * vec3(0.6, 0.9, 1.0);
     }
 
     // Panic: colour drains and the frame closes in.
@@ -108,6 +130,8 @@ export class Post {
       uTrip: { value: 0 },
       uPanic: { value: 0 },
       uTime: { value: 0 },
+      uReact: { value: 0 },
+      uKick: { value: 0 },
       uResolution: { value: new THREE.Vector2(size.x, size.y) },
     };
 
@@ -168,4 +192,14 @@ export class Post {
 
   set trip(v) { this.uniforms.uTrip.value = v; }
   set panic(v) { this.uniforms.uPanic.value = v; }
+
+  /**
+   * The record, as a number the shader can use. Written every frame regardless
+   * of uTrip: uploading two floats is cheaper than branching on the CPU to avoid
+   * it, and the shader ignores both unless the sequence is running.
+   */
+  setReact(react) {
+    this.uniforms.uReact.value = react.low;
+    this.uniforms.uKick.value = react.kick;
+  }
 }

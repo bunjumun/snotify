@@ -104,7 +104,7 @@ export class Particles {
     this.col[i3] = c.r; this.col[i3 + 1] = c.g; this.col[i3 + 2] = c.b;
   }
 
-  update(dt, cameraPos, trip = 0) {
+  update(dt, cameraPos, trip = 0, kick = 0) {
     // Silt wraps around the camera so we're always inside the cloud.
     const half = this.box / 2;
     for (let i = 0; i < SILT; i++) {
@@ -120,9 +120,12 @@ export class Particles {
       }
     }
 
-    // Sparkles.
+    // Sparkles. The rate rides the bass onset as well as uTrip, so they arrive
+    // in bursts on the beat rather than as an even drizzle for ten seconds. The
+    // accumulator is what makes that legible: a spike in `kick` banks a fraction
+    // of a particle per frame and the while-loop pays it out as a cluster.
     if (trip > 0.01) {
-      this._acc += CFG.trip.sparkleRate * trip * dt;
+      this._acc += CFG.trip.sparkleRate * trip * (1 + kick * CFG.trip.sparkleKick) * dt;
       while (this._acc >= 1) { this._pendingCentre && this.spawnSparkle(this._pendingCentre, CFG.trip.sparkleRadius); this._acc -= 1; }
     }
     for (let i = SILT; i < this.N; i++) {

@@ -469,6 +469,11 @@ export const CFG = {
     orbitRevolutions: 1,
     sparkleRate: 520,     // particles/sec at full intensity
     sparkleRadius: 14,    // and how far out from her they spawn
+    // How hard the bass onset multiplies that rate. At 2.0 a solid kick trebles
+    // the spawn for the frames it lasts, which the accumulator pays out as a
+    // visible cluster rather than a slightly denser drizzle. Any lower and the
+    // beat is not readable in the particles at all, which was the old behaviour.
+    sparkleKick: 2.0,
 
     // The blast off. A hit fires her straight up out of the dark, and she keeps
     // climbing through the orbit — so the ten seconds you can't steer are spent
@@ -669,6 +674,34 @@ export const CFG = {
     },
 
     touch: { stickRadius: 62, stickDeadzone: 8 },
+
+    // ---------- Rumble ----------
+    // One scale over every one-shot in the game rather than five retuned call
+    // sites. The call sites already encode what matters, which is their weight
+    // RELATIVE to each other: a seabed slam at 0.8 against a thermocline knock
+    // at 0.35 is a judgement worth keeping. They were simply all too strong in
+    // absolute terms, and one number fixes that without relitigating any of it.
+    rumble: {
+      scale: 0.55,
+
+      // The record in your hands. Driven by the analyser's `kick` (the onset)
+      // rather than `low` (the level), for the same reason the analyser itself
+      // gives: a level makes things glow, an onset makes them hit, and a hand
+      // feels a beat far better than it feels a volume.
+      //
+      // Capped low on purpose. This is a hum under the impacts, not a competitor
+      // to them: at musicMax the bass is still well below the quietest one-shot.
+      musicMax: 0.22,
+      // Gamepad haptics have no "sustain" primitive, so a continuous effect is
+      // really a series of overlapping short ones. The effect must outlast the
+      // gap that follows it or the rumble strobes.
+      musicEveryMs: 100,
+      musicHoldMs: 160,
+      // A one-shot silences the music rumble for its duration plus this. Without
+      // it the next re-arm lands on top of a seabed slam and cuts it in half:
+      // playEffect REPLACES whatever is running rather than mixing with it.
+      musicYieldMs: 90,
+    },
   },
 
   // ---------- Audio ----------
@@ -686,6 +719,15 @@ export const CFG = {
       crossfade: 6,       // seconds of overlap between one track and the next
       shuffle: false,     // running order is the band's, not a shuffle's
       nowPlayingFor: 7,   // how long the title card stays up on a change
+
+      // How early to hand the next track to the idle deck so preload='auto' has
+      // somewhere to put it. Assigning `src` is what starts the download, and it
+      // used to happen at the exact instant the fade opened, so every transition
+      // faded up into a track that had not received a byte. On a phone on mobile
+      // data that is the worst possible moment to be buffering. Twenty seconds is
+      // enough for a mix to get a head start without holding a second stream open
+      // for a meaningful part of every track.
+      preload: 20,
     },
 
     // The song is the point — it's the band's own record. Effects sit under it,
@@ -706,10 +748,108 @@ export const CFG = {
 
     // Six cascaded allpass stages with an LFO across them. Wet amount is uTrip,
     // so it swells with the rainbow and bleeds out on the same 60s taper.
-    phaser: { stages: 6, rateHz: 0.28, depth: 1100, baseFreq: 340, feedback: 0.55, maxWet: 0.85 },
+    //
+    // maxWet came down from 0.85. At that depth the phaser stopped being an
+    // effect over the record and became the record's replacement: the sweep ate
+    // the mids for the whole hold, and a band's own song is not something to
+    // wash out for ten seconds. At 0.6 the whoosh still reads clearly as the
+    // hit landing and you can still hear what is playing underneath it, which
+    // is the entire point of pillar 3.
+    phaser: { stages: 6, rateHz: 0.28, depth: 1100, baseFreq: 340, feedback: 0.55, maxWet: 0.6 },
 
     reverb: { seconds: 3.2, decay: 2.4, wet: 0.22 },
     analyser: { fftSize: 512, smoothing: 0.78 },
+
+    // ---------- Spatial ----------
+    // Where a sound is, relative to her. The listener is the KELPIE, not the
+    // camera: pillar 2 says you steer an animal rather than a camera, and the
+    // camera rides a spring whose lag would smear every pan into mush.
+    //
+    // Hand-rolled from a stereo panner, a gain and a filter rather than a
+    // PannerNode. The 3D listener API is split across browsers (positionX as an
+    // AudioParam on some, the deprecated setPosition on others) and this game's
+    // whole distribution property is working first time in a phone's in-app
+    // browser. Three cheap nodes we control beat one node we have to feature-
+    // detect.
+    spatial: {
+      // Where falloff starts. Tied conceptually to fog.far (130): a sound from
+      // the edge of what you can see should be at the edge of what you can hear,
+      // so vision and audio agree about how big the lake is.
+      refDistance: 14,      // full level inside this
+      maxDistance: 130,     // matches fog.far — inaudible past what you can see
+      // Never hard-panned. On headphones a full pan is disorienting rather than
+      // informative, and on the phone speaker most of this plays through it is
+      // thrown away entirely.
+      maxPan: 0.75,
+      // Water eats the top end long before it eats the level, which is why a
+      // distant sound reads as distant even at matched volume. Interpolated in
+      // log space for the reason the choke documents below.
+      muffleNear: 18000,    // Hz at the listener
+      muffleFar: 700,       // Hz at maxDistance
+    },
+
+    // ---------- The cold layer ----------
+    // config.thermocline promises "more muffled audio" below the layer and for a
+    // long time nothing implemented it. The trap is reaching for the lowpass
+    // below, which would wreck the one cue this file is emphatic about: when you
+    // hear the RECORD go muffled, you are drowning. Two different states cannot
+    // share one signal.
+    //
+    // So the cold layer gets its own filter, on ambience and SFX only, and the
+    // music bus passes it untouched. Pillar 3 agrees from the other direction:
+    // the album plays straight through and does not go dull because you swam
+    // deep. Below the layer the LAKE goes quiet and dull around a record that
+    // carries on exactly as it was.
+    thermo: {
+      muffleOpen: 20000,    // above the layer, effectively bypassed
+      muffleDeep: 1100,     // fully below it
+      ambienceDuck: 0.45,   // and the bed itself pulls back this far
+    },
+
+    // ---------- Heartbeat ----------
+    // It used to be a fixed 900ms interval at fixed pitch and level, so the first
+    // moment of panic and the last breath sounded identical. A heart that speeds
+    // up as the tank empties is the most legible dying cue there is and it costs
+    // nothing. Driven by breath.panic, which is already 0..1 across the band.
+    heartbeat: {
+      slowBpm: 54,          // at the moment panic starts
+      fastBpm: 132,         // at an empty tank
+      quietVol: 0.30,
+      loudVol: 0.62,
+      baseHz: 64,           // the thump, which also rises a little with panic
+      riseHz: 18,
+    },
+
+    // ---------- Ducking ----------
+    // The music dips under the sounds that carry information. Web Audio's
+    // compressor has no sidechain input, so this is volume automation rather
+    // than a true sidechain.
+    //
+    // The attack is deliberately NOT the 10ms the mixing literature gives for
+    // ducking dialogue: that is written for speech over a loop, and on a real
+    // record a dip that fast clicks. 45ms is under the ear's threshold for the
+    // dip itself while still getting out of the way in time.
+    //
+    // Which sounds duck is the whole design. The tail beat must NEVER duck: it
+    // fires several times a second and ducking on it turns the album into a
+    // pumping mess. See the DUCKS set in AudioDirector.
+    duck: {
+      amount: 0.55,         // music bus multiplier while a cue is speaking
+      attack: 0.045,
+      release: 0.35,
+    },
+
+    // ---------- Flow ----------
+    // Water moving past her. The boost had a beat per kick and no sense of speed
+    // at all, which is half of "the fins bite" missing. Quiet and on the ambience
+    // bus, so the listener's own ambience slider covers it and it sits under the
+    // bed rather than over it.
+    flow: {
+      atSpeed: 22,          // speed at which it reaches full
+      maxGain: 0.30,
+      freqNear: 220,        // bandpass centre at a standstill
+      freqFar: 900,         // ...and at full pelt, so it brightens as it rises
+    },
   },
 
   // ---------- Quality ----------

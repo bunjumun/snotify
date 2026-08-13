@@ -83,13 +83,62 @@ export class Gamepad_ {
     if (this.bus && (Math.abs(lx) + Math.abs(ly) + rt + a) > 0.1) this.bus.markActive('gamepad');
   }
 
-  /** Rumble where supported — silently a no-op everywhere else. */
+  /**
+   * Rumble where supported — silently a no-op everywhere else.
+   *
+   * Every call site is scaled by CFG.input.rumble.scale on the way through
+   * rather than being retuned individually. What the call sites encode is their
+   * weight RELATIVE to each other, and a seabed slam at 0.8 against a cold-layer
+   * knock at 0.35 is a judgement worth keeping intact; they were simply all too
+   * strong in absolute terms. One number fixes that without reopening any of it.
+   *
+   * A one-shot also takes the pad off the music for its duration. See _music().
+   */
   rumble(strength = 0.5, ms = 180) {
+    const R = CFG.input.rumble;
+    this._quietUntil = performance.now() + ms + R.musicYieldMs;
+    this._play(strength * R.scale, ms);
+  }
+
+  /** The actual call, unscaled, shared by one-shots and the music rumble. */
+  _play(strength, ms) {
     const p = this.pad;
     const act = p && p.vibrationActuator;
     if (!act || !act.playEffect) return;
     act.playEffect('dual-rumble', {
       duration: ms, strongMagnitude: strength, weakMagnitude: strength * 0.6,
     }).catch(() => {});
+  }
+
+  /**
+   * The record, in your hands.
+   *
+   * Driven by the analyser's `kick` — the onset — rather than `low`, the level,
+   * for the same reason the analyser itself gives: a level makes things glow and
+   * an onset makes them hit, and a hand reads a beat far better than it reads a
+   * volume. On a level the pad would just buzz continuously through a loud
+   * passage, which is noise rather than music.
+   *
+   * Two things make this awkward and both are handled here rather than at the
+   * call site. Gamepad haptics have no sustain primitive, so a continuous effect
+   * is really a series of short overlapping ones: the effect has to outlast the
+   * gap after it or the rumble strobes. And playEffect REPLACES whatever is
+   * running instead of mixing with it, so re-arming on top of a seabed slam
+   * would cut that slam in half. Hence _quietUntil: a one-shot owns the motors
+   * outright until it has finished, and the music waits its turn.
+   *
+   * @param {number} kick 0..1 onset strength from AudioDirector.react
+   */
+  music(kick) {
+    const R = CFG.input.rumble;
+    const now = performance.now();
+    if (now < (this._quietUntil || 0)) return;
+    if (now < (this._nextMusicAt || 0)) return;
+    this._nextMusicAt = now + R.musicEveryMs;
+    const m = Math.min(1, Math.max(0, kick)) * R.musicMax;
+    // Below this the motors either do nothing or click rather than hum, so it is
+    // cheaper and quieter to simply not ask.
+    if (m < 0.02) return;
+    this._play(m, R.musicHoldMs);
   }
 }

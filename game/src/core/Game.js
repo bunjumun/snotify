@@ -199,15 +199,20 @@ export class Game {
       this.divers.push(d);
     }
     this.diver = this.divers[0];   // the one the camera, the lamp and the lighter belong to
+    // Both of these are placed, and the diver is the reason spatialisation was
+    // worth building at all: he is the one thing in the lake that persists at a
+    // distance and makes noise. "Go back for him" is a direction as much as an
+    // instruction, and hearing which side he came off tells you it without the
+    // HUD having to.
     this.diver.onLetGo = () => {
       this.hud.say('He lost his grip. Go back for him.', { seconds: 3.2 });
-      this.audio?.sfx('grip_lost');
+      this.audio?.sfx('grip_lost', { at: this._diverAt() });
       this.pad?.rumble(0.8, 240);
       this.rig.addShake(0.5);
     };
     this.diver.onGrab = () => {
       this.hud.say('Got him.', { seconds: 1.8 });
-      this.audio?.sfx('grip_regain');
+      this.audio?.sfx('grip_regain', { at: this._diverAt() });
     };
 
     this.lamp = new Lamp(this.scene, RIDERS);
@@ -537,14 +542,21 @@ export class Game {
     this.rig.orbitProgress = this.trip.orbitProgress;
 
     // ---- FX ----
-    const react = this.audio?.react ?? { low: 0, mid: 0, high: 0 };
+    const react = this.audio?.react ?? { low: 0, mid: 0, high: 0, kick: 0 };
     this.kelpie.setReact(react);
     this.flora.update(dt, react.low, current);
     // Schools tighten in loud passages — the most visible thing the analyser does.
     this.shoals.update(dt, this.kelpie.position, react.mid);
     this.godrays.update(dt, react.low, this.weather.lightScale());
+    // The bong sequence reads the record too. Handed over every frame; the
+    // shader only looks at it while uTrip is up.
+    this.post.setReact(react);
+    // ...and the least visible: the bass, in the hands of anyone on a pad. It
+    // rides `kick` rather than `low` so it lands on the beat instead of buzzing
+    // through every loud passage, and it stands aside for any one-shot.
+    this.pad?.music(react.kick);
     this.bubbles.update(dt, this.time);
-    this.particles.update(dt, this.rig.camera.position, this.trip.value);
+    this.particles.update(dt, this.rig.camera.position, this.trip.value, react.kick);
 
     // Helmet bubbles: constant trickle, more when working hard.
     const helm = this._helm || (this._helm = new THREE.Vector3());
@@ -568,8 +580,13 @@ export class Game {
     this.hud.updateInventory(this.stash, this.progress.hasLighter);
     this._updateRadar(dt);
 
+    // Her ears, not the camera's. The rig sits on a spring behind her and is
+    // updated below this line anyway, so listening from it would mean panning
+    // against a pose that is both laggy and a frame stale. Pillar 2 settles it:
+    // you steer an animal, and the animal is what hears.
     this.audio?.update(dt, {
       position: this.kelpie.position,
+      forward: this.kelpie.forward,
       breathFraction: this.breath.fraction,
       panic: this.breath.panic,
       belowThermo: submersion,
@@ -811,6 +828,17 @@ export class Game {
     this.hud.clearSay();
     this.pad?.rumble(0.6, 400);
     this.intro.onBongUsed();
+  }
+
+  /**
+   * Where rider zero is, for placing his sounds. He has no `position` of his
+   * own: he is a rope of segments, and the helmet is the end of it that counts.
+   * Lazy scratch field rather than a fresh Vector3 per call, matching the rest
+   * of the hot paths in here.
+   */
+  _diverAt() {
+    const v = this._diverPos || (this._diverPos = new THREE.Vector3());
+    return this.diver.helmetPosition(v);
   }
 
   /** Fan uTrip out to everything that reads it. */

@@ -2,12 +2,18 @@
 //
 // Graph:
 //
-//        ┌─ musicBus ─┐
-//   in ──┼─ sfxBus   ─┼──► phaser ──► lowpass ──► reverb ──► master ──► out
-//        └─ ambBus   ─┘       ▲           ▲
-//                          (uTrip)     (uTrip, breath, depth)
+//   musicBus ─────────────────► musicDuck ─┐
+//   sfxBus   ──► lakeFilter ────────────────┼─► phaser ─► lowpass ─► reverb ─► master ─► out
+//   ambBus   ──► ambDuck ─────► lakeFilter ─┘     ▲          ▲
+//                                              (uTrip)   (uTrip, breath)
 //
-// Three decisions worth knowing about:
+// Note where the music bus does NOT go. `lakeFilter` is the cold layer, and it
+// is wired across ambience and SFX only on purpose: below the thermocline the
+// LAKE goes dull while the record carries on exactly as it was. Routing music
+// through it would collide head-on with the choke further down the chain, which
+// is the drowning cue, and two different states cannot share one signal.
+//
+// Five decisions worth knowing about:
 //
 // 0. The music is a record, not a soundtrack. Every track in music.json plays in
 //    order, crossfading into the next, and loops at the end. The game never
@@ -26,6 +32,23 @@
 //
 // 2. Every sound effect is synthesised. No SFX files ship at all, which keeps the
 //    game tiny and means it is never silent while waiting on a network.
+//
+// 3. Sounds are placed by hand, not by a PannerNode. The listener is the KELPIE
+//    rather than the camera: pillar 2 says you steer an animal rather than a
+//    camera, and the camera rides a spring whose lag would smear every pan.
+//    Three cheap nodes we control beat one node whose listener API is split
+//    across browsers, on a game whose whole distribution property is working
+//    first time in a phone's in-app browser. See _spatialHead().
+//
+// 4. The music ducks under the cues that carry information, and NEVER under the
+//    tail beat. Web Audio's compressor has no sidechain input, so this is plain
+//    volume automation on a gain the listener's volume slider does not touch.
+//
+// 5. update() is handed the world's state every frame and is expected to read
+//    ALL of it. For a long time it read two of six values and quietly discarded
+//    position, panic, belowThermo and speed, which is why the lake had no
+//    direction, the heart never raced, the cold layer was silent and speed had
+//    no sound. If a value arrives here, something below answers for it.
 
 import { CFG } from '../../config.js';
 
@@ -87,9 +110,16 @@ export class AudioDirector {
     this.deck = 0;           // which one is live
     this.onTrack = null;     // (track, index, total) => void — the HUD listens
     this._advancing = false;
+    this._armed = null;      // {index, deck} preloading the next track; see _arm
     this._heartbeat = null;
     this._hbWanted = false;  // panic says heartbeat; the pause menu only mutes it
+    this._panic = 0;         // 0..1, read by the beat scheduler to set its rate
     this._fails = 0;         // consecutive tracks that wouldn't load
+
+    // Where she is and which way she faces, refreshed every frame by update().
+    // Held as plain numbers rather than a Vector3 so this file stays free of a
+    // Three.js import it would otherwise need for nothing but arithmetic.
+    this._ear = { x: 0, y: 0, z: 0, rx: 1, rz: 0 };   // rx/rz = her right vector
     // Set properly by loadMusic(), but the chest can be opened before the
     // manifest has landed and `treasure` must not throw on the payoff screen.
     this._treasureTitles = [];
@@ -124,12 +154,40 @@ export class AudioDirector {
     // ---- Phaser ----
     this._buildPhaser();
 
+    // ---- The cold layer ----
+    // Everything the LAKE makes goes through here; the record does not. Opens
+    // and closes with how far below the thermocline she is. See the note at the
+    // top of the file for why this is not allowed anywhere near the music.
+    this.lakeFilter = c.createBiquadFilter();
+    this.lakeFilter.type = 'lowpass';
+    this.lakeFilter.frequency.value = CFG.audio.thermo.muffleOpen;
+    this.lakeFilter.Q.value = 0.7;
+    this.lakeFilter.connect(this.phaserIn);
+
+    // ---- Ducking ----
+    // Separate from the music bus rather than sharing its gain, because that bus
+    // carries the listener's volume slider. Ducking by writing the same gain
+    // would have every dip fight setVolume() and leave the slider wherever the
+    // last cue happened to drop it.
+    this.musicDuck = c.createGain();
+    this.musicDuck.gain.value = 1;
+    this.musicDuck.connect(this.phaserIn);
+
+    // The bed pulls back below the layer as well as going dull. Its own gain for
+    // the same reason: the ambience slider has to keep meaning what it says.
+    this.ambDuck = c.createGain();
+    this.ambDuck.gain.value = 1;
+    this.ambDuck.connect(this.lakeFilter);
+
     // ---- Buses ----
+    // Music goes straight to the duck and skips the lake filter entirely.
     this.buses = {};
     for (const name of ['music', 'sfx', 'ambience']) {
       const g = c.createGain();
       g.gain.value = CFG.audio.volumes[name];
-      g.connect(this.phaserIn);
+      g.connect(name === 'music' ? this.musicDuck
+        : name === 'ambience' ? this.ambDuck
+        : this.lakeFilter);
       this.buses[name] = g;
     }
 
@@ -147,6 +205,7 @@ export class AudioDirector {
     this._freq = new Uint8Array(this.analyser.frequencyBinCount);
 
     this._startAmbience();
+    this._startFlow();
   }
 
   /**
@@ -343,16 +402,57 @@ export class AudioDirector {
     src.connect(gain).connect(this.buses.music);
     gain.connect(this.analyser);   // pre-fader tap; see the note in the constructor
 
+    const deck = { el, src, gain };
+    // Both listeners below speak only for the deck actually on air. Two of the
+    // three deck states are not the record and must not move it: an ARMED deck
+    // is silently buffering the next track, and a DRAINING deck is finishing its
+    // fade under the one that replaced it. Left ungated, the armed deck's load
+    // error spends the live track's retry budget, and the draining deck reaches
+    // its own natural end a few seconds after the crossfade, fires `ended`, and
+    // advances a second time — cutting the incoming track off after one
+    // crossfade's worth of music.
+    const live = () => this.decks[this.deck] === deck;
+
     // Backstop. If a track's duration never resolves — a stream, a container the
     // browser won't measure — the crossfade window in update() never opens, and
     // without this the record would simply stop at the end of track one.
-    el.addEventListener('ended', () => this._advance());
+    el.addEventListener('ended', () => { if (live()) this._advance(); });
     // A dead URL shouldn't end the album either; skip to the next one.
-    el.addEventListener('error', () => this._trackFailed());
+    el.addEventListener('error', () => {
+      // A track that fails while merely armed throws away the arm and nothing
+      // else. The crossfade then loads it the old way, and if it fails again it
+      // is the live deck by that point and gets counted exactly once.
+      if (!live()) {
+        if (this._armed && this._armed.deck === deck) this._armed = null;
+        return;
+      }
+      this._trackFailed();
+    });
     // Proof one actually started, which is what clears the failure count.
     el.addEventListener('playing', () => { this._fails = 0; });
 
-    return { el, src, gain };
+    return deck;
+  }
+
+  /**
+   * Hand the next track to the idle deck early so preload='auto' has somewhere
+   * to put it — the "arm" half of arm-and-fire.
+   *
+   * Assigning `src` is what starts the download. It used to happen at the exact
+   * instant the fade opened, so preload never had a chance to do anything and
+   * every transition faded up into a track that had not yet received a byte. On
+   * a phone on mobile data that is the worst possible moment to be buffering.
+   * Arming costs one extra open stream for the last `preload` seconds of a
+   * track, and buys a transition that is already in memory when it is needed.
+   */
+  _arm(i) {
+    if (this.playlist.length < 2) return;
+    if (this._armed && this._armed.index === i) return;
+    const deck = this.decks[this.deck ^ 1];
+    const track = this.playlist[i];
+    if (!deck || !track) return;
+    deck.el.src = track.url;
+    this._armed = { index: i, deck };
   }
 
   /** Put track `i` on the idle deck and crossfade to it. */
@@ -366,13 +466,27 @@ export class AudioDirector {
     // A one-track playlist has nothing to cross into but itself, and crossfading
     // a song with a second copy of the same song is worse than a clean loop.
     next.el.loop = this.playlist.length === 1;
-    next.el.src = track.url;
-    // A fresh src already starts at zero, so this is belt and braces — but on a
-    // element that hasn't loaded metadata yet some WebKit builds throw
-    // InvalidStateError rather than storing a pending seek, and an exception
-    // here would jump straight over the play() below and leave _advancing stuck
-    // true, which stops the record for the rest of the session.
-    try { next.el.currentTime = 0; } catch { /* seek before metadata; harmless */ }
+
+    // The "fire" half. If _arm() has already given this deck this track then its
+    // src has been set for `preload` seconds and there is nothing left to do but
+    // start it — deliberately including the seek, since an armed deck has never
+    // played and is already at zero, and reaching into a buffered stream to
+    // prove it would be the one thing this split exists to avoid.
+    //
+    // Everything else falls back to loading at the moment of the fade: the first
+    // play, a skip to a track nobody armed, or an arm thrown away because it
+    // would not load.
+    const armed = this._armed && this._armed.index === i && this._armed.deck === next;
+    this._armed = null;
+    if (!armed) {
+      next.el.src = track.url;
+      // A fresh src already starts at zero, so this is belt and braces — but on a
+      // element that hasn't loaded metadata yet some WebKit builds throw
+      // InvalidStateError rather than storing a pending seek, and an exception
+      // here would jump straight over the play() below and leave _advancing stuck
+      // true, which stops the record for the rest of the session.
+      try { next.el.currentTime = 0; } catch { /* seek before metadata; harmless */ }
+    }
     next.el.play().catch(() => { /* autoplay policy or a dead URL; stay quiet */ });
 
     next.gain.gain.cancelScheduledValues(now);
@@ -423,10 +537,21 @@ export class AudioDirector {
     if (this.playlist.length < 2 || this._advancing) return;
     const el = this.decks[this.deck]?.el;
     if (!el || !el.duration || !isFinite(el.duration)) return;
-    if (el.duration - el.currentTime <= CFG.audio.playlist.crossfade) this._advance();
+    const left = el.duration - el.currentTime;
+    const P = CFG.audio.playlist;
+    if (left <= P.crossfade) this._advance();
+    // Not time to fade yet, but time to start fetching what we will fade into.
+    else if (left <= P.crossfade + P.preload) this._arm((this.index + 1) % this.playlist.length);
   }
 
-  /** Skip forward — wired to the HUD's track readout. */
+  /**
+   * Skip forward — wired to the HUD's track readout.
+   *
+   * A skip goes to the same track the pump would have armed, so a press late in
+   * a track lands on a stream that is already buffered. `_play()` clears the arm
+   * whether it used it or not, so an early skip cannot leave one behind pointing
+   * at a track the record has already gone past.
+   */
   skip() { if (this.playlist.length > 1) { this._advancing = false; this._advance(); } }
 
   get nowPlaying() { return this.playlist[this.index] || null; }
@@ -497,7 +622,114 @@ export class AudioDirector {
     lfo.start();
   }
 
+  /**
+   * Water moving past her, rising with speed.
+   *
+   * The tail beat has had a sound since Phase 1, but a beat is an event and
+   * speed is a state: between kicks a full sprint sounded exactly like drifting.
+   * This is the state half, and it is the audio side of "the fins bite".
+   *
+   * Built once and left running for the life of the context. Only two numbers
+   * move per frame, both through setTargetAtTime, so a hard change of pace
+   * arrives as a swell rather than a step. On the ambience bus deliberately: it
+   * is the lake rather than the animal, so the ambience slider covers it and the
+   * cold layer muffles it along with everything else down there.
+   */
+  _startFlow() {
+    const c = this.ctx;
+    const len = c.sampleRate * 3;
+    const buf = c.createBuffer(1, len, c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+
+    const noise = c.createBufferSource();
+    noise.buffer = buf;
+    noise.loop = true;
+
+    this.flowFilter = c.createBiquadFilter();
+    this.flowFilter.type = 'bandpass';
+    this.flowFilter.frequency.value = CFG.audio.flow.freqNear;
+    this.flowFilter.Q.value = 0.5;
+
+    this.flowGain = c.createGain();
+    this.flowGain.gain.value = 0;      // silent at a standstill
+
+    noise.connect(this.flowFilter).connect(this.flowGain).connect(this.buses.ambience);
+    noise.start();
+  }
+
   // ----------------------------------------------------------------------- sfx
+
+  /**
+   * Three nodes that place a one-shot in the water, returned as the thing a
+   * sound should connect to instead of the SFX bus.
+   *
+   * Deliberately not a PannerNode. The 3D listener API is split across browsers
+   * — positionX/forwardX as AudioParams on some, the deprecated setPosition and
+   * setOrientation on others — and the game's whole distribution property is
+   * that it works first time in a phone's in-app browser. Three nodes whose
+   * curves we own are worth more here than one node we would have to feature
+   * detect around, and it lets distance take the top end off as well as the
+   * level, which is what actually makes far things sound far underwater.
+   *
+   * Costs three nodes per shot against the handful of oscillators a shot already
+   * builds, and they are collected with it once it has finished.
+   */
+  _spatialHead(at) {
+    const c = this.ctx;
+    const S = CFG.audio.spatial;
+    const e = this._ear;
+
+    const dx = at.x - e.x, dy = at.y - e.y, dz = at.z - e.z;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.0001;
+
+    // Pan is how far off her right flank it is. Her right vector is maintained
+    // in update(); the dot of it with the direction to the sound is the whole
+    // calculation. Never hard-panned, for the reason in CFG.audio.spatial.
+    const pan = clamp(((dx * e.rx + dz * e.rz) / d) * S.maxPan, -S.maxPan, S.maxPan);
+
+    // Inverse falloff, then a taper so the far edge reaches actual silence
+    // rather than lingering at a fixed fraction forever.
+    const near = S.refDistance / Math.max(S.refDistance, d);
+    const gain = near * (1 - clamp01((d - S.refDistance) / (S.maxDistance - S.refDistance)));
+
+    // Log space, for the same reason the choke gives: interpolating 18kHz to
+    // 700Hz linearly spends nearly the whole journey inaudible and then falls
+    // off a cliff at the end.
+    const k = clamp01(d / S.maxDistance);
+    const cutoff = S.muffleNear * Math.pow(S.muffleFar / S.muffleNear, k);
+
+    const g = c.createGain();
+    g.gain.value = gain;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = cutoff;
+    lp.Q.value = 0.5;
+    const p = c.createStereoPanner();
+    p.pan.value = pan;
+
+    g.connect(lp).connect(p).connect(this.buses.sfx);
+    return g;
+  }
+
+  /**
+   * Dip the record under a cue, then let it back up.
+   *
+   * Volume automation rather than a sidechain, because Web Audio's compressor
+   * has no sidechain input to key off. The release is scheduled from the moment
+   * of the dip rather than from the end of the sound: cues are all short, and
+   * tracking their real length would mean every case in the switch reporting a
+   * duration for a gain node it never sees.
+   */
+  _dip() {
+    const D = CFG.audio.duck;
+    const now = this.ctx.currentTime;
+    const g = this.musicDuck.gain;
+    g.cancelScheduledValues(now);
+    // Time constants: setTargetAtTime lands within a few percent in 3 of them.
+    g.setTargetAtTime(D.amount, now, D.attack / 3);
+    g.setTargetAtTime(1, now + D.attack + 0.05, D.release / 3);
+  }
 
   /**
    * Synthesised one-shots. No files, no loading, no 404s.
@@ -509,15 +741,30 @@ export class AudioDirector {
    * the one sound in the game that is a reward rather than information and it
    * should ring true each time.
    *
+   * Placement is opt-in, and the default is the meaningful one. A sound given no
+   * `at` plays centred and unattenuated because it is happening TO you rather
+   * than near you: the tail beat is her own fluke, the warning is your own lungs,
+   * the chest chord is a reward being handed over. Only things that are somewhere
+   * else in the water get a position, which is why the switch below needed no
+   * changes at all — `out` is simply pointed at a spatial head instead of at the
+   * bus, and every case follows it.
+   *
    * @param {string} name
-   * @param {{force?:number}} [opts] 0..1 strength, where a sound has a range
+   * @param {{force?:number, at?:{x:number,y:number,z:number}}} [opts]
+   *   `force` is 0..1 strength where a sound has a range; `at` is a world
+   *   position, omitted for anything happening to the player herself.
    */
   sfx(name, opts = {}) {
     if (!this.ok) return;
     const c = this.ctx;
     const t = c.currentTime;
-    const out = this.buses.sfx;
+    const out = opts.at ? this._spatialHead(opts.at) : this.buses.sfx;
     const force = Math.min(1, Math.max(0, opts.force ?? 1));
+
+    // The cues that carry information get the record out of their way. Kept as a
+    // set here rather than a flag at each call site so the policy is readable in
+    // one place, and so the exclusion below is impossible to miss.
+    if (DUCKS.has(name)) this._dip();
 
     const detune = name === 'chest' ? 1 : 1 + (Math.random() - 0.5) * 0.09;
 
@@ -620,26 +867,54 @@ export class AudioDirector {
     this._beat(on);
   }
 
-  /** Start or stop the timer without changing whether panic still wants it. */
+  /**
+   * Start or stop the timer without changing whether panic still wants it.
+   *
+   * A self-rescheduling timeout rather than an interval, because the rate is no
+   * longer constant: it is read fresh from `_panic` on every beat, so the heart
+   * accelerates as the tank empties instead of thumping at one speed from the
+   * first moment of panic to the last breath. An interval cannot do that without
+   * being torn down and rebuilt each time the rate moves.
+   */
   _beat(on) {
     if (on && !this._heartbeat) {
-      this._heartbeat = setInterval(() => {
-        const c = this.ctx, t = c.currentTime;
-        for (const [off, vol] of [[0, 0.4], [0.16, 0.26]]) {
-          const o = c.createOscillator(); const g = c.createGain();
-          o.type = 'sine';
-          o.frequency.setValueAtTime(64, t + off);
-          o.frequency.exponentialRampToValueAtTime(36, t + off + 0.16);
-          g.gain.setValueAtTime(0, t + off);
-          g.gain.linearRampToValueAtTime(vol, t + off + 0.02);
-          g.gain.exponentialRampToValueAtTime(0.0001, t + off + 0.2);
-          o.connect(g).connect(this.buses.sfx);
-          o.start(t + off); o.stop(t + off + 0.3);
-        }
-      }, 900);
+      const tick = () => {
+        this._thump();
+        // Read at the top of each beat, so a tank draining mid-run speeds the
+        // heart up from the very next beat rather than the next state change.
+        const H = CFG.audio.heartbeat;
+        const bpm = H.slowBpm + (H.fastBpm - H.slowBpm) * clamp01(this._panic);
+        this._heartbeat = setTimeout(tick, 60000 / bpm);
+      };
+      tick();
     } else if (!on && this._heartbeat) {
-      clearInterval(this._heartbeat);
+      clearTimeout(this._heartbeat);
       this._heartbeat = null;
+    }
+  }
+
+  /**
+   * One lub-dub. Level and pitch ride panic alongside the rate: a heart that is
+   * merely faster reads as a metronome, where one that is also louder and higher
+   * reads as a body in trouble. Scheduled against the audio clock so the two
+   * halves stay locked to each other however busy the main thread is.
+   */
+  _thump() {
+    const H = CFG.audio.heartbeat;
+    const p = clamp01(this._panic);
+    const c = this.ctx, t = c.currentTime;
+    const loud = H.quietVol + (H.loudVol - H.quietVol) * p;
+    const hz = H.baseHz + H.riseHz * p;
+    for (const [off, scale] of [[0, 1], [0.16, 0.65]]) {
+      const o = c.createOscillator(); const g = c.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(hz, t + off);
+      o.frequency.exponentialRampToValueAtTime(hz * 0.56, t + off + 0.16);
+      g.gain.setValueAtTime(0, t + off);
+      g.gain.linearRampToValueAtTime(loud * scale, t + off + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + off + 0.2);
+      o.connect(g).connect(this.buses.sfx);
+      o.start(t + off); o.stop(t + off + 0.3);
     }
   }
 
@@ -684,13 +959,62 @@ export class AudioDirector {
   // -------------------------------------------------------------------- update
 
   /**
-   * @param {{panic:number, belowThermo:number, trip:number, speed:number}} s
+   * Every value in `s` is read by something below. It was not always so: this
+   * method took six and used two, and `position`, `panic`, `belowThermo` and
+   * `speed` were computed by Game.js every frame and thrown away here. That is
+   * why the lake had no direction, the heart never raced, the cold layer made no
+   * sound and speed was silent. Anything added to this shape answers for itself.
+   *
+   * @param {{
+   *   position: {x:number,y:number,z:number},   // her ears; the listener is the animal
+   *   forward:  {x:number,y:number,z:number},   // and which way they point
+   *   breathFraction: number,                   // 0..1 tank, drives the choke
+   *   panic: number,                            // 0..1 through the panic band
+   *   belowThermo: number,                      // 0..1 submersion in the cold layer
+   *   trip: number,                             // 0..1 uTrip
+   *   speed: number,                            // world units/sec
+   * }} s
    */
   update(dt, s) {
     if (!this.ok) return;
     this._t += dt;
     const A = CFG.audio;
     const now = this.ctx.currentTime;
+
+    // ---- Where she is ----
+    // Her right vector is forward × up, which for up = (0,1,0) collapses to
+    // (-fz, 0, fx). Kept normalised in the XZ plane: looking steeply up or down
+    // shortens the horizontal part, and without renormalising, pans would go
+    // limp exactly when she is nose-up at the surface.
+    if (s.position) { this._ear.x = s.position.x; this._ear.y = s.position.y; this._ear.z = s.position.z; }
+    if (s.forward) {
+      const rx = -s.forward.z, rz = s.forward.x;
+      const len = Math.hypot(rx, rz);
+      if (len > 1e-4) { this._ear.rx = rx / len; this._ear.rz = rz / len; }
+    }
+
+    // ---- The cold layer ----
+    // Ambience and SFX only. The record does not know she went deep, which is
+    // the entire point: see the graph at the top of the file.
+    const below = clamp01(s.belowThermo ?? 0);
+    const T = A.thermo;
+    // Log space again, for the same reason as the choke below.
+    const lakeCut = T.muffleOpen * Math.pow(T.muffleDeep / T.muffleOpen, below);
+    this.lakeFilter.frequency.setTargetAtTime(lakeCut, now, 0.35);
+    this.ambDuck.gain.setTargetAtTime(1 - (1 - T.ambienceDuck) * below, now, 0.35);
+
+    // ---- Speed ----
+    const F = A.flow;
+    const sp = clamp01((s.speed ?? 0) / F.atSpeed);
+    // Squared, so drifting is properly silent and the rush is something you have
+    // to actually earn. Linear made a gentle glide sound like a charge.
+    this.flowGain.gain.setTargetAtTime(sp * sp * F.maxGain, now, 0.18);
+    this.flowFilter.frequency.setTargetAtTime(F.freqNear + (F.freqFar - F.freqNear) * sp, now, 0.18);
+
+    // ---- Panic ----
+    // Stored rather than acted on: the beat scheduler reads it at the top of
+    // each beat, which is the only moment the rate can change without stuttering.
+    this._panic = clamp01(s.panic ?? 0);
 
     // ---- The one value ----
     // Phaser wet and the filter sweep both ride uTrip, so they bloom and fade
@@ -736,7 +1060,23 @@ export class AudioDirector {
   }
 }
 
+/**
+ * The one-shots the record gets out of the way for.
+ *
+ * All four are information: a chest is the payoff, a page is a thing found, a
+ * warning is your lungs, and grip_lost is the diver in trouble behind you. The
+ * exclusions matter more than the members. `kick` above all is NOT here and must
+ * never be: it fires several times a second at the rate people actually swim,
+ * and ducking on it would turn the band's own record into a pumping mess. That
+ * single omission is the difference between ducking that works and ducking that
+ * ruins the album. `thud`, `baggie` and the thermocline pair stay out for a
+ * milder version of the same reason — they are frequent enough that dipping for
+ * them would be a tic rather than an emphasis.
+ */
+const DUCKS = new Set(['chest', 'page', 'warn', 'grip_lost']);
+
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 function shuffled(arr) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {

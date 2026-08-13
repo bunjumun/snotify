@@ -285,8 +285,10 @@ canvas{display:block;width:100%;height:100%}
   background:rgba(4,22,28,.55);color:var(--text-dim);display:grid;place-items:center;
   font-family:inherit;font-size:.72rem;letter-spacing:.06em}
 #tThrust{right:1.2rem;bottom:5.5rem;width:82px;height:82px}
-#tBoost{right:6.5rem;bottom:1.5rem;width:62px;height:62px}
-#tUse{right:1.6rem;bottom:1.5rem;width:62px;height:62px}
+/* Moved into the corner USE used to hold, rather than left where it was with a
+   gap beside it. That corner is the easiest reach on a phone held one-handed,
+   and BOOST is now the only thing competing for it. */
+#tBoost{right:1.6rem;bottom:1.5rem;width:62px;height:62px}
 .tbtn:active{background:rgba(125,224,138,.25);color:var(--text)}
 
 /* ---------- Debug ---------- */
@@ -337,7 +339,12 @@ canvas{display:block;width:100%;height:100%}
   <!-- Labelled for the tap, not the hold: holding it is the slow way round. -->
   <button class="tbtn" id="tThrust">TAP<br>SWIM</button>
   <button class="tbtn" id="tBoost">BOOST</button>
-  <button class="tbtn" id="tUse">USE</button>
+  <!-- USE is gone. The bong was the only thing it ever did and that fires on
+       contact now, so the button sat there answering nothing. On a touch layout
+       that is worse than a missing control: one you can press and get no
+       response from reads as the game being broken rather than the button
+       being spare. Touch.js keeps its binding, harmlessly, against #tUse not
+       existing. -->
 </div>
 
 <!-- Start screen. This button is the single user gesture that unlocks the

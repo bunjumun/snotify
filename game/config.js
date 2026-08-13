@@ -298,8 +298,15 @@ export const CFG = {
   },
 
   stash: {
-    needed: 4,            // baggies per bowl — constant across all difficulties
-    pickupRadius: 2.6,
+    needed: 4,            // jars per bowl — constant across all difficulties
+    // Grown with the prop rather than left behind it. A baggie was half a unit
+    // tall inside a radius of 2.6, so the collision was five times the size of
+    // the thing drawn and picking one up felt like it happened *near* the jar
+    // rather than *to* it. The jar is about 2.2 tall now and the radius sits
+    // just outside it, which is the relationship the player can actually see.
+    // This does loosen how tightly the stash can be spaced; it does not touch
+    // any movement number, so the Phase 1 gate is unaffected.
+    pickupRadius: 4.0,
     respawnDelay: 6,      // seconds before a taken anchor can reseed
     minPlayerDistance: 45,// don't reseed one in the player's lap
 
@@ -452,7 +459,9 @@ export const CFG = {
   // ---------- Ship's log ----------
   logPages: {
     count: 7,
-    pickupRadius: 3.0,
+    // Same reasoning as the stash: a slate under a unit across inside a radius
+    // of 3 was a target you could not aim at. Both grew together.
+    pickupRadius: 4.5,
   },
 
   // ---------- The trip ----------
@@ -652,13 +661,16 @@ export const CFG = {
     // Note the tail beat deliberately does NOT get this. A buffered kick would
     // bank credit against the cooldown, and mashing is supposed to hit a ceiling
     // rather than queue up. See the kick block in Kelpie.update().
+    //
+    // NOTHING CONSUMES THIS AT PRESENT. The bong was the only use verb in the
+    // game and it fires on contact now, so the buffer is armed every press and
+    // read by nobody. Kept rather than deleted because the machinery is correct
+    // and tested and the next thing worth pressing a button at will want it; if
+    // no such thing arrives, this and the InputBus interact plumbing should go
+    // together. `useGraceMs` did NOT survive the same cull: coyote time only
+    // ever existed to forgive a press, so with no press there was nothing left
+    // for it to do.
     bufferMs: 110,
-
-    // How long a station stays usable after you have drifted back out of range.
-    // The swimming equivalent of coyote time: you committed to the press while
-    // you were in range, and the water carrying you out in the meantime is not a
-    // mistake worth punishing.
-    useGraceMs: 100,
 
     // Tilt. iOS needs requestPermission() from inside a user gesture (the DIVE
     // IN button does it) and HTTPS. Neutral is captured on start so the phone

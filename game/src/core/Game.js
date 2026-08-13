@@ -71,11 +71,6 @@ export class Game {
     this.time = 0;              // wall clock, never reset — animations read this
     this.runSeconds = 0;        // this run only, for the chest's best time
 
-    // The station you were last in range of, and when. See the coyote-time note
-    // in _updateBongs(): a press counts for a moment after you have drifted off.
-    this._graceBong = null;
-    this._graceAt = -Infinity;
-
     this.difficulty = new Difficulty();
     this.progress = new Progress();
     this.seed = seedFromUrl() || Rng.makeSeed();
@@ -532,7 +527,7 @@ export class Game {
     this.runSeconds += dt;
     this.stash.update(dt, this.time, this.kelpie.position, this.lamp);
     this.logs.update(dt, this.time, this.kelpie.position, this.lamp);
-    this._updateBongs(dt, intent);
+    this._updateBongs(dt);
     this.clues.update(dt);
 
     // ---- Trip ----
@@ -747,7 +742,24 @@ export class Game {
     return a;
   }
 
-  _updateBongs(dt, intent) {
+  /**
+   * Contact fires it. There is no button.
+   *
+   * There used to be both: swim into a lit bong and it went off, or press E from
+   * anywhere inside the much larger use radius. Two ways to do one thing, and the
+   * one nobody used was the one being advertised — the prompt sat on screen
+   * during exactly the approach that was already about to trigger the other path.
+   * You cannot help running into a station you are steering at, and being told to
+   * press a key while you do it reads as the key being required.
+   *
+   * So the button and its prompt are gone. `useRadius` stays and still does the
+   * job it was always better at: it is the range at which the game will tell you
+   * what you are missing, which is why a station never silently refuses.
+   *
+   * The coyote grace went with the button. Its own comment said it only ever
+   * answered a real press, and with no press there is nothing for it to forgive.
+   */
+  _updateBongs(dt) {
     const canUse = this.progress.hasLighter && this.stash.canPack;
     let nearest = null, nearestD = Infinity;
 
@@ -760,54 +772,27 @@ export class Game {
     this.nearestBong = nearest;
     this.nearestBongDistance = nearestD;
 
-    // Coyote time for stations. Having just drifted out of range, the one you
-    // were at stays usable for a moment. You committed to the press while you
-    // were in range, and the current carrying you out in between is not a mistake
-    // worth punishing — without this, a press at the very edge of the radius is
-    // eaten and nothing explains why.
-    //
-    // The grace only ever answers a real button press. Neither the prompt nor the
-    // swim-into-it path fires from out here, because both of those are about
-    // being at the station rather than about having asked for it.
     const inRange = !!nearest && nearestD <= CFG.bong.useRadius;
-    if (inRange) { this._graceBong = nearest; this._graceAt = this.time; }
-    const graced = !inRange
-      && this._graceBong
-      && (this.time - this._graceAt) <= CFG.input.useGraceMs / 1000;
+    if (this.trip.active || !inRange) return;
 
-    if (this.trip.active || (!inRange && !graced)) return;
-
-    const target = inRange ? nearest : this._graceBong;
-
-    // In range. Say what's missing rather than silently refusing — a station that
-    // does nothing when you press use reads as a bug.
+    // Say what's missing rather than silently refusing.
     if (!this.progress.hasLighter) {
       // Except during the opening. Reaching your first pipe with nothing to
       // light it is not a mistake to be corrected — it's the scene, and the fish
       // is already on its way over to say so. Nagging every frame on top of that
       // just talks over it.
-      if (inRange && !(this.intro.active && this.intro.step < 2)) {
+      if (!(this.intro.active && this.intro.step < 2)) {
         this.hud.say('No fire. You need a lighter.', { seconds: 2 });
       }
       return;
     }
     if (!this.stash.canPack) {
-      if (inRange) {
-        this.hud.say(`Not enough to pack. <b>${this.stash.carried}/${CFG.stash.needed}</b>`, { seconds: 2 });
-      }
+      this.hud.say(`Not enough to pack. <b>${this.stash.carried}/${CFG.stash.needed}</b>`, { seconds: 2 });
       return;
     }
-    // Swim into it and it goes off. No button, no stopping, no lining up on the
-    // last two metres — you charge a lit bong and the lit bong happens to you.
-    // E still works, and works from a long way further out, for the approach
-    // that didn't quite connect.
-    if (inRange && nearestD <= CFG.bong.hitRadius) return this._useBong(nearest);
-
-    if (inRange) this.hud.say('<kbd>E</kbd> to hit it', { seconds: 0.4 });
-    if (intent.interact) {
-      this.input.consumeInteract();
-      this._useBong(target);
-    }
+    // No stopping, no lining up on the last two metres. You charge a lit bong and
+    // the lit bong happens to you.
+    if (nearestD <= CFG.bong.hitRadius) this._useBong(nearest);
   }
 
   _useBong(bong) {

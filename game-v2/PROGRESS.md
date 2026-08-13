@@ -76,6 +76,17 @@ All seven items from `docs/v1-handoff.md` landed on the original build in commit
 
 ---
 
+## When V1 is archived
+
+The plan is to archive the original once V2 is stable and posted. Four things have to happen in the right order, and the first one is not optional.
+
+1. **Deal with `game/vendor/` first.** V2's import map points at `../game/vendor/three.module.min.js`. Archiving the folder breaks V2 immediately, with a bare-specifier failure and a blank canvas. Either move `vendor/` to the repo root and repoint both import maps, or copy it back into `game-v2/` and accept the 740K. Do this **before** touching `game/`, and confirm V2 still boots, or the archive takes the live game down with it.
+2. **Redirect `game/`, do not delete it.** That path is the one people have already shared, and it is the reason both builds stayed up in the first place. A one-line meta-refresh or a stub `index.html` pointing at the new path costs nothing and keeps every existing link alive. Deleting it turns them all into 404s.
+3. **Decide about `lakehorse.v2.*`.** The prefix exists to stop two builds sharing one save. With V1 gone it is vestigial but harmless, and renaming it would wipe everyone's progress unless migrated. Leaving it alone is the safe default. If V2 should instead *adopt* a player's V1 progress, that is a deliberate one-time migration and belongs with the Phase 8 save-versioning work, not before it.
+4. **Rename the door.** V2 becomes plain "Lakehorse Swimulator", the old door comes out of `index.html`, and `gameTally()` drops back to a single call. The `door.gameV2.*` site_text keys should be retired or repointed at the same time.
+
+---
+
 ## Decisions worth not relitigating
 
 - **Unreal is not the runtime, and cannot be.** Epic dropped HTML5 export at 4.24; UE5's only browser path is Pixel Streaming, a GPU server per concurrent player. The game's distribution property is that a fan taps a link from an in-app browser and is playing in seconds. Unreal may still be used offline as a lookdev reference or an asset bakery, gated on the page-weight budget.

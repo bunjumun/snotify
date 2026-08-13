@@ -18,6 +18,12 @@ export const CFG = {
     floorY: -60,          // seabed sits around here, displaced by noise
     surfaceY: 40,         // the far-off surface, mostly a light source
     seed: null,           // null = random per run; ?seed= in the URL overrides
+
+    // Trauma per second at full boundary strain. Small: this is a hum of unease
+    // that builds while you lean on the edge of the world, not an impact. Large
+    // enough to notice and be annoyed by is exactly right, since being annoyed
+    // is the message.
+    strainTrauma: 0.9,
   },
 
   // Superior is cold, green and close. Visibility is the single biggest lever on
@@ -234,6 +240,28 @@ export const CFG = {
       medium: { label: 'Medium', tank: 120, baggieReturn: 10, baggieCount: 14, thermoMult: 1.35, hints: 'onRequest' },
       hard:   { label: 'Hard',   tank:  90, baggieReturn:  5, baggieCount:  9, thermoMult: 1.60, hints: 'onRequest' },
     },
+  },
+
+  // ---------- Impact ----------
+  // What hitting the floor costs.
+  //
+  // The seabed is the only genuinely hard surface in this game. Everything else
+  // slows you: water, current, the boundary. So it is the only place the kelpie
+  // can be STOPPED by something, and it was doing that silently — the clamp put
+  // her back above the silt and nothing else happened at all.
+  //
+  // Everything below scales off one number, the closing speed, so a graze and a
+  // nose-dive are the same event at two strengths rather than two behaviours with
+  // a threshold between them that the player can feel as a switch.
+  impact: {
+    minSpeed: 6,          // under this it's a landing, not a crash. No reaction.
+    hardSpeed: 26,        // at or past this, everything is at full strength
+    absorb: 0.55,         // fraction of remaining speed eaten by the silt
+    trauma: 0.55,         // camera trauma at a hard hit
+    hitStop: 0.07,        // seconds at a hard hit — about four frames
+    hitStopScale: 0.05,
+    silt: 14,             // particles thrown up at a hard hit
+    siltSize: 1.5,
   },
 
   breath: {
@@ -514,6 +542,17 @@ export const CFG = {
     followSpring: 8.0,
     lookAhead: 4.0,       // bias the look target into velocity
     modeBlendTime: 0.9,   // FOLLOW <-> ORBIT, eased so it never cuts
+
+    // Shake, on a trauma model. Callers add trauma and forget; the rig squares
+    // it to get the actual offset, which is the whole trick. Linear shake spends
+    // most of its life in a mushy middle that reads as a loose camera mount,
+    // where squared trauma makes a small knock stay small and a real hit hurt.
+    shake: {
+      decay: 1.2,         // trauma lost per second, linear
+      frequency: 22,      // how fast the noise walks; lower reads as a wobble
+      maxOffset: 0.42,    // world units of displacement at full trauma
+      maxRoll: 0.10,      // radians of roll at full trauma, past which it spins
+    },
   },
 
   // ---------- Thermocline ----------
@@ -546,6 +585,25 @@ export const CFG = {
     deadzone: 0.14,
     responseCurve: 1.8,   // >1 = fine control near centre
     gamepadDeadzone: 0.12,
+
+    // How long a "use" press stays alive looking for something to act on.
+    //
+    // A press consumed on exactly the frame it happens throws away every press
+    // made slightly early, and the player never experiences that as their own
+    // timing being off. They experience it as the button not working, which is
+    // the single most expensive misreading a control can invite. 110ms is inside
+    // the 80-120ms band where a press feels forgiven rather than replayed.
+    //
+    // Note the tail beat deliberately does NOT get this. A buffered kick would
+    // bank credit against the cooldown, and mashing is supposed to hit a ceiling
+    // rather than queue up. See the kick block in Kelpie.update().
+    bufferMs: 110,
+
+    // How long a station stays usable after you have drifted back out of range.
+    // The swimming equivalent of coyote time: you committed to the press while
+    // you were in range, and the water carrying you out in the meantime is not a
+    // mistake worth punishing.
+    useGraceMs: 100,
 
     // Tilt. iOS needs requestPermission() from inside a user gesture (the DIVE
     // IN button does it) and HTTPS. Neutral is captured on start so the phone

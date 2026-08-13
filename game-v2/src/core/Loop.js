@@ -9,6 +9,12 @@
 // Frame delivers one enormous dt, and without a clamp the loop tries to catch up
 // with hundreds of steps at once, freezes for a second, and usually launches the
 // player through the seabed. Dropping that time is always the right call.
+//
+// Hit-stop scales how much real time reaches the accumulator, never the step
+// itself. That distinction is the whole reason it is safe: the simulation still
+// advances in fixed 1/60 ticks and every spring in the game behaves identically,
+// there are simply fewer ticks per real second while the stop is running. Scaling
+// STEP instead would quietly change the behaviour of everything tuned against it.
 
 const STEP = 1 / 60;
 const MAX_STEPS = 5; // beyond this we deliberately drop simulated time
@@ -27,7 +33,29 @@ export class Loop {
     this.fps = 0;
     this._fpsAcc = 0;
     this._fpsFrames = 0;
+    this._stopFor = 0;    // real seconds of hit-stop left to run
+    this._stopScale = 1;
     this._tick = this._tick.bind(this);
+  }
+
+  /**
+   * Freeze all but a sliver of the simulation for a moment, so an impact reads
+   * as something that happened to a body rather than as a number changing.
+   *
+   * Two to six frames is the entire useful range. Past that it stops reading as
+   * weight and starts reading as a dropped frame, which is the one thing it must
+   * never be mistaken for.
+   *
+   * Takes the longest stop rather than the newest, so a big hit is never cut
+   * short by a small one landing a frame later.
+   *
+   * @param {number} seconds real time to hold for
+   * @param {number} scale   fraction of normal speed during the hold
+   */
+  hitStop(seconds, scale = 0.05) {
+    if (seconds <= 0) return;
+    this._stopFor = Math.max(this._stopFor, seconds);
+    this._stopScale = scale;
   }
 
   start() {
@@ -53,7 +81,15 @@ export class Loop {
       this._fpsAcc = 0; this._fpsFrames = 0;
     }
 
-    this.acc += dt;
+    // The stop's own timer runs on real time. Ticking it with scaled time would
+    // make a stop at 5% speed take twenty times as long to expire as asked for.
+    let sim = dt;
+    if (this._stopFor > 0) {
+      this._stopFor = Math.max(0, this._stopFor - dt);
+      sim = dt * this._stopScale;
+    }
+
+    this.acc += sim;
     let steps = 0;
     while (this.acc >= STEP && steps < MAX_STEPS) {
       this.update(STEP);

@@ -16,6 +16,18 @@ const smoothstep = (t) => t * t * (3 - 2 * t);
 /** Frame-rate independent exponential smoothing. */
 const approach = (rate, dt) => 1 - Math.exp(-rate * dt);
 
+/**
+ * Smooth pseudo-random wobble in -1..1, for shake.
+ *
+ * Two sines at incommensurate rates, so it never visibly repeats over the tenth
+ * of a second any shake actually lasts. Deliberately not Math.random(): the point
+ * is a continuous signal sampled by time rather than a fresh number per frame,
+ * because the latter shakes at the frame rate and looks like a different effect
+ * on a 60Hz screen than on a 144Hz one. Deliberately not Perlin either, which
+ * would be a table and a lookup to buy smoothness this already has.
+ */
+const wobble = (t, seed) => Math.sin(t + seed) * 0.6 + Math.sin(t * 1.7 + seed * 2.3) * 0.4;
+
 export class Rig {
   constructor(aspect) {
     const c = CFG.camera;
@@ -36,8 +48,11 @@ export class Rig {
     this._back = new THREE.Vector3();
     this._orbitPos = new THREE.Vector3();
     this._shake = new THREE.Vector3();
+    this._euler = new THREE.Euler(0, 0, 0, 'YXZ');
 
-    this.shakeAmount = 0;
+    this.trauma = 0;      // 0..1; the offset is this SQUARED, see update()
+    this._shakeT = 0;     // walks the noise, so the shake is time-based not frame-based
+    this._shakeRoll = 0;
   }
 
   resize(aspect) {
@@ -92,31 +107,59 @@ export class Rig {
     }
 
     // Shake decays on its own; callers just poke it and forget.
-    if (this.shakeAmount > 0.0001) {
+    //
+    // Two things here are deliberate. The offset is trauma SQUARED, so the curve
+    // spends its time at the ends rather than in a permanent mushy middle. And
+    // the noise is smooth rather than per-frame random: white noise shakes at
+    // whatever the frame rate happens to be, so the same impact looks like static
+    // on a 144Hz screen and like a rattle on a 60Hz one. This walks a continuous
+    // signal at a fixed rate, so a hit looks the same everywhere.
+    if (this.trauma > 0.0001) {
+      const s = CFG.camera.shake;
+      this._shakeT += dt * s.frequency;
+      const amp = this.trauma * this.trauma;
       this._shake.set(
-        (Math.random() - 0.5) * this.shakeAmount,
-        (Math.random() - 0.5) * this.shakeAmount,
-        (Math.random() - 0.5) * this.shakeAmount,
+        wobble(this._shakeT, 0) * s.maxOffset * amp,
+        wobble(this._shakeT, 17.3) * s.maxOffset * amp,
+        wobble(this._shakeT, 41.7) * s.maxOffset * amp,
       );
       this._pos.add(this._shake);
-      this.shakeAmount *= Math.exp(-4.5 * dt);
+      this._shakeRoll = wobble(this._shakeT, 63.1) * s.maxRoll * amp;
+      this.trauma = Math.max(0, this.trauma - s.decay * dt);
+    } else {
+      this._shakeRoll = 0;
     }
 
     this.camera.position.copy(this._pos);
     this.camera.lookAt(this._look);
 
     // Roll the camera a little with the kelpie's bank. Subtle, but it's most of
-    // why a turn feels like a turn rather than a pan.
+    // why a turn feels like a turn rather than a pan. The Euler is a reused
+    // scratch field: this runs every frame, and the note above about handing the
+    // GC a stutter applies to it as much as to the vectors.
     if (w < 0.99) {
-      const e = new THREE.Euler().setFromQuaternion(target.quaternion, 'YXZ');
-      this.camera.rotateZ(e.z * 0.35 * (1 - w));
+      this._euler.setFromQuaternion(target.quaternion, 'YXZ');
+      this.camera.rotateZ(this._euler.z * 0.35 * (1 - w));
     }
+    // Shake rolls too. A camera that only ever translates under impact reads as
+    // the whole world sliding; a little roll is what makes it read as the mount
+    // being knocked.
+    if (this._shakeRoll) this.camera.rotateZ(this._shakeRoll);
   }
 
-  addShake(amount) { this.shakeAmount = Math.max(this.shakeAmount, amount); }
+  /**
+   * Add trauma, 0..1, and let it decay on its own.
+   *
+   * Accumulates rather than taking the maximum. Two things going wrong at once
+   * ought to feel worse than the worse of them alone, which a max() can never
+   * express — under it, a knock during a bigger shake is simply swallowed.
+   */
+  addShake(amount) { this.trauma = Math.min(1, this.trauma + amount); }
 
   /** Drop the camera straight into place — used on spawn and on retry. */
   snapTo(target) {
+    this.trauma = 0;
+    this._shakeRoll = 0;
     const c = CFG.camera;
     this._back.set(0, c.rideHeight, c.rideBack).applyQuaternion(target.quaternion);
     this._followPos.copy(target.position).add(this._back);

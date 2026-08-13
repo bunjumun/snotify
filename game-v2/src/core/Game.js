@@ -71,6 +71,11 @@ export class Game {
     this.time = 0;              // wall clock, never reset — animations read this
     this.runSeconds = 0;        // this run only, for the chest's best time
 
+    // The station you were last in range of, and when. See the coyote-time note
+    // in _updateBongs(): a press counts for a moment after you have drifted off.
+    this._graceBong = null;
+    this._graceAt = -Infinity;
+
     this.difficulty = new Difficulty();
     this.progress = new Progress();
     this.seed = seedFromUrl() || Rng.makeSeed();
@@ -435,8 +440,25 @@ export class Game {
     const current = this._current || (this._current = new THREE.Vector3());
     current.copy(this.weather.current).add(this.bounds.force(this.kelpie.position));
 
+    // Bounds.strain has been computed since the boundary was written, carrying a
+    // comment saying it was for cues at the edge, and nothing ever read it. This
+    // is that cue: a rising unease as the current leans harder, so pushing at the
+    // edge of the lake feels like being pushed back rather than like drifting
+    // into treacle. Topped up per second rather than set, since trauma decays.
+    if (this.bounds.strain > 0.05) {
+      this.rig.addShake(this.bounds.strain * CFG.world.strainTrauma * dt);
+    }
+
     this.kelpie.update(dt, intent, { current, attract: this._bongAttract() });
-    this.seabed.clampAbove(this.kelpie.position, 2.0);
+
+    // Hitting the floor is an event, not a clamp. clampAbove() reports whether it
+    // had to move her, and that report used to be dropped on the ground: you
+    // could fly nose-first into the silt at full speed and get nothing back. No
+    // jolt, no sound, no cost, she simply stopped descending. Read the closing
+    // speed before the clamp, because after it the velocity is still pointing
+    // down through a floor she is no longer inside.
+    const closing = -this.kelpie.velocity.y;
+    if (this.seabed.clampAbove(this.kelpie.position, 2.0)) this._hitSeabed(closing);
 
     // A tail beat throws water. This puff is the receipt for the tap — without
     // something leaving the fluke, tapping reads as a button that does nothing.
@@ -451,6 +473,9 @@ export class Game {
       this.kelpie.tailPoint(tail);
       this.breath.spend(CFG.breath.kickCost);
       this.bubbles.burst(tail.x, tail.y, tail.z, 5, 0.5);
+      // Louder from a standing start than mid-sprint: the same beat is more work
+      // when there's no momentum under it, and the ear already expects that.
+      this.audio?.sfx('kick', { force: 1 - Math.min(1, this.kelpie.speed / 20) });
     }
 
     this._followEntities(dt);
@@ -556,6 +581,37 @@ export class Game {
     this.hud.radar.draw(dt, this.kelpie.position, this.kelpie.yaw);
   }
 
+  /**
+   * She met the floor. `speed` is how fast she was closing on it.
+   *
+   * The silt absorbs rather than bounces, because she is half a tonne of animal
+   * meeting mud and not a ball. Losing the horizontal speed as well as the fall
+   * is the part that sells it: a crash that only cancels your descent leaves you
+   * skating along the bottom at full pelt, which reads as a bug.
+   *
+   * Hit-stop only for the hard half of the range. On a graze it would register as
+   * a dropped frame rather than as weight, and a stutter the player can't explain
+   * is worse than no feedback at all.
+   */
+  _hitSeabed(speed) {
+    const I = CFG.impact;
+    if (speed < I.minSpeed) return;
+    const f = Math.min(1, (speed - I.minSpeed) / (I.hardSpeed - I.minSpeed));
+
+    this.kelpie.velocity.y = 0;
+    this.kelpie.velocity.multiplyScalar(1 - I.absorb * f);
+
+    this.rig.addShake(I.trauma * f);
+    if (f > 0.5) this.loop.hitStop(I.hitStop * f, I.hitStopScale);
+    this.audio?.sfx('thud', { force: f });
+    this.pad?.rumble(0.55 * f, 140);
+
+    // From her belly rather than her centre, so the cloud comes off the ground
+    // she actually touched.
+    const p = this.kelpie.position;
+    this.smoke.puff(p.x, p.y - 1.4, p.z, Math.round(I.silt * f) + 2, I.siltSize * (0.5 + f));
+  }
+
   _followEntities(dt) {
     const anchor = this._anchor || (this._anchor = new THREE.Vector3());
     // In series, not in parallel. One rope off her back, and the four of them
@@ -652,7 +708,24 @@ export class Game {
     this.nearestBong = nearest;
     this.nearestBongDistance = nearestD;
 
-    if (this.trip.active || !nearest || nearestD > CFG.bong.useRadius) return;
+    // Coyote time for stations. Having just drifted out of range, the one you
+    // were at stays usable for a moment. You committed to the press while you
+    // were in range, and the current carrying you out in between is not a mistake
+    // worth punishing — without this, a press at the very edge of the radius is
+    // eaten and nothing explains why.
+    //
+    // The grace only ever answers a real button press. Neither the prompt nor the
+    // swim-into-it path fires from out here, because both of those are about
+    // being at the station rather than about having asked for it.
+    const inRange = !!nearest && nearestD <= CFG.bong.useRadius;
+    if (inRange) { this._graceBong = nearest; this._graceAt = this.time; }
+    const graced = !inRange
+      && this._graceBong
+      && (this.time - this._graceAt) <= CFG.input.useGraceMs / 1000;
+
+    if (this.trip.active || (!inRange && !graced)) return;
+
+    const target = inRange ? nearest : this._graceBong;
 
     // In range. Say what's missing rather than silently refusing — a station that
     // does nothing when you press use reads as a bug.
@@ -661,23 +734,28 @@ export class Game {
       // light it is not a mistake to be corrected — it's the scene, and the fish
       // is already on its way over to say so. Nagging every frame on top of that
       // just talks over it.
-      if (!(this.intro.active && this.intro.step < 2)) {
+      if (inRange && !(this.intro.active && this.intro.step < 2)) {
         this.hud.say('No fire. You need a lighter.', { seconds: 2 });
       }
       return;
     }
     if (!this.stash.canPack) {
-      this.hud.say(`Not enough to pack. <b>${this.stash.carried}/${CFG.stash.needed}</b>`, { seconds: 2 });
+      if (inRange) {
+        this.hud.say(`Not enough to pack. <b>${this.stash.carried}/${CFG.stash.needed}</b>`, { seconds: 2 });
+      }
       return;
     }
     // Swim into it and it goes off. No button, no stopping, no lining up on the
     // last two metres — you charge a lit bong and the lit bong happens to you.
     // E still works, and works from a long way further out, for the approach
     // that didn't quite connect.
-    if (nearestD <= CFG.bong.hitRadius) return this._useBong(nearest);
+    if (inRange && nearestD <= CFG.bong.hitRadius) return this._useBong(nearest);
 
-    this.hud.say('<kbd>E</kbd> to hit it', { seconds: 0.4 });
-    if (intent.interact) this._useBong(nearest);
+    if (inRange) this.hud.say('<kbd>E</kbd> to hit it', { seconds: 0.4 });
+    if (intent.interact) {
+      this.input.consumeInteract();
+      this._useBong(target);
+    }
   }
 
   _useBong(bong) {

@@ -499,19 +499,34 @@ export class AudioDirector {
 
   // ----------------------------------------------------------------------- sfx
 
-  /** Synthesised one-shots. No files, no loading, no 404s. */
-  sfx(name) {
+  /**
+   * Synthesised one-shots. No files, no loading, no 404s.
+   *
+   * Every case detunes by a few percent per invocation. Without it a repeated
+   * sound is bit-identical every single time, and the ear reads exact repetition
+   * as synthetic faster than it reads any amount of wrong timbre — ten baggies in
+   * a row was ten copies of one waveform. `chest` opts out, because its chord is
+   * the one sound in the game that is a reward rather than information and it
+   * should ring true each time.
+   *
+   * @param {string} name
+   * @param {{force?:number}} [opts] 0..1 strength, where a sound has a range
+   */
+  sfx(name, opts = {}) {
     if (!this.ok) return;
     const c = this.ctx;
     const t = c.currentTime;
     const out = this.buses.sfx;
+    const force = Math.min(1, Math.max(0, opts.force ?? 1));
+
+    const detune = name === 'chest' ? 1 : 1 + (Math.random() - 0.5) * 0.09;
 
     const tone = (freq, dur, type = 'sine', vol = 0.3, glideTo = null) => {
       const o = c.createOscillator();
       const g = c.createGain();
       o.type = type;
-      o.frequency.setValueAtTime(freq, t);
-      if (glideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1, glideTo), t + dur);
+      o.frequency.setValueAtTime(freq * detune, t);
+      if (glideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1, glideTo * detune), t + dur);
       g.gain.setValueAtTime(0, t);
       g.gain.linearRampToValueAtTime(vol, t + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -528,7 +543,7 @@ export class AudioDirector {
       s.buffer = b;
       const f = c.createBiquadFilter();
       f.type = 'bandpass';
-      f.frequency.value = freq;
+      f.frequency.value = freq * detune;
       const g = c.createGain();
       g.gain.value = vol;
       s.connect(f).connect(g).connect(out);
@@ -536,6 +551,25 @@ export class AudioDirector {
     };
 
     switch (name) {
+      // The tail beat. The most frequent sound in the game by a wide margin and
+      // for a long time the only action with no sound at all, which quietly made
+      // the main verb feel like a button that wasn't wired up.
+      //
+      // Water displaced by something large, so: a low body with a fast decay and
+      // no tone in it. Anything pitched here turns swimming into a UI click, and
+      // anything longer smears into the next beat at the rate people actually
+      // tap. Deliberately quiet. It fires several times a second and the job is
+      // to be felt rather than heard.
+      case 'kick':        noise(0.13, 190 + force * 90, 0.09 + force * 0.05); break;
+
+      // Half a tonne of horse into silt. The thud carries the weight and the
+      // noise carries the cloud; the pitch drop is what makes it read as ground
+      // rather than as another animal.
+      case 'thud':
+        noise(0.28 + force * 0.2, 240, 0.1 + force * 0.22);
+        tone(96, 0.24 + force * 0.16, 'sine', 0.1 + force * 0.16, 44);
+        break;
+
       case 'baggie':      tone(520, 0.16, 'triangle', 0.25, 880); break;
       case 'lighter':     noise(0.35, 2600, 0.3); tone(120, 0.4, 'sawtooth', 0.18, 60); break;
       case 'fish':        tone(700, 0.3, 'sine', 0.16, 460); break;

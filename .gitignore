@@ -12,3 +12,8 @@ tracks/**/*.ogg
 
 # Trash: deleted songs archived locally until permanently removed via the player
 .trash/
+
+# The change request ledger stays local by decision — rough thinking, not shared
+# work product. The notebook it tracks is an Apple Note and was never in here.
+# Consequence worth knowing: a fresh clone starts with no ledger at all.
+change requests/

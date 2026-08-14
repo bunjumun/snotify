@@ -772,8 +772,22 @@ export class Game {
     this.nearestBong = nearest;
     this.nearestBongDistance = nearestD;
 
-    const inRange = !!nearest && nearestD <= CFG.bong.useRadius;
-    if (this.trip.active || !inRange) return;
+    if (this.trip.active || !nearest) return;
+
+    // No stopping, no lining up on the last two metres. You charge a lit bong and
+    // the lit bong happens to you.
+    //
+    // Tested ABOVE the useRadius gate on purpose. Contact is a column now rather
+    // than a ball on the bowl (see Bong.hitTest), and the top of that column is
+    // further from the bowl than useRadius is wide — so leaving the test down
+    // below would reintroduce, by another route, the exact overfly miss the
+    // column exists to fix.
+    if (canUse && nearest.hitTest(this.kelpie.position)) {
+      this._useBong(nearest);
+      return;
+    }
+
+    if (nearestD > CFG.bong.useRadius) return;
 
     // Say what's missing rather than silently refusing.
     if (!this.progress.hasLighter) {
@@ -788,11 +802,7 @@ export class Game {
     }
     if (!this.stash.canPack) {
       this.hud.say(`Not enough to pack. <b>${this.stash.carried}/${CFG.stash.needed}</b>`, { seconds: 2 });
-      return;
     }
-    // No stopping, no lining up on the last two metres. You charge a lit bong and
-    // the lit bong happens to you.
-    if (nearestD <= CFG.bong.hitRadius) this._useBong(nearest);
   }
 
   _useBong(bong) {

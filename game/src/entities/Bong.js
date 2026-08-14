@@ -153,6 +153,35 @@ export class Bong {
 
   inRange(pos) { return this.distanceTo(pos) <= CFG.bong.useRadius; }
 
+  /**
+   * Are you in the column? This is what fires the thing.
+   *
+   * A vertical capsule of CFG.bong.hitRadius running from the base up past the
+   * bowl by CFG.bong.hitHeight, rather than a sphere sitting on the bowl.
+   *
+   * The sphere was wrong at both ends and only ever wrong SOMETIMES, which is
+   * what made it read as "some of my bongs aren't working" rather than as a
+   * miss. It fired on a dead-centre pass only below about ten units off the
+   * floor; two thirds of the stash floats 4 to 46 units up, so you would collect
+   * your fourth baggie high, swim straight at a bong and sail over the top of
+   * it. Nothing was said either way, because the game only opens its mouth to
+   * tell you what you are missing and you were missing nothing.
+   *
+   * Starting the column at the base rather than the bowl matters more since the
+   * prop doubled: the bowl is now 9.3 units up and the kelpie is clamped to 2.0
+   * above the seabed, so bowl-up would have made the commonest approach of all,
+   * along the floor, the one that could never connect.
+   */
+  hitTest(pos) {
+    const at = this._hitPoint || (this._hitPoint = new THREE.Vector3());
+    at.copy(this.position);
+    // Clamp onto the segment, then it is an ordinary sphere test against that.
+    const top = at.y + this.useHeight + CFG.bong.hitHeight;
+    const y = Math.min(Math.max(pos.y, at.y), top);
+    const dx = pos.x - at.x, dy = pos.y - y, dz = pos.z - at.z;
+    return dx * dx + dy * dy + dz * dz <= CFG.bong.hitRadius * CFG.bong.hitRadius;
+  }
+
   /** Distance to the bowl rather than to the base. See CFG.bong.useHeight. */
   distanceTo(pos) {
     const at = this._usePoint || (this._usePoint = new THREE.Vector3());

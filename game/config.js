@@ -328,11 +328,30 @@ export const CFG = {
     // Big. A station you can see across the fog line and steer at from a long
     // way out, rather than a bottle on the seabed you have to go looking for at
     // close range. Scales the whole prop, and useHeight scales with it.
-    scale: 2.1,
+    // Doubled from 2.1: a landmark you navigate by rather than a prop you find.
+    scale: 4.2,
     // Hitting it means HITTING it. Swim into the thing and it goes off — no
     // button, no stopping, no lining up. The kelpie is 5.2 units nose to tail
-    // and the glass is over 5 tall now, so this is genuinely "you touched it".
+    // and the glass is over 12 tall now, so this is genuinely "you touched it".
+    // This is the radius of the COLUMN, not of a ball on the bowl. It used to be
+    // a sphere centred on the bowl and that was wrong at both ends: it fired only
+    // below about ten units off the floor, so anyone arriving high — which is most
+    // of the time, since two thirds of the stash floats 4 to 46 units up — flew
+    // straight over the top and got silence, because the game only speaks to say
+    // what you are MISSING and they were missing nothing. Doubling the scale would
+    // have broken the other end too, lifting the bowl 9.3 up and putting it out of
+    // reach of a kelpie clamped 2.0 above the seabed. See Bong.hitTest().
     hitRadius: 5.5,
+    // How far above the bowl the column still counts. World units, deliberately
+    // not scaled with the prop: this is a gameplay volume tuned against the stash
+    // column rather than a proportion of the glass. 22 puts the top of the column
+    // 31 up, and the capsule's cap adds hitRadius on top of that, so measured it
+    // connects up to about 36 units off the floor and lets go by 46. That is the
+    // realistic dive-in covered without making a bong into a chimney you set off
+    // while cruising over it on your way somewhere else.
+    // It is also what the world already draws — plume() sends bubbles and smoke up
+    // from the mouthpiece, so this is "swim through the smoke and it lights".
+    hitHeight: 22,
     // Generous on purpose. A bong is a station you swim up to, not a pixel you
     // have to land on — and the reward for reaching it is the best thing in the
     // game, so making the last two metres the hard part is the wrong place to

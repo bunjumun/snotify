@@ -217,6 +217,8 @@
   .vol input[type=range] { -webkit-appearance: none; appearance: none; width: 90px; height: 4px; border-radius: 4px; background: var(--wave); outline: none; cursor: pointer; }
   .vol input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--text); cursor: pointer; }
   .vol input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border: none; border-radius: 50%; background: var(--text); cursor: pointer; }
+  .vol .meter { position: relative; width: 34px; height: 4px; border-radius: 4px; background: var(--wave); overflow: hidden; flex: none; }
+  .vol .meter span { position: absolute; inset: 0; width: 0%; background: var(--wave-prog); border-radius: inherit; }
 
 
   /* Single-mix view (?b&s&v, no login): playback only — no comments, no
@@ -1303,6 +1305,7 @@
           <div class="vol">
             <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 00-2.5-4.03v8.06A4.5 4.5 0 0016.5 12z"/></svg>
             <input type="range" id="vol" min="0" max="1" step="0.01" value="0.9" aria-label="Volume" />
+            <div class="meter" id="meter" aria-hidden="true"><span id="meterFill"></span></div>
           </div>
         </div>
       </div>
@@ -1353,6 +1356,76 @@ let activeSong = null, activeSongIndex = -1, activeVer = 0;
 let wsByVer = [];          // wavesurfer instance per version
 let layerByVer = [];       // container div per version
 let readyByVer = [];
+
+// ---------- Loudness meter (CR-6) ----------
+// waveOpts() never sets a backend, so every version plays through a plain
+// HTMLMediaElement (wavesurfer v7's default) rather than through Web Audio.
+// That makes tapping one with our own createMediaElementSource() safe: the
+// element hasn't already been claimed by anything, and a browser only
+// allows that call once per element in its lifetime.
+//
+// One shared AnalyserNode for every version rather than one each: only the
+// active version is actually making sound at a time, the rest sit paused
+// ready to swap in, and summing silence with a live signal is just the
+// live signal. Simpler than tracking which analyser to read on a switch.
+let meterCtx = null, meterAnalyser = null, meterData = null;
+let meterSources = [];     // MediaElementSourceNodes, torn down in destroyPlayers()
+let meterRAF = 0;
+
+function meterTap(w){
+  if (!meterCtx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    meterCtx = new AC();
+    meterAnalyser = meterCtx.createAnalyser();
+    meterAnalyser.fftSize = 512;
+    meterData = new Uint8Array(meterAnalyser.fftSize);
+  }
+  try {
+    const src = meterCtx.createMediaElementSource(w.getMediaElement());
+    src.connect(meterCtx.destination);   // keep the sound actually playing
+    src.connect(meterAnalyser);          // and feed the meter
+    meterSources.push(src);
+  } catch {}   // element not attached yet, or already tapped: skip this version
+}
+
+function meterLevel(){
+  meterAnalyser.getByteTimeDomainData(meterData);
+  let sum = 0;
+  for (let i = 0; i < meterData.length; i++){
+    const v = (meterData[i] - 128) / 128;
+    sum += v * v;
+  }
+  const rms = Math.sqrt(sum / meterData.length);
+  const db = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
+  // Full scale is the top of the bar, so a mastered mix around -10dB RMS
+  // reads hot with headroom left rather than pinned. Measured against a
+  // half-amplitude sine (-9dB): on an earlier -50..-6 range that sat at
+  // 0.93 and any real mix would have buried the needle.
+  return Math.max(0, Math.min(1, (db + 50) / 50));
+}
+
+function meterStart(){
+  if (!meterAnalyser) return;
+  // Resume before the early return, not after: browsers open a context
+  // suspended when it was built outside a gesture, and everything tapped
+  // is routed THROUGH it, so a context left suspended is silent playback
+  // rather than merely a dead meter.
+  if (meterCtx.state === 'suspended') meterCtx.resume();
+  if (meterRAF) return;
+  const fill = $('meterFill');
+  const tick = () => {
+    if (fill) fill.style.width = (meterLevel() * 100).toFixed(1) + '%';
+    meterRAF = requestAnimationFrame(tick);
+  };
+  meterRAF = requestAnimationFrame(tick);
+}
+
+function meterStop(){
+  cancelAnimationFrame(meterRAF);
+  meterRAF = 0;
+  const fill = $('meterFill');
+  if (fill) fill.style.width = '0%';
+}
 
 // Read fresh for every player rather than once at load: the band's theme isn't
 // known until after the gate, and a theme reshapes the wave through CSS
@@ -2311,6 +2384,9 @@ function destroyPlayers(){
   wsByVer = []; layerByVer = []; readyByVer = [];
   objectUrls.forEach(u => URL.revokeObjectURL(u));
   objectUrls = [];
+  meterSources.forEach(s => { try { s.disconnect(); } catch(e){} });
+  meterSources = [];
+  meterStop();
   $('wavewrap').querySelectorAll('.wave-layer').forEach(n => n.remove());
 }
 
@@ -2347,6 +2423,7 @@ function openSong(songIndex, autoplay, startVer = 0){
       if (gen !== openGen) return;
       const w = WaveSurfer.create({ container: layer, url, ...waveOpts() });
       w.setVolume(curVolume);
+      meterTap(w);
       wireVersion(w, vi);
       wsByVer[vi] = w;
       if (vi === activeVer && autoplay) w.once('ready', () => { if (gen === openGen) w.play(); });
@@ -2388,8 +2465,8 @@ function wireVersion(w, vi){
     renderVersions();
   });
   w.on('timeupdate', (t) => { if (vi === activeVer){ $('curTime').textContent = fmt(t); $('atTime').textContent = fmt(t); moveRiders(w); } });
-  w.on('play',  () => { if (vi === activeVer){ setPlayingUI(true); refStopAll('main'); } });
-  w.on('pause', () => { if (vi === activeVer) setPlayingUI(false); });
+  w.on('play',  () => { if (vi === activeVer){ setPlayingUI(true); refStopAll('main'); meterStart(); } });
+  w.on('pause', () => { if (vi === activeVer){ setPlayingUI(false); meterStop(); } });
   w.on('finish',() => { if (vi === activeVer) next(true); });
   w.on('error', () => {
     readyByVer[vi] = 'failed';

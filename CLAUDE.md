@@ -28,47 +28,62 @@ Whatever the session is about, **read the change requests notebook at the start 
 | `../games/` | **Outside this repo, and no code in it.** Art direction reference: wreck and diving-suit photography, the kelpie, cover art. Its `lakehorse lore.rtf` is stale; see the lore note below. |
 | `.claude/skills/` | 13 vendored game-dev skill packs (MIT, from aaabench). Numbers and reasoning transfer; the code samples are GDScript/C# and do not. |
 | `supabase/` | Schema. Lore, art and mixes are all "stacked by version, one marked live". |
-| `change requests/LEDGER.md` | Claude's side of the notebook, which is the Apple Note "Snalbum feature ideas". Deliberately untracked, so it exists on one disk only. Read the note at session start and at every idle point; see below. |
+| `change requests/LEDGER.md` | Claude's side of the notebook, which is the Apple Note "Snalbum ideas & outbox". Deliberately untracked, so it exists on one disk only. Read the note at session start and at every idle point; see below. |
 
 Both games are vanilla ES modules plus a vendored Three.js. No TypeScript, no tests, no package.json.
 
 ## The change requests notebook
 
-This project's four pieces, one instance of a convention meant for all of them:
+This project's three pieces, one instance of a convention meant for all of them:
 
 | Piece | Here |
 |---|---|
-| Capture note, his | Apple Note **"Snalbum feature ideas"** |
-| Outbox note, Claude's | Apple Note **"Snalbum waiting on you"** |
+| Notebook, both directions | Apple Note **"Snalbum ideas & outbox"** |
 | Ledger | `change requests/LEDGER.md` |
 | Manager | scheduled task `manager-snalbum`, daily at 07:09, silent |
+
+**One note, not two.** It began as a pair — "Snalbum feature ideas" for his
+capture and "Snalbum waiting on you" for the outbox — and they were folded
+together on 2026-08-14, in line with the user-level convention. Neither old name
+exists any more, and asking for one raises `Invalid index (-1719)` rather than
+returning empty, which reads like a broken connector rather than a renamed note.
 
 `/brief` is a user-level skill, so it works in any project and learns the note
 names from this table rather than from a hardcoded string.
 
-The notebook is the **Apple Note "Snalbum feature ideas"**. It exists so an idea
+The notebook is the **Apple Note "Snalbum ideas & outbox"**. It exists so an idea
 can be written down the moment it arrives, from the phone or the desk, without
 derailing whatever is being built: rather than interrupting, he writes it there
 and it gets picked up at the next natural gap. `change requests/LEDGER.md` is
 Claude's side, one row per item with a status and the reading it was built on.
 
-**Never write to the note unless he asks in that session, and then only to the
-legend at the bottom, never to an item line.** The tool replaces a note whole, so
-a stray write while he is typing on a phone loses text; that risk is the reason,
+**The note has two halves and the separator between them is the boundary.**
+Everything above the last `—` is his capture zone. Everything at or below it is
+Claude's: the `OUTBOX — waiting on you` table, then the dated `COMPLETED` log.
+
+**Never write above that separator unless he asks in that session, and then only
+to the legend, never to an item line.** The tool replaces a note whole, so a
+stray write while he is typing on a phone loses text; that risk is the reason,
 and it does not go away just because a write was invited. Say the risk out loud
-before writing. Claude reads the note and writes the ledger. When an item ships,
-say so in chat so he can delete the line himself.
+before writing. The outbox and the completed log below the separator are Claude's
+to rewrite freely — but a rewrite still means reading the whole note first and
+copying his half back verbatim, because whole-note replacement does not care
+which half you meant to touch.
+
+When an item ships, append a dated line to `COMPLETED`. If the line it came from
+sits above the separator, say so in chat and leave it: striking it through would
+mean writing into his half.
 
 Item lines carry no marker for the site and player, and `#game` for the game.
 Tags are `[bug]` and `[?]` only. Both legends live in the note and the ledger.
 
-**The outbox note is the other direction.** His phone is too old for Remote
-Control, so a push can never reach him and the manager is silent by design; the
-note is therefore the only channel out. Write it only when something changed, and
-read it immediately before writing so anything he typed is in hand. An entry
-earns its place only if it needs a human: his ear, his login, his push, or an
-answer only he has. Each carries what happens if he ignores it, so ignoring it
-stays a real option and the note never becomes a pile of obligations.
+**The outbox is the other direction.** His phone is too old for Remote Control,
+so a push can never reach him and the manager is silent by design; the note is
+therefore the only channel out. Write it only when something changed, and read it
+immediately before writing so anything he typed is in hand. An entry earns its
+place only if it needs a human: his ear, his login, his push, or an answer only
+he has. Each carries what happens if he ignores it, so ignoring it stays a real
+option and the note never becomes a pile of obligations.
 
 The Notes tools are deferred, so load them before the first read:
 
@@ -76,7 +91,7 @@ The Notes tools are deferred, so load them before the first read:
 ToolSearch  select:mcp__Read_and_Write_Apple_Notes__get_note_content
 ```
 
-then `get_note_content` with `note_name: "Snalbum feature ideas"`. **If the Notes
+then `get_note_content` with `note_name: "Snalbum ideas & outbox"`. **If the Notes
 connector is not available in a session, say so out loud rather than quietly
 skipping the check** — a silent skip looks exactly like an empty notebook, and
 the whole arrangement rests on him trusting that what he writes gets seen.

@@ -40,11 +40,15 @@ derailing whatever is being built: rather than interrupting, he writes it there
 and it gets picked up at the next natural gap. `change requests/LEDGER.md` is
 Claude's side, one row per item with a status and the reading it was built on.
 
-**Never write to the note.** It was set up once on 2026-08-14 with its headings
-and tag legend, and is read-only from here on; the tool replaces a note whole, so
-a stray write while he is typing on a phone loses text. Claude reads the note and
-writes only the ledger. When an item ships, say so in chat so he can delete the
-line himself. The tag legend lives in both the note and the ledger.
+**Never write to the note unless he asks in that session, and then only to the
+legend at the bottom, never to an item line.** The tool replaces a note whole, so
+a stray write while he is typing on a phone loses text; that risk is the reason,
+and it does not go away just because a write was invited. Say the risk out loud
+before writing. Claude reads the note and writes the ledger. When an item ships,
+say so in chat so he can delete the line himself.
+
+Item lines carry no marker for the site and player, and `#game` for the game.
+Tags are `[bug]` and `[?]` only. Both legends live in the note and the ledger.
 
 The Notes tools are deferred, so load them before the first read:
 

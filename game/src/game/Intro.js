@@ -153,8 +153,8 @@ export class Intro {
       this.active = false;
       g.hud.say(
         `Good, isn't it. That was the last of your shake, though.<br>` +
-        `Find <b>four baggies</b> and you can pack another. They're all over this wreck — ` +
-        `sweep that lamp about.`,
+        `Find <b>four jars</b> and you can pack another. They're all over this wreck. ` +
+        `Sweep that lamp about.`,
         { who: 'A lake trout', seconds: 10 },
       );
       g.audio?.sfx('fish');

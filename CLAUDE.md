@@ -34,6 +34,18 @@ Both games are vanilla ES modules plus a vendored Three.js. No TypeScript, no te
 
 ## The change requests notebook
 
+This project's four pieces, one instance of a convention meant for all of them:
+
+| Piece | Here |
+|---|---|
+| Capture note, his | Apple Note **"Snalbum feature ideas"** |
+| Outbox note, Claude's | Apple Note **"Snalbum waiting on you"** |
+| Ledger | `change requests/LEDGER.md` |
+| Manager | scheduled task `manager-snalbum`, daily at 07:09, silent |
+
+`/brief` is a user-level skill, so it works in any project and learns the note
+names from this table rather than from a hardcoded string.
+
 The notebook is the **Apple Note "Snalbum feature ideas"**. It exists so an idea
 can be written down the moment it arrives, from the phone or the desk, without
 derailing whatever is being built: rather than interrupting, he writes it there
@@ -49,6 +61,14 @@ say so in chat so he can delete the line himself.
 
 Item lines carry no marker for the site and player, and `#game` for the game.
 Tags are `[bug]` and `[?]` only. Both legends live in the note and the ledger.
+
+**The outbox note is the other direction.** His phone is too old for Remote
+Control, so a push can never reach him and the manager is silent by design; the
+note is therefore the only channel out. Write it only when something changed, and
+read it immediately before writing so anything he typed is in hand. An entry
+earns its place only if it needs a human: his ear, his login, his push, or an
+answer only he has. Each carries what happens if he ignores it, so ignoring it
+stays a real option and the note never becomes a pile of obligations.
 
 The Notes tools are deferred, so load them before the first read:
 

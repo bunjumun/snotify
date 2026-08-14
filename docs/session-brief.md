@@ -38,36 +38,25 @@ Site: `https://bunjumun.github.io/snotify/`. Repo: `github.com/bunjumun/snotify`
 
 ## State of play, 2026-08-14
 
-There are two builds, and the important thing to understand is that **what is deployed and what is on the working branch are different shapes.**
+**The takeover has shipped.** What is deployed and what is on the working tree are now the same shape, which is the opposite of what this section said for the two days before it.
 
-### Deployed (`origin/main`, currently `710bab8`)
-
-```
-game/       V1, polished. The five original doors point here.  →  /game/
-game-v2/    V2, behind its own fifth door.                     →  /game-v2/
-```
-
-`vendor/` (Three.js, 740K) still sits **inside `game/`**, and `game-v2/index.html` reaches it as `../game/vendor/`.
-
-Save keys are separated: V1 writes `lakehorse.*`, V2 writes `lakehorse.v2.*`. The album page's `gameTally()` reads both directly, one call per door.
-
-### Local branch `v2-takes-over` (`f1d4d64`, **four commits unpushed**)
-
-The reorganisation, staged and not yet live:
+### Deployed (`origin/main`, currently `d51592a`)
 
 ```
-vendor/            moved to the repo root, owned by neither build
-game/              V2, having taken the path over from V1        →  /game/
-archive/game-v1/   V1, frozen, doorless, still playable if served
+vendor/            Three.js, 740K, at the repo root, owned by neither build
+game/              V2, having taken the path over from V1   →  /game/
+archive/game-v1/   V1, frozen, doorless, still served       →  /archive/game-v1/
 ```
 
-Plus Phase 1b (audio) and the mason jars. `CLAUDE.md` and `PROGRESS.md` **on this branch describe the world after that push**, which is why they read as though the takeover has already happened. It has not shipped yet. Pushing this branch to `main` is the act that makes those documents true.
+Verified on 2026-08-14 against the live site rather than inferred from git: `/game/config.js` and `/game/index.html` match the working tree byte for byte, `/game-v2/` now returns 404, and the album page carries one game door instead of two.
 
 The takeover is a takeover rather than a redirect on purpose: `/game/` is the address people already have, and a redirect is a hop that can rot.
 
+Save keys stay separated even though only one build is live: V2 writes `lakehorse.v2.*`, and older V1 dives are parked under `lakehorse.*` and left alone. The album page's `gameTally()` reads them directly.
+
 ### Branch topology
 
-`main` carries the V1 polish (`0b5bbaf`) and V2's first door. `v2-takes-over` is `main` plus the four commits above. The ~20 other local branches are finished work, already merged or abandoned; ignore them unless you have a reason.
+`main` carries everything. No local branch is ahead of `origin/main`, so nothing is stranded. The ~20 local branches are finished work, already merged; ignore them unless you have a reason.
 
 ---
 

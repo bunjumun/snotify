@@ -278,7 +278,7 @@ export class Clues {
     const near = g.stash.nearestAvailable(g.kelpie.position);
     const short = CFG.stash.needed - g.stash.carried;
     if (!near) {
-      this._speak(0, `Nothing close. Keep moving — this wreck is full of it.`);
+      this._speak(0, `Nothing close. Keep moving. This wreck is full of it.`);
       return;
     }
     this._speak(0,
@@ -398,7 +398,7 @@ export class Clues {
         `You got it open, then.<br>` +
         `There are still <b>${remaining}</b> slates from her log out here, if you're curious.`);
     } else {
-      this._speak(1, `You've had everything this wreck has. Go on — swim for the pleasure of it.`);
+      this._speak(1, `You've had everything this wreck has. Go on. Swim for the pleasure of it.`);
     }
   }
 

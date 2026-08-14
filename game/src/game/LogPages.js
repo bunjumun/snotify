@@ -22,7 +22,7 @@ import { LogPage } from '../entities/LogPage.js';
 
 export const ENTRIES = [
   {
-    id: 'p1', title: 'Log of the Enias — day 1',
+    id: 'p1', title: 'Log of the Enias, day 1',
     body: `Cleared the yards 0610 with eleven hundred tonnes of ore and forty-one souls.
 The manifest lists both in the same column and nobody at the gate thought that
 was worth a second look. Trim good. Every one of them has signed away nine years.`,
@@ -34,32 +34,32 @@ Coordinates for The Drain came off a chart drawn by somebody who never came back
 to say whether it worked. We are going anyway. That is the mood aboard.`,
   },
   {
-    id: 'p3', title: 'day 14 — entering',
+    id: 'p3', title: 'day 14, entering',
     body: `No stars in here. That I was ready for. What I was not ready for is that there
-is no dark either — it is lit and there is nothing doing the lighting.
+is no dark either. It is lit and there is nothing doing the lighting.
 Two of the crew will not come out of the hold. I am not ordering them to.`,
   },
   {
-    id: 'p4', title: 'day 14 — out the other side',
+    id: 'p4', title: 'day 14, out the other side',
     body: `Water. All of it, every heading, curve to curve, and no land anywhere on it.
 The navigator laughed for about four seconds and then had to sit down.
 We are through. We are somewhere. Those are not the same thing.`,
   },
   {
-    id: 'p5', title: 'day 14 — 1540',
+    id: 'p5', title: 'day 14, 1540',
     body: `She was built to be caught by a cradle and there is no cradle. We came in flat
-and fast and it made no difference at all — water at that speed is a floor.
+and fast and it made no difference at all. Water at that speed is a floor.
 Breach forward. Pumps on. Chief says he can hold it if it does not get worse.
 It got worse while he was saying it.`,
   },
   {
-    id: 'p6', title: 'day 14 — 1912',
+    id: 'p6', title: 'day 14, 1912',
     body: `We are down by the head and she will not answer. I have told the crew.
 They took it better than I did.
 Whoever finds this: she was a good ship and none of it was her fault.`,
   },
   {
-    id: 'p7', title: 'Last page — undated',
+    id: 'p7', title: 'Last page, undated',
     body: `Something came alongside in the dark and it was not a ship.
 Green, and longer than the hold, and lit from the inside like nothing is meant
 to be. It looked at me the way a horse does.

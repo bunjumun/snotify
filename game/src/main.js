@@ -49,9 +49,9 @@ if (!webglOk()) {
   bail(
     "This browser can't run the water.",
     'The Swimulator needs WebGL, and this browser either lacks it or has it ' +
-    'switched off. <b>If you opened this inside another app</b> — Instagram, ' +
-    'Facebook, a messages list — open it in Safari or Chrome instead and it ' +
-    'should run.');
+    'switched off. <b>Did you open this inside another app?</b> Instagram, ' +
+    'Facebook and messages lists all carry their own browser about with them. ' +
+    'Open this in Safari or Chrome instead and it should run.');
   throw new Error('no webgl');   // stops the rest of this module cold
 }
 
@@ -62,7 +62,7 @@ try {
   console.error('[lakehorse]', e);
   bail(
     'The water would not load.',
-    'Something broke while building the lake. A reload often fixes it — the ' +
+    'Something broke while building the lake. A reload often fixes it. The ' +
     'site updates in place, and a half-cached update can land like this.');
   throw e;
 }

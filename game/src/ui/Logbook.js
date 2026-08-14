@@ -23,7 +23,7 @@ export class Logbook {
 
     if (!have.size) {
       this.list.innerHTML = '<p class="logempty">Nothing recovered yet. The slates are out '
-        + 'there — small, dark, and they catch the lamp when you sweep past one.</p>';
+        + 'there. They are small and dark, and they catch the lamp when you sweep past one.</p>';
     } else {
       ENTRIES.forEach((e, i) => {
         const d = document.createElement('div');
@@ -34,7 +34,7 @@ export class Logbook {
           // A missing page is shown as missing rather than hidden, so the shape
           // of the story is visible from the first slate you find. The wording
           // rotates because six identical lines in a column read as a bug.
-          d.innerHTML = '<h4>— not recovered —</h4><pre class="logempty">'
+          d.innerHTML = '<h4>(not recovered)</h4><pre class="logempty">'
             + MISSING[i % MISSING.length] + '</pre>';
         }
         this.list.appendChild(d);

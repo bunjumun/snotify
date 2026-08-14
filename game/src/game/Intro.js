@@ -68,7 +68,7 @@ export class Intro {
 
     g.hud.say(
       'A bit of shake, no fire, and a lamp with nothing in it.<br>' +
-      '<span style="opacity:.72">Tap to swim — she kicks each time.</span><br>' +
+      '<span style="opacity:.72">Tap to swim. She kicks each time.</span><br>' +
       'There\'s a pipe out there somewhere. Start with that.',
       { seconds: 6 },
     );
@@ -180,7 +180,7 @@ export class Intro {
     g.rig.addShake(0.12);
 
     g.hud.say(
-      'It presses a lighter into the diver\'s glove. Not a flint one — a <b>plasma torch</b>.<br>' +
+      'It presses a lighter into the diver\'s glove. Not a flint one. A <b>plasma torch</b>.<br>' +
       'Twin arc. No flame to drown. This lighter will burn even the wettest weed.<br>' +
       'The dankest dank.',
       { who: 'A whitefish', seconds: 6 },

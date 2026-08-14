@@ -306,7 +306,7 @@ export class Game {
     this.logs.onFound = (entry, found, total) => {
       this.audio?.sfx('page');
       this.hud.say(
-        `<b>${entry.title}</b> — ${found} of ${total} recovered.<br>` +
+        `Recovered <b>${entry.title}</b>. That makes ${found} of ${total}.<br>` +
         `<span style="opacity:.7">Read it from the pause screen.</span>`,
         { seconds: 4.5 },
       );

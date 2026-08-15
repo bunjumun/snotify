@@ -264,7 +264,41 @@
   .ref-what { font-size: 13px; margin-bottom: 10px; word-break: break-word; }
   .ref-what a { color: var(--accent); }
   .ref-embed { display: none; margin-bottom: 10px; }
-  .ref-embed iframe { width: 100%; border: 1px solid var(--line); border-radius: var(--radius); display: block; }
+  /* A YouTube reference is a video and gets to look like one, rather than the
+     120px audio strip it used to be squeezed into. The cap is the whole point:
+     the pane also holds the transport, the volume and the section controls, and
+     a 16:9 video in a tall window would push all three below the fold. So it
+     takes its natural shape until 30vh, and stops. */
+  .ref-embed iframe {
+    width: 100%; aspect-ratio: 16 / 9; max-height: 30vh; height: auto;
+    border: 1px solid var(--line); border-radius: var(--radius); display: block;
+  }
+  /* Audio-only embeds (SoundCloud, Spotify) have no picture to preserve, so
+     they keep a strip rather than being stretched to a widescreen box. */
+  .ref-embed.audio-only iframe { aspect-ratio: auto; height: 120px; }
+
+  /* The section to play from. Two numbers and a loop, which is the whole
+     feature: set them off the playhead where we own the audio, type them where
+     we do not. Laid out flat rather than in a panel — it is three controls. */
+  .ref-sect { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 9px; }
+  .ref-sect .lbl { color: var(--text-mute); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
+  .ref-sect .row { display: flex; align-items: center; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+  .ref-sect input[type=text] {
+    width: 62px; flex: none; padding: 4px 6px; font-size: 12px; text-align: center;
+    font-variant-numeric: tabular-nums;
+    background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+  }
+  .ref-sect .grab {
+    cursor: pointer; font-size: 11px; padding: 4px 7px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text-dim);
+  }
+  .ref-sect .grab:hover:not(:disabled) { color: var(--text); background: var(--bg-hover); }
+  .ref-sect .grab:disabled { opacity: .35; cursor: default; }
+  .ref-sect .loop { display: inline-flex; align-items: center; gap: 5px; color: var(--text-mute); font-size: 12px; cursor: pointer; }
+  .ref-sect .loop input { accent-color: var(--accent); }
+  /* The section is live on the playing side, so it says so out loud rather than
+     leaving you to wonder why the reference stops after twenty seconds. */
+  .ref-sect .note { color: var(--text-mute); font-size: 11.5px; margin-top: 6px; }
   .ref-attach { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
   .ref-attach summary { cursor: pointer; color: var(--text-mute); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; list-style: none; }
   .ref-attach summary::-webkit-details-marker { display: none; }
@@ -676,6 +710,13 @@
   .veritem .cpy:hover, .vlog-copy:hover { color: var(--text); background: var(--bg-row); }
   .veritem .vstar { font-variant-numeric: tabular-nums; }
   .veritem .vstar:hover, .veritem .vstar.on { color: #ffc93c; }
+  /* The mix's own reference. Ghosted when the slot is empty and solid when it
+     is filled, so a glance down the stack says which mixes were chasing
+     something without opening any of them. Emoji ignore `color`, hence the
+     opacity — the state has to be visible, not merely present. */
+  .veritem .vref { opacity: .3; filter: grayscale(1); }
+  .veritem .vref:hover { opacity: .75; }
+  .veritem .vref.on { opacity: 1; filter: none; }
 
   @media (max-width: 660px) {
     /* The version menu anchors to a mid-row button — pin it to the viewport
@@ -882,7 +923,10 @@
   </div>
 
   <!-- Reference: this song's mixes on one side, the track it is chasing on the
-       other. Only one of them is ever making a sound. -->
+       other. Only one of them is ever making a sound.
+       One modal, three slots — the song's, a mix version's, or a comment's.
+       #refSong says which one you are in, because they look identical
+       otherwise and attaching to the wrong one is silent. -->
   <div class="modal-back" id="refModal">
     <div class="modal" style="max-width:720px">
       <h2>Reference <span id="refSong" style="font-size:12px;font-weight:400;color:var(--text-mute)"></span></h2>
@@ -914,6 +958,22 @@
           <div class="ref-vol" id="refVolRow">
             <span>Vol</span><input type="range" id="refVol" min="0" max="1" step="0.01" />
           </div>
+
+          <!-- The section to play from. Hidden until something is attached,
+               because there is nothing to take a section of. -->
+          <div class="ref-sect" id="refSect" style="display:none">
+            <span class="lbl">Section</span>
+            <div class="row">
+              <input type="text" id="refIn"  placeholder="0:00" maxlength="9" title="Start here (m:ss)" />
+              <button class="grab" id="refGrabIn" title="Take the start from where the reference is playing">Set in</button>
+              <input type="text" id="refOut" placeholder="end" maxlength="9" title="Stop here (m:ss)" />
+              <button class="grab" id="refGrabOut" title="Take the end from where the reference is playing">Set out</button>
+              <button class="grab" id="refSectClear" title="Play the whole track again">Whole</button>
+              <label class="loop"><input type="checkbox" id="refLoop" /> loop</label>
+            </div>
+            <div class="note" id="refSectNote"></div>
+          </div>
+
           <audio id="refAudio" preload="none"></audio>
         </div>
       </div>
@@ -921,7 +981,7 @@
       <div class="hint" id="refHint" style="margin-top:10px"></div>
 
       <details class="ref-attach" id="refAttach">
-        <summary>Attach a reference</summary>
+        <summary id="refAttachSum">Attach a reference</summary>
         <label>Link to audio, or a player to embed</label>
         <input type="text" id="refUrl" placeholder="https://…  (an mp3, or a YouTube / SoundCloud / Bandcamp / Spotify link)" maxlength="2000" />
         <label>What is it?</label>
@@ -1845,6 +1905,11 @@ function normalize(data){
         // Who would keep this mix. A list of names rather than a count,
         // because the star has to know whether one of them is yours.
         stars: Array.isArray(v.stars) ? v.stars : [],
+        // What THIS mix was aiming at, which is not necessarily what the song
+        // is aiming at. Named here for the same reason the song's is: this
+        // builds a new object, so anything unnamed is dropped on every load.
+        // Undefined until schema v22 is applied, which reads as unattached.
+        reference: v.reference || null,
       }));
     else if (s.src)
       // legacy flat shape (one src, no versions array) — no version row exists,
@@ -1852,7 +1917,7 @@ function normalize(data){
       versions = [{ id: null, created_at: null,
                     name: s.name || 'Original', src: publicUrl(s.src), date: s.date || '',
                     changelog: s.changelog || '', changes: Array.isArray(s.changes) ? s.changes : null,
-                    stars: [] }];
+                    stars: [], reference: null }];
     else return null;
     versions = versions.filter(v => v.src);
     if (!versions.length) return null;
@@ -2599,6 +2664,9 @@ function renderVersions(){
       <span class="cpy vstar ${iStarred(v) ? 'on' : ''}" data-act="star"
             title="${iStarred(v) ? 'You starred this mix — click to take it back' : `Star ${esc(v.name)}`}"
             >${iStarred(v) ? '★' : '☆'}${starsOf(v).length ? starsOf(v).length : ''}</span>
+      <span class="cpy vref ${v.reference ? 'on' : ''}" data-act="ref"
+            title="${v.reference ? `What “${esc(v.name)}” was aiming at${v.reference.title ? ': ' + esc(v.reference.title) : ''}` : `Attach what “${esc(v.name)}” was aiming at — its own reference, separate from the song's`}"
+            >🎧</span>
       <span class="cpy" data-act="share" title="Copy share link to ${esc(v.name)} (opens the player)">🔗</span>
       <span class="cpy" data-act="audio" title="Copy direct link to the audio file">🎵</span>
       <a class="dl" href="${esc(v.src)}" download="${esc(activeSong.title)} — ${esc(v.name)}${esc(extOf(v.src))}" title="Download ${esc(v.name)}">⬇</a>`}
@@ -2612,6 +2680,9 @@ function renderVersions(){
       e.stopPropagation();
       const vi = Number(el.dataset.vi);
       if (b.dataset.act === 'star'){ toggleStar(activeSong, vi); return; }
+      // The mix's own slot. Opens the same modal the song uses, pointed
+      // somewhere else — and closes the menu, which would otherwise sit on top.
+      if (b.dataset.act === 'ref'){ toggleVerMenu(false); openReference({ scope: 'version', vi }); return; }
       const v = activeSong.versions[vi];
       copyText(b.dataset.act === 'audio' ? audioUrl(v) : shareUrl(activeSong, v), b);
     }));
@@ -2754,6 +2825,19 @@ const tagChips = (tags) => (tags || []).map(id => {
   return t ? `<span class="tag t-${t.id}" title="${esc(t.label)}">${t.icon} ${esc(t.short)}</span>` : '';
 }).join('');
 
+// A comment's own reference track, offered in the byline next to the tags —
+// the natural place, since both answer "what kind of note is this". It says the
+// track's name when there is one, because "listen to this" is worth more when
+// you can see what "this" is before clicking. Nothing attached shows a quiet
+// invitation that only appears on hover, so thirty comments do not read as
+// thirty unfinished jobs.
+function crefLink(c){
+  const r = c && c.reference;
+  if (!r) return `<span class="cref none" data-cref="${c.id}" title="Attach a reference to this comment">+ reference</span>`;
+  const bit = (typeof r.in === 'number') ? ` ${fmt(r.in)}` : '';
+  return `<span class="cref" data-cref="${c.id}" title="${esc(r.title || r.src)}">🎧 ${esc(r.title || 'reference')}${bit}</span>`;
+}
+
 let commentCache = {};   // song_id -> [comments], mirrors the shared table
 let cReplyTo = null, cEditId = null;   // which thread/comment has an inline compose box open
 const mapRow = (r) => ({ id: r.id, time: r.time_s, text: r.text, name: r.name || '',
@@ -2761,6 +2845,10 @@ const mapRow = (r) => ({ id: r.id, time: r.time_s, text: r.text, name: r.name ||
                          parentId: r.parent_id || null, resolved: !!r.resolved,
                          resolvedBy: r.resolved_by || '', editedAt: r.edited_at ? Date.parse(r.edited_at) : null,
                          tags: Array.isArray(r.tags) ? r.tags : [],
+                         // Evidence in this one argument. Its own slot, sharing
+                         // nothing with the song's or the mix's — see the
+                         // Reference section for why there is no inheritance.
+                         reference: r.reference || null,
                          dismissedVersions: r.dismissed_versions || [],
                          at: Date.parse(r.created_at) });
 function commentsFor(id){ return (commentCache[id] || []).slice().sort((a,b)=>a.time-b.time); }
@@ -3115,7 +3203,7 @@ function renderComments(){
           ${cEditId === c.id
             ? `<div class="cedit"><input type="text" value="${esc(c.text)}" maxlength="280" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`
             : `<div class="txt">${esc(c.text)}</div>`}
-          <div class="who">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}${timeago(c.at)}${c.editedAt ? ' · <span class="edited-tag">edited</span>' : ''} ${carried}${c.resolved ? `<span class="cbadge resolved">✓ resolved</span>` : ''}${tagChips(c.tags)}</div>
+          <div class="who">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}${timeago(c.at)}${c.editedAt ? ' · <span class="edited-tag">edited</span>' : ''} ${carried}${c.resolved ? `<span class="cbadge resolved">✓ resolved</span>` : ''}${tagChips(c.tags)}${crefLink(c)}</div>
           <div class="cactions">
             <span class="act-reply">Reply</span>
             <span class="act-edit">Edit</span>
@@ -3151,6 +3239,10 @@ function handleClistClick(e){
   const cid = cmtEl?.dataset.id || null;
 
   if (e.target.classList.contains('del')){ deleteComment(cid); return; }
+  // The comment's own reference. Its id comes off the span rather than the row,
+  // because the byline belongs to the root comment and a reply has no slot.
+  const crefEl = e.target.closest('[data-cref]');
+  if (crefEl){ openReference({ scope: 'comment', cid: crefEl.dataset.cref }); return; }
   if (e.target.classList.contains('act-reply')){
     cReplyTo = (cReplyTo === rootId ? null : rootId); cEditId = null; renderComments(); return;
   }
@@ -3337,8 +3429,24 @@ function refreshListBadges(){
 
 
 // ---------- Reference ----------
-// The track this song is chasing. It belongs to the SONG, not to a mix and not
-// to the album, so it stays put whichever version you are listening to.
+// The track something here is chasing, and the bit of it worth chasing.
+//
+// There are THREE slots, and they share nothing:
+//
+//   song     what the song is chasing. Stays put across the whole stack.
+//   version  what THIS mix was aiming at, which drifts as the stack grows.
+//   comment  evidence in one argument: "it should sit like this, listen".
+//
+// No inheritance, deliberately. A mix with nothing attached shows nothing
+// attached and never borrows the song's. Falling back would make it impossible
+// to say "this mix was chasing nothing in particular", and an empty slot is
+// information — it is the difference between not answered and answered "none".
+// It also means clearing one can never silently reveal another.
+//
+// One modal serves all three. What changes is the SUBJECT: which slot is being
+// read and written. Everything else — the mixes down the left, the reference
+// down the right, the one-sound-at-a-time rule — is identical, because the job
+// is identical.
 //
 // The rule that makes comparing worth anything: only one thing is ever making
 // a sound. Starting either side stops the other — including the page's main
@@ -3347,25 +3455,108 @@ let refMixWS = null;          // a wavesurfer of its own, so the main deck is un
 let refVerIdx = 0;
 const REF_VOL_KEY = 'mp_ref_vol', MIX_VOL_KEY = 'mp_ref_mixvol';
 
+// Which slot the modal is currently pointed at. `vi` is a version index and
+// `cid` a comment id; only the one the scope names is read.
+let refSubject = { scope: 'song', vi: 0, cid: null };
+
+const refComment = (cid) => activeSong ? commentsFor(activeSong.id).find(c => c.id === cid) || null : null;
+
+// The reference in the slot the subject names, and nowhere else. The absence of
+// a fallback here is the no-crosstalk rule, expressed once.
+function refCurrent(){
+  if (!activeSong) return null;
+  if (refSubject.scope === 'version') return (activeSong.versions[refSubject.vi] || {}).reference || null;
+  if (refSubject.scope === 'comment') return (refComment(refSubject.cid) || {}).reference || null;
+  return activeSong.reference || null;
+}
+// What to call the slot on screen. Attaching to the wrong one is silent and
+// looks exactly like attaching to the right one, so the header always says.
+function refSubjectLabel(){
+  if (!activeSong) return '';
+  if (refSubject.scope === 'version'){
+    const v = activeSong.versions[refSubject.vi];
+    return v ? `· mix “${v.name}” · ${activeSong.title}` : '';
+  }
+  if (refSubject.scope === 'comment'){
+    const c = refComment(refSubject.cid);
+    return c ? `· comment at ${fmt(c.time)} · ${activeSong.title}` : '';
+  }
+  return `· ${activeSong.title}`;
+}
+// Kept for the places that ask "does this song have one" without opening
+// anything — the list badge and the profile card, both song-level by nature.
 const refOf = (song) => (song && song.reference) || null;
+
+// ---- what a section means ----
+// in/out are seconds from the start of the REFERENCE, stored on the slot beside
+// the track itself, so a comment can isolate the chorus while the song's own
+// reference stays whole. Both optional: in alone means "start here", out alone
+// means "stop there".
+const refIn   = (r) => (r && typeof r.in  === 'number' && r.in  >= 0) ? r.in  : null;
+const refOut  = (r) => (r && typeof r.out === 'number' && r.out >  0) ? r.out : null;
+const refLoops = (r) => !!(r && r.loop);
+const hasSection = (r) => refIn(r) !== null || refOut(r) !== null;
+// m:ss in, seconds out. Accepts a bare number of seconds too, because typing 90
+// when you mean 1:30 is a reasonable thing to do and refusing it helps nobody.
+function parseTime(s){
+  const t = String(s || '').trim();
+  if (!t) return null;
+  const m = t.match(/^(?:(\d+):)?(\d{1,2}(?:\.\d+)?)$/);
+  if (!m) return null;
+  const mins = m[1] ? parseInt(m[1], 10) : 0;
+  const secs = parseFloat(m[2]);
+  if (!m[1] && secs > 59) return secs;          // "90" means 90 seconds
+  if (secs >= 60) return null;
+  return mins * 60 + secs;
+}
+
 // Which services we can recognise well enough to embed, and how to pause them.
-function refEmbedSrc(url){
+// YouTube arrives in more shapes than the watch URL: a share link, a Short, a
+// live page, the music subdomain, an already-embedded URL. All of them are the
+// same video id, so all of them are the same reference.
+function refEmbedSrc(url, ref){
   const u = String(url || '');
   let m;
-  if ((m = u.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{6,})/)))
-    return { src: `https://www.youtube.com/embed/${m[1]}?enablejsapi=1`, api: 'yt' };
-  if (/soundcloud\.com\//.test(u))
-    return { src: `https://w.soundcloud.com/player/?url=${encodeURIComponent(u)}`, api: 'sc' };
+  if ((m = u.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([\w-]{6,})/))){
+    // YouTube's player takes the section as URL parameters, which is the only
+    // control we get over someone else's iframe without loading their API.
+    // Whole seconds: start/end will not take fractions.
+    const p = ['enablejsapi=1'];
+    const i = refIn(ref), o = refOut(ref);
+    if (i !== null) p.push('start=' + Math.floor(i));
+    if (o !== null) p.push('end=' + Math.ceil(o));
+    return { src: `https://www.youtube.com/embed/${m[1]}?${p.join('&')}`, api: 'yt', video: true, sect: 'both' };
+  }
+  if (/soundcloud\.com\//.test(u)){
+    const i = refIn(ref);
+    // SoundCloud takes a start and nothing else, as #t on the tracked URL.
+    const inner = i !== null ? `${u}#t=${Math.floor(i)}s` : u;
+    return { src: `https://w.soundcloud.com/player/?url=${encodeURIComponent(inner)}`, api: 'sc', video: false, sect: 'in' };
+  }
   if ((m = u.match(/open\.spotify\.com\/(track|album|playlist)\/([\w]+)/)))
-    return { src: `https://open.spotify.com/embed/${m[1]}/${m[2]}`, api: null };
-  if (/bandcamp\.com\//.test(u)) return { src: u, api: null };
+    return { src: `https://open.spotify.com/embed/${m[1]}/${m[2]}`, api: null, video: false, sect: 'none' };
+  if (/bandcamp\.com\//.test(u)) return { src: u, api: null, video: false, sect: 'none' };
   return null;
 }
-const refIsEmbed = (r) => r && (r.kind === 'embed' || (r.kind === 'url' && refEmbedSrc(r.src)));
+const refIsEmbed = (r) => r && (r.kind === 'embed' || (r.kind === 'url' && refEmbedSrc(r.src, r)));
 
 function refSrcUrl(r){
   if (!r) return null;
   return r.kind === 'file' ? publicUrl(r.src) : r.src;
+}
+
+// A YouTube link often already carries a timestamp — t=95s, or #t=1m35s. That
+// is someone having already found the bit they mean, so it becomes the in point
+// at attach time rather than being thrown away. Once stored it is an ordinary
+// in point, editable like any other.
+function refStartFromUrl(url){
+  const m = String(url || '').match(/[?&#]t(?:ime_continue)?=(?:(\d+)h)?(?:(\d+)m)?(\d+)s?\b/)
+         || String(url || '').match(/[?&#](?:start)=(\d+)\b/);
+  if (!m) return null;
+  if (m.length === 2) return parseInt(m[1], 10);
+  const h = parseInt(m[1] || '0', 10), mi = parseInt(m[2] || '0', 10), s = parseInt(m[3] || '0', 10);
+  const total = h * 3600 + mi * 60 + s;
+  return total > 0 ? total : null;
 }
 
 // Anything that starts playing must silence everything else first.
@@ -3417,34 +3608,79 @@ function refLoadMix(i){
     if (d) $('refMixSeek').value = Math.round((t / d) * 1000);
     $('refMixTime').textContent = fmt(t);
   });
+  // A comment is about a moment, so opening one lands the mix on that moment
+  // rather than at the top of the track.
+  if (refSubject.scope === 'comment'){
+    const c = refComment(refSubject.cid);
+    if (c && c.time > 0) refMixWS.once('ready', () => { try { refMixWS.setTime(c.time); } catch {} });
+  }
+}
+
+// The section controls, which only make sense once something is attached, and
+// only half make sense on an embed — there is no playhead to grab from someone
+// else's iframe, and no way to make it loop.
+function renderRefSection(r, emb){
+  const box = $('refSect');
+  if (!r){ box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  const i = refIn(r), o = refOut(r);
+  $('refIn').value  = i !== null ? fmt(i) : '';
+  $('refOut').value = o !== null ? fmt(o) : '';
+  $('refLoop').checked = refLoops(r);
+  const own = !emb;                                  // we hold the audio element
+  $('refGrabIn').disabled = $('refGrabOut').disabled = !own;
+  $('refLoop').disabled = !own;
+  if (own){
+    $('refSectNote').textContent = hasSection(r)
+      ? (refLoops(r) ? 'Playing this section on repeat.' : 'Playing this section, then stopping.')
+      : 'Play the reference, then set in and out where you want it.';
+  } else {
+    // Say what this particular service can honour rather than one vague warning.
+    const can = emb.sect;
+    $('refSectNote').textContent =
+      can === 'both' ? 'Typed here, not grabbed — an embedded player has no playhead we can read. Its own start and end are honoured; looping is not available.'
+    : can === 'in'   ? 'Typed here, not grabbed. This player takes a start point only — the out point and looping are ignored.'
+    :                  'This player takes no start or end, so the section is a note to yourself. Attach a file or a direct audio link to have it honoured.';
+  }
 }
 
 function renderReference(){
-  const r = refOf(activeSong);
-  $('refSong').textContent = activeSong ? `· ${activeSong.title}` : '';
+  const r = refCurrent();
+  $('refSong').textContent = refSubjectLabel();
   $('refNone').style.display = r ? 'none' : 'block';
   $('refWhat').innerHTML = '';
   $('refEmbed').style.display = 'none';
+  $('refEmbed').className = 'ref-embed';
   $('refEmbed').innerHTML = '';
   $('refKind').textContent = '';
   $('refHint').textContent = '';
+  $('refAttachSum').textContent = r ? 'Change what is attached' : 'Attach a reference';
   const own = $('refOwnTransport'), vol = $('refVolRow');
   const a = $('refAudio');
   if (!a.paused) a.pause();
   a.removeAttribute('src');
 
-  if (!r){ own.style.display = 'none'; vol.style.display = 'none'; return; }
+  // An empty slot says which slot it is, so "nothing here" cannot be misread as
+  // "the song has nothing" when you are standing in a mix.
+  $('refNone').textContent =
+      refSubject.scope === 'version' ? 'This mix has nothing attached.'
+    : refSubject.scope === 'comment' ? 'This comment has nothing attached.'
+    :                                  'Nothing attached yet.';
 
-  const emb = refIsEmbed(r) ? (refEmbedSrc(r.src) || { src: r.src, api: null }) : null;
+  if (!r){ own.style.display = 'none'; vol.style.display = 'none'; renderRefSection(null); return; }
+
+  const emb = refIsEmbed(r) ? (refEmbedSrc(r.src, r) || { src: r.src, api: null, video: false, sect: 'none' }) : null;
   $('refWhat').innerHTML = r.title
     ? `<b>${esc(r.title)}</b>` + (r.kind !== 'file' ? ` — <a href="${esc(r.src)}" target="_blank" rel="noopener">open</a>` : '')
     : (r.kind === 'file' ? 'Uploaded reference' : `<a href="${esc(r.src)}" target="_blank" rel="noopener">${esc(r.src)}</a>`);
 
   if (emb){
-    $('refKind').textContent = '· embedded player';
+    $('refKind').textContent = emb.video ? '· video' : '· embedded player';
     $('refEmbed').style.display = 'block';
-    $('refEmbed').innerHTML = `<iframe src="${esc(emb.src)}" height="120" allow="autoplay; encrypted-media"
-                                       data-api="${esc(emb.api || '')}" loading="lazy"></iframe>`;
+    // Audio-only services keep the old strip; a video gets to be a video.
+    $('refEmbed').className = 'ref-embed' + (emb.video ? '' : ' audio-only');
+    $('refEmbed').innerHTML = `<iframe src="${esc(emb.src)}" allow="autoplay; encrypted-media; picture-in-picture"
+                                       allowfullscreen data-api="${esc(emb.api || '')}" loading="lazy"></iframe>`;
     own.style.display = 'none'; vol.style.display = 'none';
     // Be straight about what this cannot do rather than pretending.
     $('refHint').textContent = emb.api
@@ -3457,27 +3693,45 @@ function renderReference(){
     a.volume = parseFloat($('refVol').value);
     $('refHint').textContent = 'Only one side plays at a time — starting either pauses the other.';
   }
+  renderRefSection(r, emb);
 }
 
-function openReference(){
+// Every way in lands here. `subject` names the slot; leaving it out means the
+// song, which is what the keyboard shortcut and the profile button have always
+// meant.
+function openReference(subject){
   if (!activeSong || singleMix) return;
+  refSubject = Object.assign({ scope: 'song', vi: activeVer, cid: null }, subject || {});
   $('refModal').classList.add('open');
   $('refMixVol').value = localStorage.getItem(MIX_VOL_KEY) ?? '0.9';
   $('refVol').value    = localStorage.getItem(REF_VOL_KEY) ?? '0.9';
-  refVerIdx = activeVer;
+  // The mix on the left starts as the one the slot is about: the version for a
+  // version, the comment's own version for a comment, whatever is playing for
+  // the song.
+  if (refSubject.scope === 'version') refVerIdx = refSubject.vi;
+  else if (refSubject.scope === 'comment'){
+    const c = refComment(refSubject.cid);
+    const vi = c ? activeSong.versions.findIndex(v => v.id === c.versionId) : -1;
+    refVerIdx = vi >= 0 ? vi : activeVer;
+  } else refVerIdx = activeVer;
   renderRefVersions();
   renderReference();
   refLoadMix(refVerIdx);
-  $('refUrl').value = (refOf(activeSong) || {}).src || '';
-  $('refTitle').value = (refOf(activeSong) || {}).title || '';
+  const cur = refCurrent() || {};
+  $('refUrl').value = cur.src || '';
+  $('refTitle').value = cur.title || '';
   $('refStatus').textContent = '';
+  $('refStatus').className = 'status';
+  // An empty slot opens with the attach panel already down: there is nothing to
+  // look at otherwise, and the next thing anyone wants is to attach something.
+  $('refAttach').open = !refCurrent();
 }
 function closeReference(){
   refStopAll(null);
   if (refMixWS){ try { refMixWS.destroy(); } catch {} refMixWS = null; }
   $('refModal').classList.remove('open');
 }
-$('refToggle').onclick = openReference;
+$('refToggle').onclick = () => openReference();
 $('refClose').onclick = closeReference;
 $('refModal').addEventListener('click', (e) => { if (e.target === $('refModal')) closeReference(); });
 
@@ -3502,13 +3756,32 @@ $('refMixVol').addEventListener('input', () => {
 
 $('refPlay').onclick = () => {
   const a = $('refAudio');
-  if (a.paused){ refStopAll('ref'); a.play().catch(() => {}); } else a.pause();
+  if (a.paused){ refStopAll('ref'); refSeekIntoSection(); a.play().catch(() => {}); } else a.pause();
 };
+// Starting outside the section jumps into it. Starting inside it does not, so
+// hitting play after a manual seek plays from where you actually put it.
+function refSeekIntoSection(){
+  const a = $('refAudio'), r = refCurrent();
+  const i = refIn(r), o = refOut(r);
+  if (i === null && o === null) return;
+  const t = a.currentTime || 0;
+  if ((i !== null && t < i - 0.05) || (o !== null && t >= o - 0.02)) a.currentTime = i ?? 0;
+}
 $('refAudio').addEventListener('play',  () => { refStopAll('ref'); $('refPlay').textContent = '❚❚'; });
 $('refAudio').addEventListener('pause', () => { $('refPlay').textContent = '▶'; });
 $('refAudio').addEventListener('timeupdate', () => {
   const a = $('refAudio');
   if (!a.duration) return;
+  // The out point, enforced here rather than by the element: HTMLAudioElement
+  // has no "stop at" and its loop flag only ever loops the whole file.
+  const r = refCurrent(), o = refOut(r);
+  if (o !== null && a.currentTime >= o){
+    if (refLoops(r)){ a.currentTime = refIn(r) ?? 0; }
+    else { a.pause(); a.currentTime = refIn(r) ?? 0; }
+  } else if (refLoops(r) && o === null && a.currentTime >= a.duration - 0.05){
+    a.currentTime = refIn(r) ?? 0;                 // loop with no out: back to in
+    a.play().catch(() => {});
+  }
   $('refSeek').value = Math.round((a.currentTime / a.duration) * 1000);
   $('refTime').textContent = fmt(a.currentTime);
 });
@@ -3521,18 +3794,84 @@ $('refVol').addEventListener('input', () => {
   $('refAudio').volume = parseFloat($('refVol').value);
 });
 
+// ---- the section ----
+// Every edit saves immediately. A section is two numbers with no confirm step
+// worth building, and a Save button that can be forgotten is worse than a write
+// that happens.
+// Section complaints go in the section's own note line, not in #refStatus:
+// that one lives inside the attach panel, which is usually folded shut while
+// you are setting points, and an error nobody can see is not an error message.
+function refSectSay(msg){ $('refSectNote').textContent = msg; }
+
+async function refSetSection(patch){
+  const r = refCurrent();
+  if (!r) return;
+  const next = Object.assign({}, r, patch);
+  // Nulls mean "no such point" rather than "the point zero", so they come out
+  // of the stored object entirely — the validator would take them either way,
+  // but a row full of nulls is harder to read in six months.
+  if (next.in == null) delete next.in;
+  if (next.out == null) delete next.out;
+  if (!next.loop) delete next.loop;
+  if (refIn(next) !== null && refOut(next) !== null && refOut(next) <= refIn(next)){
+    renderReference();
+    refSectSay('The out point has to come after the in point.');
+    return;
+  }
+  await refSave(next);
+}
+const TIME_HELP = 'Times read as m:ss, like 1:24.';
+$('refIn').addEventListener('change',  () => {
+  const v = $('refIn').value.trim();
+  const t = v ? parseTime(v) : null;
+  if (v && t === null){ renderReference(); refSectSay(TIME_HELP); return; }
+  refSetSection({ in: t });
+});
+$('refOut').addEventListener('change', () => {
+  const v = $('refOut').value.trim();
+  const t = v ? parseTime(v) : null;
+  if (v && t === null){ renderReference(); refSectSay(TIME_HELP); return; }
+  refSetSection({ out: t });
+});
+$('refGrabIn').onclick  = () => refSetSection({ in:  Math.max(0, $('refAudio').currentTime || 0) });
+$('refGrabOut').onclick = () => refSetSection({ out: Math.max(0.01, $('refAudio').currentTime || 0) });
+$('refSectClear').onclick = () => refSetSection({ in: null, out: null, loop: false });
+$('refLoop').addEventListener('change', () => refSetSection({ loop: $('refLoop').checked }));
+
 // ---- attaching one ----
+// Three slots, three functions, one shape. The scope decides which RPC and what
+// to update locally; nothing else about attaching differs.
 async function refSave(ref){
-  if (!activeSong) return;
+  if (!activeSong) return false;
+  const sc = refSubject.scope;
   try {
-    await libRpc('set_song_reference', { f: activeSong.folder || activeSong.title, ref });
+    if (sc === 'version'){
+      const v = activeSong.versions[refSubject.vi];
+      if (!v || !v.id) throw new Error('That mix predates version ids, so it cannot hold its own reference. The song still can.');
+      await libRpc('set_version_reference', { vid: v.id, ref });
+      v.reference = ref;
+    } else if (sc === 'comment'){
+      const c = refComment(refSubject.cid);
+      if (!c) throw new Error('That comment is gone.');
+      await libRpc('set_comment_reference', { cid: c.id, ref });
+      c.reference = ref;
+    } else {
+      await libRpc('set_song_reference', { f: activeSong.folder || activeSong.title, ref });
+      activeSong.reference = ref;
+    }
   } catch (err){
     $('refStatus').className = 'status err';
-    $('refStatus').textContent = err.message || 'Could not save that.';
+    // The one failure worth naming: the columns are not there yet. Everything
+    // else is already legible.
+    const m = String(err.message || '');
+    $('refStatus').textContent = (err.status === 404 || /does not exist|schema cache/i.test(m))
+      ? 'The database has not got references on mixes and comments yet — apply supabase/schema-v22.sql.'
+      : (m || 'Could not save that.');
     return false;
   }
-  activeSong.reference = ref;
   renderReference();
+  if (sc === 'version') renderVersions();
+  if (sc === 'comment') renderComments();
   $('refStatus').className = 'status ok';
   $('refStatus').textContent = ref ? 'Attached.' : 'Removed.';
   return true;
@@ -3543,9 +3882,19 @@ $('refSaveUrl').onclick = () => {
   if (!/^https?:\/\//i.test(src)){ $('refStatus').className = 'status err'; $('refStatus').textContent = 'That needs to be an http(s) address.'; return; }
   // A link we can play directly beats an embed; anything else becomes a widget.
   const direct = /\.(mp3|m4a|aac|ogg|opus|wav|aif|aiff|flac)(\?|$)/i.test(src);
-  refSave({ kind: direct ? 'url' : 'embed', src, title: $('refTitle').value.trim() });
+  const ref = { kind: direct ? 'url' : 'embed', src, title: $('refTitle').value.trim() };
+  // Keep whatever section is already set — changing the track usually means a
+  // different take of the same thing, and retyping the times is a chore.
+  const cur = refCurrent();
+  if (cur){ if (refIn(cur) !== null) ref.in = cur.in; if (refOut(cur) !== null) ref.out = cur.out; if (refLoops(cur)) ref.loop = true; }
+  // A timestamped share link has already found the bit it means.
+  if (ref.in === undefined){ const t = refStartFromUrl(src); if (t !== null) ref.in = t; }
+  refSave(ref);
 };
-$('refClear').onclick = () => { if (confirm('Remove the reference from this song?')) refSave(null); };
+$('refClear').onclick = () => {
+  const what = refSubject.scope === 'version' ? 'this mix' : refSubject.scope === 'comment' ? 'this comment' : 'this song';
+  if (confirm(`Remove the reference from ${what}?`)) refSave(null);
+};
 $('refFile').addEventListener('change', async () => {
   const f = $('refFile').files[0];
   if (!f || !activeSong) return;
@@ -3556,15 +3905,27 @@ $('refFile').addEventListener('change', async () => {
   $('refStatus').textContent = `Uploading ${f.name}…`;
   try {
     if (f.size > 50 * 1024 * 1024) throw new Error('That file is over the 50 MB limit.');
+    // Uploads land in one folder per SONG — <band>/<song>/_ref/<name> — and the
+    // move upserts. Three slots on one song uploading a file called bounce.wav
+    // would therefore be three slots pointing at whichever went last. So the
+    // slot is written into the name before it goes: same folder, no collision,
+    // and no change to the edge function.
+    const slot = refSubject.scope === 'version' ? 'v-' + String((activeSong.versions[refSubject.vi] || {}).id || '').slice(0, 8) + '-'
+               : refSubject.scope === 'comment' ? 'c-' + String(refSubject.cid || '').slice(0, 8) + '-'
+               : '';
+    const upName = slot + f.name;
     const enc = (...seg) => seg.map(encodeURIComponent).join('/');
-    const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${enc(curBand, pass, song, f.name)}`, {
+    const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${enc(curBand, pass, song, upName)}`, {
       method: 'POST',
       headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
                  'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'true' },
       body: f });
     if (!r.ok) throw new Error(`Upload failed (${r.status})`);
     const res = await edgeFn('import-inbox', { band: curBand, pass, song, kind: 'ref' });
-    await refSave({ kind: 'file', src: res.ref, title: $('refTitle').value.trim() || res.name || f.name });
+    const ref = { kind: 'file', src: res.ref, title: $('refTitle').value.trim() || res.name || f.name };
+    const cur = refCurrent();
+    if (cur){ if (refIn(cur) !== null) ref.in = cur.in; if (refOut(cur) !== null) ref.out = cur.out; if (refLoops(cur)) ref.loop = true; }
+    await refSave(ref);
   } catch (err){
     $('refStatus').className = 'status err';
     $('refStatus').textContent = err.message || 'Could not upload that.';

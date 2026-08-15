@@ -158,6 +158,16 @@ header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px;
 .cedit button:hover { color: var(--accent); }
 .cbadge { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-left: 6px; letter-spacing: .2px; }
 .cbadge.resolved { background: rgba(155,107,231,.16); color: #b48cf0; }
+/* A comment's own reference track, in the byline beside the tag chips. Blue
+   and underlined on hover because it behaves like a link and should read like
+   one; muted with no track attached, so an empty slot invites rather than
+   announces. It never shows the song's or the mix's — the three slots share
+   nothing, which is the point of having three. */
+.cmt .cref { color: var(--accent); font-weight: 600; cursor: pointer; margin-left: 6px; white-space: nowrap; }
+.cmt .cref:hover { text-decoration: underline; }
+.cmt .cref.none { color: var(--text-mute); font-weight: 600; opacity: 0; transition: opacity .15s; }
+.cmt:hover .cref.none { opacity: 1; }
+@media (hover: none) { .cmt .cref.none { opacity: .7; } }
 
 /* To-do modal (per-item issues list, GitHub-style) */
 .todo-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 4px 0 12px; }

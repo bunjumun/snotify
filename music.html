@@ -628,7 +628,13 @@
   body.singlemix #toolsBtn, body.shared #adminBtn { display: none !important; }
   /* The game is the exception to "band members only": it's public, and a fan
      reading this page is exactly who it's for. It still stays out of the
-     stripped-down single-mix view, which is deliberately just the player. */
+     stripped-down single-mix view, which is deliberately just the player.
+     Public, though, means public to LAKEHORSE's listeners — the door is only
+     put up for a band that has the game, so another band's share link stops
+     handing strangers a way into the kelpie's lake. The class is set from
+     BAND_FEATURES by applyTheme(), which the shared paths call too. */
+  #gameBtn { display: none; }
+  body.has-game #gameBtn { display: inline-flex; }
   body.singlemix #gameBtn { display: none !important; }
 
   /* Authoring affordances light up for any logged-in band member */
@@ -1519,7 +1525,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=28"></script>
+<script src="core.js?v=29"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -2050,7 +2056,9 @@ async function init() {
     $('artBtn').href  = 'art.html?b='   + encodeURIComponent(curBand);
     $('homeBtn').href = 'index.html?b=' + encodeURIComponent(curBand);
     songs = normalize(payload);
-    loadGameFlags();                 // in the background — the boxes fill in
+    // In the background — the boxes fill in. Only asked for at all by a band
+    // that has the game; for anyone else there are no boxes to fill.
+    if (bandHas('game')) loadGameFlags();
 
     if (route.project){
       curProject = { slug: payload.slug, name: payload.name, band: payload.band,
@@ -4922,7 +4930,7 @@ function renderProfileVersions(){
           vi === fav ? '<span class="latest fav">★ FAVOURITE</span>' : ''}</div>
         ${sub ? `<div class="pvsub">${esc(sub)}</div>` : ''}
         ${v.changelog ? `<div class="pvlog">${esc(v.changelog)}</div>` : ''}
-        ${owner && v.id ? `<label class="pgame ${gameOk.has(v.id) ? 'on' : ''}" data-act="game"
+        ${owner && v.id && bandHas('game') ? `<label class="pgame ${gameOk.has(v.id) ? 'on' : ''}" data-act="game"
            title="${gameOk.has(v.id)
              ? `${esc(v.name)} is the mix the Lakehorse game plays. Untick to take it out.`
              : `Put ${esc(v.name)} in the Lakehorse game. One mix per song — ticking this swaps out whichever is in there now. It becomes public: the game is an open page.`}">

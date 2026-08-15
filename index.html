@@ -35,6 +35,14 @@
   /* Sibling links sit in the header of every page, this one included */
   #musicBtn, #artBtn { display: none; }
   body.authed #musicBtn, body.authed #artBtn { display: inline-flex; }
+  /* The game and the assets shelf are Lakehorse's. Hidden by default and put
+     up by the body classes applyTheme() sets from BAND_FEATURES, so a band
+     without them never sees them flash on the way past. */
+  #gameBtn, #assetsBtn, #doorGame, #doorAssets { display: none; }
+  body.authed.has-game #gameBtn,
+  body.authed.has-assets #assetsBtn { display: inline-flex; }
+  body.authed.has-game #doorGame,
+  body.authed.has-assets #doorAssets { display: block; }
   .bandline b { color: var(--text); }
 </style>
 </head>
@@ -136,7 +144,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=28"></script>
+<script src="core.js?v=29"></script>
 <script type="module">
 // This page is the front door, so it inherits every link ever shared before it
 // existed — back when index.html WAS the player. Anything carrying a song, a
@@ -147,7 +155,13 @@ if (route.song || route.version || route.project || location.hash.startsWith('#/
 }
 
 App.init     = () => init();
-App.onLock   = () => { $('bandLine').textContent = ''; $('bandCount').textContent = ''; };
+App.onLock   = () => {
+  $('bandLine').textContent = ''; $('bandCount').textContent = '';
+  // Locking hands the page back to the gate, and the next band through it may
+  // not be this one — so the per-band doors come down with the library rather
+  // than sitting there behind the modal.
+  applyFeatures(null);
+};
 App.onLogout = () => {};
 
 async function init(){
@@ -175,16 +189,24 @@ async function init(){
     const art = await libRpc('get_library', { k: 'art' });
     tally('tallyArt', ((art && art.songs) || []).length, 'piece', 'pieces');
   } catch { $('tallyArt').innerHTML = '&nbsp;'; }
-  // Same tolerance for the lore document: a database from before v19 has
-  // nothing to say about drafts, and the door still opens.
-  try {
-    const dr = (await libRpc('lore_list', {})) || [];
-    const on = dr.find(d => d.active);
-    $('tallyAssets').textContent = dr.length
-      ? `${dr.length} draft${dr.length === 1 ? '' : 's'}` + (on ? ` · ${on.name} is live` : ' · none live')
-      : 'Nothing written yet';
-  } catch { $('tallyAssets').textContent = 'Not set up yet'; }
-  gameTally('lakehorse.v2.progress', 'tallyGame');
+  // The game and the writing that feeds it are Lakehorse's, so both doors are
+  // put up only for a band that holds them — and the calls behind them are not
+  // made at all otherwise, rather than made and thrown away.
+  const hasLore = bandHas('lore'), hasLog = bandHas('log');
+  if (hasLore || hasLog){
+    // Same tolerance for the lore document: a database from before v19 has
+    // nothing to say about drafts, and the door still opens. A band holding
+    // only the log gets counted on the log, so the tally is about the shelf
+    // they actually have rather than about a document they do not.
+    try {
+      const dr = (await libRpc('lore_list', hasLore ? {} : { d: 'log' })) || [];
+      const on = dr.find(d => d.active);
+      $('tallyAssets').textContent = dr.length
+        ? `${dr.length} draft${dr.length === 1 ? '' : 's'}` + (on ? ` · ${on.name} is live` : ' · none live')
+        : 'Nothing written yet';
+    } catch { $('tallyAssets').textContent = 'Not set up yet'; }
+  }
+  if (bandHas('game')) gameTally('lakehorse.v2.progress', 'tallyGame');
 
   document.title = curBandTitle + " · Sn'Album";
   $('bandLine').innerHTML = `Signed in as <b>${esc(curBandTitle)}</b>.`;

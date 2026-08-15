@@ -22,6 +22,16 @@
   .card p { color: var(--text-dim); font-size: 13px; margin: 0; }
   .card .sub { margin-top: 12px; color: var(--text-mute); font-size: 12.5px; font-weight: 600; }
 
+  /* Both documents on this shelf are Lakehorse's writing, read by Lakehorse's
+     game, so each card is put up only for a band holding it — see BAND_FEATURES
+     in core.js, which applyTheme() turns into these classes. A band holding
+     neither can still reach this page by typing the address, and gets the
+     sentence rather than an empty grid that looks like a loading failure. */
+  #cardLore, #cardLog, #shelfEmpty { display: none; }
+  body.has-lore #cardLore, body.has-log #cardLog { display: block; }
+  body.authed:not(.has-lore):not(.has-log) #shelfEmpty { display: block; }
+  #shelfEmpty { color: var(--text-dim); font-size: 14px; line-height: 1.55; max-width: 46em; }
+
   /* ---------- The document ---------- */
   .dochead { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
   .dochead .dtitle { font-weight: 600; font-size: 17px; }
@@ -121,6 +131,10 @@
     <!-- The shelf. One asset for now; the grid is here because there will be
          more, and a one-item grid costs nothing. -->
     <div id="shelf">
+      <p id="shelfEmpty">The lore document and the ship's log belong to the band
+         whose game reads them, and this band holds neither. Nothing is missing
+         and nothing is broken: there is simply no writing filed under this
+         library yet.</p>
       <div class="cards">
         <div class="card" id="cardLore">
           <div class="glyph">📖</div>
@@ -172,7 +186,7 @@
     </div>
   </div>
 
-<script src="core.js?v=27"></script>
+<script src="core.js?v=29"></script>
 <script type="module">
 // The parser the GAME uses, imported rather than reimplemented — so what this
 // page reports as "12 exchanges" is what the fish will actually find.
@@ -239,10 +253,16 @@ async function init(){
   $('homeBtn').href = 'index.html?b=' + b;
   $('musicBtn').href = 'music.html?b=' + b;
 
-  $('assetCount').textContent = `${Object.keys(DOCS).length} assets`;
+  // Only the documents this band holds. The keys of DOCS and the feature names
+  // in BAND_FEATURES are deliberately the same two words, `lore` and `log`, so
+  // the shelf and the permission cannot drift apart; keep them matching if a
+  // third document is ever added.
+  const mine = Object.keys(DOCS).filter(slug => bandHas(slug));
+  $('assetCount').textContent = mine.length
+    ? `${mine.length} asset${mine.length === 1 ? '' : 's'}` : '';
   // Each card reports its own stack, so the shelf says what state everything is
   // in before you open anything.
-  for (const slug of Object.keys(DOCS)){
+  for (const slug of mine){
     try {
       const list = (await libRpc('lore_list', { d: slug })) || [];
       const on = list.find(x => x.active);

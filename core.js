@@ -111,6 +111,7 @@ const BAND_THEME = {
 };
 function applyTheme(band){
   setToolBand(band);
+  applyFeatures(band);
   const t = BAND_THEME[bandSlugOf(band || '')] || '';
   if (t) document.body.dataset.theme = t;
   else delete document.body.dataset.theme;
@@ -118,6 +119,47 @@ function applyTheme(band){
   // After the theme, never before: the design settings are read as a
   // multiplier on whatever palette the theme just laid down.
   loadDesign(band);
+}
+
+// ---------- Per-band features ----------
+// The third of these maps, and the same bargain as BAND_THEME above and
+// BAND_TOOLS below: a band gets what is listed against its slug and nothing
+// else, so the site can carry one band's world without offering it to the rest.
+//
+// What is listed here is Lakehorse's fiction, not site machinery. The game is
+// theirs — the kelpie, the wreck of the SS Enias — and so is the writing that
+// feeds it: the lore the fish recite and the log on the slates in the hold.
+// Every band was being shown all of it, which is how this got written down as a
+// bug. Nothing here was ever a DATA leak: lore_list and game_flags go through
+// libRpc, which sends the band and its password, and lore_active() defaults to
+// lakehorse and is called by the game with no band at all. It is the doors that
+// were wrong, not who could open them.
+//
+// A band with no entry gets no game door, no assets shelf and no IN GAME tick.
+// Note this scopes what the SITE OFFERS, not who may play: game/ is a public
+// page with no gate, and a link to it works for anyone who has one.
+const BAND_FEATURES = {
+  lakehorse: ['game', 'lore', 'log'],
+};
+// Defaults to the band on screen, which is what every call site wants; the
+// argument is there for the gate, which knows the band before it is logged in.
+function bandHas(feature, band = curBand){
+  return (BAND_FEATURES[bandSlugOf(band || '')] || []).includes(feature);
+}
+
+// Chrome goes on the body, so a page hides a button in CSS rather than
+// remembering to ask in JavaScript at each of the three places it loads a
+// library. Hung off applyTheme for the reason the tools menu is: that is the
+// one call every page already makes the moment it knows the band, on the
+// gated path and the shared-link path alike, and a band swap re-runs it.
+// has-assets is the shelf, not a document — the two cards gate separately.
+function applyFeatures(band){
+  const has = BAND_FEATURES[bandSlugOf(band || '')] || [];
+  const b = document.body.classList;
+  b.toggle('has-game',   has.includes('game'));
+  b.toggle('has-lore',   has.includes('lore'));
+  b.toggle('has-log',    has.includes('log'));
+  b.toggle('has-assets', has.includes('lore') || has.includes('log'));
 }
 
 // ---------- Dazzle generator ----------

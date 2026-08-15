@@ -219,6 +219,12 @@
   .vol input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border: none; border-radius: 50%; background: var(--text); cursor: pointer; }
   .vol .meter { position: relative; width: 34px; height: 4px; border-radius: 4px; background: var(--wave); overflow: hidden; flex: none; }
   .vol .meter span { position: absolute; inset: 0; width: 0%; background: var(--wave-prog); border-radius: inherit; }
+  /* The meter is fed by a Web Audio tap that we deliberately never install on
+     a touch device (see meterWanted), because routing playback through it
+     costs iOS dropouts and pitch shifts. A phone in landscape is wide enough
+     to clear the 660px rule below and would otherwise show a bar that can
+     never move, so hide it by the same test the tap uses. */
+  @media (pointer: coarse) { .vol .meter { display: none; } }
 
 
   /* Single-mix view (?b&s&v, no login): playback only — no comments, no
@@ -1432,7 +1438,22 @@ let meterCtx = null, meterAnalyser = null, meterData = null;
 let meterSources = [];     // MediaElementSourceNodes, torn down in destroyPlayers()
 let meterRAF = 0;
 
+// Only tap where the meter is actually on screen, and never on a phone.
+// The tap is not free: everything tapped plays THROUGH the AudioContext
+// instead of the browser's native media path, and on iOS that buys dropouts
+// and pitch artefacts — for a meter that is display:none below 660px anyway.
+// That is the whole of the mobile skipping bug, so the cheapest correct fix
+// is to not build the graph at all where nobody can see the result.
+//
+// Width alone is not enough: a phone in landscape clears 660px and would tap
+// again. Pointer is what actually separates a phone from a desktop, so ask
+// both. Checked at tap time rather than cached, because a window can be
+// resized between one song opening and the next.
+const meterWanted = () =>
+  window.matchMedia('(min-width: 661px) and (pointer: fine)').matches;
+
 function meterTap(w){
+  if (!meterWanted()) return;   // leaves meterAnalyser null, so meterStart() no-ops too
   if (!meterCtx){
     const AC = window.AudioContext || window.webkitAudioContext;
     meterCtx = new AC();

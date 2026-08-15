@@ -5792,6 +5792,12 @@ $('pjThumbFile').addEventListener('change', async () => {
       body: f });
     if (!r.ok) throw new Error(`Upload failed (${r.status})`);
     const res = await edgeFn('import-inbox', { band: curBand, pass, song: '_shares', kind: 'img' });
+    // An import-inbox that predates the 'img' kind does not fail: it falls
+    // through to the audio branch, finds no audio, and answers {imported:0}
+    // with no ref and no rows written. Harmless, and completely silent, which
+    // is the part worth catching — a picture that just never appears reads as
+    // a broken button rather than as a deploy that has not happened yet.
+    if (!res || !res.ref) throw new Error('The picture uploaded but could not be filed. The site needs its import function redeployed for pictures. Use artwork from the site meanwhile.');
     pjSetCover(res.ref);
     pjStatus('');
   } catch (err){

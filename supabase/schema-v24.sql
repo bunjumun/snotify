@@ -1,11 +1,18 @@
--- S'notify v24 — a mix gets an address of its own, and a public link stops
+-- S'notify v24 - a mix gets an address of its own, and a public link stops
 -- handing out the whole stack.
--- Paste into Supabase → SQL Editor → Run. Idempotent; additive over v3–v23.
+-- Paste into Supabase -> SQL Editor -> Run. Idempotent; additive over v3-v23.
+--
+-- ASCII ONLY, deliberately, and please keep it that way. The dashboard is
+-- driven through the browser and the file gets there via the clipboard, which
+-- hands macOS pasteboard text to the page as MacRoman: every em dash, arrow and
+-- emoji arrives as mojibake and the whole buffer stops matching the file. It is
+-- caught by hashing the editor against the file before pressing Run, but the
+-- cheaper fix is to give it nothing to mangle.
 --
 -- Three requests, one migration, because they all land in the same two
 -- functions and shipping them apart would mean rewriting get_shared twice.
 --
--- CR-18 — A SINGLE MIX GETS ITS OWN TOKEN.
+-- CR-18 - A SINGLE MIX GETS ITS OWN TOKEN.
 --   v23 gave a token to an album, a song and the library, and left the single
 --   mix on the link it already had: ?b=<band>&s=<song>&v=<mix name>. v23 argued
 --   at length that a token beats a slug because an unshared thing should have
@@ -14,7 +21,7 @@
 --   seen a single link, is exactly the case that argument was against.
 --
 --   It also fixes something the UI had to apologise for. Because ?b&s&v does
---   not gate, the "band link" option for a mix could not point AT the mix — it
+--   not gate, the "band link" option for a mix could not point AT the mix - it
 --   dropped the version and opened the song, so a bandmate landed on whatever
 --   sits on top of the stack rather than on the mix that was sent. With an
 --   address of its own the mix can be shared as itself either way.
@@ -22,7 +29,7 @@
 --   ?b&s&v keeps working, served by get_shared_version, and is not deprecated
 --   here. Links already sent must not die for a change nobody asked them about.
 --
--- CR-19 — A PUBLIC LINK CARRIES ONE MIX PER SONG.
+-- CR-19 - A PUBLIC LINK CARRIES ONE MIX PER SONG.
 --   His words: "I'd like a public link to the entire album to only send the
 --   latest or most starred mix (if there is one). use upload date as a tie
 --   breaker if needed." The rule, in order: most stars wins; on a tie, or with
@@ -30,7 +37,7 @@
 --   by upload date.
 --
 --   "Latest" is read as STACK POSITION and not as the upload clock, and that is
---   a decision. Position is his — the player's LATEST badge sits on whatever he
+--   a decision. Position is his - the player's LATEST badge sits on whatever he
 --   dragged to the top, and reading "latest" off created_at would quietly
 --   disagree with the word on his own screen. Upload date stays where he put
 --   it, as the tie-break.
@@ -40,12 +47,12 @@
 --   the interface and from nobody else.
 --
 --   Applied to a public song and a public library link too, not only an album.
---   Otherwise the 🔗 on a song hands out the whole stack while the 🔗 on the
+--   Otherwise the link on a song hands out the whole stack while the link on the
 --   album next to it does not, which is the same inconsistency CR-16 was about.
 --   A logged-in bandmate is unaffected: get_library and get_project still carry
 --   everything, because the trim is about strangers, not about mixes.
 --
--- CR-20/21 — THE HAND-PICKED SHARE TOOL grows per-song choices and a picture.
+-- CR-20/21 - THE HAND-PICKED SHARE TOOL grows per-song choices and a picture.
 --   projects.picks says, per song, which mixes travel; projects.cover is a
 --   thumbnail. Both nullable, and a project with neither behaves exactly as it
 --   did, which is what keeps every ?p= link ever sent working.
@@ -63,7 +70,7 @@ create unique index if not exists versions_share_token
 -- picks: ordered, one entry per song in the project.
 --   [{"folder":"currency","mode":"auto"},
 --    {"folder":"snowmelt","mode":"all"},
---    {"folder":"tomorrow","mode":"pick","versions":["<version uuid>", …]}]
+--    {"folder":"tomorrow","mode":"pick","versions":["<version uuid>", ...]}]
 -- null means "no configuration", which is every project made before today, and
 -- those keep resolving through projects.songs exactly as they always have.
 -- songs[] is still written alongside picks rather than replaced by it: it is
@@ -99,18 +106,17 @@ $$;
 
 -- _song_json, with a filter on which versions travel.
 --
--- vids null  → every live version, byte for byte what _song_json returns
--- vids array → only those, in the stack's own order, and unknown ids are simply
+-- vids null  -> every live version, byte for byte what _song_json returns
+-- vids array -> only those, in the stack's own order, and unknown ids are simply
 --              absent rather than an error (a mix trashed after a link was
 --              configured must not break the link)
 --
--- The shape is otherwise _song_json's exactly, including the star names and the
--- peaks, because the client's normalize() and renderList() then need no new
--- branch: a public album renders through the code path a logged-in one does.
--- The one thing it adds is 'share_token', so the owner's UI can tell whether a
--- mix already has a public link without a second round trip. It is null for
--- everyone who is not the owner, because the only functions that pass it on are
--- password-checked ones.
+-- The shape is _song_json's exactly, including the star names and the peaks,
+-- because the client's normalize() and renderList() then need no new branch: a
+-- public album renders through the code path a logged-in one does. Nothing is
+-- added to it, share_token least of all - whether a mix has a public link is
+-- the owner's business and reaches the page through get_share, which takes a
+-- password.
 create or replace function _song_json_sel(s songs, vids uuid[]) returns jsonb
 language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
@@ -173,7 +179,7 @@ returns uuid[] language sql stable security definer set search_path = public as 
 $$;
 
 -- ---------------------------------------------------------------------------
--- Minting, revoking and reading a token — now for a mix as well (CR-18)
+-- Minting, revoking and reading a token - now for a mix as well (CR-18)
 -- ---------------------------------------------------------------------------
 -- kind='version' takes the version's uuid as its ref rather than a name. A name
 -- is not unique across a band, and the client has the id in hand at every call
@@ -273,10 +279,10 @@ end $$;
 -- Still no password, still nothing but the token, so a caller cannot ask about
 -- an item it does not already hold a link to. What changed:
 --
---   · a fourth branch, 'version', for a single mix
---   · album, song and library now carry ONE mix per song, chosen by
+--   - a fourth branch, 'version', for a single mix
+--   - album, song and library now carry ONE mix per song, chosen by
 --     _auto_version, unless the album's picks say otherwise
---   · the album branch honours picks, so a hand-configured link sends exactly
+--   - the album branch honours picks, so a hand-configured link sends exactly
 --     what was configured and the automatic rule never overrides a choice
 --
 -- Comments stay private in every case; no payload here carries them.
@@ -350,7 +356,7 @@ end $$;
 -- The gated album read, honouring picks (CR-20)
 -- ---------------------------------------------------------------------------
 -- A bandmate opening a hand-configured link sees what was configured, not the
--- whole stack. That is not a privacy rule — it is what "share these three mixes"
+-- whole stack. That is not a privacy rule - it is what "share these three mixes"
 -- means, and it would be strange for the same link to say different things
 -- depending on who opened it. The password still decides WHETHER you may see it.
 --
@@ -392,7 +398,7 @@ $$;
 -- two functions of the same name, one with defaults, is ambiguous to resolve
 -- and PostgREST would pick by argument names in a way that is not worth
 -- reasoning about. The new arguments default to null, so a cached older page
--- calling with five arguments still resolves and still works — it simply
+-- calling with five arguments still resolves and still works - it simply
 -- writes no picks and no cover.
 --
 -- coalesce on update, not assignment: passing null for cover means "leave it

@@ -74,7 +74,38 @@ When an item ships, append a dated line to `COMPLETED`. If the line it came from
 sits above the separator, say so in chat and leave it: striking it through would
 mean writing into his half.
 
-Item lines carry no marker for the site and player, and `#game` for the game.
+**The marker is `<`, and writing it back is a trap that has now drawn blood
+twice.** It was `#game` until 2026-08-14, when he wrote "You keep removing my
+hashtags on this list" into BUGS. He was right, and it was Claude: a hashtag
+typed on a phone is a real Apple Notes tag object, `get_note_content` does not
+return it, so every whole-note rewrite typed his half back without it. He chose
+`>` that day and moved to `<` within hours, growing it into a routing scheme:
+`<game`, `<snotify`, `<musicplayer`, `<songplayer`, `<snalbum`. Follow him; do
+not migrate it back.
+
+**Write `<` as `&lt;`, with the semicolon.** On 2026-08-14 a rewrite put bare
+`<` characters into the note and Apple Notes parsed `<snotify` as an unknown
+HTML tag and swallowed it — all thirteen of his markers vanished in one write.
+The note takes HTML, so `<` opens a tag whatever you meant by it. This is the
+same wound as the hashtags with a different weapon, and it is why the rule below
+matters more than it looks.
+
+**Reading and writing are not symmetric, which is the whole trap.**
+`get_note_content` returns entities with the semicolon *stripped* — `&lt;` comes
+back as `&lt`, `&gt;` as `&gt`, `&quot;` as `&quot`, `&` as `&amp`. So the
+reader's output is never safe to write back verbatim: it renders as the literal
+text `&lt`. Repair on the way in, escape on the way out:
+
+| In the note | Reader returns | Write back as |
+|---|---|---|
+| `<` | `&lt` | `&lt;` |
+| `>` | `&gt` | `>` (bare `>` is safe; it opens nothing) |
+| `&` | `&amp` | `&` |
+| `"` `“` `”` `’` | `&quot` or the character | the real curly character |
+
+**Always read the note back after writing it** and confirm his markers survived.
+Both losses were caught that way and only that way.
+
 Tags are `[bug]` and `[?]` only. Both legends live in the note and the ledger.
 
 **The outbox is the other direction.** His phone is too old for Remote Control,

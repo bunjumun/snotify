@@ -692,6 +692,58 @@
   .trash-item.pick.share .tico { flex: none; font-size: 15px; }
   .trash-item.pick.share.pub:hover { background: rgba(255,176,32,.10); border-color: var(--warn); }
   .trash-item.pick.share.gated:hover { background: var(--bg-hover); border-color: var(--accent); }
+  /* The same two rows are reused in the share builder, where they are a
+     persistent choice rather than a one-shot answer, so one of them stays lit. */
+  #pjVis .trash-item.pick.share.on.pub { background: rgba(255,176,32,.12); border-color: var(--warn); }
+  #pjVis .trash-item.pick.share.on.gated { background: var(--bg-hover); border-color: var(--accent); }
+
+  /* The share builder (CR-20/21). Everything here exists because the tool it
+     replaces asked its questions through confirm(), which can hold exactly one
+     sentence and two browser-named buttons — so "which mixes" and "does this
+     need the password" had nowhere to be asked at all. */
+  .pj-head { display: flex; gap: 14px; align-items: flex-start; }
+  .pj-headfields { flex: 1; min-width: 0; }
+  .pj-lbl { font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+            color: var(--text-mute); margin-bottom: 6px; display: block; }
+  #pjName { width: 100%; background: var(--field); border: 1px solid var(--line); color: var(--text);
+            border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; outline: none; }
+  #pjName:focus { border-color: var(--accent); background: var(--field-on); }
+  /* A dashed empty square rather than a blank one: it has to read as a slot
+     waiting for something, not as a picture that failed to load. */
+  .pj-thumb { position: relative; width: 92px; height: 92px; flex: none; border-radius: 12px;
+              border: 1px dashed var(--line); background: var(--bg-soft); cursor: pointer;
+              display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .pj-thumb:hover { border-color: var(--accent); }
+  .pj-thumb img { width: 100%; height: 100%; object-fit: cover; display: none; }
+  .pj-thumb.has img { display: block; }
+  .pj-thumb.has { border-style: solid; }
+  .pj-thumb.has span { display: none; }
+  .pj-thumb span { font-size: 11px; color: var(--text-mute); text-align: center; padding: 0 8px; line-height: 1.35; }
+  .pj-thumbacts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .modal .btn.sm { padding: 5px 10px; font-size: 12px; }
+  .pj-count { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text-mute); }
+  .pj-all { float: right; font-weight: 400; letter-spacing: 0; text-transform: none; }
+
+  /* One row per song, and the mix chooser only appears on a song that is
+     actually travelling — an unticked row has nothing to configure, and a
+     dropdown on it would invite a choice that gets thrown away. */
+  #pjList { max-height: 34vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
+  .pj-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .pj-row:last-child { border-bottom: none; }
+  .pj-row input[type=checkbox] { flex: none; width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+  .pj-row .pjt { flex: 1; min-width: 0; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .pj-row.off .pjt { color: var(--text-mute); }
+  .pj-row select { flex: none; max-width: 46%; background: var(--bg); border: 1px solid var(--line);
+                   color: var(--text-dim); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; }
+  .pj-row.off select { visibility: hidden; }
+
+  /* The share link's own picture, standing in for the note emoji. Same box as
+     .logo so the header never reflows between a link that has one and a link
+     that does not. */
+  .colcover { display: none; width: 46px; height: 46px; border-radius: 12px; flex: none;
+              object-fit: cover; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+  body.hascover header.app .logo { display: none; }
+  body.hascover .colcover { display: block; }
 
   /* Edit mode (pencil) — reorder / rename / stack / unstack / trash */
   #editBtn { display: none; }
@@ -838,6 +890,10 @@
   <div class="wrap">
     <header class="app">
       <div class="logo">🎵</div>
+      <!-- A share link's own picture (CR-21), which stands in for the note
+           emoji rather than sitting beside it: two icons in the corner of a
+           page that has exactly one subject reads as a bug. -->
+      <img class="colcover" id="collectionCover" alt="" />
       <div>
         <h1 id="collectionTitle">S'notify</h1>
         <p data-txt="music.tagline">Versioned player · stack mixes, comment, compare</p>
@@ -1065,6 +1121,61 @@
       <div class="hint" id="shareHint" style="margin-bottom:12px"></div>
       <div id="shareList"></div>
       <div class="actions"><button class="btn ghost" id="shareCancel">Cancel</button></div>
+    </div>
+  </div>
+
+  <!-- Build a share link (CR-20). What this replaces: a prompt() for the name,
+       a confirm() asking all-or-one-at-a-time, and then ONE confirm() PER SONG.
+       Ten songs meant eleven modal dialogs, in a fixed order, with no way back
+       to a song you had just answered wrong. It is one form now, and the things
+       that were unanswerable in a confirm() — which mix, and whether the link
+       needs the band password — are choices on the row they belong to. -->
+  <div class="modal-back" id="projModal">
+    <div class="modal" style="max-width:620px">
+      <h2>Make a share link</h2>
+      <div class="hint" style="margin-bottom:12px">Pick what travels, and how much of each stack goes with it.</div>
+
+      <div class="pj-head">
+        <div class="pj-thumb" id="pjThumb" title="Add a picture for this link">
+          <img id="pjThumbImg" alt="" /><span id="pjThumbHint">Add a picture</span>
+        </div>
+        <div class="pj-headfields">
+          <label class="pj-lbl" for="pjName">Name</label>
+          <input type="text" id="pjName" maxlength="80" placeholder="Album rough mixes" />
+          <div class="pj-thumbacts">
+            <button class="btn ghost sm" id="pjThumbFileBtn">Upload a picture</button>
+            <button class="btn ghost sm" id="pjThumbLibBtn">Use artwork from the site</button>
+            <button class="btn ghost sm" id="pjThumbClear" style="display:none">Remove</button>
+          </div>
+          <div class="status" id="pjThumbStatus" style="display:none"></div>
+        </div>
+      </div>
+      <input type="file" id="pjThumbFile" accept="image/*" style="display:none" />
+
+      <div class="pj-lbl" style="margin-top:14px">Who can open it</div>
+      <div id="pjVis">
+        <div class="trash-item pick share pub" data-vis="public" style="cursor:pointer">
+          <span class="tico">🌐</span>
+          <span class="tname">Public link</span>
+          <span class="tsub">No password. Anyone who opens it can listen. Comments stay hidden.</span>
+        </div>
+        <div class="trash-item pick share gated" data-vis="band" style="cursor:pointer">
+          <span class="tico">🔒</span>
+          <span class="tname">Band link</span>
+          <span class="tsub">Asks for the band password. Bandmates see the comments too.</span>
+        </div>
+      </div>
+
+      <div class="pj-lbl" style="margin-top:14px">
+        Songs <span class="pj-count" id="pjCount"></span>
+        <span class="pj-all"><span class="linky" id="pjAll">all</span> · <span class="linky" id="pjNone">none</span></span>
+      </div>
+      <div id="pjList"></div>
+
+      <div class="actions">
+        <button class="btn ghost" id="pjCancel">Cancel</button>
+        <button class="btn primary" id="pjGo">Make the link</button>
+      </div>
     </div>
   </div>
 
@@ -1408,7 +1519,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=27"></script>
+<script src="core.js?v=28"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -1818,12 +1929,28 @@ $('vol').value = curVolume;
 // mix version, the scrap of project metadata needed to show the right gate,
 // and band-name resolution. Library, projects, comments and every edit go
 // through functions that re-check the band password server-side.
-let singleMix = false;             // ungated one-mix view (?b&s&v, not logged in)
+// Ungated one-mix view. Two ways in now: the original ?b&s&v, and a ?t= token
+// minted for a single mix (CR-18). Everything downstream reads this rather than
+// the route, so both land in the same stripped-back player.
+let singleMix = false;
+
+// A share link's picture (CR-21). Stored as a bucket path when it was uploaded
+// and as an absolute URL when it was borrowed off a song's cover; publicUrl
+// passes an absolute URL straight through, so both arrive here as one case.
+// Named for what it sets and not after anything in core.js, deliberately — see
+// the note on mintShareUrl for what happens in this module when a name is
+// reused.
+function setCollectionCover(src){
+  const url = src ? publicUrl(src) : null;
+  $('collectionCover').src = url || '';
+  document.body.classList.toggle('hascover', !!url);
+}
 
 async function init() {
   if (!WaveSurfer) return; // engine failed to load; message already shown
   curProject = null; curBand = null; singleMix = false;
   document.body.classList.remove('shared', 'singlemix');
+  setCollectionCover(null);
   $('mixHint').style.display = 'none';
   try {
     // A public link (?t=…) resolves on the token alone: no band name, no
@@ -1839,7 +1966,18 @@ async function init() {
       songs = normalize(sh);
       applyTheme(curBand);
       document.body.classList.add('shared');
+      // A token for one mix (CR-18) wears the same face as the ?b&s&v link it
+      // replaces: one song, one mix, and the line offering bandmates the way
+      // in. The class is what hides the library chrome that has nothing to act
+      // on here, and the payload shape is identical either way — one song
+      // carrying one version — so nothing below needs to know which it is.
+      if (sh.kind === 'version'){
+        singleMix = true;
+        document.body.classList.add('singlemix');
+        $('mixHint').style.display = 'block';
+      }
       document.body.classList.remove('authed');
+      setCollectionCover(sh.cover);
       $('collectionTitle').textContent = sh.name || curBandTitle;
       document.title = sh.name || curBandTitle;
       commentCache = {};             // comments are for logged-in bandmates
@@ -1869,7 +2007,12 @@ async function init() {
     }
 
     // A single mix (?b&s&v) plays without login; everything else is gated.
-    if (!route.project && route.song && route.version && !isAuthed(band)){
+    // &g=1 opts that same address out of the ungated door (CR-18): it falls
+    // through to the gate below, then to the full library, and applyDeepLink
+    // lands it on the mix. That is what the share chooser's "band link" for a
+    // mix now copies, and it is why that option no longer has to drop the
+    // version and apologise for opening the song instead.
+    if (!route.project && route.song && route.version && !route.gated && !isAuthed(band)){
       const sv = await rpc('get_shared_version', { b: band, s: route.song, v: route.version });
       if (!sv) return showBadLink();
       singleMix = true;
@@ -1913,6 +2056,7 @@ async function init() {
       curProject = { slug: payload.slug, name: payload.name, band: payload.band,
                      songs: songs.map(s => s.folder || s.title) };
       document.body.classList.add('shared');
+      setCollectionCover(payload.cover);
       $('collectionTitle').textContent = payload.name;
       document.title = payload.name;
       if (!songs.length) return showBadLink('Nothing here yet', 'No mixes have been published to this project so far — check back soon.');
@@ -2770,41 +2914,52 @@ async function offerShare(el, kind, ref, bandLink){
     `Share ${what}`,
     'Two kinds of link. A public link can be switched off again later, and switching it off kills every link ever sent for this item.',
     { label: 'Public link',
-      sub: `Anyone who opens it can listen to ${what}. No password. Comments stay hidden.` },
+      sub: `Anyone who opens it can listen to ${what}. No password. Comments stay hidden, and each song travels as one mix — the most starred, or the latest.` },
     { label: 'Band link',
-      sub: 'Asks for the band password. Only bandmates get in, and they see comments.' });
+      sub: 'Asks for the band password. Only bandmates get in, and they see every mix and the comments.' });
   if (!choice) return;
   if (choice === 'band') return copyText(bandLink, el);
   try { copyText(await mintShareUrl(kind, ref), el); }
   catch (e) { alert(e.message || 'Could not make a public link.'); }
 }
 
-// A single mix, which until now was the one 🔗 that never asked (CR-16). It
-// looked like it needed no choice, because a version link was already the one
-// password-free thing on the site — but from the outside that just reads as
-// the button behaving differently here for no stated reason.
+// A single mix, which until CR-16 was the one 🔗 that never asked, and until
+// CR-18 was the one that could not honour either answer properly.
 //
-// Both options already exist, so nothing is minted and no token is involved:
-//   public  ?b&s&v  — unchanged, served by get_shared_version, the mix alone
-//   band    ?b&s    — the song, gated
-// The asymmetry worth admitting is in the second one: ?b&s&v does not gate
-// (a logged-in bandmate opening it lands in the full player), so the band
-// option has to drop the version and point at the song. That means it opens
-// on the stack's latest mix rather than on the one being shared. The row says
-// so rather than letting it be a surprise.
+// CR-16 wired the chooser up to the two links that already existed — public
+// ?b&s&v, band ?b&s — and had to admit two things in the row text. The public
+// link was built out of band, song and mix names, so it was guessable in a way
+// nothing else on the site has been since v23 went token-only. And the band
+// link had to DROP the version, because ?b&s&v does not gate, so a bandmate
+// landed on whatever sat on top of the stack rather than on the mix that was
+// sent. Both were real, and he asked for the fix rather than the apology.
+//
+// So now:
+//   public  ?t=<token>    minted, unguessable, one mix, no password (v24)
+//   band    ?b&s&v&g=1    gated, and it opens ON the mix (see parseRoute)
+//
+// ?b&s&v without the flag still works and still plays without a password.
+// Every link ever sent goes on doing exactly what it did — get_shared_version
+// is untouched — because a link already in someone's messages is not ours to
+// reinterpret. It is simply no longer what the button copies.
 async function offerVersionShare(el, song, ver){
-  const pubLink = shareUrl(song, ver);
+  const legacyLink = shareUrl(song, ver);
   if (!document.body.classList.contains('authed') ||
-      document.body.classList.contains('shared')) return copyText(pubLink, el);
+      document.body.classList.contains('shared')) return copyText(legacyLink, el);
   const choice = await askShareKind(
     `Share “${ver.name}”`,
-    `One mix of “${song.title}”.`,
+    `One mix of “${song.title}”. A public link can be switched off again later, and switching it off kills every link ever sent for this mix.`,
     { label: 'Public link',
       sub: `Anyone who opens it can hear “${ver.name}” on its own. No password, no other mixes, no comments.` },
     { label: 'Band link',
-      sub: `Asks for the band password and opens “${song.title}” with all its mixes, so it lands on the latest rather than on “${ver.name}”.` });
+      sub: `Asks for the band password, then opens “${song.title}” on “${ver.name}” with the rest of the stack there too.` });
   if (!choice) return;
-  copyText(choice === 'band' ? shareUrl(song) : pubLink, el);
+  if (choice === 'band') return copyText(shareUrl(song, ver) + '&g=1', el);
+  // A mix minted before v24 has no id in hand only if the payload is old; fall
+  // back to the link that has always worked rather than failing the copy.
+  if (!ver.id) return copyText(legacyLink, el);
+  try { copyText(await mintShareUrl('version', ver.id), el); }
+  catch (e) { alert(e.message || 'Could not make a public link.'); }
 }
 
 const songRef = (song) => song.folder || song.title;
@@ -5472,32 +5627,211 @@ $('trashClose').onclick = closeTrash;
 $('trashModal').addEventListener('click', (e) => { if (e.target === $('trashModal')) closeTrash(); });
 
 // ---------- Share a hand-picked set of songs as a project ----------
-// A project is an ordered list of songs behind an unguessable slug. Opening
-// one still asks for the band password — the slug decides *what* you see, not
-// *whether* you may see it.
+// A project is an ordered list of songs behind an unguessable slug. Since v24
+// it also carries WHICH MIXES of each song travel, whether it needs the band
+// password, and a picture.
+//
+// What this replaced, and why the replacement is a form rather than a tidier
+// sequence of dialogs: the old tool was prompt() for the name, confirm() for
+// all-or-one-at-a-time, and then one confirm() per song. Eleven modal dialogs
+// for ten songs, answered in a fixed order with no way back to one you had just
+// got wrong. More to the point, confirm() holds one sentence and two buttons the
+// browser names itself, so the two questions he actually wanted to answer —
+// which mix of this song, and does this link need the password — could not be
+// asked at all. They are not extra questions bolted on; they are the reason the
+// dialogs had to go.
 const projSlug = () => {
   const a = new Uint8Array(8); crypto.getRandomValues(a);
   const cs = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   return [...a].map(n => cs[n % cs.length]).join('');
 };
-$('projBtn').onclick = async () => {
-  if (!curBand || !isAuthed(curBand)) return;
-  const name = prompt('Name this share link (e.g. “Album rough mixes”):',
-                      curBandTitle + ' mixes');
-  if (name === null || !name.trim()) return;
-  const all = confirm(`Include all ${songs.length} songs in this view?\n\nOK = all · Cancel = choose them one at a time`);
-  const picked = [];
-  for (const s of songs){
+
+// Builder state. Keyed by song folder rather than by index, because the list
+// re-renders and an index survives that badly.
+//   on    is the song travelling
+//   mode  'auto' | 'all' | 'pick'
+//   vid   the chosen version id, only read when mode is 'pick'
+let pjPicks = new Map();
+let pjWho = 'band';          // the safer of the two, so a mis-click cannot publish
+let pjCover = null;          // bucket path or absolute URL, or null
+
+function pjRender(){
+  const n = [...pjPicks.values()].filter(p => p.on).length;
+  $('pjCount').textContent = n ? `· ${n} of ${songs.length}` : `· none of ${songs.length}`;
+  $('pjGo').disabled = !n;
+  $('pjList').innerHTML = songs.map(s => {
     const key = s.folder || s.title;
-    if (all || confirm(`Include “${s.title}”?`)) picked.push(key);
-  }
-  if (!picked.length) return alert('Pick at least one song.');
-  const slug = projSlug();
+    const p = pjPicks.get(key) || { on: false, mode: 'auto', vid: null };
+    const vs = s.versions || [];
+    // "Best mix" is the same rule the plain public 🔗 uses (CR-19), named on
+    // the option rather than explained somewhere else, so the default is
+    // legible without knowing the feature it comes from.
+    const opts = [
+      `<option value="auto"${p.mode === 'auto' ? ' selected' : ''}>Best mix — most starred, else latest</option>`,
+      `<option value="all"${p.mode === 'all' ? ' selected' : ''}>All ${vs.length} mix${vs.length === 1 ? '' : 'es'}</option>`,
+      ...vs.filter(v => v.id).map(v =>
+        `<option value="v:${esc(v.id)}"${p.mode === 'pick' && p.vid === v.id ? ' selected' : ''}>Only “${esc(v.name)}”</option>`),
+    ].join('');
+    return `<div class="pj-row ${p.on ? '' : 'off'}" data-key="${esc(key)}">
+        <input type="checkbox" ${p.on ? 'checked' : ''} />
+        <span class="pjt" title="${esc(s.title)}">${esc(s.title)}</span>
+        <select>${opts}</select>
+      </div>`;
+  }).join('');
+  $('pjList').querySelectorAll('.pj-row').forEach(row => {
+    const key = row.dataset.key;
+    const box = row.querySelector('input');
+    const set = (on) => {
+      const p = pjPicks.get(key) || { mode: 'auto', vid: null };
+      pjPicks.set(key, { ...p, on });
+      pjRender();
+    };
+    box.onchange = () => set(box.checked);
+    row.querySelector('.pjt').onclick = () => set(!box.checked);
+    row.querySelector('select').onchange = (e) => {
+      const v = e.target.value;
+      const p = pjPicks.get(key) || { on: true, mode: 'auto', vid: null };
+      pjPicks.set(key, v.startsWith('v:') ? { ...p, on: true, mode: 'pick', vid: v.slice(2) }
+                                          : { ...p, on: true, mode: v, vid: null });
+      pjRender();
+    };
+  });
+}
+
+function pjSetVis(v){
+  pjWho = v;
+  $('pjVis').querySelectorAll('.pick').forEach(el => el.classList.toggle('on', el.dataset.vis === v));
+}
+function pjSetCover(src){
+  pjCover = src || null;
+  $('pjThumbImg').src = pjCover ? publicUrl(pjCover) : '';
+  $('pjThumb').classList.toggle('has', !!pjCover);
+  $('pjThumbClear').style.display = pjCover ? '' : 'none';
+}
+function pjStatus(msg, cls){
+  const el = $('pjThumbStatus');
+  el.style.display = msg ? '' : 'none';
+  el.className = 'status' + (cls ? ' ' + cls : '');
+  el.textContent = msg || '';
+}
+
+function openShareBuilder(){
+  if (!curBand || !isAuthed(curBand)) return;
+  if (!songs.length) return alert('Nothing in this view to share yet.');
+  pjPicks = new Map(songs.map(s => [s.folder || s.title, { on: true, mode: 'auto', vid: null }]));
+  $('pjName').value = (curProject && curProject.name) || (curBandTitle + ' mixes');
+  pjSetVis('band'); pjSetCover(null); pjStatus('');
+  pjRender();
+  $('projModal').classList.add('open');
+  setTimeout(() => { $('pjName').focus(); $('pjName').select(); }, 30);
+}
+const closeShareBuilder = () => $('projModal').classList.remove('open');
+
+$('projBtn').onclick = openShareBuilder;
+$('pjCancel').onclick = closeShareBuilder;
+$('projModal').addEventListener('click', (e) => { if (e.target === $('projModal')) closeShareBuilder(); });
+$('pjVis').querySelectorAll('.pick').forEach(el => el.onclick = () => pjSetVis(el.dataset.vis));
+$('pjAll').onclick  = () => { pjPicks.forEach((p, k) => pjPicks.set(k, { ...p, on: true  })); pjRender(); };
+$('pjNone').onclick = () => { pjPicks.forEach((p, k) => pjPicks.set(k, { ...p, on: false })); pjRender(); };
+$('pjThumbClear').onclick = () => { pjSetCover(null); pjStatus(''); };
+
+// The picture, route one: something the site already holds. Cheapest possible
+// path — every cover in this view is already a resolved URL on the song object,
+// so this costs no request and no storage.
+$('pjThumbLibBtn').onclick = async () => {
+  // Only songs that HAVE a cover are offered: an empty row here would be a
+  // promise the picker cannot keep. The song-picker modal is borrowed rather
+  // than a third one grown, because the shape is identical — a list of rows,
+  // one answer, Escape cancels.
+  const withArt = songs.filter(s => s.cover);
+  if (!withArt.length) return pjStatus('No artwork on any song in this view yet. Upload a picture instead.', 'err');
+  $('pickTitle').textContent = 'Use artwork from';
+  $('pickHint').textContent = 'Whichever cover you pick becomes this link’s picture.';
+  $('pickList').innerHTML = withArt.map(s => `
+    <div class="trash-item pick" data-key="${esc(s.folder || s.title)}" style="cursor:pointer">
+      <img src="${esc(s.cover)}" alt="" style="width:26px;height:26px;border-radius:5px;object-fit:cover;flex:none" />
+      <span class="tname">${esc(s.title)}</span>
+    </div>`).join('');
+  const key = await new Promise((resolve) => {
+    const close = (v) => { $('pickModal').classList.remove('open'); pickCloser = null; resolve(v); };
+    pickCloser = close;
+    $('pickList').querySelectorAll('.pick').forEach(el => el.onclick = () => close(el.dataset.key));
+    $('pickCancel').onclick = () => close(null);
+    $('pickModal').onclick = (e) => { if (e.target === $('pickModal')) close(null); };
+    $('pickModal').classList.add('open');
+  });
+  if (!key) return;
+  const s = songs.find(x => (x.folder || x.title) === key);
+  if (s && s.cover){ pjSetCover(s.cover); pjStatus(''); }
+};
+
+// Route two: a file off the disk. It goes the way every other upload here goes
+// — into the inbox bucket with the band password in the object path, then the
+// import-inbox Edge Function moves it into permanent storage with the service
+// role and hands the path back. kind:'img' is that function's ref branch with
+// an image filter instead of an audio one; it makes no song and no version row.
+$('pjThumbFileBtn').onclick = () => $('pjThumbFile').click();
+$('pjThumb').onclick = () => { if (!pjCover) $('pjThumbFile').click(); };
+$('pjThumbFile').addEventListener('change', async () => {
+  const f = $('pjThumbFile').files[0];
+  if (!f) return;
+  const pass = bandPass(curBand);
+  if (!pass){ showGate(curBand, false); return; }
+  pjStatus(`Uploading ${f.name}…`);
   try {
-    await libRpc('upsert_project', { proj: slug, proj_name: name.trim(), folders: picked });
-    await copyText(pageBase() + '?p=' + encodeURIComponent(slug), $('projBtn'));
-    alert(`“${name.trim()}” created — the link is on your clipboard.`);
-  } catch (err){ alert('Could not create the link: ' + (err.message || err)); }
+    if (f.size > 10 * 1024 * 1024) throw new Error('That picture is over the 10 MB limit.');
+    // One reserved folder for every share-link picture in the band, rather than
+    // a folder per link: a link can be remade or deleted, and orphaned images
+    // under dead slugs would be unreachable rubbish nobody ever sweeps up.
+    const enc = (...seg) => seg.map(encodeURIComponent).join('/');
+    const upName = Date.now().toString(36) + '-' + f.name.replace(/[^\w.\- ]+/g, '');
+    const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${enc(curBand, pass, '_shares', upName)}`, {
+      method: 'POST',
+      headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+                 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'true' },
+      body: f });
+    if (!r.ok) throw new Error(`Upload failed (${r.status})`);
+    const res = await edgeFn('import-inbox', { band: curBand, pass, song: '_shares', kind: 'img' });
+    pjSetCover(res.ref);
+    pjStatus('');
+  } catch (err){
+    pjStatus(err.message || 'Could not upload that.', 'err');
+  }
+  $('pjThumbFile').value = '';
+});
+
+$('pjGo').onclick = async () => {
+  const name = $('pjName').value.trim();
+  if (!name) { $('pjName').focus(); return pjStatus('Give the link a name first.', 'err'); }
+  // Song order follows the view, not the order they were ticked: the list on
+  // screen is the album's order and the link should open the way the album reads.
+  const folders = songs.map(s => s.folder || s.title).filter(k => (pjPicks.get(k) || {}).on);
+  if (!folders.length) return;
+  const picks = folders.map(k => {
+    const p = pjPicks.get(k);
+    return p.mode === 'pick' ? { folder: k, mode: 'pick', versions: [p.vid] }
+                             : { folder: k, mode: p.mode };
+  });
+  const slug = projSlug();
+  $('pjGo').disabled = true;
+  pjStatus('Making the link…');
+  try {
+    await libRpc('upsert_project', { proj: slug, proj_name: name, folders,
+                                     picks, cover: pjCover });
+    // Public means a token, not a public ?p= — same argument as v23: the slug
+    // is what the link is made of, and a thing that has not been made public
+    // should have no public address at all.
+    const link = pjWho === 'public' ? await mintShareUrl('project', slug)
+                                    : pageBase() + '?p=' + encodeURIComponent(slug);
+    await copyText(link, $('projBtn'));
+    closeShareBuilder();
+    alert(`“${name}” is on your clipboard.\n\n${pjWho === 'public'
+      ? 'Anyone who opens it can listen — no password.'
+      : 'Whoever opens it will be asked for the band password.'}`);
+  } catch (err){
+    pjStatus('Could not make the link: ' + (err.message || err), 'err');
+  }
+  $('pjGo').disabled = false;
 };
 
 // ---------- Keyboard ----------
@@ -5506,7 +5840,11 @@ document.addEventListener('keydown', (e) => {
     closeAdd(); closeTrash(); closeReference();
     if (!document.body.classList.contains('locked')) $('gateModal').classList.remove('open');
     if (shareCloser) shareCloser(null);
+    // The artwork picker opens ON TOP of the builder, so it has to be the one
+    // Escape takes first: closing the builder out from under it would strand an
+    // open modal over a page with nothing behind it.
     else if (pickCloser) pickCloser(null);
+    else if ($('projModal').classList.contains('open')) closeShareBuilder();
     else if (editing) setEditing(false);
     else if (profiling) closeProfile();
     return;

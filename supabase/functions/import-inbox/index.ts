@@ -4,13 +4,28 @@
 // 60-second polling importer). Deploy with:
 //   supabase functions deploy import-inbox --no-verify-jwt
 //
-// Request:  POST { band, pass, song, kind? }   kind: 'audio' (default) | 'art' | 'ref'
+// Request:  POST { band, pass, song, kind? }
+//   kind: 'audio' (default) | 'art' | 'ref' | 'img'
 // Response: { ok: true, imported: n }  |  { ok: true, ref: '<path>' }  |  { error }
 //
 // 'art' is S'nart: the same import, pointed at images. A revision of a piece
 // of art stacks exactly like a new mix of a song — same songs/versions rows,
 // distinguished only by songs.kind — so the only thing that varies here is
 // which file extensions count and what MIME type they go up as.
+//
+// 'ref' and 'img' are the two PASSTHROUGH kinds: move one file into permanent
+// storage, hand the path back, write no rows at all. They are the same code and
+// differ only in what they will accept and where it lands:
+//
+//   ref   audio   <band>/<song>/_ref/<file>     what a mix was chasing
+//   img   images  <band>/<song>/_img/<file>     a picture with no song of its own
+//
+// 'img' exists for share-link thumbnails (CR-21), which are the first image on
+// this site that belongs to no piece and no song. It is called with the
+// reserved folder '_shares', giving <band>/_shares/_img/<file>. It could not
+// reuse 'ref' because 'ref' filters on AUDIO_RE and would reject every picture,
+// and it must not reuse 'art' because 'art' creates a songs row and the
+// thumbnail would appear in Sn'art as a piece nobody made.
 
 const SUPA_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -52,13 +67,15 @@ Deno.serve(async (req) => {
   try {
     const { band, pass, song, kind } = await req.json();
     if (!band || !pass || !song) return json({ error: 'band, pass, song required' }, 400);
-    const k = kind === 'art' ? 'art' : kind === 'ref' ? 'ref' : 'audio';
-    const MEDIA_RE = k === 'art' ? IMAGE_RE : AUDIO_RE;
+    const k = kind === 'art' ? 'art' : kind === 'ref' ? 'ref'
+            : kind === 'img' ? 'img' : 'audio';
+    const MEDIA_RE = (k === 'art' || k === 'img') ? IMAGE_RE : AUDIO_RE;
 
     // A reference is not a version of anything: it is the track this song is
     // chasing. Move the one file into the permanent bucket under the song's
     // own _ref/ folder and hand the path back — no songs or versions rows.
-    if (k === 'ref') {
+    // 'img' is the same move for a picture that belongs to no song at all.
+    if (k === 'ref' || k === 'img') {
       const okRef = await api('/rest/v1/rpc/band_pass_ok', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ b: band, p: pass }),
@@ -70,11 +87,14 @@ Deno.serve(async (req) => {
         body: JSON.stringify({ prefix: `${bb}/${pass}/${song}`, limit: 20 }),
       });
       const names = ((await listed.json()) as { name: string }[])
-        .map((e) => e.name).filter((n) => n && AUDIO_RE.test(n));
-      if (!names.length) return json({ error: 'no audio found to use as a reference' }, 400);
+        .map((e) => e.name).filter((n) => n && MEDIA_RE.test(n));
+      if (!names.length) {
+        return json({ error: k === 'img' ? 'no image found to use as a picture'
+                                         : 'no audio found to use as a reference' }, 400);
+      }
       const file = names[0];
       const from = `${bb}/${pass}/${song}/${file}`;
-      const to = `${bb}/${song}/_ref/${file}`;
+      const to = `${bb}/${song}/${k === 'img' ? '_img' : '_ref'}/${file}`;
       const ext = (file.match(/\.[^.]+$/)?.[0] ?? '').toLowerCase();
       try {
         await api('/storage/v1/object/move', {

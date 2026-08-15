@@ -437,7 +437,15 @@ function parseRoute(){
   // token: a public share link (?t=…). It carries no band, song or album name
   // on purpose — the token IS the whole address, so an unshared item has no
   // public identity to guess at. See get_shared() in supabase/schema-v23.sql.
-  const r = { band: null, album: null, project: null, song: null, version: null, token: null };
+  // gated (&g=1): the same ?b&s&v address, but asking for the band password
+  // first and then opening the WHOLE library on that mix. Without it, ?b&s&v is
+  // the one passwordless route this site has always had, which is exactly why
+  // the mix share chooser could not offer it as the "band" option — see
+  // offerVersionShare in music.html. The flag is not a security boundary and is
+  // not treated as one: it only says which of two existing doors to use, and
+  // the ungated door stays open on the same URL without it.
+  const r = { band: null, album: null, project: null, song: null, version: null,
+              token: null, gated: false };
   for (let i = 0; i + 1 < seg.length; i += 2){
     if (seg[i] === 'p') r.project = seg[i+1];
     else if (seg[i] === 's') r.song = seg[i+1];
@@ -446,7 +454,7 @@ function parseRoute(){
   if (!r.project && !r.song){
     const q = new URLSearchParams(location.search);
     r.band = q.get('b'); r.project = q.get('p'); r.song = q.get('s'); r.version = q.get('v');
-    r.album = q.get('al'); r.token = q.get('t');
+    r.album = q.get('al'); r.token = q.get('t'); r.gated = q.get('g') === '1';
   }
   return r;
 }

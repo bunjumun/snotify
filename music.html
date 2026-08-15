@@ -2676,7 +2676,17 @@ async function copyText(text, el){
 // Now the choice is asked outright. A public link is opt-in per item and keyed
 // by a token, so an unshared album has no public address at all — see the
 // argument at the top of supabase/schema-v23.sql.
-async function publicUrl(kind, ref){
+// Named mintShareUrl, and the name is load-bearing (CR-17). This was called
+// publicUrl when CR-13 shipped, which is also the name of core.js's helper
+// that turns a stored object path into a fetchable storage URL. core.js is a
+// classic script, this is a module, and a module-level declaration shadows the
+// global for the WHOLE module — so every `publicUrl(v.src)` above quietly
+// started calling this instead, returning a Promise where a string was wanted.
+// Covers, art thumbnails and audio srcs all became "[object Promise]". It threw
+// nothing and logged nothing, because a Promise is a perfectly good value right
+// up until something tries to fetch it. Do not name anything in this module
+// after a core.js helper.
+async function mintShareUrl(kind, ref){
   const tok = await libRpc('set_share', { kind, ref });
   return pageBase() + '?t=' + encodeURIComponent(tok);
 }
@@ -2693,7 +2703,7 @@ async function offerShare(el, kind, ref, bandLink){
     'Cancel — band link, which asks for the band password.\n\n' +
     'A public link can be switched off again later.');
   if (!wantPublic) return copyText(bandLink, el);
-  try { copyText(await publicUrl(kind, ref), el); }
+  try { copyText(await mintShareUrl(kind, ref), el); }
   catch (e) { alert(e.message || 'Could not make a public link.'); }
 }
 

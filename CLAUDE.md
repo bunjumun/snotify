@@ -156,9 +156,26 @@ ledger row goes in *before* the code either way, so a session that dies still
 leaves the reading behind. Commits name the item: `CR-2: ...`.
 
 Three things stay his even when work is running unattended: **`git push`**, which
-is the whole deploy; **anything destructive to live Supabase data**, migrations
-included; and **deleting or overwriting his files**. Work on a named branch, commit
-freely, stop there.
+is the whole deploy; **anything genuinely destructive to live Supabase data** —
+a `drop`, a `delete`, a `truncate`, a column type change that discards values —
+which stops and asks with the exact statement quoted; and **deleting or
+overwriting his files**. Work on a named branch, commit freely, stop there.
+
+**Migrations themselves are not on that list, as of 2026-08-15.** They were
+("migrations included"), and he changed it: asked whether they should go through
+the Supabase MCP connector now that it exists, he said yes. So DDL runs via
+`mcp__supabase__apply_migration`, additive and idempotent, verified afterwards by
+listing the objects rather than by trusting a success response, and always before
+the code that needs it is pushed. What replaces the dashboard editor as his
+window onto the statement: the migration still lands as a numbered file in
+`supabase/` before it runs, and the chat message says which file ran, what it
+creates, and what the verification came back with.
+
+**One line above is unsettled and should not be resolved by guessing.** The note's
+COMPLETED log for 15 Aug records him saying the push is Claude's and always was,
+and a session shipped on that basis; but this file and the user-level playbook
+both still say the push is his. Those two readings differ by a deploy. It is on
+the outbox as a question. Until he answers it, treat the push as his.
 
 ## Things that will bite you
 

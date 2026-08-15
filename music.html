@@ -677,6 +677,22 @@
   .trash-item.pick.danger .tname { color: #ff6b6b; }
   .trash-item.pick.danger:hover { background: rgba(255,107,107,.1); }
 
+  /* The share chooser. Two rows, and each one has to say what it does before
+     it is clicked, because the consequence differs: one of them puts a thing
+     on the open internet. A pick row is a single line by design, so these get
+     a second line under the name — the row stops being a label and becomes
+     the whole explanation, which is what confirm() could never manage with
+     two buttons the browser insisted on calling OK and Cancel. */
+  .trash-item.pick.share { align-items: flex-start; border: 1px solid var(--line); margin-bottom: 8px; }
+  .trash-item.pick.share .tname { min-width: 0; }
+  .trash-item.pick.share .tsub {
+    flex: 1 0 100%; font-weight: 400; font-size: 12px;
+    color: var(--text-mute); line-height: 1.45; margin-top: 2px;
+  }
+  .trash-item.pick.share .tico { flex: none; font-size: 15px; }
+  .trash-item.pick.share.pub:hover { background: rgba(255,176,32,.10); border-color: var(--warn); }
+  .trash-item.pick.share.gated:hover { background: var(--bg-hover); border-color: var(--accent); }
+
   /* Edit mode (pencil) — reorder / rename / stack / unstack / trash */
   #editBtn { display: none; }
   body.authed:not(.shared):not(.singlemix) #editBtn { display: inline-flex; }
@@ -1037,6 +1053,18 @@
       <div class="hint" id="delHint" style="margin-bottom:10px"></div>
       <div id="delList"></div>
       <div class="actions"><button class="btn ghost" id="delCancel">Cancel</button></div>
+    </div>
+  </div>
+
+  <!-- Sharing used to ask through confirm(), which only ever offers OK and
+       Cancel: the words that mattered had to sit in the body text while the
+       buttons said something else. This asks with the words on the choices. -->
+  <div class="modal-back" id="shareModal">
+    <div class="modal" style="max-width:440px">
+      <h2 id="shareTitle">Copy a link</h2>
+      <div class="hint" id="shareHint" style="margin-bottom:12px"></div>
+      <div id="shareList"></div>
+      <div class="actions"><button class="btn ghost" id="shareCancel">Cancel</button></div>
     </div>
   </div>
 
@@ -2691,20 +2719,92 @@ async function mintShareUrl(kind, ref){
   return pageBase() + '?t=' + encodeURIComponent(tok);
 }
 
+// The chooser (CR-16). It replaced a confirm(), and the reason is that
+// confirm() cannot be made to say this. It gives you two buttons the browser
+// names — OK and Cancel — so "OK means public" has to be asserted in the body
+// text and then held in your head while you look at a button saying OK. The
+// two outcomes here are not symmetrical enough for that: one of them puts a
+// recording on the open internet and the other does not. So the words go on
+// the choices, each with the consequence under it, and the public one is
+// marked as the heavier of the two the way the delete chooser marks its own.
+//
+// Resolves 'public', 'band', or null for cancelled. Escape and a click on the
+// backdrop both cancel, matching every other modal on this page.
+let shareCloser = null;
+function askShareKind(title, hint, pub, gated){
+  return new Promise((resolve) => {
+    $('shareTitle').textContent = title;
+    $('shareHint').textContent = hint || '';
+    $('shareList').innerHTML = `
+      <div class="trash-item pick share pub" data-kind="public" style="cursor:pointer">
+        <span class="tico">🌐</span>
+        <span class="tname">${esc(pub.label)}</span>
+        <span class="tsub">${esc(pub.sub)}</span>
+      </div>
+      <div class="trash-item pick share gated" data-kind="band" style="cursor:pointer">
+        <span class="tico">🔒</span>
+        <span class="tname">${esc(gated.label)}</span>
+        <span class="tsub">${esc(gated.sub)}</span>
+      </div>`;
+    const close = (val) => {
+      $('shareModal').classList.remove('open');
+      shareCloser = null;
+      resolve(val);
+    };
+    shareCloser = close;
+    $('shareList').querySelectorAll('.pick').forEach(el => el.onclick = () => close(el.dataset.kind));
+    $('shareCancel').onclick = () => close(null);
+    $('shareModal').onclick = (e) => { if (e.target === $('shareModal')) close(null); };
+    $('shareModal').classList.add('open');
+  });
+}
+
 // The token is minted once and reused after, so choosing "public" twice cannot
 // quietly invalidate a link already sent. Only an owner is offered the choice:
 // someone holding a public link must not be able to mint more of them.
 async function offerShare(el, kind, ref, bandLink){
   if (!document.body.classList.contains('authed') ||
       document.body.classList.contains('shared')) return copyText(bandLink, el);
-  const wantPublic = confirm(
-    'Copy a PUBLIC link?\n\n' +
-    'OK — anyone with the link can listen. No password.\n' +
-    'Cancel — band link, which asks for the band password.\n\n' +
-    'A public link can be switched off again later.');
-  if (!wantPublic) return copyText(bandLink, el);
+  const what = kind === 'project' ? 'this album' : kind === 'song' ? 'this song' : 'the library';
+  const choice = await askShareKind(
+    `Share ${what}`,
+    'Two kinds of link. A public link can be switched off again later, and switching it off kills every link ever sent for this item.',
+    { label: 'Public link',
+      sub: `Anyone who opens it can listen to ${what}. No password. Comments stay hidden.` },
+    { label: 'Band link',
+      sub: 'Asks for the band password. Only bandmates get in, and they see comments.' });
+  if (!choice) return;
+  if (choice === 'band') return copyText(bandLink, el);
   try { copyText(await mintShareUrl(kind, ref), el); }
   catch (e) { alert(e.message || 'Could not make a public link.'); }
+}
+
+// A single mix, which until now was the one 🔗 that never asked (CR-16). It
+// looked like it needed no choice, because a version link was already the one
+// password-free thing on the site — but from the outside that just reads as
+// the button behaving differently here for no stated reason.
+//
+// Both options already exist, so nothing is minted and no token is involved:
+//   public  ?b&s&v  — unchanged, served by get_shared_version, the mix alone
+//   band    ?b&s    — the song, gated
+// The asymmetry worth admitting is in the second one: ?b&s&v does not gate
+// (a logged-in bandmate opening it lands in the full player), so the band
+// option has to drop the version and point at the song. That means it opens
+// on the stack's latest mix rather than on the one being shared. The row says
+// so rather than letting it be a surprise.
+async function offerVersionShare(el, song, ver){
+  const pubLink = shareUrl(song, ver);
+  if (!document.body.classList.contains('authed') ||
+      document.body.classList.contains('shared')) return copyText(pubLink, el);
+  const choice = await askShareKind(
+    `Share “${ver.name}”`,
+    `One mix of “${song.title}”.`,
+    { label: 'Public link',
+      sub: `Anyone who opens it can hear “${ver.name}” on its own. No password, no other mixes, no comments.` },
+    { label: 'Band link',
+      sub: `Asks for the band password and opens “${song.title}” with all its mixes, so it lands on the latest rather than on “${ver.name}”.` });
+  if (!choice) return;
+  copyText(choice === 'band' ? shareUrl(song) : pubLink, el);
 }
 
 const songRef = (song) => song.folder || song.title;
@@ -2754,7 +2854,7 @@ function renderVersions(){
       <span class="cpy vref ${v.reference ? 'on' : ''}" data-act="ref"
             title="${v.reference ? `What “${esc(v.name)}” was aiming at${v.reference.title ? ': ' + esc(v.reference.title) : ''}` : `Attach what “${esc(v.name)}” was aiming at — its own reference, separate from the song's`}"
             >🎧</span>
-      <span class="cpy" data-act="share" title="Copy share link to ${esc(v.name)} (opens the player)">🔗</span>
+      <span class="cpy" data-act="share" title="Share ${esc(v.name)}: asks whether you want a public or a band link">🔗</span>
       <span class="cpy" data-act="audio" title="Copy direct link to the audio file">🎵</span>
       <a class="dl" href="${esc(v.src)}" download="${esc(activeSong.title)} — ${esc(v.name)}${esc(extOf(v.src))}" title="Download ${esc(v.name)}">⬇</a>`}
     </div>`).join('');
@@ -2771,7 +2871,8 @@ function renderVersions(){
       // somewhere else — and closes the menu, which would otherwise sit on top.
       if (b.dataset.act === 'ref'){ toggleVerMenu(false); openReference({ scope: 'version', vi }); return; }
       const v = activeSong.versions[vi];
-      copyText(b.dataset.act === 'audio' ? audioUrl(v) : shareUrl(activeSong, v), b);
+      if (b.dataset.act === 'audio'){ copyText(audioUrl(v), b); return; }
+      offerVersionShare(b, activeSong, v);
     }));
     el.addEventListener('click', (e) => {
       const vi = Number(el.dataset.vi);
@@ -4680,7 +4781,7 @@ function renderProfileVersions(){
       <div class="pvacts">
         ${owner ? `<span class="pv" data-act="rename" title="Rename ${esc(v.name)}">✏️</span>` : ''}
         <span class="pv" data-act="play" title="Play ${esc(v.name)} from the top">▶</span>
-        <span class="pv" data-act="share" title="Copy a link to ${esc(v.name)} — plays without a password">🔗</span>
+        <span class="pv" data-act="share" title="Share ${esc(v.name)}: asks whether you want a public or a band link">🔗</span>
         <span class="pv" data-act="audio" title="Copy a direct link to the audio file">🎵</span>
         <a class="pv" href="${esc(v.src)}" download="${esc(s.title)} — ${esc(v.name)}${esc(extOf(v.src))}"
            title="Download ${esc(v.name)}">⬇</a>
@@ -4784,7 +4885,7 @@ $('pVers').addEventListener('click', (e) => {
     deleteFlow(activeSong, activeSong.versions.length > 1 ? vi : undefined);
     return;
   }
-  if (act && act.dataset.act === 'share'){ copyText(shareUrl(activeSong, v), act); return; }
+  if (act && act.dataset.act === 'share'){ offerVersionShare(act, activeSong, v); return; }
   if (act && act.dataset.act === 'audio'){ copyText(audioUrl(v), act); return; }
   if (e.target.closest('a.pv')) return;                    // the download link
   if (vi !== activeVer) switchVersion(vi);
@@ -5029,7 +5130,7 @@ function renderVlog(){
         ${vi===0 ? '<span class="vlog-latest">LATEST</span>' : ''}
         ${ver.date ? `<span class="vlog-date">${esc(ver.date)}</span>` : ''}
       </div>
-      <span class="vlog-copy" data-vi="${vi}" title="Copy share link to ${esc(ver.name)}">🔗</span>
+      <span class="vlog-copy" data-vi="${vi}" title="Share ${esc(ver.name)}: asks whether you want a public or a band link">🔗</span>
       ${bullets.length
         ? `<ul class="vlog-bullets">${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>`
         : `<div class="vlog-none">No changelog for this version.</div>`}
@@ -5040,7 +5141,7 @@ function renderVlog(){
     el.querySelector('.vlog-copy').addEventListener('click', (e) => {
       e.stopPropagation();
       const ver = activeSong.versions[Number(el.dataset.vi)];
-      copyText(shareUrl(activeSong, ver), e.target);
+      offerVersionShare(e.target, activeSong, ver);
     });
   });
 }
@@ -5404,7 +5505,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape'){
     closeAdd(); closeTrash(); closeReference();
     if (!document.body.classList.contains('locked')) $('gateModal').classList.remove('open');
-    if (pickCloser) pickCloser(null);
+    if (shareCloser) shareCloser(null);
+    else if (pickCloser) pickCloser(null);
     else if (editing) setEditing(false);
     else if (profiling) closeProfile();
     return;

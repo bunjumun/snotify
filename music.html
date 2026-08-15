@@ -1798,6 +1798,29 @@ async function init() {
   document.body.classList.remove('shared', 'singlemix');
   $('mixHint').style.display = 'none';
   try {
+    // A public link (?t=…) resolves on the token alone: no band name, no
+    // password, and nothing in the URL the recipient could have guessed at.
+    // It renders through the same list code a logged-in view uses, so a
+    // shared album looks like the album — minus comments, which stay for
+    // bandmates. Checked before anything else because a token link carries
+    // none of the other parameters the branches below reason about.
+    if (route.token){
+      const sh = await rpc('get_shared', { tok: route.token });
+      if (!sh) return showBadLink();
+      curBand = sh.band; curBandTitle = sh.band_title || sh.band;
+      songs = normalize(sh);
+      applyTheme(curBand);
+      document.body.classList.add('shared');
+      document.body.classList.remove('authed');
+      $('collectionTitle').textContent = sh.name || curBandTitle;
+      document.title = sh.name || curBandTitle;
+      commentCache = {};             // comments are for logged-in bandmates
+      if (!songs.length) return showBadLink('Nothing here yet',
+        'This link works, but whatever it points at has no mixes in it yet.');
+      unlockView(); renderList(); applyDeepLink();
+      return;
+    }
+
     let band = route.band && bandSlugOf(route.band);
     let projMeta = null;
 
@@ -2035,7 +2058,7 @@ function renderList() {
       const vp = e.target.closest('.vpick');
       if (vp){ e.stopPropagation(); openRowVersions(i, vp); return; }
       const cp = e.target.closest('.scpy');
-      if (cp){ copyText(shareUrl(songs[i]), cp); return; }
+      if (cp){ offerShare(cp, 'song', songRef(songs[i]), shareUrl(songs[i])); return; }
       // The title and ▤ are the same door, the way a Bandcamp track listing
       // works: the row plays the song, the title opens the song's own page —
       // which opens paused, so it is also "open it without playing".
@@ -2644,12 +2667,45 @@ async function copyText(text, el){
   if (el){ const old = el.textContent; el.textContent = '✓'; setTimeout(() => { el.textContent = old; }, 900); }
 }
 
+// ---------- Public links (CR-13) ----------
+// Until v23 a share button minted two different kinds of link without saying
+// so: with a version in hand it produced something anyone could open, without
+// one it produced a password gate. Nothing in the UI distinguished them, which
+// is what "no ability to share link with no password login" was about.
+//
+// Now the choice is asked outright. A public link is opt-in per item and keyed
+// by a token, so an unshared album has no public address at all — see the
+// argument at the top of supabase/schema-v23.sql.
+async function publicUrl(kind, ref){
+  const tok = await libRpc('set_share', { kind, ref });
+  return pageBase() + '?t=' + encodeURIComponent(tok);
+}
+
+// The token is minted once and reused after, so choosing "public" twice cannot
+// quietly invalidate a link already sent. Only an owner is offered the choice:
+// someone holding a public link must not be able to mint more of them.
+async function offerShare(el, kind, ref, bandLink){
+  if (!document.body.classList.contains('authed') ||
+      document.body.classList.contains('shared')) return copyText(bandLink, el);
+  const wantPublic = confirm(
+    'Copy a PUBLIC link?\n\n' +
+    'OK — anyone with the link can listen. No password.\n' +
+    'Cancel — band link, which asks for the band password.\n\n' +
+    'A public link can be switched off again later.');
+  if (!wantPublic) return copyText(bandLink, el);
+  try { copyText(await publicUrl(kind, ref), el); }
+  catch (e) { alert(e.message || 'Could not make a public link.'); }
+}
+
+const songRef = (song) => song.folder || song.title;
+
 // Header 🔗: the whole view — this project (album) or the band's library.
-// Both are login-gated for whoever opens them.
-$('shareBtn').onclick = () => copyText(
-  curProject ? pageBase() + '?p=' + encodeURIComponent(curProject.slug)
-             : pageBase() + '?b=' + encodeURIComponent(curBand || ''),
-  $('shareBtn'));
+$('shareBtn').onclick = () => {
+  const bandLink = curProject ? pageBase() + '?p=' + encodeURIComponent(curProject.slug)
+                              : pageBase() + '?b=' + encodeURIComponent(curBand || '');
+  offerShare($('shareBtn'), curProject ? 'project' : 'band',
+             curProject ? curProject.slug : curBand, bandLink);
+};
 
 function renderVersions(){
   const dd = $('verdrop');
@@ -2695,7 +2751,7 @@ function renderVersions(){
   const veb = $('verMenu').querySelector('#verEditBtn');
   if (veb) veb.addEventListener('click', (e) => { e.stopPropagation(); setEditing(!editing); });
   const vsh = $('verMenu').querySelector('#verShare');
-  if (vsh) vsh.addEventListener('click', (e) => { e.stopPropagation(); copyText(shareUrl(activeSong), vsh); });
+  if (vsh) vsh.addEventListener('click', (e) => { e.stopPropagation(); offerShare(vsh, 'song', songRef(activeSong), shareUrl(activeSong)); });
   $('verMenu').querySelectorAll('.veritem').forEach(el => {
     el.querySelectorAll('.cpy').forEach(b => b.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -4781,7 +4837,7 @@ function renderProfileLinks(){
     if (e.key === 'Enter'){ e.preventDefault(); saveLyricsUrl(inp.value.trim()); }
   });
   $('pRefOpen').onclick = () => openReference();
-  $('pShareStack').onclick = () => copyText(shareUrl(activeSong), $('pShareStack'));
+  $('pShareStack').onclick = () => offerShare($('pShareStack'), 'song', songRef(activeSong), shareUrl(activeSong));
 }
 
 async function saveLyricsUrl(url){
@@ -4798,7 +4854,7 @@ async function saveLyricsUrl(url){
 }
 
 $('pBack').onclick = () => closeProfile();
-$('pShare').onclick = () => { if (activeSong) copyText(shareUrl(activeSong), $('pShare')); };
+$('pShare').onclick = () => { if (activeSong) offerShare($('pShare'), 'song', songRef(activeSong), shareUrl(activeSong)); };
 $('pPrevSong').onclick = () => stepProfile(-1);
 $('pNextSong').onclick = () => stepProfile(1);
 function stepProfile(d){

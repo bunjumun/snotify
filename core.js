@@ -434,7 +434,10 @@ async function loadDesign(band){
 // Band sub-URLs (/<band>/) are stub pages that redirect here with ?b=.
 function parseRoute(){
   const seg = location.hash.replace(/^#\/?/, '').split('/').map(x => { try { return decodeURIComponent(x); } catch { return x; } });
-  const r = { band: null, album: null, project: null, song: null, version: null };
+  // token: a public share link (?t=…). It carries no band, song or album name
+  // on purpose — the token IS the whole address, so an unshared item has no
+  // public identity to guess at. See get_shared() in supabase/schema-v23.sql.
+  const r = { band: null, album: null, project: null, song: null, version: null, token: null };
   for (let i = 0; i + 1 < seg.length; i += 2){
     if (seg[i] === 'p') r.project = seg[i+1];
     else if (seg[i] === 's') r.song = seg[i+1];
@@ -443,7 +446,7 @@ function parseRoute(){
   if (!r.project && !r.song){
     const q = new URLSearchParams(location.search);
     r.band = q.get('b'); r.project = q.get('p'); r.song = q.get('s'); r.version = q.get('v');
-    r.album = q.get('al');
+    r.album = q.get('al'); r.token = q.get('t');
   }
   return r;
 }

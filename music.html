@@ -856,6 +856,72 @@
     .wrap { padding-bottom: 190px; }
     header.app { margin-bottom: 14px; }
   }
+
+  /* ---------- Progress bars and checklists (CR-34 phase 1) ----------
+     Two surfaces from the same parts: a bar on every song row, and one for the
+     album above the list when the view IS an album. Clicking either drops the
+     phase-grouped checklist in place rather than navigating anywhere, which is
+     what the doc asks for and also the only shape that works on a song row —
+     a row that took you to another page would stop being a row you can play.
+
+     The song accordion is a flex child of .song with a 100% basis. The row was
+     already `flex-wrap: wrap`, so it drops onto its own line underneath without
+     any of the row's own layout having to know about it. */
+  .pbar { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; flex: none; }
+  .pbar .track {
+    width: 54px; height: 5px; border-radius: 3px; background: var(--field);
+    border: 1px solid var(--line); overflow: hidden;
+  }
+  .pbar .fill {
+    display: block; height: 100%; border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width .18s ease-out;
+  }
+  .pbar .pct { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+  .pbar:hover .pct { color: var(--text); }
+  .pbar.done .pct { color: var(--accent-2); font-weight: 700; }
+
+  /* The album's own bar, above the list. Wider, because it is the one number
+     the page is actually about when you are looking at a record. */
+  #albumProg { display: none; margin: 0 0 14px; }
+  body.hasalbumprog #albumProg { display: block; }
+  #albumProg .head {
+    display: flex; align-items: center; gap: 10px; cursor: pointer;
+    padding: 10px 14px; border-radius: 10px; background: var(--bg-row);
+    border: 1px solid transparent; user-select: none;
+  }
+  #albumProg .head:hover { background: var(--bg-hover); }
+  #albumProg .head .lbl { font-size: 13px; font-weight: 600; }
+  #albumProg .head .track { flex: 1 1 80px; height: 7px; border-radius: 4px;
+    background: var(--field); border: 1px solid var(--line); overflow: hidden; }
+  #albumProg .head .fill { display: block; height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .18s ease-out; }
+  #albumProg .head .pct { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
+
+  .pacc { flex: 1 1 100%; min-width: 0; margin-top: 10px; cursor: default; }
+  .pacc[hidden] { display: none; }
+  .pphase { margin-bottom: 10px; }
+  .pphase-h {
+    display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px;
+    font-size: 12px; font-weight: 700; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .pphase-h .w { font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .7; }
+  .ptask {
+    display: flex; align-items: flex-start; gap: 8px; padding: 4px 6px;
+    border-radius: 6px; font-size: 13px; line-height: 1.35;
+  }
+  .ptask:hover { background: var(--bg-hover); }
+  .ptask input { margin: 2px 0 0; flex: none; accent-color: var(--accent); cursor: pointer; }
+  .ptask label { cursor: pointer; flex: 1 1 auto; min-width: 0; }
+  .ptask.on label { color: var(--text-dim); text-decoration: line-through; text-decoration-thickness: 1px; }
+  .ptask .w { flex: none; font-size: 11px; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+  /* The aggregate phase has no boxes: it is the mean of the songs and there is
+     nothing on it a person could tick. Saying so is better than showing an
+     empty phase and letting it read as something that failed to load. */
+  .pauto { font-size: 12.5px; color: var(--text-dim); padding: 4px 6px; }
+  .pauto b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .pnote { font-size: 12px; color: var(--text-mute); padding: 2px 6px 6px; }
 </style>
 </head>
 <body class="locked">
@@ -922,6 +988,17 @@
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
       <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
     </header>
+    <!-- The album's progress, above the record it is about. Only ever shown in
+         an album view: the whole library is not a record and has no release to
+         be a percentage of. Filled in by renderAlbumProgress(). -->
+    <div id="albumProg">
+      <div class="head" id="albumProgHead" title="How far along this record is — click for the checklist">
+        <span class="lbl">Album progress</span>
+        <span class="track"><span class="fill" id="albumProgFill" style="width:0%"></span></span>
+        <span class="pct" id="albumProgPct">0%</span>
+      </div>
+      <div class="pacc" id="albumProgAcc" hidden></div>
+    </div>
     <div id="list" class="loading">Loading…</div>
     <div class="edithint">Edit mode — tap a title to rename · ▲▼ reorder · ⧉ stack into another song · 🗑 trash. Open a song's version menu to edit its stack.</div>
     <div class="mixhint" id="mixHint" style="display:none">Shared mix · <span class="linky" id="mixLogin">band members log in</span> for the full library</div>
@@ -1540,6 +1617,9 @@
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
 <script src="core.js?v=31"></script>
+<!-- The two checklists and the arithmetic. No DOM, no network; it throws at
+     load if the weights stop summing to 100, which is deliberate. -->
+<script src="progress.js?v=1"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -1563,15 +1643,26 @@ App.init     = () => init();
 App.onLock   = () => {          // hard gate went up: don't leave a library behind it
   $('trackCount').textContent = '';
   $('list').className = ''; $('list').innerHTML = '';
+  // The album bar is band data too. Leaving it up behind the gate would show
+  // how far along a record is to someone who has just been told to log in.
+  document.body.classList.remove('hasalbumprog');
+  progress = Object.create(null);
 };
 App.onLogout = () => {          // tear the player down before the band is forgotten
   commentCache = {};
+  progress = Object.create(null);
+  document.body.classList.remove('hasalbumprog');
   try { destroyPlayers(); } catch {}
   activeSong = null; activeSongIndex = -1;
 };
 
 let songs = [];
 let curProject = null;             // project scoping the current view (via #/p/<slug>)
+// Progress ticks, keyed 'song/<folder>' and 'album/<project slug>' → Set of
+// task keys. Only ticked tasks are ever stored or sent, so membership IS the
+// state and there is no third value to reason about. Empty until the band is
+// logged in; a shared link never loads it, because progress is band data.
+let progress = Object.create(null);
 let order = [], pos = -1;          // play order over songs
 let shuffle = false, repeat = 'off';
 let curVolume = parseFloat(localStorage.getItem('mp_vol') ?? '0.9');
@@ -1969,6 +2060,8 @@ function setCollectionCover(src){
 async function init() {
   if (!WaveSurfer) return; // engine failed to load; message already shown
   curProject = null; curBand = null; singleMix = false;
+  progress = Object.create(null);
+  document.body.classList.remove('hasalbumprog');
   document.body.classList.remove('shared', 'singlemix');
   setCollectionCover(null);
   $('mixHint').style.display = 'none';
@@ -2094,6 +2187,7 @@ async function init() {
     unlockView();
     loadComments();                  // in the background — badges fill in
     loadLinkedArt();                 // likewise: covers appear as they resolve
+    loadProgress();                  // and the bars, once the ticks are in hand
     if (!songs.length) return showEmpty();
     renderList();
     applyDeepLink();
@@ -2200,6 +2294,191 @@ function showEmpty() {
     </div>`;
 }
 
+// ---------- Progress: how far along is the record (CR-34 phase 1) ----------
+// From his "album progress strategy" doc. Two weighted checklists, a bar for
+// each, and clicking a bar drops the phase-grouped list in place. This is phase
+// one of four: ticking only. The inspector (assignee, notes, due date), the
+// attached links and the cascade backfill are phases two to four, and the v25
+// migration already carries the columns and the RPC for all of them — the page
+// is the only thing that does not offer them yet.
+//
+// WHY PROGRESS IS ONLY EVER SHOWN TO A LOGGED-IN BAND. It is band data behind
+// the same password as everything else, and two members have to see the same
+// bar or the feature is worthless. A shared link and a single shared mix load
+// none of it and show no bars, the same way they show no comments.
+//
+// WHY NOTHING RE-RENDERS THE LIST ON A TICK. Ticking a box inside an open
+// accordion and then rebuilding the list underneath it would close the thing
+// you are using. So a tick patches the two numbers it can change — this song's
+// bar and the album's — and leaves every element where it is.
+const progKey = (scope, ref) => scope + '/' + ref;
+function ticksFor(scope, ref){
+  const k = progKey(scope, ref);
+  return progress[k] || (progress[k] = new Set());
+}
+// A song with no folder is a legacy flat row with no stable key to hang
+// progress on. It gets no bar rather than a bar that cannot be saved.
+const progressable = (s) => !!(s && s.folder) && !!window.PROGRESS;
+const songPctOf = (s) => progressable(s) ? PROGRESS.songPct(ticksFor('song', s.folder)) : 0;
+// The album's number, including the mean of every song IN THE ALBUM — songs
+// nobody has touched included, so ten songs with one finished is a tenth of
+// that phase and not half of it. Adding a song lowers the bar, which is honest:
+// the record did just get further from being done.
+function albumPctNow(){
+  if (!curProject || !window.PROGRESS) return 0;
+  return PROGRESS.albumPct(ticksFor('album', curProject.slug),
+                           songs.filter(progressable).map(songPctOf));
+}
+
+async function loadProgress(){
+  if (!window.PROGRESS || !curBand || !bandPass(curBand)) return;
+  let rows;
+  try { rows = await libRpc('progress_all', {}); }
+  catch (e){
+    // v25 not applied yet, or a network blip. Bars simply do not appear; there
+    // is nothing half-drawn to explain, so nothing is said.
+    return;
+  }
+  progress = Object.create(null);
+  for (const r of (rows || [])) ticksFor(r.scope, r.ref).add(r.key);
+  renderProgressBars();
+  renderAlbumProgress();
+}
+
+function barHtml(pct, cls){
+  const w = Math.round(pct);
+  return `<span class="pbar ${cls || ''}${w >= 100 ? ' done' : ''}" title="Production progress — click for the checklist">
+      <span class="track"><span class="fill" style="width:${w}%"></span></span>
+      <span class="pct">${w}%</span>
+    </span>`;
+}
+
+// The checklist itself. `auto` phases have no boxes — the album's 50% song
+// average is the mean of the songs and there is nothing on it a person could
+// tick — so they render as a sentence saying what the number came from.
+function accHtml(list, scope, ref){
+  const ticks = ticksFor(scope, ref);
+  return list.map(ph => {
+    if (ph.auto){
+      const done = songs.filter(progressable);
+      const mean = done.length ? done.reduce((a, s) => a + songPctOf(s), 0) / done.length : 0;
+      return `<div class="pphase">
+        <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
+        <div class="pauto">Worked out from the songs, not ticked: <b>${Math.round(mean)}%</b>
+          across ${done.length} song${done.length === 1 ? '' : 's'}, which is
+          <b>${Math.round(mean / 100 * ph.weight)}</b> of the ${ph.weight} points here.</div>
+      </div>`;
+    }
+    return `<div class="pphase">
+      <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
+      ${ph.tasks.map(t => {
+        const on = ticks.has(t.key);
+        return `<div class="ptask ${on ? 'on' : ''}" data-key="${esc(t.key)}">
+          <input type="checkbox" id="pt-${esc(scope)}-${esc(ref)}-${esc(t.key)}" ${on ? 'checked' : ''} />
+          <label for="pt-${esc(scope)}-${esc(ref)}-${esc(t.key)}">${esc(t.name)}</label>
+          <span class="w">${t.weight}%</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('')
+  + `<div class="pnote">Anyone in the band can tick or untick these, and a tick carries no name.</div>`;
+}
+
+// Wire one accordion. Delegated on the container, so re-rendering its innards
+// never leaves a listener behind on an element that has gone.
+function wireAcc(el, scope, ref){
+  el.addEventListener('click', e => e.stopPropagation());   // never plays the song
+  el.addEventListener('change', async (e) => {
+    const box = e.target.closest('input[type=checkbox]');
+    if (!box) return;
+    const row = box.closest('.ptask');
+    const key = row.dataset.key;
+    const on  = box.checked;
+    const ticks = ticksFor(scope, ref);
+    // Optimistic, and put back if the write fails: a checkbox that waits for a
+    // round trip before it moves feels broken, and this one is cheap to undo.
+    on ? ticks.add(key) : ticks.delete(key);
+    row.classList.toggle('on', on);
+    refreshProgressNumbers();
+    try {
+      await libRpc('progress_set', { scope_in: scope, ref_in: ref, key_in: key,
+                                     done_in: on, ver_in: PROGRESS.VERSION });
+    } catch (err){
+      on ? ticks.delete(key) : ticks.add(key);
+      box.checked = !on; row.classList.toggle('on', !on);
+      refreshProgressNumbers();
+      alert('Could not save that tick: ' + (err.message || err));
+    }
+  });
+}
+
+// Patch every number in place. Called after a tick, and cheap enough to call
+// after any of them: it touches at most one element per song plus two.
+function refreshProgressNumbers(){
+  document.querySelectorAll('#list .song').forEach(el => {
+    const s = songs[Number(el.dataset.i)];
+    const bar = el.querySelector(':scope > .meta .pbar');
+    if (!s || !bar) return;
+    const w = Math.round(songPctOf(s));
+    bar.querySelector('.fill').style.width = w + '%';
+    bar.querySelector('.pct').textContent = w + '%';
+    bar.classList.toggle('done', w >= 100);
+  });
+  if (curProject){
+    const w = Math.round(albumPctNow());
+    $('albumProgFill').style.width = w + '%';
+    $('albumProgPct').textContent = w + '%';
+    // The album accordion shows the song average as a sentence, so it goes
+    // stale the moment a song is ticked. Redraw it only while it is open.
+    const acc = $('albumProgAcc');
+    if (!acc.hidden) acc.innerHTML = accHtml(PROGRESS.ALBUM, 'album', curProject.slug);
+  }
+}
+
+// The bars on the song rows, added after renderList has drawn them. Kept apart
+// from renderList so that the list can be rebuilt for any of its own reasons
+// without this having to be threaded through it.
+function renderProgressBars(){
+  if (!window.PROGRESS || !document.body.classList.contains('authed') || editing) return;
+  document.querySelectorAll('#list .song').forEach(el => {
+    const s = songs[Number(el.dataset.i)];
+    if (!s || !progressable(s) || el.querySelector(':scope > .meta .pbar')) return;
+    const sub = el.querySelector(':scope > .meta .sub');
+    if (!sub) return;
+    sub.insertAdjacentHTML('beforeend', barHtml(songPctOf(s)));
+    const bar = sub.querySelector('.pbar');
+    const acc = document.createElement('div');
+    acc.className = 'pacc'; acc.hidden = true;
+    el.appendChild(acc);
+    wireAcc(acc, 'song', s.folder);
+    bar.addEventListener('click', (e) => {
+      e.stopPropagation();                       // the row plays; the bar opens
+      acc.hidden = !acc.hidden;
+      if (!acc.hidden) acc.innerHTML = accHtml(PROGRESS.SONG, 'song', s.folder);
+    });
+  });
+}
+
+// The album's own bar, above the list. Only in an album view: the whole library
+// is not a record and has no release to be a percentage of, and a bar there
+// would be measuring nothing.
+function renderAlbumProgress(){
+  if (!window.PROGRESS || !curProject || !document.body.classList.contains('authed')) return;
+  document.body.classList.add('hasalbumprog');
+  const w = Math.round(albumPctNow());
+  $('albumProgFill').style.width = w + '%';
+  $('albumProgPct').textContent = w + '%';
+  const acc = $('albumProgAcc');
+  if (!$('albumProgHead').dataset.wired){
+    $('albumProgHead').dataset.wired = '1';
+    wireAcc(acc, 'album', curProject.slug);
+    $('albumProgHead').addEventListener('click', () => {
+      acc.hidden = !acc.hidden;
+      if (!acc.hidden) acc.innerHTML = accHtml(PROGRESS.ALBUM, 'album', curProject.slug);
+    });
+  }
+}
+
 function renderList() {
   $('list').className = 'songlist';
   $('trackCount').textContent = `${songs.length} song${songs.length===1?'':'s'}`;
@@ -2268,6 +2547,7 @@ function renderList() {
       deleteFlow(songs[Number(el.dataset.i)]);
     });
   });
+  renderProgressBars();            // the bars ride on top of the rows just drawn
 }
 
 // ---------- Starting a song on a particular mix ----------

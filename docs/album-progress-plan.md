@@ -1,6 +1,17 @@
 # Album and song progress, from his "album progress strategy" doc
 
-**Status: plan only, nothing built.** Written 2026-08-16 against
+**Status as of 2026-08-16, fourth run: phase 1 is built and live.** The v25
+migration is applied, `progress.js` holds the two checklists, and the two bars
+tick. Phases 2 to 4 are unbuilt.
+
+**Two things below were wrong and are corrected in place, at his word that the
+plan was written without enough context.** Both were found by reading the schema
+rather than the plan: `projects` has no `id` column, so the key had to change
+shape. The corrections are marked **CORRECTED** where they sit rather than
+rewritten silently, because the reasoning that produced the wrong shape is worth
+keeping beside the right one.
+
+Written 2026-08-16 against
 `album progress strategy.rtf` at the repo root, which he wrote on the 16th and
 pointed at from the notebook: *"check out doc called 'album progress strategy'
 in the musicplayer folder, I'd like to add this to the player &lt;musicplayer"*.
@@ -40,30 +51,63 @@ and its password, and RLS is written per band. Two consequences:
 
 ## Schema, additive, one migration (v25)
 
+**CORRECTED.** The shape first written here could not be built: it had
+`project_id uuid references projects(id)`, and `projects` has no `id` — its
+primary key has been `slug text` since v3. Rather than patch that one line, the
+key was simplified, because a nullable `song_id` beside a nullable `project_id`
+with a `coalesce` in the unique index was awkward before it was impossible.
+
+A row is keyed by `(band, scope, ref, task_key)`. `ref` carries the song's
+**folder** when the scope is a song and the project's **slug** when it is an
+album. `folder` is already the stable song key everywhere else on the site —
+project membership, deep links and `rename_song` all use it — and it survives a
+retitle where a title does not. `unique (band, folder)` on `songs` makes band
+plus ref unambiguous without a join.
+
+The cost, which is real: one column cannot reference two tables conditionally,
+so there is no foreign key and no cascade. Deleting a song leaves its progress
+rows behind. They are invisible — nothing reads a ref that is not in the library
+— and restoring a trashed song brings its progress back with it, which is the
+better of the two failures. Revisit only if orphans ever become countable.
+
+This is what was actually applied:
+
 ```
 progress_tasks
   id            uuid pk
-  band          text            not null      -- same gate as everything else
-  scope         text            not null      -- 'song' | 'album'
-  song_id       uuid null references songs(id) on delete cascade
-  project_id    uuid null references projects(id) on delete cascade
-  task_key      text            not null      -- stable slug, e.g. 'trk.main_vocals'
-  checklist_version int         not null default 1
-  done          boolean         not null default false
+  band          text        not null references bands(slug)
+  scope         text        not null check (scope in ('song','album'))
+  ref           text        not null      -- song folder, or project slug
+  task_key      text        not null      -- stable slug, e.g. 't.vox_main'
+  checklist_version int     not null default 1
+  done          boolean     not null default false
   done_at       timestamptz null
-  assignee      text null
-  notes         text null
-  due_on        date null
-  updated_at    timestamptz     not null default now()
-  unique (band, scope, coalesce(song_id, project_id), task_key)
+  assignee      text null                 -- phase 2
+  notes         text null                 -- phase 2
+  due_on        date null                 -- phase 2
+  updated_at    timestamptz not null default now()
+  unique (band, scope, ref, task_key)
 
-progress_links
+progress_links                            -- phase 3; created, nothing reads it
   id            uuid pk
-  task_id       uuid references progress_tasks(id) on delete cascade
+  task_id       uuid not null references progress_tasks(id) on delete cascade
   label         text not null
   url           text not null
   sort          int  not null default 0
 ```
+
+Three RPCs, all `security definer` behind `_require_pass`: `progress_all(b,p)`
+returns every ticked row for the band in one call (the album bar needs the mean
+of the songs, so any page drawing a bar already needs all of them);
+`progress_set(...)` is one tick; `progress_set_many(...)` is the phase-4 cascade,
+shipped early because it is the same insert with a list and shipping it now
+means phase 4 needs no migration behind it.
+
+**Unticking deletes the row** rather than storing `done = false`. The two are
+the same state, and keeping false rows would quietly end the "a row exists only
+once it is touched" rule after the first misclick. Phase 2 changes this: once a
+task can carry notes and an assignee, an unticked row has something worth
+keeping.
 
 Notes on that shape, each of which is a decision worth arguing with:
 
@@ -96,7 +140,10 @@ Notes on that shape, each of which is a decision worth arguing with:
 
 1. **v25 migration plus the checklist module and the two bars, tick only.** No
    inspector, no links, no assignee. This alone answers "how far along is the
-   record", which is the whole point of the item.
+   record", which is the whole point of the item. **Built and live 2026-08-16.**
+   One thing the plan did not anticipate: a tick must not rebuild the song list,
+   because rebuilding it underneath an open accordion closes the thing being
+   used. So a tick patches the two numbers it can change and moves nothing else.
 2. **The inspector**: assignee, notes, due date.
 3. **Links**, which is the only part needing a second table and the only part
    that overlaps a LATER item (reference tracks on a comment). Worth building

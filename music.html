@@ -867,19 +867,33 @@
      The song accordion is a flex child of .song with a 100% basis. The row was
      already `flex-wrap: wrap`, so it drops onto its own line underneath without
      any of the row's own layout having to know about it. */
-  .pbar { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; flex: none; }
+  /* Deliberately loud. This was a hairline with an 11px number beside it and it
+     read as decoration next to the comment badge — the one number on the row
+     that says whether the song is finished was the quietest thing on it. */
+  .pbar {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer; flex: none;
+    padding: 3px 8px 3px 4px; border-radius: 999px;
+    background: var(--field); border: 1px solid var(--line);
+    transition: border-color .12s, background .12s;
+  }
+  .pbar:hover { border-color: var(--accent); background: var(--bg-hover); }
   .pbar .track {
-    width: 54px; height: 5px; border-radius: 3px; background: var(--field);
+    width: 84px; height: 8px; border-radius: 999px; background: var(--bg-row);
     border: 1px solid var(--line); overflow: hidden;
   }
   .pbar .fill {
-    display: block; height: 100%; border-radius: 3px;
+    display: block; height: 100%; border-radius: 999px;
     background: linear-gradient(90deg, var(--accent), var(--accent-2));
     transition: width .18s ease-out;
   }
-  .pbar .pct { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-dim); }
-  .pbar:hover .pct { color: var(--text); }
-  .pbar.done .pct { color: var(--accent-2); font-weight: 700; }
+  .pbar .pct {
+    font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+    color: var(--text); min-width: 34px; text-align: right;
+  }
+  .pbar.done { border-color: var(--accent-2); }
+  .pbar.done .pct { color: var(--accent-2); }
+  /* Nothing ticked reads as an invitation rather than as a failure. */
+  .pbar.zero .pct { color: var(--text-mute); font-weight: 600; }
 
   /* The album's own bar, above the list. Wider, because it is the one number
      the page is actually about when you are looking at a record. */
@@ -887,18 +901,20 @@
   #albumProg { margin: 0 0 14px; }
   .aprog + .aprog { margin-top: 8px; }
   .aprog .head {
-    display: flex; align-items: center; gap: 10px; cursor: pointer;
-    padding: 10px 14px; border-radius: 10px; background: var(--bg-row);
-    border: 1px solid transparent; user-select: none;
+    display: flex; align-items: center; gap: 14px; cursor: pointer;
+    padding: 14px 18px; border-radius: 12px; background: var(--bg-row);
+    border: 1px solid var(--line); user-select: none;
+    transition: border-color .12s, background .12s;
   }
-  .aprog .head:hover { background: var(--bg-hover); }
-  .aprog .head .lbl { font-size: 13px; font-weight: 600; }
+  .aprog .head:hover { background: var(--bg-hover); border-color: var(--accent); }
+  .aprog .head .lbl { font-size: 15px; font-weight: 700; letter-spacing: .01em; }
   .aprog .head .sub2 { font-size: 12px; color: var(--text-mute); flex: none; }
-  .aprog .head .track { flex: 1 1 80px; height: 7px; border-radius: 4px;
+  .aprog .head .track { flex: 1 1 120px; height: 12px; border-radius: 999px;
     background: var(--field); border: 1px solid var(--line); overflow: hidden; }
-  .aprog .head .fill { display: block; height: 100%;
+  .aprog .head .fill { display: block; height: 100%; border-radius: 999px;
     background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .18s ease-out; }
-  .aprog .head .pct { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
+  .aprog .head .pct { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums;
+    flex: none; min-width: 62px; text-align: right; letter-spacing: -.02em; }
 
   /* The record panel's track picker. Its own row so it survives the checklist
      being redrawn underneath it on every tick. */
@@ -2440,7 +2456,7 @@ async function loadProgress(){
 
 function barHtml(pct, cls){
   const w = Math.round(pct);
-  return `<span class="pbar ${cls || ''}${w >= 100 ? ' done' : ''}" title="Production progress — click for the checklist">
+  return `<span class="pbar ${cls || ''}${w >= 100 ? ' done' : ''}${w === 0 ? ' zero' : ''}" title="Production progress — click for the checklist">
       <span class="track"><span class="fill" style="width:${w}%"></span></span>
       <span class="pct">${w}%</span>
     </span>`;
@@ -2637,6 +2653,7 @@ function refreshProgressNumbers(except){
     bar.querySelector('.fill').style.width = w + '%';
     bar.querySelector('.pct').textContent = w + '%';
     bar.classList.toggle('done', w >= 100);
+    bar.classList.toggle('zero', w === 0);
   });
   document.querySelectorAll('#albumProg .aprog').forEach(el => {
     const al = albumsInView().find(a => a.slug === el.dataset.slug);

@@ -4346,7 +4346,7 @@ function renderComments(){
   if (!list.length){ $('clist').innerHTML = `<div class="cempty">No open comments on this version — seek to a spot and add one.</div>`; return; }
 
   const replyRow = (r) => `
-    <div class="cmt" data-id="${r.id}">
+    <div class="cmt" data-id="${r.id}" data-t="${r.time}">
       <div class="body">
         ${cEditId === r.id
           ? `<div class="cedit"><input type="text" value="${esc(r.text)}" maxlength="280" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`

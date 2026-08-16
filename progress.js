@@ -237,14 +237,49 @@
    * Kept here rather than in the page so that the read-only bar on the other two
    * pages gets the same answer without repeating any of it. */
   function shapeFor(raw, scope, ref) {
-    if (!raw) return { hidden: new Set(), items: [] };
+    if (!raw) return { hidden: new Set(), items: [], remix: false, remixSince: null };
+    const rm = (raw.remix || []).find(r => r.scope === scope && r.ref === ref);
     return {
       hidden: new Set((raw.hidden || [])
         .filter(h => h.scope === scope && h.ref === ref).map(h => h.key)),
       items: (raw.items || [])
         .filter(i => i.scope === scope && i.ref === ref)
         .sort((a, b) => (a.sort || 0) - (b.sort || 0)),
+      remix: !!rm, remixSince: rm ? rm.since : null,
     };
+  }
+
+  /* ------------------------------------------------------------------------
+   * REOPENING A FINISHED TRACK FOR A REMIX
+   *
+   * His words: "light and lessons are released so they should read 100 with
+   * all criteria clicked. i want to be able to mark them if i adjust the mix
+   * and plan to remix. tis woul dfrop them to mixed but not masted yet level if
+   * ticked", and "this function should be possible for any completed tracks".
+   *
+   * Unticking Mastering & release already produces the right NUMBER. It does
+   * not produce the right MEANING: the result is indistinguishable from a song
+   * that was never mastered, and those are opposite situations — one is work
+   * not yet done, the other is finished work deliberately reopened. So the flag
+   * does not touch a single tick. It marks the record as being remixed and, for
+   * as long as that is true, the last phase's points are withheld from the
+   * total regardless of what is ticked underneath them. Turn the flag off and
+   * the score returns to exactly what it was, with nothing to re-tick.
+   *
+   * WHICH PHASE. The last substantive one in each list — Mastering & release on
+   * a song, Distribution, rights & release on a record — because "send it back"
+   * always means undoing the finishing move, never an earlier one. A named
+   * mapping rather than "whatever is last" so this cannot silently point at the
+   * wrong phase if the lists are ever reordered. */
+  const REMIX_PHASE = { song: 'r', album: 'ad' };
+
+  // The weight withheld by the flag, in shaped points — used by the page to
+  // show what a remix costs on THIS song, since a custom item in that phase
+  // changes the number.
+  function remixCost(scope, list, shape) {
+    const key = REMIX_PHASE[scope];
+    const ph = shapedList(list, shape).find(p => p.key === key);
+    return ph ? ph.weight : 0;
   }
 
   /* Every leaf in reading order, which is also backfill order: the cascade
@@ -265,7 +300,19 @@
 
   /* The song percentage: just the sum of what is ticked, because every point on
    * a song is manual. */
-  function songPct(ticks, shape) { return pct(shapedList(SONG, shape), ticks); }
+  function songPct(ticks, shape) {
+    const list = shapedList(SONG, shape);
+    return pct(list, remixTicks('song', list, ticks, shape));
+  }
+  // Ticks with the remixed phase's own keys removed, so those points cannot
+  // count while the flag is on even though the rows are still there.
+  function remixTicks(scope, list, ticks, shape) {
+    if (!shape || !shape.remix) return ticks;
+    const ph = list.find(p => p.key === REMIX_PHASE[scope]);
+    if (!ph) return ticks;
+    const drop = new Set(ph.tasks.map(t => t.key));
+    return new Set([...ticks].filter(k => !drop.has(k)));
+  }
 
   /* The album percentage: the manual half plus the mean of the songs.
    *
@@ -297,7 +344,7 @@
    * different thing — it has no boxes to fill in by hand or otherwise. */
   function albumPct(ticks, songPcts, shape) {
     const list = shapedList(ALBUM, shape);
-    const manual = pct(list, ticks);
+    const manual = pct(list, remixTicks('album', list, ticks, shape));
     const auto = list.find(ph => ph.auto);
     if (!auto) return manual;
     const mean = songPcts.length
@@ -356,5 +403,6 @@
     VERSION: CHECKLIST_VERSION,
     SONG, ALBUM, SONG_TASKS, ALBUM_TASKS,
     songPct, albumPct, priorTo, shapedList, shapeFor,
+    REMIX_PHASE, remixCost,
   };
 })(window);

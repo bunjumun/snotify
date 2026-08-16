@@ -894,6 +894,19 @@
   .pbar.done .pct { color: var(--accent-2); }
   /* Nothing ticked reads as an invitation rather than as a failure. */
   .pbar.zero .pct { color: var(--text-mute); font-weight: 600; }
+  .premixchip { flex: none; font-size: 12px; line-height: 1; color: var(--warn, #e0a94a);
+    margin-right: -2px; }
+  /* The remix toggle inside a checklist. */
+  .premix {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 6px 2px; margin-top: 4px; border-top: 1px solid var(--line);
+  }
+  .premix.on { color: var(--warn, #e0a94a); }
+  .premix .rlbl { font-size: 12px; color: var(--text-dim); }
+  .premix.on .rlbl { color: var(--warn, #e0a94a); }
+  .premix .lnk { font-size: 12px; cursor: pointer; color: var(--accent-2);
+    border-bottom: 1px dotted var(--accent-2); }
+  .premix .lnk:hover { color: var(--text); border-bottom-color: var(--text); }
 
   /* The album's own bar, above the list. Wider, because it is the one number
      the page is actually about when you are looking at a record. */
@@ -1777,7 +1790,7 @@ let curProject = null;             // project scoping the current view (via #/p/
 let progress = Object.create(null);
 // His own additions and removals, raw as the server returns them. One object
 // for the whole band; PROGRESS.shapeFor narrows it to one song or one record.
-let progShape = { items: [], hidden: [] };
+let progShape = { items: [], hidden: [], remix: [] };
 const shapeOf = (scope, ref) => PROGRESS.shapeFor(progShape, scope, ref);
 let order = [], pos = -1;          // play order over songs
 let shuffle = false, repeat = 'off';
@@ -2476,7 +2489,7 @@ async function loadProgress(){
       libRpc('progress_all', {}),
       // Older databases have no v27, and that must not take the bars down with
       // it: no custom items is a perfectly good answer.
-      libRpc('progress_shape', {}).catch(() => ({ items: [], hidden: [] })),
+      libRpc('progress_shape', {}).catch(() => ({ items: [], hidden: [], remix: [] })),
     ]);
   }
   catch (e){
@@ -2485,7 +2498,7 @@ async function loadProgress(){
     return;
   }
   progress = Object.create(null);
-  progShape = shape || { items: [], hidden: [] };
+  progShape = shape || { items: [], hidden: [], remix: [] };
   for (const r of (rows || [])) ticksFor(r.scope, r.ref).add(r.key);
   // The ticks usually land AFTER renderList has already drawn the rows, because
   // this is fired off in the background rather than awaited. Drawing bars that
@@ -2497,9 +2510,11 @@ async function loadProgress(){
   renderAlbumProgress();
 }
 
-function barHtml(pct, cls){
+function barHtml(pct, cls, remixing){
   const w = Math.round(pct);
-  return `<span class="pbar ${cls || ''}${w >= 100 ? ' done' : ''}${w === 0 ? ' zero' : ''}" title="Production progress — click for the checklist">
+  return `<span class="pbar ${cls || ''}${w >= 100 ? ' done' : ''}${w === 0 ? ' zero' : ''}"
+      title="${remixing ? 'Sent back for a remix — ' : 'Production progress — '}click for the checklist">
+      ${remixing ? '<span class="premixchip" title="Being remixed">↻</span>' : ''}
       <span class="track"><span class="fill" style="width:${w}%"></span></span>
       <span class="pct">${w}%</span>
     </span>`;
@@ -2550,7 +2565,8 @@ function autoPhaseHtml(ref, ph){
 
 function accHtml(list, scope, ref){
   const ticks = ticksFor(scope, ref);
-  const shaped = PROGRESS.shapedList(list, shapeOf(scope, ref));
+  const shape = shapeOf(scope, ref);
+  const shaped = PROGRESS.shapedList(list, shape);
   return shaped.map(ph => {
     if (ph.auto) return autoPhaseHtml(ref, ph);
     const full = ph.tasks.length && ph.tasks.every(t => ticks.has(t.key));
@@ -2577,8 +2593,29 @@ function accHtml(list, scope, ref){
     </div>`;
   }).join('')
   + hiddenHtml(list, scope, ref)
+  + remixHtml(scope, ref, shape)
   + `<div class="pnote">Click a category heading to fill it in or empty it. Removing a
        step shares its weight out inside its own category, so this still adds up to 100.</div>`;
+}
+
+// The remix toggle. Offered on ANY song or record, at his word "this function
+// should be possible for any completed tracks" — restricting it to ones already
+// at 100 would mean it is not there the moment it is actually needed, since a
+// remix is decided the moment the mix stops satisfying him, not after he has
+// gone hunting for the toggle first.
+function remixHtml(scope, ref, shape){
+  const cost = PROGRESS.remixCost(scope, scope === 'album' ? PROGRESS.ALBUM : PROGRESS.SONG, shape);
+  if (shape.remix){
+    const since = shape.remixSince ? new Date(shape.remixSince).toLocaleDateString() : '';
+    return `<div class="premix on" data-remix="${esc(scope)}:${esc(ref)}">
+      <span class="rlbl">Sent back for a remix${since ? ' on ' + esc(since) : ''} —
+        holding ${cost.toFixed(0)} points back until it is remastered.</span>
+      <span class="lnk" data-remixoff="1">Mark remastered</span>
+    </div>`;
+  }
+  return `<div class="premix" data-remix="${esc(scope)}:${esc(ref)}">
+    <span class="lnk" data-remixon="1">Send back for a remix</span>
+  </div>`;
 }
 
 // What he has taken off THIS song or record, so removing something is visibly
@@ -2702,6 +2739,18 @@ function wireAcc(el){
       return;
     }
 
+    const remixOn = e.target.closest('[data-remixon]');
+    const remixOff = e.target.closest('[data-remixoff]');
+    if (remixOn || remixOff){
+      const scope = el.dataset.scope, ref = el.dataset.ref, on = !!remixOn;
+      const list = progShape.remix.filter(r => !(r.scope === scope && r.ref === ref));
+      progShape.remix = on ? list.concat([{ scope, ref, since: new Date().toISOString() }]) : list;
+      paintAcc(el); refreshProgressNumbers(null);
+      libRpc('progress_remix_set', { scope_in: scope, ref_in: ref, on_in: on })
+        .catch(err => { alert('Could not save that: ' + (err.message || err)); loadProgress(); });
+      return;
+    }
+
     const add = e.target.closest('[data-addphase]');
     if (add){
       const phase = add.dataset.addphase;
@@ -2779,6 +2828,12 @@ function refreshProgressNumbers(except){
     bar.querySelector('.pct').textContent = w + '%';
     bar.classList.toggle('done', w >= 100);
     bar.classList.toggle('zero', w === 0);
+    const remixing = shapeOf('song', s.folder).remix;
+    if (!!bar.querySelector('.premixchip') !== remixing){
+      bar.querySelector('.track').insertAdjacentHTML('beforebegin',
+        remixing ? '<span class="premixchip" title="Being remixed">↻</span>' : '');
+      if (!remixing) bar.querySelector('.premixchip')?.remove();
+    }
   });
   document.querySelectorAll('#albumProg .aprog').forEach(el => {
     const al = albumsInView().find(a => a.slug === el.dataset.slug);
@@ -2820,7 +2875,8 @@ function renderProgressBars(){
     if (!s || !progressable(s) || el.querySelector(':scope > .meta .pbar')) return;
     const sub = el.querySelector(':scope > .meta .sub');
     if (!sub) return;
-    sub.insertAdjacentHTML('beforeend', barHtml(songPctOf(s)));
+    sub.insertAdjacentHTML('beforeend',
+      barHtml(songPctOf(s), '', shapeOf('song', s.folder).remix));
     const bar = sub.querySelector('.pbar');
     const acc = document.createElement('div');
     acc.className = 'pacc'; acc.hidden = true;

@@ -153,7 +153,7 @@ export class Intro {
       this.active = false;
       g.hud.say(
         `Good, isn't it. That was the last of your shake, though.<br>` +
-        `Find <b>four jars</b> and you can pack another. They're all over this wreck. ` +
+        `Fill <b>a jar's worth</b> and you can pack another. Some hold an eighth, some a half. ` +
         `Sweep that lamp about.`,
         { who: 'A lake trout', seconds: 10 },
       );

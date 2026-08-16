@@ -253,21 +253,36 @@ export class Game {
 
     this.stash = new Stash(this.rng, this.seabed, this.difficulty);
     this.scene.add(this.stash.group);
-    this.stash.onPickup = (n) => {
-      this.breath.add(this.difficulty.baggieReturn);
+    this.stash.onPickup = (n, worth) => {
+      // Per eighth, not per jar. `baggieReturn` is what a quarter gives back, so
+      // a half pays double and an eighth pays half, and a bowl's worth of air is
+      // the same however it arrived.
+      this.breath.add(this.difficulty.baggieReturn * (worth / 2));
       this.audio?.sfx('baggie');
-      this.bubbles.burst(this.kelpie.position.x, this.kelpie.position.y, this.kelpie.position.z, 6, 0.6);
-      const need = CFG.stash.needed;
-      this.hud.say(n >= need ? 'Bowl packed. Find a bong.' : `${n}/${need}`, { seconds: 1.8 });
+      // The burst scales with the jar too, so a half announces itself.
+      const puff = 4 + worth * 2;
+      this.bubbles.burst(this.kelpie.position.x, this.kelpie.position.y, this.kelpie.position.z, puff, 0.6);
+      // Says what you just picked up as well as what you now hold, because with
+      // three sizes in the water "how much was that one" is a real question and
+      // the jar is gone by the time you could look at it.
+      const took = Stash.fraction(worth);
+      this.hud.say(
+        n >= CFG.stash.needed ? `+${took}. Bowl packed. Find a bong.` : `+${took} · ${Stash.fraction(n)} of a bowl`,
+        { seconds: 1.8 },
+      );
     };
 
     this.trip = new Trip();
     this.trip.onStart = () => {
       this.audio?.tripStart();
       // Everything at once. This is the moment the whole run is paid for, and it
-      // costs four baggies — it is allowed to be too much.
+      // costs a whole bowl — it is allowed to be too much.
+      // Fewer than it was, and it is the same note as the rise time: 120 bubbles
+      // in one frame is a wall appearing, and it landed on the frame the picture
+      // was already snapping on. The bloom is a second and a half now, so the
+      // exhale does not have to carry the whole announcement on its own.
       const k = this.kelpie.position;
-      this.bubbles.burst(k.x, k.y + 1, k.z, 120, 1.6);
+      this.bubbles.burst(k.x, k.y + 1, k.z, 72, 1.6);
       const h = this._helm || (this._helm = new THREE.Vector3());
       for (const d of this.divers) {
         d.helmetPosition(h);
@@ -545,7 +560,9 @@ export class Game {
     this.godrays.update(dt, react.low, this.weather.lightScale());
     // The bong sequence reads the record too. Handed over every frame; the
     // shader only looks at it while uTrip is up.
-    this.post.setReact(react);
+    // dt so the kick can be eased on the way down rather than strobing; see
+    // Post.setReact, which is where "smooth out the visual effect" mostly lives.
+    this.post.setReact(react, dt);
     // ...and the least visible: the bass, in the hands of anyone on a pad. It
     // rides `kick` rather than `low` so it lands on the beat instead of buzzing
     // through every loud passage, and it stands aside for any one-shot.
@@ -801,7 +818,7 @@ export class Game {
       return;
     }
     if (!this.stash.canPack) {
-      this.hud.say(`Not enough to pack. <b>${this.stash.carried}/${CFG.stash.needed}</b>`, { seconds: 2 });
+      this.hud.say(`Not enough to pack. <b>${this.stash.fraction} of a bowl</b>`, { seconds: 2 });
     }
   }
 
@@ -895,7 +912,7 @@ export class Game {
       `speed  ${this.kelpie.speed.toFixed(1)}  surge ${this.kelpie.surge.toFixed(2)}\n` +
       `breath ${this.breath.value.toFixed(1)} / ${this.breath.max}\n` +
       `uTrip  ${this.trip.value.toFixed(3)} (${this.trip.phase})\n` +
-      `bag    ${this.stash.carried}/${CFG.stash.needed}${this.stash.hasShake ? ' +shake' : ''}\n` +
+      `bag    ${this.stash.carried}/${CFG.stash.needed} eighths${this.stash.hasShake ? ' +shake' : ''}\n` +
       `grip   ${this.diver.grip.toFixed(0)}${this.diver.adrift ? ' ADRIFT' : ''}\n` +
       `gale   ${this.weather.intensity.toFixed(2)} (${this.weather.state})\n` +
       `clue   stage ${this.clues.stage}${this.clues.proximity ? ' +ping' : ''}` +

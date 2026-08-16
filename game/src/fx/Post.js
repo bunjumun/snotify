@@ -27,6 +27,14 @@
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
 
+// How fast the shader's copy of the kick falls back to the real level, per
+// second. Fast enough that two beats never smear into one at any tempo a record
+// is likely to be at, slow enough that a single beat is a bloom with a shape
+// rather than one bright frame. Lives here rather than in config because it is a
+// property of this smoothing and not a knob on the sequence; the knobs he would
+// reach for are in CFG.trip.
+const KICK_FALL = 7.0;
+
 const VERT = `
   varying vec2 vUv;
   void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
@@ -198,8 +206,20 @@ export class Post {
    * of uTrip: uploading two floats is cheaper than branching on the CPU to avoid
    * it, and the shader ignores both unless the sequence is running.
    */
-  setReact(react) {
+  setReact(react, dt = 0) {
     this.uniforms.uReact.value = react.low;
-    this.uniforms.uKick.value = react.kick;
+    // **The kick is eased on the way down, not taken raw.** A kick is an onset
+    // detector: it spikes to 1 on a beat and drops to 0 within a frame or two,
+    // and four separate terms in the shader multiply by it — aberration, hue,
+    // saturation, glow and edge. So every bass hit was moving five things at
+    // once, instantly, and that flicker is most of what reads as the picture
+    // being harsh rather than smooth. Rising is left instant, because a beat
+    // that arrives late is not a beat; only the fall is smoothed, so a hit
+    // blooms and decays instead of blinking.
+    const k = react.kick;
+    const cur = this.uniforms.uKick.value;
+    this.uniforms.uKick.value = k > cur
+      ? k
+      : cur + (k - cur) * (dt > 0 ? 1 - Math.exp(-KICK_FALL * dt) : 1);
   }
 }

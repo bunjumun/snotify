@@ -844,21 +844,44 @@ export class AudioDirector {
   }
 
   /** Bubbling draw, then the exhale. */
+  /**
+   * The bubble of a bong being pulled.
+   *
+   * **Turned down and tapered on his word**, which was that it is too much. It
+   * was 22 bubbles at a flat 0.16, every one as loud as the first, over 1.2
+   * seconds — a hit that started at full and stayed there, on top of a record
+   * that is also playing, at the exact moment the picture is doing the most it
+   * ever does. Three things were wrong with that and only one of them was volume.
+   *
+   * Now: fewer bubbles, quieter, and each one softer than the last, so the pull
+   * arrives and settles instead of running at a level for a second and stopping
+   * dead. The onset of each bubble is slower too (8ms was a click at the front of
+   * every one of them, and 22 clicks is a rattle).
+   *
+   * Every number is in config rather than here, because "too loud" is a judgement
+   * he has to make with his ears on a real mix and this is where he will come to
+   * turn it down again.
+   */
   _bong() {
     const c = this.ctx;
+    const B = CFG.audio.bongHit;
     const t = c.currentTime;
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < B.bubbles; i++) {
       const o = c.createOscillator();
       const g = c.createGain();
-      const at = t + i * 0.055 + Math.random() * 0.02;
+      const at = t + i * B.spacing + Math.random() * 0.02;
+      // Linear taper to `tailGain` of the opening level across the run. The last
+      // bubble is the quietest, which is what makes it read as a pull ending
+      // rather than as a loop being cut off.
+      const fade = 1 - (1 - B.tailGain) * (i / Math.max(1, B.bubbles - 1));
       o.type = 'sine';
       o.frequency.setValueAtTime(180 + Math.random() * 320, at);
       o.frequency.exponentialRampToValueAtTime(90 + Math.random() * 90, at + 0.1);
       g.gain.setValueAtTime(0, at);
-      g.gain.linearRampToValueAtTime(0.16, at + 0.008);
-      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.12);
+      g.gain.linearRampToValueAtTime(B.gain * fade, at + B.attack);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.14);
       o.connect(g).connect(this.buses.sfx);
-      o.start(at); o.stop(at + 0.18);
+      o.start(at); o.stop(at + 0.2);
     }
   }
 

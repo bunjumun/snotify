@@ -34,7 +34,7 @@
 // reciting a band's backstory at you is a plaque. A fish asking a stoned man
 // where he's from, and him telling it, is a scene.
 //
-// That whole window is bought with four baggies and it drains on the same curve
+// That whole window is bought with one packed bowl and it drains on the same curve
 // as the colour, which is the only reason it can be this generous — it is not a
 // mode, it is a payoff.
 
@@ -43,6 +43,7 @@ import { CFG } from '../../config.js';
 import { GuideFish } from '../entities/Fish.js';
 import { Chest } from '../entities/Chest.js';
 import { LoreFeed } from './LoreFeed.js';
+import { Stash } from './Stash.js';
 
 // Public by design — see supabase/schema-v19.sql. lore_active() serves only the
 // draft the band deliberately promoted, which is why it needs no password.
@@ -276,14 +277,21 @@ export class Clues {
   _stashHint() {
     const g = this.game;
     const near = g.stash.nearestAvailable(g.kelpie.position);
-    const short = CFG.stash.needed - g.stash.carried;
+    // Both halves of this speak in fractions now. "You're 6 short" was true in
+    // eighths and meaningless in weed, and the fish is the one voice in the game
+    // that is supposed to talk like a person who knows the lake.
+    const short = Stash.fraction(CFG.stash.needed - g.stash.carried);
     if (!near) {
       this._speak(0, `Nothing close. Keep moving. This wreck is full of it.`);
       return;
     }
+    // Naming the size is the fish doing something the player cannot: judging a
+    // jar from across the fog. It also answers "is that one even worth the
+    // swim", which only became a real question once jars stopped being equal.
     this._speak(0,
       `You're ${short} short and you're running out of air.<br>` +
-      `There's a bag ${bearing(g.kelpie.position, near.position)}. Go.`);
+      `There's ${Stash.fraction(near.baggie.eighths)} of a jar ` +
+      `${bearing(g.kelpie.position, near.position)}. Go.`);
   }
 
   _chestHint() {

@@ -7,7 +7,7 @@
 // are the same number.
 //
 // Four phases:
-//   RISE   0.6s   everything blooms in
+//   RISE   1.5s   everything blooms in, on a smootherstep
 //   HOLD   10s    exactly one camera revolution at full intensity
 //   TAPER  60s    colour and phaser bleed out slowly...
 //   ...but the camera comes home in the first ~1.2s of the taper. A minute-long
@@ -20,6 +20,12 @@ export const TripPhase = { IDLE: 'idle', RISE: 'rise', HOLD: 'hold', TAPER: 'tap
 
 const CAMERA_RETURN = 1.2; // seconds into the taper before the rig is fully back
 const easeInOut = (t) => t * t * (3 - 2 * t);
+// Smootherstep, for the rise only. Smoothstep is flat at its ends but its
+// SECOND derivative is not, so the acceleration into the bloom arrives as a
+// step — which is exactly the moment the picture is doing the most and the
+// moment he says needs smoothing. This one is flat in both, so the sequence
+// eases out of nothing rather than being switched into.
+const easeSmoother = (t) => t * t * t * (t * (t * 6 - 15) + 10);
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
 export class Trip {
@@ -57,7 +63,10 @@ export class Trip {
     switch (this.phase) {
       case TripPhase.RISE: {
         const k = Math.min(1, this.t / T.riseTime);
-        this.value = easeInOut(k);
+        this.value = easeSmoother(k);
+        // The camera stays on the softer curve. It has a spring of its own on the
+        // far side of this, and stacking smootherstep on top of that made the
+        // swing out feel like it was being held back rather than let go.
         this.orbitWeight = easeInOut(k);
         if (this.t >= T.riseTime) { this.phase = TripPhase.HOLD; this.t = 0; }
         break;

@@ -153,11 +153,16 @@ canvas{display:block;width:100%;height:100%}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .panic #breathWrap{animation:pulse .8s ease-in-out infinite}
 
-/* Inventory: four baggie slots and the lighter. Deliberately literal — you
+/* Inventory: eight eighth-of-a-bowl slots and the lighter. Deliberately literal — you
    should never have to read a number to know if you can pack a bowl. */
 #inv{display:flex;align-items:center;gap:.55rem}
-.slots{display:flex;gap:4px}
-.slot{width:15px;height:19px;border:1px solid #2f5f4e;border-radius:3px;background:#0c231d}
+.slots{display:flex;gap:2px}
+/* Eight eighths where there were four quarters, so each box is narrower and
+   the pairs are grouped: the wider gap before every odd slot draws the quarter
+   marks, which is what stops a row of eight from being something you count. */
+.slot{width:9px;height:19px;border:1px solid #2f5f4e;border-radius:3px;background:#0c231d}
+.slot:nth-child(2n+1){margin-left:4px}
+.slot:first-child{margin-left:0}
 .slot.full{background:var(--weed);border-color:var(--weed);box-shadow:0 0 9px rgba(125,224,138,.55)}
 #lighter{font-size:1rem;opacity:.25;filter:grayscale(1)}
 #lighter.has{opacity:1;filter:none;text-shadow:0 0 10px rgba(255,180,84,.65)}

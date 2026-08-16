@@ -1,7 +1,7 @@
 // Bongs — stations, not pickups.
 //
-// A bong needs the lighter and four baggies. Short of that it sits dark and
-// unlit; at four it lights, and its positional hum comes up loud enough to be
+// A bong needs the lighter and a full bowl. Short of that it sits dark and
+// unlit; at eight eighths it lights, and its positional hum comes up loud enough to be
 // heard through fog well before it can be seen.
 //
 // That last part is the design working: "I'm loaded" stops being a number on the
@@ -84,7 +84,7 @@ export class Bong {
   }
 
   /**
-   * @param {boolean} canUse lighter in hand AND four baggies
+   * @param {boolean} canUse lighter in hand AND a full bowl
    * @param {{low:number,mid:number,high:number,kick:number}} [react] the record
    */
   update(dt, t, canUse, react = null) {

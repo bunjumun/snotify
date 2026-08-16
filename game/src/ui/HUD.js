@@ -1,9 +1,16 @@
 // The HUD.
 //
 // Deliberately literal. You should never have to read a number to know whether
-// you can pack a bowl — four slots either are or aren't full, and the lighter
+// you can pack a bowl — the slots either are or aren't full, and the lighter
 // either is or isn't lit. Breath changes colour as well as length, because from
 // the corner of an eye colour reads faster than width.
+//
+// **Eight slots now, not four, and each is an eighth.** A jar is worth one, two
+// or four of them, so a pickup lights a run of slots rather than exactly one and
+// the row shows how much weed you have rather than how many jars you found. The
+// slots are grouped in pairs by a wider gap, which puts a quarter mark every two
+// — without it, eight identical boxes is a thing you have to count, and counting
+// is the failure this HUD was drawn to avoid.
 //
 // One prompt element handles interaction, fish dialogue and objectives, because
 // only one of those should ever be competing for attention at a time.

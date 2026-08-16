@@ -1,7 +1,25 @@
 // Mason jars of weed — the game's currency.
 //
-// Four packs a bowl. They were baggies once, and small on purpose: finding them
-// was meant to be an act of searching, which is what gave the lamp a job.
+// A jar holds an eighth, a quarter or a half, and eight eighths pack a bowl.
+// They were baggies once, and small on purpose: finding them was meant to be an
+// act of searching, which is what gave the lamp a job.
+//
+// **The fraction has to be readable from across the fog, with no number on it.**
+// That is the whole difficulty of the change, and it is answered twice over,
+// because either signal alone fails somewhere:
+//
+//  - **Size.** The jar scales by the cube root of its fraction, so the eye
+//    reads volume rather than height. It is the signal that survives distance
+//    and it is the one that is useless up close, where everything is big.
+//  - **Fill.** The weed inside stands at the fraction's own height in the jar,
+//    with the glass empty above it. It is the signal that survives being close
+//    and is invisible at range, where a jar is four pixels of green.
+//
+// Cube root rather than linear on purpose: a half at linear scale is four times
+// an eighth, which puts the small jar well inside the pickup radius of 4 and
+// undoes the thing this prop was redrawn for — that what you see is what you
+// hit. At the cube root the spread is 0.79 to 1.26 and the sphere still fits
+// the picture at both ends.
 //
 // That intent survives the change of prop but the scale did not deserve to. A
 // baggie was half a unit tall inside a pickup radius of nearly three, so you
@@ -65,8 +83,20 @@ function shared() {
   return SHARED;
 }
 
+// The weed cylinder is 1.58 tall and centred at -0.28, so it stands from -1.07
+// to 0.51 in the jar's own space. Filling it part way means scaling in Y and
+// pushing the centre back up by half of what was lost, so the weed keeps
+// sitting on the bottom of the jar instead of hovering in the middle of it.
+const WEED_BASE = -1.07;
+const WEED_HEIGHT = 1.58;
+
 export class Baggie {
-  constructor(position) {
+  /**
+   * @param {THREE.Vector3} position
+   * @param {number} [eighths] what the jar is worth: 1, 2 or 4. Defaults to a
+   *   quarter, which is what every jar was before fractions existed.
+   */
+  constructor(position, eighths = 2) {
     const S = shared();
     this.group = new THREE.Group();
     this.group.position.copy(position);
@@ -77,7 +107,7 @@ export class Baggie {
     this.group.add(this.mesh);
 
     const weed = new THREE.Mesh(S.weed, S.weedMat);
-    weed.position.y = -0.28;
+    this._weed = weed;
     this.group.add(weed);
 
     const lid = new THREE.Mesh(S.lid, S.lidMat);
@@ -93,6 +123,30 @@ export class Baggie {
     // a shelf of them looking like a shop display.
     this.group.rotation.z = (Math.random() - 0.5) * 0.5;
     this.group.rotation.x = (Math.random() - 0.5) * 0.4;
+
+    this.setFraction(eighths);
+  }
+
+  /**
+   * Set what this jar is worth and redraw it to match. Separate from the
+   * constructor because a jar is reused: `place()` reseeds it somewhere else,
+   * and reseeding it at the same size every time would mean the level's mix of
+   * fractions slowly froze into whatever the first layout happened to roll.
+   *
+   * @param {number} eighths 1, 2 or 4
+   */
+  setFraction(eighths) {
+    this.eighths = eighths;
+    // Volume, not height. See the header for why this is a cube root.
+    this.group.scale.setScalar(Math.pow(eighths / 2, CFG.stash.sizeExponent));
+    // Fill runs 0.55 to 1.0 rather than 0.25 to 1.0. The two signals multiply,
+    // so a literal fill on top of a cube-root size would leave an eighth-jar
+    // holding a smear of green nobody would read as weed at all. Overstating
+    // the small end is the right error here: the jar still reads as the least
+    // of the three, which is all the fill has to say.
+    const fill = 0.55 + 0.45 * ((eighths - 1) / 3);
+    this._weed.scale.y = fill;
+    this._weed.position.y = WEED_BASE + (WEED_HEIGHT * fill) / 2;
   }
 
   update(dt, t, lamp) {
@@ -118,12 +172,13 @@ export class Baggie {
     this.respawnAt = performance.now() / 1000 + CFG.stash.respawnDelay;
   }
 
-  place(position) {
+  place(position, eighths = this.eighths) {
     this.group.position.copy(position);
     this._baseY = position.y;
     this.taken = false;
     this.group.visible = true;
     this._glint = 0;
+    if (eighths !== this.eighths) this.setFraction(eighths);
   }
 
   setTrip(v) {

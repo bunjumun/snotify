@@ -238,16 +238,28 @@ export const CFG = {
 
   // ---------- Breath & the baggie economy ----------
   // Difficulty scales the tank, what a baggie gives back, how densely the level
-  // is stocked, and how hard the cold layer bites. Four baggies to pack a bowl
-  // never changes — that's the identity of the mechanic, not a difficulty knob.
+  // is stocked, and how hard the cold layer bites. An eighth of a bowl is an
+  // eighth on every mode — the fractions are the identity of the mechanic, not
+  // a difficulty knob. What difficulty moves is how many jars there are.
+  //
+  // Counts went up by about half when the fractions came in, because a jar is
+  // no longer reliably a quarter: at the old counts a level stocked mostly with
+  // eighths would have had the player scraping the map for a single bowl. The
+  // ratio between the modes is untouched.
+  //
+  // `baggieReturn` is now the breath returned by a QUARTER, and each jar pays
+  // out in proportion (`eighths / 2`). A full bowl's worth of jars therefore
+  // still returns exactly what four old baggies did, whatever mix of sizes it
+  // arrived in — otherwise a run of eighths would have been worth more air than
+  // a run of halves for the same weed, which is backwards.
   difficulty: {
     default: 'medium',
     order: ['chill', 'easy', 'medium', 'hard'],
     modes: {
-      chill:  { label: 'Chill',  tank: 260, baggieReturn: 70, baggieCount: 26, thermoMult: 1.00, hints: 'volunteered' },
-      easy:   { label: 'Easy',   tank: 180, baggieReturn: 20, baggieCount: 20, thermoMult: 1.15, hints: 'volunteered' },
-      medium: { label: 'Medium', tank: 120, baggieReturn: 10, baggieCount: 14, thermoMult: 1.35, hints: 'onRequest' },
-      hard:   { label: 'Hard',   tank:  90, baggieReturn:  5, baggieCount:  9, thermoMult: 1.60, hints: 'onRequest' },
+      chill:  { label: 'Chill',  tank: 260, baggieReturn: 70, baggieCount: 38, thermoMult: 1.00, hints: 'volunteered' },
+      easy:   { label: 'Easy',   tank: 180, baggieReturn: 20, baggieCount: 30, thermoMult: 1.15, hints: 'volunteered' },
+      medium: { label: 'Medium', tank: 120, baggieReturn: 10, baggieCount: 21, thermoMult: 1.35, hints: 'onRequest' },
+      hard:   { label: 'Hard',   tank:  90, baggieReturn:  5, baggieCount: 14, thermoMult: 1.60, hints: 'onRequest' },
     },
   },
 
@@ -298,7 +310,39 @@ export const CFG = {
   },
 
   stash: {
-    needed: 4,            // jars per bowl — constant across all difficulties
+    // ---------- What a jar is worth ----------
+    // A bowl is measured in EIGHTHS, not in jars. Every jar used to be worth
+    // exactly a quarter, so "four jars" and "one bowl" were the same sentence
+    // and the number on the HUD was really a jar count wearing a fraction's
+    // clothes. Now a jar carries an eighth, a quarter or a half, so what you
+    // are holding is an amount and the jars are how it arrives.
+    //
+    // Integers throughout, deliberately. Eight eighths and a jar worth 1, 2 or
+    // 4 of them means no float ever reaches a comparison — 0.125 * 8 is not 1
+    // in binary and a bowl that refuses to pack at 8/8 would be an unfindable
+    // bug for exactly the reason nobody would look for it.
+    needed: 8,            // eighths per bowl — constant across all difficulties
+    // Weighted to the small end so more jars are genuinely needed rather than
+    // just present: the expected jar is 1.85 eighths, so a bowl takes about
+    // 4.3 jars against the old flat 4. The pace barely moves; the variance is
+    // the point. A half is rare enough to feel like luck when the tank is low.
+    fractions: [
+      { eighths: 1, weight: 0.45, label: '1/8' },
+      { eighths: 2, weight: 0.40, label: '1/4' },
+      { eighths: 4, weight: 0.15, label: '1/2' },
+    ],
+    // These weights are DEALT, not rolled — see Stash._rollFraction, which had
+    // to stop rolling them because a level of independent draws kept coming out
+    // with no halves in it at all. This is the size of the deck that gets dealt:
+    // bigger than the jar count on any difficulty, so what is left in the bag is
+    // never quite countable, and small enough that the proportions still hold
+    // over a single level rather than only over a long session.
+    bagSize: 48,
+    // How much bigger a half-jar is than an eighth-jar, drawn as the cube root
+    // of the ratio so the eye reads volume rather than height: 0.79, 1.0, 1.26
+    // against the quarter. Anything stronger and an eighth is a speck inside a
+    // pickup radius of 4, which is the exact mismatch the jar was drawn to fix.
+    sizeExponent: 1 / 3,
     // Grown with the prop rather than left behind it. A baggie was half a unit
     // tall inside a radius of 2.6, so the collision was five times the size of
     // the thing drawn and picking one up felt like it happened *near* the jar
@@ -309,6 +353,13 @@ export const CFG = {
     pickupRadius: 4.0,
     respawnDelay: 6,      // seconds before a taken anchor can reseed
     minPlayerDistance: 45,// don't reseed one in the player's lap
+    // How far apart two anchors have to be, so one sweep of one area cannot
+    // collect four at once. Was 24 and hardcoded in Stash.js. It had to come
+    // down when the counts went up: a disc of radius 176 fits maybe 150
+    // anchors at 24 units and the seeder wants three per jar, which at 38 jars
+    // is 114 and would have had it spinning out its guard loop and quietly
+    // returning short. At 18 there is room for roughly twice that.
+    anchorSpacing: 18,
 
     // Weed is the fuel of this planet and it is not only lying in the silt. A
     // third of it settles on the floor; the rest is caught anywhere in the water
@@ -355,7 +406,7 @@ export const CFG = {
     // Generous on purpose. A bong is a station you swim up to, not a pixel you
     // have to land on — and the reward for reaching it is the best thing in the
     // game, so making the last two metres the hard part is the wrong place to
-    // put difficulty. The scarcity is in the four baggies, which is where it
+    // put difficulty. The scarcity is in the eight eighths, which is where it
     // belongs.
     // Twice what it was. With contact firing it anyway, E is for the approach
     // you didn't quite line up — it should be forgiving well before the glass.
@@ -489,7 +540,17 @@ export const CFG = {
   // all read from this one value, so picture and sound bloom and fade as one
   // thing. Tuning the sequence is tuning this curve.
   trip: {
-    riseTime: 0.6,
+    // **Was 0.6, and that was the whole of "smooth out the visual effect".** The
+    // sequence went from nothing to everything — hue, aberration, glow, edge
+    // shimmer, the camera leaving her back — inside two thirds of a second, and
+    // over a smoothstep, which is only flat at its ends and steepest exactly in
+    // the middle where all of that is happening at once. It read as a cut rather
+    // than a bloom. At 1.5 the picture opens up over about a bar and a half at
+    // most tempos, and the camera has time to swing out rather than jumping.
+    //
+    // This does NOT lengthen the sequence: the hold is a fixed ten seconds of
+    // its own and the taper is a minute. It only spends longer arriving.
+    riseTime: 1.5,
     holdTime: 10.0,       // exactly one camera revolution
     taperTime: 60.0,
     orbitRadius: 21,      // wider than it needs to be, on purpose
@@ -786,7 +847,26 @@ export const CFG = {
     // wash out for ten seconds. At 0.6 the whoosh still reads clearly as the
     // hit landing and you can still hear what is playing underneath it, which
     // is the entire point of pillar 3.
-    phaser: { stages: 6, rateHz: 0.28, depth: 1100, baseFreq: 340, feedback: 0.55, maxWet: 0.6 },
+    // The phaser over the record during a hit. `maxWet` came down from 0.6 with
+    // the rest of the hit: at 0.6 the band's own mix spends the sequence sounding
+    // like it is being played through the effect rather than coloured by it, and
+    // the record is the one thing here that is not ours to smear. 0.42 still
+    // swims and still leaves the vocal where he put it.
+    phaser: { stages: 6, rateHz: 0.28, depth: 1100, baseFreq: 340, feedback: 0.55, maxWet: 0.42 },
+
+    // ---------- The bong hit ----------
+    // The bubble of the pull itself. Turned down at his word: it was 22 bubbles
+    // at a flat 0.16 across 1.2 seconds, all of them equally loud, which arrives
+    // as a wall rather than as somebody taking a hit. Start here if it is still
+    // too much — `gain` is the level of the first bubble and everything else
+    // follows from it.
+    bongHit: {
+      bubbles: 14,        // was 22
+      gain: 0.085,        // was 0.16, a flat level for the whole run
+      tailGain: 0.35,     // the last bubble, as a fraction of the first
+      spacing: 0.062,     // seconds between bubbles; 14 x 0.062 is ~0.87s total
+      attack: 0.018,      // was 0.008, which put a click on the front of each
+    },
 
     reverb: { seconds: 3.2, decay: 2.4, wet: 0.22 },
     analyser: { fftSize: 512, smoothing: 0.78 },

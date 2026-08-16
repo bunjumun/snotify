@@ -883,20 +883,22 @@
 
   /* The album's own bar, above the list. Wider, because it is the one number
      the page is actually about when you are looking at a record. */
-  #albumProg { display: none; margin: 0 0 14px; }
-  body.hasalbumprog #albumProg { display: block; }
-  #albumProg .head {
+  #albumProg:empty { display: none; }
+  #albumProg { margin: 0 0 14px; }
+  .aprog + .aprog { margin-top: 8px; }
+  .aprog .head {
     display: flex; align-items: center; gap: 10px; cursor: pointer;
     padding: 10px 14px; border-radius: 10px; background: var(--bg-row);
     border: 1px solid transparent; user-select: none;
   }
-  #albumProg .head:hover { background: var(--bg-hover); }
-  #albumProg .head .lbl { font-size: 13px; font-weight: 600; }
-  #albumProg .head .track { flex: 1 1 80px; height: 7px; border-radius: 4px;
+  .aprog .head:hover { background: var(--bg-hover); }
+  .aprog .head .lbl { font-size: 13px; font-weight: 600; }
+  .aprog .head .sub2 { font-size: 12px; color: var(--text-mute); flex: none; }
+  .aprog .head .track { flex: 1 1 80px; height: 7px; border-radius: 4px;
     background: var(--field); border: 1px solid var(--line); overflow: hidden; }
-  #albumProg .head .fill { display: block; height: 100%;
+  .aprog .head .fill { display: block; height: 100%;
     background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .18s ease-out; }
-  #albumProg .head .pct { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
+  .aprog .head .pct { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
 
   .pacc { flex: 1 1 100%; min-width: 0; margin-top: 10px; cursor: default; }
   .pacc[hidden] { display: none; }
@@ -988,17 +990,10 @@
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
       <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
     </header>
-    <!-- The album's progress, above the record it is about. Only ever shown in
-         an album view: the whole library is not a record and has no release to
-         be a percentage of. Filled in by renderAlbumProgress(). -->
-    <div id="albumProg">
-      <div class="head" id="albumProgHead" title="How far along this record is — click for the checklist">
-        <span class="lbl">Album progress</span>
-        <span class="track"><span class="fill" id="albumProgFill" style="width:0%"></span></span>
-        <span class="pct" id="albumProgPct">0%</span>
-      </div>
-      <div class="pacc" id="albumProgAcc" hidden></div>
-    </div>
+    <!-- The album's progress, above the record it is about. One block per album
+         in view, built by renderAlbumProgress(). Empty in a shared or
+         project view — see the note on that function for why. -->
+    <div id="albumProg"></div>
     <div id="list" class="loading">Loading…</div>
     <div class="edithint">Edit mode — tap a title to rename · ▲▼ reorder · ⧉ stack into another song · 🗑 trash. Open a song's version menu to edit its stack.</div>
     <div class="mixhint" id="mixHint" style="display:none">Shared mix · <span class="linky" id="mixLogin">band members log in</span> for the full library</div>
@@ -1645,13 +1640,13 @@ App.onLock   = () => {          // hard gate went up: don't leave a library behi
   $('list').className = ''; $('list').innerHTML = '';
   // The album bar is band data too. Leaving it up behind the gate would show
   // how far along a record is to someone who has just been told to log in.
-  document.body.classList.remove('hasalbumprog');
+  $('albumProg').innerHTML = ''; delete $('albumProg').dataset.sig;
   progress = Object.create(null);
 };
 App.onLogout = () => {          // tear the player down before the band is forgotten
   commentCache = {};
   progress = Object.create(null);
-  document.body.classList.remove('hasalbumprog');
+  $('albumProg').innerHTML = ''; delete $('albumProg').dataset.sig;
   try { destroyPlayers(); } catch {}
   activeSong = null; activeSongIndex = -1;
 };
@@ -2061,7 +2056,7 @@ async function init() {
   if (!WaveSurfer) return; // engine failed to load; message already shown
   curProject = null; curBand = null; singleMix = false;
   progress = Object.create(null);
-  document.body.classList.remove('hasalbumprog');
+  $('albumProg').innerHTML = ''; delete $('albumProg').dataset.sig;
   document.body.classList.remove('shared', 'singlemix');
   setCollectionCover(null);
   $('mixHint').style.display = 'none';
@@ -2320,14 +2315,34 @@ function ticksFor(scope, ref){
 // progress on. It gets no bar rather than a bar that cannot be saved.
 const progressable = (s) => !!(s && s.folder) && !!window.PROGRESS;
 const songPctOf = (s) => progressable(s) ? PROGRESS.songPct(ticksFor('song', s.folder)) : 0;
+// WHAT AN ALBUM IS HERE, because the first cut of this got it wrong and it is
+// worth writing down so nobody repeats it. A `project` is NOT an album: it is a
+// share link minted by the film-strip button, and there are a dozen of them
+// called things like "Erics special link" and "Lakehorse Tunes for Laurel".
+// Hanging a record's progress on one would mean the record's completeness lived
+// on a throwaway link. The album layer is `songs.album`, which `albumOf` already
+// falls back to the band title for — the hierarchy the project has always
+// stated is band → album → song → version.
+//
+// So the album bar keys on the album SLUG, and there is one bar per album
+// actually present in the view.
+function albumsInView(){
+  if (!window.PROGRESS) return [];
+  const out = [], seen = new Map();
+  for (const s of songs){
+    if (!progressable(s)) continue;
+    const k = albumSlugOf(s);
+    if (!seen.has(k)){ seen.set(k, { slug: k, name: albumOf(s), songs: [] }); out.push(seen.get(k)); }
+    seen.get(k).songs.push(s);
+  }
+  return out;
+}
 // The album's number, including the mean of every song IN THE ALBUM — songs
 // nobody has touched included, so ten songs with one finished is a tenth of
 // that phase and not half of it. Adding a song lowers the bar, which is honest:
 // the record did just get further from being done.
-function albumPctNow(){
-  if (!curProject || !window.PROGRESS) return 0;
-  return PROGRESS.albumPct(ticksFor('album', curProject.slug),
-                           songs.filter(progressable).map(songPctOf));
+function albumPctOf(al){
+  return PROGRESS.albumPct(ticksFor('album', al.slug), al.songs.map(songPctOf));
 }
 
 async function loadProgress(){
@@ -2341,7 +2356,13 @@ async function loadProgress(){
   }
   progress = Object.create(null);
   for (const r of (rows || [])) ticksFor(r.scope, r.ref).add(r.key);
+  // The ticks usually land AFTER renderList has already drawn the rows, because
+  // this is fired off in the background rather than awaited. Drawing bars that
+  // are missing and then correcting the numbers on the ones already there are
+  // two different jobs, and skipping the second is why every bar sat at 0% no
+  // matter what was stored.
   renderProgressBars();
+  refreshProgressNumbers();
   renderAlbumProgress();
 }
 
@@ -2360,7 +2381,8 @@ function accHtml(list, scope, ref){
   const ticks = ticksFor(scope, ref);
   return list.map(ph => {
     if (ph.auto){
-      const done = songs.filter(progressable);
+      const al = albumsInView().find(a => a.slug === ref);
+      const done = al ? al.songs : [];
       const mean = done.length ? done.reduce((a, s) => a + songPctOf(s), 0) / done.length : 0;
       return `<div class="pphase">
         <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
@@ -2424,15 +2446,17 @@ function refreshProgressNumbers(){
     bar.querySelector('.pct').textContent = w + '%';
     bar.classList.toggle('done', w >= 100);
   });
-  if (curProject){
-    const w = Math.round(albumPctNow());
-    $('albumProgFill').style.width = w + '%';
-    $('albumProgPct').textContent = w + '%';
+  document.querySelectorAll('#albumProg .aprog').forEach(el => {
+    const al = albumsInView().find(a => a.slug === el.dataset.slug);
+    if (!al) return;
+    const w = Math.round(albumPctOf(al));
+    el.querySelector('.fill').style.width = w + '%';
+    el.querySelector('.pct').textContent = w + '%';
     // The album accordion shows the song average as a sentence, so it goes
     // stale the moment a song is ticked. Redraw it only while it is open.
-    const acc = $('albumProgAcc');
-    if (!acc.hidden) acc.innerHTML = accHtml(PROGRESS.ALBUM, 'album', curProject.slug);
-  }
+    const acc = el.querySelector('.pacc');
+    if (!acc.hidden) acc.innerHTML = accHtml(PROGRESS.ALBUM, 'album', al.slug);
+  });
 }
 
 // The bars on the song rows, added after renderList has drawn them. Kept apart
@@ -2459,24 +2483,59 @@ function renderProgressBars(){
   });
 }
 
-// The album's own bar, above the list. Only in an album view: the whole library
-// is not a record and has no release to be a percentage of, and a bar there
-// would be measuring nothing.
+// One bar per album in view, above the list.
+//
+// THE LINE IS LOGGED IN versus PUBLIC, at his word, and not library versus
+// project. A band member sees progress wherever they are — the library, or a
+// project they opened while logged in. A public share link never does: it never
+// gets the `authed` class, so this returns before drawing anything, and the same
+// guard in renderProgressBars keeps the per-song bars off the rows. Someone
+// holding a link to four mixes has no business knowing how finished the record
+// is.
+//
+// One honest wrinkle, since a project is a hand-picked SUBSET of songs. The
+// ticked half of an album's score is stored per album and is the same wherever
+// you look at it, but the half that averages the songs can only average the
+// songs the page was given. So the same album can read differently in a project
+// view than in the library. The song count sits in the header for exactly that
+// reason: the bar says what it is measuring rather than implying it measured
+// everything.
+//
+// Songs with no album set fall back to the band's own name via albumOf, so a
+// band that has never filled the album field in — which is all of them today —
+// gets exactly one bar named after the band. That is the right answer for one
+// record in progress, and it splits on its own the day a song is given an album.
 function renderAlbumProgress(){
-  if (!window.PROGRESS || !curProject || !document.body.classList.contains('authed')) return;
-  document.body.classList.add('hasalbumprog');
-  const w = Math.round(albumPctNow());
-  $('albumProgFill').style.width = w + '%';
-  $('albumProgPct').textContent = w + '%';
-  const acc = $('albumProgAcc');
-  if (!$('albumProgHead').dataset.wired){
-    $('albumProgHead').dataset.wired = '1';
-    wireAcc(acc, 'album', curProject.slug);
-    $('albumProgHead').addEventListener('click', () => {
-      acc.hidden = !acc.hidden;
-      if (!acc.hidden) acc.innerHTML = accHtml(PROGRESS.ALBUM, 'album', curProject.slug);
+  const host = $('albumProg');
+  if (!window.PROGRESS || !document.body.classList.contains('authed')){ host.innerHTML = ''; return; }
+  const albums = albumsInView();
+  if (!albums.length){ host.innerHTML = ''; return; }
+  // Rebuild only when the set of albums changes, so an open accordion survives
+  // a background refresh.
+  const sig = albums.map(a => a.slug).join(' ');
+  if (host.dataset.sig !== sig){
+    host.dataset.sig = sig;
+    host.innerHTML = albums.map(a => `
+      <div class="aprog" data-slug="${esc(a.slug)}">
+        <div class="head" title="How far along this record is — click for the checklist">
+          <span class="lbl">${esc(a.name)}</span>
+          <span class="sub2">${a.songs.length} song${a.songs.length === 1 ? '' : 's'}</span>
+          <span class="track"><span class="fill" style="width:0%"></span></span>
+          <span class="pct">0%</span>
+        </div>
+        <div class="pacc" hidden></div>
+      </div>`).join('');
+    host.querySelectorAll('.aprog').forEach(el => {
+      const slug = el.dataset.slug;
+      const acc = el.querySelector('.pacc');
+      wireAcc(acc, 'album', slug);
+      el.querySelector('.head').addEventListener('click', () => {
+        acc.hidden = !acc.hidden;
+        if (!acc.hidden) acc.innerHTML = accHtml(PROGRESS.ALBUM, 'album', slug);
+      });
     });
   }
+  refreshProgressNumbers();
 }
 
 function renderList() {
@@ -2548,6 +2607,7 @@ function renderList() {
     });
   });
   renderProgressBars();            // the bars ride on top of the rows just drawn
+  renderAlbumProgress();
 }
 
 // ---------- Starting a song on a particular mix ----------

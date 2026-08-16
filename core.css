@@ -186,6 +186,26 @@ header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px;
 .todo-row .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .todo-row .meta { color: var(--text-mute); font-size: 11.5px; margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .todo-row .replies { color: var(--text-mute); }
+/* The same list, in the upload dialog. Two differences, both because of where
+   it sits: a row here is a checkbox you tick rather than a link you follow, so
+   it loses the pointer cursor the modal's rows have; and the dialog is already
+   tall, so the list is given less room and scrolls sooner. */
+.add-todo-list { max-height: 30vh; margin: 6px 0 0; border: 1px solid var(--line); border-radius: 8px; padding: 4px; }
+.add-todo-list .todo-row { cursor: default; align-items: flex-start; }
+.add-todo-list .todo-row.ticked { background: var(--bg-hover); }
+/* Ticked text reads as done without going grey: struck through would fight the
+   reply box that opens underneath it. */
+.add-todo-list .todo-row.ticked .txt { color: var(--text-mute); }
+.add-todo-list .todo-tick { flex: none; width: 16px; height: 16px; margin-top: 3px; cursor: pointer; accent-color: var(--accent); }
+/* The reply is offered only once the note is ticked, because a reply here means
+   "here is what I did about it", which is only true of something you fixed. */
+.add-todo-list .todo-reply { width: 100%; margin-top: 6px; font: inherit; font-size: 12.5px;
+  background: var(--bg); border: 1px solid var(--line); color: var(--text);
+  border-radius: 6px; padding: 6px 8px; resize: vertical; min-height: 34px; }
+.add-todo-list .todo-row .txt { white-space: normal; }
+.add-todo-preview { white-space: pre-wrap; margin-top: 6px; padding: 8px 10px;
+  background: var(--bg-row); border-radius: 6px; border: 1px solid var(--line); }
+
 .chip { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 20px; background: var(--bg-row); border: 1px solid var(--line); color: var(--text-mute); }
 .chip.origin { color: var(--accent); border-color: var(--accent); }
 .chip.dismissed { text-decoration: line-through; opacity: .5; }

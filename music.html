@@ -7,7 +7,7 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=29" />
+<link rel="stylesheet" href="core.css?v=30" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
@@ -950,8 +950,22 @@
           </div>
         </div>
 
+        <!-- The song's open notes, put in front of you at the one moment you are
+             answering them. Hidden until an existing song is chosen: a brand new
+             song has nothing said about it yet, and an empty panel here would
+             read as something failing to load. -->
+        <div id="addTodo" style="display:none">
+          <label>To-do on this song <span class="hint" id="addTodoCount"></span></label>
+          <div class="hint">Tick what this mix fixes. Ticked notes are marked resolved
+            once the upload lands, and they write themselves into the change notes below.</div>
+          <div class="todo-list add-todo-list" id="addTodoList"></div>
+        </div>
+
         <label>Change notes (optional — becomes this version's changelog)</label>
         <textarea id="addNote" placeholder="- Vocal +2 dB&#10;- New outro"></textarea>
+        <!-- What the ticks will add, shown rather than described, so the
+             generated half of the changelog is visible before it is written. -->
+        <div class="hint add-todo-preview" id="addTodoPreview" style="display:none"></div>
 
         <div class="hint">Uploads are imported straight away — the new version shows up
           as soon as this finishes.</div>
@@ -1525,7 +1539,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=29"></script>
+<script src="core.js?v=30"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -3241,6 +3255,10 @@ async function loadComments(){
   } catch { return; }   // offline / stale password — leave what we have
   if (activeSong){ refreshListBadges(); renderComments(); renderMarkers(); }
   else if (songs.length) refreshListBadges();
+  // The upload dialog shows this same list, so a refresh that lands while it is
+  // open has to reach it too — otherwise a note a bandmate resolved a moment ago
+  // is still sitting there with a tickbox beside it.
+  if ($('addModal').classList.contains('open')) renderAddTodo();
 }
 // Pick up bandmates' new comments whenever a song is opened.
 const refreshSongComments = () => loadComments();
@@ -5416,7 +5434,161 @@ function fillSongSelect(){
   syncSongNew();
 }
 function syncSongNew(){ $('addSongNew').style.display = $('addSongSel').value === '__new__' ? 'block' : 'none'; }
-$('addSongSel').addEventListener('change', syncSongNew);
+$('addSongSel').addEventListener('change', () => { syncSongNew(); resetAddTodo(); });
+
+// ---------- The song's to-do list, inside the upload dialog (CR-25) ----------
+// Uploading a new mix is the moment you are answering the notes people left on
+// the last one, so the notes belong here rather than two clicks away on
+// #todoToggle. That modal is still the place to read a song's whole history;
+// this is the working subset — what is open, and what this mix does about it.
+//
+// It leans on machinery that already shipped rather than growing its own:
+// loadComments() fetches the entire library's comments in one call keyed by
+// song id, so rootsFor(id) answers for ANY song without it being the one
+// playing. That is the whole reason this could be a panel and not a migration.
+//
+// Ticked notes are held here and applied only after the import succeeds. Marking
+// a note resolved against a mix that failed to upload would be a lie the
+// database keeps, and the tick is cheap to replay while a failed upload is not.
+// Keyed by comment id, valued by the reply text, which is '' until one is typed.
+let addTicks = new Map();
+
+// The song the dialog is pointed at, or null for a new one — which by definition
+// has nothing said about it yet.
+function addTodoSong(){
+  const key = $('addSongSel').value;
+  if (!key || key === '__new__') return null;
+  return songs.find(x => (x.folder || x.title) === key) || null;
+}
+function addTodoRows(){
+  const song = addTodoSong();
+  return song ? rootsFor(song.id).filter(c => !c.resolved) : [];
+}
+// Switching songs abandons the ticks, because a tick means "this mix fixes that
+// note" and the mix has just changed what it is a mix of.
+function resetAddTodo(){ addTicks = new Map(); renderAddTodo(); }
+
+// A re-render replaces the textareas, so whatever is typed in them has to come
+// back into the map first or ticking a second note would silently eat the reply
+// typed against the first.
+function harvestAddReplies(){
+  document.querySelectorAll('#addTodoList .todo-reply').forEach(t => {
+    if (addTicks.has(t.dataset.id)) addTicks.set(t.dataset.id, t.value);
+  });
+}
+
+function renderAddTodo(){
+  const wrap = $('addTodo'), song = addTodoSong(), rows = addTodoRows();
+  // Nothing open is not a failure and does not deserve an empty box: a song with
+  // every note answered simply has no panel.
+  if (!song || !rows.length){ wrap.style.display = 'none'; updateAddTodoPreview(); return; }
+  wrap.style.display = 'block';
+  $('addTodoCount').textContent = `· ${rows.length} open on “${song.title}”`;
+  $('addTodoList').innerHTML = rows.map(c => {
+    const ticked = addTicks.has(c.id);
+    const nReplies = repliesFor(song.id, c.id).length;
+    return `
+    <div class="todo-row ${ticked ? 'ticked' : ''}" data-id="${c.id}">
+      <input type="checkbox" class="todo-tick" data-id="${c.id}" ${ticked ? 'checked' : ''}
+             title="This mix fixes this note" />
+      <div class="body">
+        <div class="txt">${esc(c.text)}</div>
+        <div class="meta">
+          <span>${fmt(c.time)}</span>
+          <span>${c.name ? `${esc(c.name)} · ` : ''}${timeago(c.at)}</span>
+          ${nReplies ? `<span class="replies">💬 ${nReplies}</span>` : ''}
+          ${tagChips(c.tags)}
+        </div>
+        ${ticked ? `<textarea class="todo-reply" data-id="${c.id}"
+            placeholder="Reply (optional) — what you did about it">${esc(addTicks.get(c.id) || '')}</textarea>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  updateAddTodoPreview();
+}
+
+$('addTodoList').addEventListener('change', (e) => {
+  const box = e.target.closest('.todo-tick');
+  if (!box) return;
+  harvestAddReplies();
+  if (box.checked) addTicks.set(box.dataset.id, addTicks.get(box.dataset.id) || '');
+  else addTicks.delete(box.dataset.id);
+  renderAddTodo();
+});
+// Typing must not re-render, or the box loses focus on the first keystroke. The
+// map is updated in place and only the preview redraws.
+$('addTodoList').addEventListener('input', (e) => {
+  const t = e.target.closest('.todo-reply');
+  if (!t) return;
+  addTicks.set(t.dataset.id, t.value);
+  updateAddTodoPreview();
+});
+
+// The generated half of the changelog. It goes BELOW what he types rather than
+// replacing it: he did that typing by hand, and a tool that overwrites it is a
+// tool you stop trusting with the box.
+function addTodoLogLines(){
+  const song = addTodoSong();
+  if (!song || !addTicks.size) return '';
+  const out = ['Fixed in this mix:'];
+  for (const c of addTodoRows()){
+    if (!addTicks.has(c.id)) continue;
+    out.push(`- ${c.text.replace(/\s+/g, ' ').trim()} (at ${fmt(c.time)})`);
+    const reply = (addTicks.get(c.id) || '').trim();
+    if (reply) out.push(`  ${reply.replace(/\s+/g, ' ').trim()}`);
+  }
+  return out.length > 1 ? out.join('\n') : '';
+}
+function updateAddTodoPreview(){
+  const el = $('addTodoPreview'), lines = addTodoLogLines();
+  const multi = ($('addFile').files || []).length > 1;
+  if (!lines){ el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = 'block';
+  // Several files at once means several versions and no single changelog to
+  // write to, which is why the notes box disables itself there too. Say that
+  // rather than appearing to write a log nobody will find.
+  el.textContent = multi
+    ? `${addTicks.size} note${addTicks.size === 1 ? '' : 's'} will be marked resolved, `
+      + 'with replies posted. Uploading several files at once makes several '
+      + 'versions, so there is no one change log to write these into.'
+    : 'Will be added to the change notes above:\n\n' + lines;
+}
+
+// Applied after the import, one note at a time, and deliberately tolerant: a
+// reply that fails should not stop the resolve, and one failed note should not
+// abandon the rest. Whatever did not land stays ticked in the database's eyes,
+// which is recoverable; the alternative is a half-applied set nobody can see.
+async function applyAddTicks(song){
+  if (!song || !addTicks.size) return { done: 0, failed: 0 };
+  const who = $('cname').value.trim();
+  const roots = rootsFor(song.id);
+  let done = 0, failed = 0;
+  for (const [cid, reply] of addTicks){
+    const root = roots.find(c => c.id === cid);
+    if (!root) continue;
+    try {
+      const text = (reply || '').trim();
+      if (text){
+        // Attributed to the note's own origin mix, not the one just uploaded:
+        // the server assigns that id during import and the page has not seen
+        // it yet. A reply belonging to its thread's version is also what the
+        // drawer already does.
+        const ver = song.versions.find(v => v.id === root.versionId) || song.versions[0];
+        const row = await libRpc('add_comment', { sid: song.id, time_s: root.time,
+          txt: text, who, ver: ver ? ver.name : '', vid: ver ? ver.id : null,
+          parent_id: root.id, tg: null });
+        (commentCache[song.id] ||= []).push(mapRow(row));
+      }
+      const r = await libRpc('resolve_comment', { cid, is_resolved: true, who });
+      const list = commentCache[song.id] || [];
+      const i = list.findIndex(c => c.id === cid);
+      if (i !== -1) list[i] = { ...list[i], ...mapRow({ ...r, dismissed_versions: list[i].dismissedVersions }) };
+      done++;
+    } catch { failed++; }
+  }
+  addTicks = new Map();
+  return { done, failed };
+}
 
 function syncFileUI(){
   const files = $('addFile').files;
@@ -5434,6 +5606,9 @@ function syncFileUI(){
       : ' Check the box above to compress WAV/AIFF/FLAC to MP3 in your browser before upload — otherwise the master uploads as-is.';
   }
   $('addFileHint').textContent = hint;
+  // Going from one file to several removes the changelog these ticks write to,
+  // so the panel's own wording has to change with it.
+  updateAddTodoPreview();
 }
 $('addFile').addEventListener('change', syncFileUI);
 
@@ -5451,6 +5626,16 @@ function openAdd(){
   $('addForm').style.display = 'block';
   $('addActions').style.display = 'flex';
   $('addCompress').checked = false;
+  // The dialog opens on whatever song is playing where there is one, because
+  // that is overwhelmingly the song you came here to upload a mix of, and it is
+  // what makes the to-do panel useful on the first frame rather than after a
+  // trip through the selector.
+  if (activeSong){
+    const key = activeSong.folder || activeSong.title;
+    if ([...$('addSongSel').options].some(o => o.value === key)) $('addSongSel').value = key;
+    syncSongNew();
+  }
+  resetAddTodo();
   syncFileUI();
 }
 function closeAdd(){ $('addModal').classList.remove('open'); }
@@ -5478,7 +5663,13 @@ async function doUpload(){
   if (!files.length){ setAddStatus('Choose at least one audio file.', 'err'); return; }
   if (!song){ setAddStatus('Give the song a title.', 'err'); return; }
   const multi = files.length > 1;
-  const note = multi ? '' : $('addNote').value.trim();
+  // The ticked notes go into the log under what he typed, not over it. Captured
+  // before the upload starts, along with the song they belong to, because both
+  // the selector and the tick map get reset once this succeeds.
+  harvestAddReplies();
+  const todoSong = addTodoSong(), todoLog = multi ? '' : addTodoLogLines();
+  const typed = multi ? '' : $('addNote').value.trim();
+  const note = [typed, todoLog].filter(Boolean).join('\n\n');
   const btn = $('addGo');
   btn.disabled = true;
   try {
@@ -5523,10 +5714,29 @@ async function doUpload(){
     // Import right away rather than waiting on a poller somewhere.
     setAddStatus('Importing…');
     const res = await edgeFn('import-inbox', { band: curBand, pass, song });
-    setAddStatus(`Done ✓ — ${res.imported} mix${res.imported === 1 ? '' : 'es'} added to “${songLabel}”.`, 'ok');
+
+    // Only now are the ticks applied. The mix exists, so resolving the notes it
+    // answers is finally true — and if the upload had thrown above, every tick
+    // is still sitting in the dialog rather than spent on a mix that never came.
+    let ticked = { done: 0, failed: 0 };
+    if (todoSong){
+      setAddStatus('Marking the notes you ticked…');
+      ticked = await applyAddTicks(todoSong);
+    }
+
+    setAddStatus(`Done ✓ — ${res.imported} mix${res.imported === 1 ? '' : 'es'} added to “${songLabel}”.`
+      + (ticked.done ? ` ${ticked.done} note${ticked.done === 1 ? '' : 's'} resolved.` : '')
+      + (ticked.failed ? ` ${ticked.failed} could not be marked, and stayed open.` : ''),
+      ticked.failed ? 'err' : 'ok');
     await init();
     fillSongSelect();
     $('addFile').value = ''; $('addVerName').value = ''; $('addNote').value = '';
+    // init() kicks the comment fetch off in the background and does not wait for
+    // it, so waiting here is what stops the panel redrawing from the cache it is
+    // about to replace — which would put the notes just resolved back on screen
+    // with tickboxes beside them.
+    await loadComments();
+    resetAddTodo();
     syncFileUI();
   } catch (err) {
     setAddStatus(String(err.message || err), 'err');

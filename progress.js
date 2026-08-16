@@ -38,9 +38,25 @@
    * song, again against an empty table. The number moves on every change to
    * what the lists MEAN, because a stored row claiming a list that no longer
    * exists is worth being able to spot later. */
-  const CHECKLIST_VERSION = 5;
+  const CHECKLIST_VERSION = 6;
 
-  /* The song checklist: nine stages, 27 leaves, 100 points.
+  /* The song checklist: ten stages, 24 leaves, 100 points.
+   *
+   * TRIMMED BY A QUARTER at his word ("simplify opitons by 25%"), from 32
+   * leaves to 24. Nothing was dropped that was a real step; what went was
+   * granularity that made the list a chore to read without telling him
+   * anything he did not already know from the neighbouring box. The vocal
+   * tournament is the clearest case: eight to four to two to one was four
+   * boxes describing one afternoon, and what actually matters is that takes
+   * exist, that they have been comped to one, and that it is finished. Session
+   * cleanup folded into the edit pass it happens during, sweetening became one
+   * act rather than two, credits and promo became the one errand they are, and
+   * physical manufacturing left the song entirely because pressing a record is
+   * the record's job and is on the album list.
+   *
+   * No stage weights changed, so nothing already ticked moved: the freed points
+   * stayed inside the stage they came from. Every surviving key kept its name,
+   * so the ticks already on the board survived the trim untouched.
    *
    * WHY IT LOOKS NOTHING LIKE THE FIRST ONE. The shipped list was generated,
    * and it put vocals in tracking — two stages before mixing. He records vocals
@@ -89,8 +105,7 @@
     ]},
     { key: 'e', name: 'Editing', weight: 16, tasks: [
       { key: 'e.body', weight: 7, name: 'Body edited — transients pulled tight without going inhuman' },
-      { key: 'e.rest', weight: 4, name: 'Filler and atmospheres edited' },
-      { key: 'e.gain', weight: 2, name: 'Gain staging and session cleanup' },
+      { key: 'e.rest', weight: 6, name: 'Filler and atmospheres edited, session cleaned up' },
       { key: 'e.rough', weight: 3, name: 'Rough mix uploaded as a version for the band to pick at' },
     ]},
     /* Three STATES, not three jobs, and that is exactly what he asked for:
@@ -105,16 +120,12 @@
     /* The heaviest stage, and last rather than middle. The tournament is his,
      * down to the number: eight takes because it halves cleanly three times. */
     { key: 'v', name: 'Vocals', weight: 18, tasks: [
-      { key: 'v.takes', weight: 4, name: 'Eight takes recorded against the finished mix' },
-      { key: 'v.comp4', weight: 3, name: 'Comped down to four' },
-      { key: 'v.comp2', weight: 3, name: 'Comped down to two' },
-      { key: 'v.pitch', weight: 3, name: 'Final two pitch corrected' },
-      { key: 'v.comp1', weight: 2, name: 'Comped down to one elite take' },
-      { key: 'v.mix', weight: 3, name: 'Vocal mixed' },
+      { key: 'v.takes', weight: 6, name: 'Takes recorded against the finished mix — eight of them' },
+      { key: 'v.comp1', weight: 7, name: 'Comped down to one elite take' },
+      { key: 'v.mix', weight: 5, name: 'Pitch corrected and mixed' },
     ]},
     { key: 's', name: 'Sweetening', weight: 6, tasks: [
-      { key: 's.automation', weight: 3, name: 'Automation and builds — the transitions ramp the way they should' },
-      { key: 's.extras', weight: 3, name: 'Doubles, extra parts and transition effects added' },
+      { key: 's.automation', weight: 6, name: 'Sweetened — automation, builds, doubles, transition effects' },
     ]},
     { key: 'r', name: 'Mastering', weight: 5, tasks: [
       { key: 'r.eq', weight: 2, name: 'Master EQ — top-end sparkle, bass weight, mids in check' },
@@ -130,14 +141,11 @@
      * he leaves alone, and dropping it would lose it for the album. */
     { key: 'x', name: 'Visuals & assets', weight: 5, tasks: [
       { key: 'x.art', weight: 3, name: 'Cover artwork finalised and uploaded' },
-      { key: 'x.credits', weight: 1, name: 'Credits, liner notes and lyrics formatted' },
-      { key: 'x.promo', weight: 1, name: 'Promo assets and press kit ready' },
+      { key: 'x.credits', weight: 2, name: 'Credits, lyrics and promo assets ready' },
     ]},
     { key: 'd', name: 'Distribution & rights', weight: 5, tasks: [
-      { key: 'd.codes', weight: 1, name: 'ISRC / UPC codes generated and metadata locked' },
-      { key: 'd.upload', weight: 2, name: 'Distribution upload and pre-save scheduled' },
-      { key: 'd.physical', weight: 1, name: 'Physical manufacturing submitted' },
-      { key: 'd.out', weight: 1, name: 'Out — Soundcloud, or live through the distributor' },
+      { key: 'd.codes', weight: 2, name: 'ISRC code generated and metadata locked' },
+      { key: 'd.out', weight: 3, name: 'Out — Soundcloud, or live through the distributor' },
     ]},
   ];
 

@@ -920,6 +920,9 @@
   }
 
   .pacc { flex: 1 1 100%; min-width: 0; margin-top: 10px; cursor: default; }
+  /* On the song's own page the checklist is not an accordion inside a row, it
+     is the body of a card, so it carries no top margin of its own. */
+  #pProgAcc { margin-top: 0; }
   .pacc[hidden] { display: none; }
   .pphase { margin-bottom: 10px; }
   .pphase-h {
@@ -928,6 +931,27 @@
     text-transform: uppercase; letter-spacing: .04em;
   }
   .pphase-h .w { font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .7; }
+  /* A category heading is a control: click it to fill the category in, or to
+     empty it if it is already full. */
+  .pphase-h.clickable { cursor: pointer; user-select: none; }
+  .pphase-h.clickable:hover { color: var(--text); }
+  .pphase-h .phall {
+    margin-left: auto; font-size: 10px; font-weight: 600; letter-spacing: .03em;
+    opacity: 0; transition: opacity .12s; color: var(--accent-2); flex: none;
+  }
+  .pphase-h.clickable:hover .phall { opacity: 1; }
+  /* The "everything" row, above the list rather than in it. */
+  .pbulk {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 2px 6px 8px; border-bottom: 1px solid var(--line); margin-bottom: 8px;
+  }
+  .pbulk .bcount { font-size: 12px; color: var(--text-mute);
+    font-variant-numeric: tabular-nums; margin-right: auto; }
+  .pbulk .lnk {
+    font-size: 12px; cursor: pointer; color: var(--text-dim);
+    border-bottom: 1px dotted var(--line); user-select: none;
+  }
+  .pbulk .lnk:hover { color: var(--accent-2); border-bottom-color: var(--accent-2); }
   .ptask {
     display: flex; align-items: flex-start; gap: 8px; padding: 4px 6px;
     border-radius: 6px; font-size: 13px; line-height: 1.35;
@@ -1332,6 +1356,17 @@
       </div>
 
       <div class="pwave" id="pWave"></div>
+
+      <!-- The song's own progress, on the song's own page. The library row has
+           the same checklist behind its bar, but this is the page you are on
+           when you are thinking about one song rather than scanning a shelf,
+           and it is the natural place to fill it in. Open by default: there is
+           no ambiguity about which song it belongs to here, so a fold would be
+           a click for nothing. -->
+      <section class="pcard" id="pProgCard">
+        <h3>Progress <span class="pcount" id="pProgPct"></span></h3>
+        <div class="pacc" id="pProgAcc"></div>
+      </section>
 
       <div class="pcols">
         <section class="pcard">
@@ -2458,8 +2493,17 @@ function accHtml(list, scope, ref){
   const ticks = ticksFor(scope, ref);
   return list.map(ph => {
     if (ph.auto) return autoPhaseHtml(ref, ph);
+    // The whole category is a control. Clicking the heading fills the category
+    // in, or empties it if it was already full — a toggle rather than two
+    // buttons, because the heading can only sensibly mean one thing at a time
+    // and the state it is in says which.
+    const full = ph.tasks.length && ph.tasks.every(t => ticks.has(t.key));
     return `<div class="pphase">
-      <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
+      <div class="pphase-h clickable" data-phase="${esc(ph.key)}"
+           title="${full ? 'Clear every box in ' + esc(ph.name) : 'Tick every box in ' + esc(ph.name)}">
+        ${esc(ph.name)} <span class="w">${ph.weight}%</span>
+        <span class="phall">${full ? 'clear' : 'tick all'}</span>
+      </div>
       ${ph.tasks.map(t => {
         const on = ticks.has(t.key);
         return `<div class="ptask ${on ? 'on' : ''}" data-key="${esc(t.key)}">
@@ -2470,14 +2514,80 @@ function accHtml(list, scope, ref){
       }).join('')}
     </div>`;
   }).join('')
-  + `<div class="pnote">Anyone in the band can tick or untick these, and a tick carries no name.</div>`;
+  + `<div class="pnote">Click a category heading to fill it in or empty it. Anyone in
+       the band can tick or untick these, and a tick carries no name.</div>`;
+}
+
+// The bulk row that sits above a checklist. Separate from accHtml's output only
+// in that it is prepended, so that the "everything" controls read as being about
+// the list rather than as another line inside it.
+function bulkHtml(list, scope, ref){
+  const ticks = ticksFor(scope, ref);
+  const all = list.filter(ph => !ph.auto).flatMap(ph => ph.tasks);
+  const on = all.filter(t => ticks.has(t.key)).length;
+  return `<div class="pbulk">
+    <span class="bcount">${on} of ${all.length} ticked</span>
+    <span class="lnk" data-bulk="all">Tick everything</span>
+    <span class="lnk" data-bulk="none">Clear everything</span>
+  </div>`;
 }
 
 
 // Wire one accordion. Delegated on the container, so re-rendering its innards
 // never leaves a listener behind on an element that has gone.
+// Tick or clear a set of keys in one go, from a category heading or from the
+// "everything" controls. One round trip either way: v25 shipped the bulk insert
+// and v26 added the matching delete, because a control that fills two dozen
+// boxes in a click and then needs two dozen calls to undo is a trap rather than
+// a pair of controls — and the undo is what you reach for right after a
+// mistake, which is the worst moment to be slow.
+async function bulkSet(el, keys, on){
+  if (!keys.length) return;
+  const scope = el.dataset.scope, ref = el.dataset.ref;
+  const ticks = ticksFor(scope, ref);
+  const before = new Set(ticks);
+  keys.forEach(k => on ? ticks.add(k) : ticks.delete(k));
+  paintAcc(el);
+  refreshProgressNumbers(null);
+  try {
+    await libRpc(on ? 'progress_set_many' : 'progress_clear_many',
+      on ? { scope_in: scope, ref_in: ref, keys, ver_in: PROGRESS.VERSION }
+         : { scope_in: scope, ref_in: ref, keys });
+  } catch (err){
+    // Put back exactly what was there, rather than inverting what we just did:
+    // some of these keys may already have been ticked before the click, and
+    // undoing by inversion would clear those too.
+    progress[progKey(scope, ref)] = before;
+    paintAcc(el);
+    refreshProgressNumbers(null);
+    alert('Could not save that: ' + (err.message || err));
+  }
+}
+
 function wireAcc(el){
-  el.addEventListener('click', e => e.stopPropagation());   // never plays the song
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();                                    // never plays the song
+    const scope = el.dataset.scope;
+    const list = scope === 'album' ? PROGRESS.ALBUM : PROGRESS.SONG;
+    const ticks = ticksFor(scope, el.dataset.ref);
+
+    const bulk = e.target.closest('[data-bulk]');
+    if (bulk){
+      const all = list.filter(ph => !ph.auto).flatMap(ph => ph.tasks).map(t => t.key);
+      const want = bulk.dataset.bulk === 'all';
+      // Send only what actually changes. Clearing a list that is already half
+      // empty should not ask the server to delete rows that were never there.
+      return bulkSet(el, all.filter(k => ticks.has(k) !== want), want);
+    }
+
+    const head = e.target.closest('.pphase-h[data-phase]');
+    if (head){
+      const ph = list.find(x => x.key === head.dataset.phase);
+      if (!ph || !ph.tasks.length) return;
+      const full = ph.tasks.every(t => ticks.has(t.key));
+      return bulkSet(el, ph.tasks.filter(t => ticks.has(t.key) === full).map(t => t.key), !full);
+    }
+  });
   el.addEventListener('change', async (e) => {
     const box = e.target.closest('input[type=checkbox]');
     if (!box) return;
@@ -2511,7 +2621,8 @@ function wireAcc(el){
 function paintAcc(acc){
   const scope = acc.dataset.scope, ref = acc.dataset.ref;
   if (!scope || !ref) return;
-  acc.innerHTML = accHtml(scope === 'album' ? PROGRESS.ALBUM : PROGRESS.SONG, scope, ref);
+  const list = scope === 'album' ? PROGRESS.ALBUM : PROGRESS.SONG;
+  acc.innerHTML = bulkHtml(list, scope, ref) + accHtml(list, scope, ref);
 }
 
 
@@ -2543,6 +2654,8 @@ function refreshProgressNumbers(except){
     paintAcc(acc);
   });
   document.querySelectorAll('#albumProg .aprog').forEach(showPickPct);
+  if (profiling && activeSong && $('pProgPct'))
+    $('pProgPct').textContent = Math.round(songPctOf(activeSong)) + '%';
   // The one under the pointer keeps its focus, so it is not redrawn. The only
   // part of it that can have gone stale is the averaged phase, and that can be
   // swapped on its own without touching a single checkbox — and only ever says
@@ -5384,6 +5497,25 @@ function renderProfile(){
   renderProfileChips();
   renderProfileVersions();
   renderProfileLinks();
+  renderProfileProgress();
+}
+
+// The progress card on the song's page. Same machinery as the library row and
+// the record's panel: one accordion, told what it is pointed at through the
+// element, so a tick here is the same tick as a tick anywhere else.
+function renderProfileProgress(){
+  const card = $('pProgCard'), acc = $('pProgAcc');
+  if (!card || !acc) return;
+  const s = activeSong;
+  const show = window.PROGRESS && s && progressable(s)
+            && document.body.classList.contains('authed');
+  card.style.display = show ? '' : 'none';
+  if (!show){ acc.innerHTML = ''; return; }
+  acc.hidden = false;
+  acc.dataset.scope = 'song'; acc.dataset.ref = s.folder;
+  if (!acc.dataset.wired){ acc.dataset.wired = '1'; wireAcc(acc); }
+  paintAcc(acc);
+  $('pProgPct').textContent = Math.round(songPctOf(s)) + '%';
 }
 
 // Kept separate from the rest of the header because the comment pool arrives

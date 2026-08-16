@@ -79,21 +79,26 @@ remembering.
   he sweetens while the vocal is still being comped, the two should swap — it
   changes nothing about the arithmetic, only the reading order and what the
   phase-4 cascade backfill would consider "prior".
-- **The album now uses this same list**, at his word: *"we'll need to refine
-  progress criteria per song verses album eventually but for now use the same
-  metrics for both"*. The generated album checklist — material selection,
-  integration and master flow, visuals and packaging, distribution, plus a
-  fifty-point phase that averaged the songs — is gone, and is in the git history
-  if it is wanted back. Refining the album's criteria separately is explicitly a
-  later job.
+- **The song carries the production pipeline; the album averages it and adds
+  its own.** At his word: *"song level has the production pipeline. album
+  completion is determined more generally by averaging individual song
+  completion amount and then factoring in the rest of the variables"*. So the
+  two lists parted company again after a spell of sharing one. A song has the
+  ten stages above. An album has five phases: **Song completion average (50,
+  worked out, not ticked)**, Material & track selection (10), Integration &
+  master flow (15), Visuals, assets & packaging (15), Distribution, rights &
+  release (10).
 
-  Two consequences, neither obviously right, both worth him knowing. **The album
-  no longer moves on its own as songs fill in** — its score is its own ticks.
-  "The album is mastered" is a different claim from "every song is mastered",
-  and it measures the first; putting the average back is one phase in the list.
-  And **the same task key now exists at both scopes**, which the storage always
-  allowed: the unique key is `(band, scope, ref, task_key)`, so ticking
-  Mastering on the album ticks it on no song.
+  Half and half is the split: a record of finished songs never sequenced,
+  mastered or packaged is genuinely about half done, and so is a fully packaged
+  record of unfinished songs. His case — three of five songs complete, album
+  untouched — reads 30%.
+
+  **What looks like duplication is not.** The song list also has Visuals &
+  assets and Distribution & rights, added when he said a finished song is
+  "choosable as a single release". A single's artwork and distribution are its
+  own; the album's cover, liner notes, packaging and pre-order are the record's.
+  A song can go out as a single long before the record is packaged.
 
 - **The music page is the album, for now.** His words: it is called "music"
   today, and *"eventually when multiple albums exist this will be broken into

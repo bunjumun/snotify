@@ -38,7 +38,7 @@
    * song, again against an empty table. The number moves on every change to
    * what the lists MEAN, because a stored row claiming a list that no longer
    * exists is worth being able to spot later. */
-  const CHECKLIST_VERSION = 4;
+  const CHECKLIST_VERSION = 5;
 
   /* The song checklist: nine stages, 27 leaves, 100 points.
    *
@@ -141,33 +141,63 @@
     ]},
   ];
 
-  /* THE ALBUM USES THE SAME LIST AS A SONG, at his word: "we'll need to refine
-   * progress criteria per song verses album eventually but for now use the same
-   * metrics for both". So there is one checklist, applied at two levels.
+  /* THE ALBUM IS THE AVERAGE OF ITS SONGS PLUS ITS OWN VARIABLES, at his word:
+   * "song level has the production pipeline. album completion is determined
+   * more generally by averaging individual song completion amount and then
+   * factoring in the rest of the variables".
    *
-   * What this replaced: a separate generated album list — material selection,
-   * integration and master flow, visuals and packaging, distribution — with a
-   * fifty-point phase that was the mean of the songs and could not be ticked by
-   * anyone. It is in the git history if it is ever wanted back, and
-   * docs/song-workflow-plan.md records why it went.
+   * So the two lists part company, and the division of labour is clean. The
+   * pipeline above — writing, tracking, editing, mixing, vocals, mastering —
+   * happens to a SONG. It is meaningless at album level except as the average
+   * of the songs it already applies to, which is what the first phase here is.
+   * What is left over is the work that only exists because the songs are being
+   * assembled into one object: choosing and ordering them, making them flow
+   * into each other, mastering the sequence as a whole, and everything the
+   * package needs.
    *
-   * TWO CONSEQUENCES WORTH KNOWING, because neither is obviously right.
+   * Half and half. Fifty points of average and fifty of album-only work is the
+   * split the original doc chose and nothing has argued against it: a record of
+   * finished songs that has never been sequenced, mastered or packaged is
+   * genuinely about half done, and so is a fully packaged record of unfinished
+   * songs.
    *
-   * The album's score is now its OWN ticks and nothing else — it no longer
-   * moves on its own as the songs fill in. "The album is mastered" is a
-   * different claim from "every song is mastered", and this measures the first.
-   * If he wants the songs to feed it again that is one phase back in the list.
+   * `auto: true` marks the averaged phase. It has no boxes because there is
+   * nothing on it a person could tick — it is worked out from the songs — and
+   * it sits in the list rather than beside it so the phases still add to 100
+   * and it appears in its right place when the accordion is open.
    *
-   * The same task key can now exist at both scopes for the same band. That is
-   * fine and always was: the stored row carries `scope`, and the unique key is
-   * (band, scope, ref, task_key). Ticking Mastering on the album does not tick
-   * it on any song.
-   *
-   * He also said the music page is the album for now, and that it splits into
-   * releases once there is more than one. Nothing here has to change for that:
-   * the album is keyed on the album slug, and a second album starts its own
-   * row set the day a song is given one. */
-  const ALBUM = SONG;
+   * A NOTE ON WHAT LOOKS LIKE DUPLICATION. The song list also has Visuals &
+   * assets and Distribution & rights, added when he said a finished song is
+   * "choosable as a single release". Those are not these. A single's artwork
+   * and its distribution are its own; the album's cover, liner notes, packaging
+   * and pre-order are the record's. A song can go out as a single long before
+   * the record is packaged, and both need saying. */
+  const ALBUM = [
+    { key: 'am', name: 'Material & track selection', weight: 10, tasks: [
+      { key: 'am.vision', weight: 3, name: 'Album vision and shortlist defined' },
+      { key: 'am.flow', weight: 3, name: 'Key, tempo and sequence flow rough drafted' },
+      { key: 'am.slots', weight: 4, name: 'Every track slot filled — the songs that are on it are on it' },
+    ]},
+    { key: 'avg', name: 'Song completion average', weight: 50, auto: true, tasks: [] },
+    { key: 'ai', name: 'Integration & master flow', weight: 15, tasks: [
+      { key: 'ai.assembly', weight: 4, name: 'Full album assembly uploaded as one sequenced render' },
+      { key: 'ai.transitions', weight: 4, name: 'Transitions, interludes and crossfades dialled in' },
+      { key: 'ai.seq_ok', weight: 3, name: 'Running order approved by the band' },
+      { key: 'ai.master', weight: 4, name: 'Final album master received and the sequence signed off' },
+    ]},
+    { key: 'av', name: 'Visuals, assets & packaging', weight: 15, tasks: [
+      { key: 'av.cover', weight: 5, name: 'Front and back cover artwork finalised and uploaded' },
+      { key: 'av.credits', weight: 3, name: 'Album credits, liner notes and lyrics formatted' },
+      { key: 'av.packaging', weight: 4, name: 'Physical packaging layout completed' },
+      { key: 'av.promo', weight: 3, name: 'Promotional assets and press kit ready' },
+    ]},
+    { key: 'ad', name: 'Distribution, rights & release', weight: 10, tasks: [
+      { key: 'ad.codes', weight: 2, name: 'ISRC and UPC codes generated, metadata locked' },
+      { key: 'ad.upload', weight: 3, name: 'Distribution upload and pre-order scheduled' },
+      { key: 'ad.physical', weight: 2, name: 'Physical manufacturing submitted' },
+      { key: 'ad.campaign', weight: 3, name: 'Promo campaign and release date locked' },
+    ]},
+  ];
 
   /* Every leaf in reading order, which is also backfill order: the cascade
    * prompt in phase 4 means "everything above this line", and "above" is this
@@ -200,36 +230,33 @@
    * An album with no songs in it scores zero for the phase rather than full
    * marks. Dividing by zero and calling it complete would say a record with
    * nothing on it is half made. */
-  /* THE ALBUM IS HALF ITS OWN TICKS AND HALF ITS SONGS, at his word: "songs
-   * have their own completion status that feeds into album completion status.
-   * so 3 of 5 songs could be complete and choosable as single releases but the
-   * album that includes them and yet to be completed songs would read as not
-   * complete."
+  /* The album's score: its own ticks, plus the averaged phase filled in from
+   * the songs.
    *
-   * That sentence rules out both simple answers. If the album were only its own
-   * checklist it would not budge as songs finished, and three finished songs
-   * would show nothing. If it were only the mean of its songs it would have no
-   * room for the work that is the record's alone — sequencing it, mastering it
-   * as a whole, getting the artwork made. So it is a blend, an even one: half
-   * the album's own ticks over the same nine stages, half how far its songs
-   * have got.
+   * The average counts EVERY song on the record, including ones nobody has
+   * started, which is the reading he described: "3 of 5 songs could be complete
+   * and choosable as single releases but the album that includes them and yet
+   * to be completed songs would read as not complete". Three of five finished
+   * and nothing else touched is 30 of the 50 averaged points, so 30%.
    *
-   * Three of five songs finished and nothing else touched therefore reads 30%,
-   * and cannot read complete until both halves are, which is the behaviour he
-   * described. A song's own score is one number wherever it is looked at — as
-   * part of the record or as a single — because it is stored against the song,
-   * not against the context it is viewed in.
+   * A record with no songs on it scores zero for that phase rather than full
+   * marks. Dividing by nothing and calling it complete would say a record with
+   * nothing on it is half made.
    *
    * Nothing is auto-ticked from what is on the site, deliberately: "for now i'm
    * manually engaging the options on the webpage so dont worry about auto
-   * filling". Every box here is his to tick. */
-  const ALBUM_OWN_SHARE = 0.5;
+   * filling". The averaged phase is worked out rather than ticked, which is a
+   * different thing — it has no boxes to fill in by hand or otherwise. */
   function albumPct(ticks, songPcts) {
-    const own = pct(ALBUM, ticks);
-    if (!songPcts.length) return own;
-    const mean = songPcts.reduce((a, b) => a + b, 0) / songPcts.length;
-    return own * ALBUM_OWN_SHARE + mean * (1 - ALBUM_OWN_SHARE);
+    const manual = pct(ALBUM, ticks);
+    const auto = ALBUM.find(ph => ph.auto);
+    if (!auto) return manual;
+    const mean = songPcts.length
+      ? songPcts.reduce((a, b) => a + b, 0) / songPcts.length
+      : 0;
+    return manual + (mean / 100) * auto.weight;
   }
+
 
 
 

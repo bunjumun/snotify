@@ -2399,6 +2399,23 @@ function barHtml(pct, cls){
 function accHtml(list, scope, ref){
   const ticks = ticksFor(scope, ref);
   return list.map(ph => {
+    // The averaged phase has no boxes: it is worked out from the songs and
+    // there is nothing on it a person could tick. Saying where the number came
+    // from beats showing an empty phase that reads as something failing to load.
+    if (ph.auto){
+      const al = albumsInView().find(a => a.slug === ref);
+      const inAlbum = al ? al.songs : [];
+      const mean = inAlbum.length
+        ? inAlbum.reduce((a, s) => a + songPctOf(s), 0) / inAlbum.length : 0;
+      const done = inAlbum.filter(s => songPctOf(s) >= 100).length;
+      return `<div class="pphase">
+        <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
+        <div class="pauto">Worked out from the songs, not ticked.
+          <b>${Math.round(mean)}%</b> across ${inAlbum.length} song${inAlbum.length === 1 ? '' : 's'},
+          ${done} of them finished, which is <b>${Math.round(mean / 100 * ph.weight)}</b>
+          of the ${ph.weight} points here. Fill a song in from the dropdown above and this moves.</div>
+      </div>`;
+    }
     return `<div class="pphase">
       <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
       ${ph.tasks.map(t => {
@@ -2411,29 +2428,9 @@ function accHtml(list, scope, ref){
       }).join('')}
     </div>`;
   }).join('')
-  + albumSplitNote(scope, ref)
   + `<div class="pnote">Anyone in the band can tick or untick these, and a tick carries no name.</div>`;
 }
 
-// The album's bar is not the sum of the boxes above it, and a reader who ticks
-// all ten stages and sees 50% deserves to be told why rather than left to think
-// it is broken. Half the album's score is its own list; the other half is how
-// far its songs have got. Shown with the live numbers, so it doubles as the
-// answer to "which songs are holding this up".
-function albumSplitNote(scope, ref){
-  if (scope !== 'album') return '';
-  const al = albumsInView().find(a => a.slug === ref);
-  if (!al) return '';
-  const own = PROGRESS.songPct(ticksFor('album', ref));   // same list at both scopes
-  const pcts = al.songs.map(songPctOf);
-  const mean = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : 0;
-  const done = pcts.filter(p => p >= 100).length;
-  return `<div class="pauto">The boxes above are <b>half</b> this record's score
-    (currently <b>${Math.round(own)}%</b>). The other half is how far its songs have
-    got: <b>${Math.round(mean)}%</b> across ${pcts.length} song${pcts.length === 1 ? '' : 's'},
-    ${done} of them finished. So the record cannot read complete until both its own
-    list and every song on it are.</div>`;
-}
 
 // Wire one accordion. Delegated on the container, so re-rendering its innards
 // never leaves a listener behind on an element that has gone.
@@ -2504,11 +2501,24 @@ function refreshProgressNumbers(except){
     paintAcc(acc);
   });
   document.querySelectorAll('#albumProg .aprog').forEach(showPickPct);
-  // The one under the pointer: only its record note can have gone stale, and
-  // that can be swapped on its own without touching a single checkbox.
+  // The one under the pointer keeps its focus, so it is not redrawn. The only
+  // part of it that can have gone stale is the averaged phase, and that can be
+  // swapped on its own without touching a single checkbox — and only ever says
+  // something different when the tick was on a song rather than on this record.
   if (except && !except.hidden && except.dataset.scope === 'album'){
+    const auto = PROGRESS.ALBUM.find(ph => ph.auto);
     const note = except.querySelector('.pauto');
-    if (note) note.outerHTML = albumSplitNote('album', except.dataset.ref);
+    if (auto && note){
+      const al = albumsInView().find(a => a.slug === except.dataset.ref);
+      const inAlbum = al ? al.songs : [];
+      const mean = inAlbum.length
+        ? inAlbum.reduce((a, s) => a + songPctOf(s), 0) / inAlbum.length : 0;
+      const done = inAlbum.filter(s => songPctOf(s) >= 100).length;
+      note.innerHTML = `Worked out from the songs, not ticked.
+        <b>${Math.round(mean)}%</b> across ${inAlbum.length} song${inAlbum.length === 1 ? '' : 's'},
+        ${done} of them finished, which is <b>${Math.round(mean / 100 * auto.weight)}</b>
+        of the ${auto.weight} points here. Fill a song in from the dropdown above and this moves.`;
+    }
   }
 }
 

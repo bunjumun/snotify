@@ -7,7 +7,7 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=30" />
+<link rel="stylesheet" href="core.css?v=31" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
@@ -1539,7 +1539,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=30"></script>
+<script src="core.js?v=31"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -2020,10 +2020,13 @@ async function init() {
     }
 
     if (!band){
-      // Main URL always lands on the home page (band-name entry) — nobody
-      // ends up inside a band without asking for it by name. The name is
-      // pre-filled with your last band, so it's one click if you're known.
-      return showGate(null);
+      // A bare URL used to always land on the band-name entry. It resumes into
+      // your last band instead when that band's password is still cached, which
+      // is CR-26 and the reasoning is on lastBand(). `?home` still gets you the
+      // entry screen, and the name is pre-filled there now, which is what the
+      // comment this replaced had been claiming all along.
+      band = wantsHome() ? '' : lastBand();
+      if (!band) return showGate(null, true, lastBand() || null);
     }
 
     // A single mix (?b&s&v) plays without login; everything else is gated.

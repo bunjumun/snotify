@@ -6,7 +6,7 @@
 <title>Band assets</title>
 <meta name="description" content="Band assets — the lore document, stacked by draft, with one draft live." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>" />
-<link rel="stylesheet" href="core.css?v=30" />
+<link rel="stylesheet" href="core.css?v=31" />
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
   /* Assets-only surface. Everything shared lives in core.css. */
@@ -186,7 +186,7 @@
     </div>
   </div>
 
-<script src="core.js?v=30"></script>
+<script src="core.js?v=31"></script>
 <script type="module">
 // The parser the GAME uses, imported rather than reimplemented — so what this
 // page reports as "12 exchanges" is what the fish will actually find.
@@ -238,8 +238,11 @@ async function init(){
   // gating to the page itself — miss this and body.locked hides .wrap with
   // `visibility: hidden`, which is a blank page and no way in. Same three lines
   // as art.html, and for the same reason.
-  const band = route.band && bandSlugOf(route.band);
-  if (!band){ showGate(null, true); return; }
+  // Resume into your last band when its password is still cached (CR-26, and
+  // the reasoning is on lastBand()); `?home` insists on the entry screen.
+  let band = route.band && bandSlugOf(route.band);
+  if (!band) band = wantsHome() ? '' : lastBand();
+  if (!band){ showGate(null, true, lastBand() || null); return; }
   if (!isAuthed(band)){ showGate(band, true); return; }
 
   curBand = band;

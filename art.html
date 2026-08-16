@@ -7,7 +7,7 @@
 <meta name="description" content="Sn'art — versioned artwork with comments pinned to a region of the image." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with index.html -->
-<link rel="stylesheet" href="core.css?v=30" />
+<link rel="stylesheet" href="core.css?v=31" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
@@ -388,7 +388,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=30"></script>
+<script src="core.js?v=31"></script>
 <script type="module">
 // core.js owns the gate, the route and every Supabase call — these are the
 // three moments it has to hand control back to this page.
@@ -434,8 +434,11 @@ async function init(){
   document.body.classList.remove('shared', 'singlemix');
   $('mixHint').style.display = 'none';
 
-  const band = route.band && bandSlugOf(route.band);
-  if (!band){ showGate(null, true); return; }
+  // Resume into your last band when its password is still cached (CR-26, and
+  // the reasoning is on lastBand()); `?home` insists on the entry screen.
+  let band = route.band && bandSlugOf(route.band);
+  if (!band) band = wantsHome() ? '' : lastBand();
+  if (!band){ showGate(null, true, lastBand() || null); return; }
 
   // A single-revision link opens without a password: exactly one image, no
   // comments, nothing else about the band exposed. Same deal as a shared mix.

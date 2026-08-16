@@ -527,6 +527,35 @@ function clearAuth(b){
   const a = auths(); delete a[b];
   localStorage.setItem(AUTH_KEY, JSON.stringify(a));
 }
+
+// The band you were last let into, if the password for it is still cached (CR-26).
+//
+// `mp_last_band` has been written by grantAuth() and cleared by logout() since
+// the multi-band era began, and until now **nothing read it** — so a return visit
+// to a bare URL was asked which band it was while that band's password sat in
+// localStorage one key away. The comment over music.html's gate call had claimed
+// for just as long that the name was "pre-filled with your last band"; it never
+// was. This is the read half, finally.
+//
+// It answers empty unless the password is still there, which is what makes it
+// safe to trust: a logged-out band, a cleared cache and a v1 entry holding a bare
+// 1 all fail isAuthed() and land you back on the gate, exactly as before.
+//
+// Worth naming the decision this overrides, because it was a considered one:
+// "nobody ends up inside a band without asking for it by name." With the password
+// cached, that ask is the band name alone and no password, so anyone at this
+// browser could already get in by typing it. Resuming gives away nothing that was
+// not already one guess away.
+function lastBand(){
+  const b = localStorage.getItem('mp_last_band') || '';
+  return b && isAuthed(b) ? b : '';
+}
+
+// ...and the way back out. Landing straight inside a band needs a route to the
+// band-entry screen, and logout() is the wrong one: it clears the very cache this
+// is meant to keep, so switching bands would cost a re-login. `?home` on any page
+// forces the gate and touches nothing.
+const wantsHome = () => new URLSearchParams(location.search).has('home');
 // The band password was wrong or has changed since we cached it.
 const isAuthErr = (e) => e && (e.status === 401 || e.status === 403 || /band password/i.test(e.message || ''));
 
@@ -1509,7 +1538,12 @@ function logout(){
   App.onLogout();
   document.body.classList.remove('authed', 'editing');
   applyTheme(null);
-  history.replaceState(null, '', pageBase());
+  // `?home` rather than a bare path, now that a bare path resumes into your last
+  // band (CR-26). It matters for the two-band case the line above only half
+  // handles: log out of A while B is still cached and `mp_last_band` is B, and a
+  // bare path would walk you straight into B, making Log out look broken. Asking
+  // for the entry screen out loud is what makes it mean what it says.
+  history.replaceState(null, '', pageBase() + '?home');
   route = parseRoute();
   App.init();
 }

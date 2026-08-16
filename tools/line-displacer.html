@@ -354,7 +354,7 @@
 
         const approximationLineSpacingValue = document.getElementById('approximationLineSpacingValue');
 
-        const approximationLineWidth = document.getElementById('approximationLineWidthValue');
+        const approximationLineWidth = document.getElementById('approximationLineWidth');
 
         const rgbLayerSeparation = document.getElementById('rgbLayerSeparation');
 
@@ -1207,6 +1207,27 @@
         document.querySelectorAll('select, input[type="checkbox"], input[type="color"]').forEach(control => {
 
             control.addEventListener('change', drawDisplaced);
+
+        });
+
+
+
+        // A colour picker only fires `change` when it is dismissed, so the canvas
+        // used to sit on the old colour for the whole time you were choosing one.
+        // `input` fires as the swatch moves; coalesced to one redraw per frame
+        // because a full redraw resamples the image and a drag emits far more
+        // events than that.
+        let colourFrame = 0;
+
+        document.querySelectorAll('input[type="color"]').forEach(control => {
+
+            control.addEventListener('input', () => {
+
+                if (colourFrame) return;
+
+                colourFrame = requestAnimationFrame(() => { colourFrame = 0; drawDisplaced(); });
+
+            });
 
         });
 

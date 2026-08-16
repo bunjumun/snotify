@@ -900,6 +900,25 @@
     background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .18s ease-out; }
   .aprog .head .pct { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
 
+  /* The record panel's track picker. Its own row so it survives the checklist
+     being redrawn underneath it on every tick. */
+  .apick {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 14px 0; cursor: default;
+  }
+  .apick[hidden] { display: none; }
+  .apick label { font-size: 12px; color: var(--text-dim); flex: none; }
+  .apick select {
+    flex: 1 1 200px; min-width: 0; font: inherit; font-size: 13px;
+    padding: 5px 8px; border-radius: 8px;
+    background: var(--field); color: var(--text); border: 1px solid var(--line);
+  }
+  .apick select:focus { border-color: var(--accent); outline: none; }
+  .apick .apctnow {
+    flex: none; font-size: 13px; font-weight: 700;
+    font-variant-numeric: tabular-nums; color: var(--text-dim);
+  }
+
   .pacc { flex: 1 1 100%; min-width: 0; margin-top: 10px; cursor: default; }
   .pacc[hidden] { display: none; }
   .pphase { margin-bottom: 10px; }
@@ -2418,11 +2437,16 @@ function albumSplitNote(scope, ref){
 
 // Wire one accordion. Delegated on the container, so re-rendering its innards
 // never leaves a listener behind on an element that has gone.
-function wireAcc(el, scope, ref){
+function wireAcc(el){
   el.addEventListener('click', e => e.stopPropagation());   // never plays the song
   el.addEventListener('change', async (e) => {
     const box = e.target.closest('input[type=checkbox]');
     if (!box) return;
+    // Read the target off the element, not out of a closure. The record's panel
+    // can be pointed at any track on it, and a closure captured at wiring time
+    // would happily go on writing ticks to the record while the dropdown said
+    // otherwise — the worst kind of bug, because the screen would look right.
+    const scope = el.dataset.scope, ref = el.dataset.ref;
     const row = box.closest('.ptask');
     const key = row.dataset.key;
     const on  = box.checked;
@@ -2431,22 +2455,30 @@ function wireAcc(el, scope, ref){
     // round trip before it moves feels broken, and this one is cheap to undo.
     on ? ticks.add(key) : ticks.delete(key);
     row.classList.toggle('on', on);
-    refreshProgressNumbers();
+    refreshProgressNumbers(el);
     try {
       await libRpc('progress_set', { scope_in: scope, ref_in: ref, key_in: key,
                                      done_in: on, ver_in: PROGRESS.VERSION });
     } catch (err){
       on ? ticks.delete(key) : ticks.add(key);
       box.checked = !on; row.classList.toggle('on', !on);
-      refreshProgressNumbers();
+      refreshProgressNumbers(el);
       alert('Could not save that tick: ' + (err.message || err));
     }
   });
 }
 
+// Draw an accordion from whatever it is currently pointed at.
+function paintAcc(acc){
+  const scope = acc.dataset.scope, ref = acc.dataset.ref;
+  if (!scope || !ref) return;
+  acc.innerHTML = accHtml(scope === 'album' ? PROGRESS.ALBUM : PROGRESS.SONG, scope, ref);
+}
+
+
 // Patch every number in place. Called after a tick, and cheap enough to call
 // after any of them: it touches at most one element per song plus two.
-function refreshProgressNumbers(){
+function refreshProgressNumbers(except){
   document.querySelectorAll('#list .song').forEach(el => {
     const s = songs[Number(el.dataset.i)];
     const bar = el.querySelector(':scope > .meta .pbar');
@@ -2462,12 +2494,24 @@ function refreshProgressNumbers(){
     const w = Math.round(albumPctOf(al));
     el.querySelector('.fill').style.width = w + '%';
     el.querySelector('.pct').textContent = w + '%';
-    // The album accordion shows the song average as a sentence, so it goes
-    // stale the moment a song is ticked. Redraw it only while it is open.
-    const acc = el.querySelector('.pacc');
-    if (!acc.hidden) acc.innerHTML = accHtml(PROGRESS.ALBUM, 'album', al.slug);
   });
+  // The same track can be open in two places at once — on its own row and in
+  // the record's panel — and the record's note quotes numbers that move when
+  // any song is ticked. So redraw every open checklist except the one under the
+  // pointer, which has to keep its focus.
+  document.querySelectorAll('.pacc').forEach(acc => {
+    if (acc.hidden || acc === except) return;
+    paintAcc(acc);
+  });
+  document.querySelectorAll('#albumProg .aprog').forEach(showPickPct);
+  // The one under the pointer: only its record note can have gone stale, and
+  // that can be swapped on its own without touching a single checkbox.
+  if (except && !except.hidden && except.dataset.scope === 'album'){
+    const note = except.querySelector('.pauto');
+    if (note) note.outerHTML = albumSplitNote('album', except.dataset.ref);
+  }
 }
+
 
 // The bars on the song rows, added after renderList has drawn them. Kept apart
 // from renderList so that the list can be rebuilt for any of its own reasons
@@ -2483,14 +2527,32 @@ function renderProgressBars(){
     const bar = sub.querySelector('.pbar');
     const acc = document.createElement('div');
     acc.className = 'pacc'; acc.hidden = true;
+    acc.dataset.scope = 'song'; acc.dataset.ref = s.folder;
     el.appendChild(acc);
-    wireAcc(acc, 'song', s.folder);
+    wireAcc(acc);
     bar.addEventListener('click', (e) => {
       e.stopPropagation();                       // the row plays; the bar opens
       acc.hidden = !acc.hidden;
-      if (!acc.hidden) acc.innerHTML = accHtml(PROGRESS.SONG, 'song', s.folder);
+      if (!acc.hidden) paintAcc(acc);
     });
   });
+}
+
+// The score of whatever the dropdown is currently pointed at, shown beside it.
+// Editing a track from the record's panel would otherwise give no feedback at
+// all — the record's own bar barely moves, because one track is a fifth of half
+// of it, and the track's own bar is far down the page behind the open panel.
+function showPickPct(el){
+  const acc = el.querySelector('.pacc');
+  const out = el.querySelector('.apctnow');
+  if (!acc || !out) return;
+  if (acc.dataset.scope === 'album'){
+    const al = albumsInView().find(a => a.slug === acc.dataset.ref);
+    out.textContent = al ? Math.round(albumPctOf(al)) + '%' : '';
+  } else {
+    const song = songs.find(s => s.folder === acc.dataset.ref);
+    out.textContent = song ? Math.round(songPctOf(song)) + '%' : '';
+  }
 }
 
 // One bar per album in view, above the list.
@@ -2533,15 +2595,40 @@ function renderAlbumProgress(){
           <span class="track"><span class="fill" style="width:0%"></span></span>
           <span class="pct">0%</span>
         </div>
-        <div class="pacc" hidden></div>
+        <!-- Which thing the checklist below is editing. The record has ten
+             stages of its own AND every track has the same ten, so without this
+             the only way to fill a track in from here would be to close the
+             record, find the row and open that instead. It sits above the list
+             rather than inside it because the list is redrawn on every tick and
+             a control that vanishes mid-use is worse than no control. -->
+        <div class="apick" hidden>
+          <label>Editing</label>
+          <select class="apicksel">
+            <option value="album:${esc(a.slug)}">The record — ${esc(a.name)}</option>
+            ${a.songs.map((s, n) => `<option value="song:${esc(s.folder)}">${n + 1}. ${esc(s.title)}</option>`).join('')}
+          </select>
+          <span class="apctnow"></span>
+        </div>
+        <div class="pacc" hidden data-scope="album" data-ref="${esc(a.slug)}"></div>
       </div>`).join('');
     host.querySelectorAll('.aprog').forEach(el => {
-      const slug = el.dataset.slug;
-      const acc = el.querySelector('.pacc');
-      wireAcc(acc, 'album', slug);
+      const acc  = el.querySelector('.pacc');
+      const pick = el.querySelector('.apick');
+      const sel  = el.querySelector('.apicksel');
+      wireAcc(acc);
+      const retarget = () => {
+        const [scope, ...rest] = sel.value.split(':');
+        acc.dataset.scope = scope; acc.dataset.ref = rest.join(':');
+        paintAcc(acc);
+        showPickPct(el);
+      };
+      sel.addEventListener('change', retarget);
+      sel.addEventListener('click', e => e.stopPropagation());
+      pick.addEventListener('click', e => e.stopPropagation());
       el.querySelector('.head').addEventListener('click', () => {
-        acc.hidden = !acc.hidden;
-        if (!acc.hidden) acc.innerHTML = accHtml(PROGRESS.ALBUM, 'album', slug);
+        const open = acc.hidden;
+        acc.hidden = !open; pick.hidden = !open;
+        if (open) retarget();
       });
     });
   }

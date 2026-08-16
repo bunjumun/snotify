@@ -221,6 +221,9 @@
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
       <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
     </header>
+    <!-- Filled in by progress-ui.js, and left empty when there is nothing to
+         say, so it takes no space on a band with no progress recorded. -->
+    <div id="albumProgMini"></div>
 
     <div id="list" class="loading">Loading…</div>
 
@@ -389,6 +392,9 @@
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
 <script src="core.js?v=31"></script>
+<!-- The record's progress bar, read-only here; the player owns the editable one. -->
+<script src="progress.js?v=6"></script>
+<script src="progress-ui.js?v=1"></script>
 <script type="module">
 // core.js owns the gate, the route and every Supabase call — these are the
 // three moments it has to hand control back to this page.
@@ -475,6 +481,10 @@ async function init(){
 
   curBand = band;
   applyTheme(curBand);
+  // The record's progress, read-only, above the artwork. The art page is one of
+  // the places he works on a release, so the number belongs here too; filling it
+  // in stays the player's job. In the background — the artwork must not wait.
+  PROGRESS_UI.mount($('albumProgMini'), { href: 'music.html?b=' + encodeURIComponent(curBand) });
   let payload;
   try {
     payload = await libRpc('get_library', { k: 'art' });

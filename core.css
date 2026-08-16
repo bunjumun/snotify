@@ -423,3 +423,44 @@ body.texting .dock { display: none; }
 .tool-row.off .tool-what { opacity: .42; }
 .tool-row.off .tool-what b { text-decoration: line-through; text-decoration-color: var(--text-mute); }
 
+
+/* ---------------------------------------------------------------------------
+   The record's progress, read-only. Shown on Sn'Album's front page and on the
+   art page; the player has its own, richer version of this in its own styles
+   under .aprog, deliberately kept apart so that making one louder cannot
+   silently restyle the other.
+   Filled in by progress-ui.js, which leaves the host empty when there is
+   nothing to say — so the host must carry no margin or border of its own.
+   --------------------------------------------------------------------------- */
+.aprogmini {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 18px; margin-bottom: 14px; border-radius: 12px;
+  background: var(--bg-row); border: 1px solid var(--line);
+  text-decoration: none; color: inherit;
+  transition: border-color .12s, background .12s;
+}
+a.aprogmini:hover { background: var(--bg-hover); border-color: var(--accent); }
+.aprogmini .lbl { font-size: 15px; font-weight: 700; letter-spacing: .01em; flex: none; }
+.aprogmini .sub2 { font-size: 12px; color: var(--text-mute); flex: none; }
+.aprogmini .track {
+  flex: 1 1 120px; height: 12px; border-radius: 999px;
+  background: var(--field); border: 1px solid var(--line); overflow: hidden;
+}
+.aprogmini .fill {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width .18s ease-out;
+}
+.aprogmini .pct {
+  font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums;
+  flex: none; min-width: 62px; text-align: right; letter-spacing: -.02em;
+}
+.aprogmini.done { border-color: var(--accent-2); }
+.aprogmini.done .pct { color: var(--accent-2); }
+/* Narrow screens: the name and the tally step onto their own line rather than
+   squeezing the bar down to a stub. */
+@media (max-width: 560px) {
+  .aprogmini { flex-wrap: wrap; gap: 8px 12px; }
+  .aprogmini .track { flex-basis: 100%; order: 3; }
+  .aprogmini .pct { margin-left: auto; }
+}

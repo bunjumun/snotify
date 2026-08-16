@@ -97,6 +97,9 @@
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
       <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
     </header>
+    <!-- Filled in by progress-ui.js, and left empty when there is nothing to
+         say, so it takes no space on a band with no progress recorded. -->
+    <div id="albumProgMini"></div>
 
     <p class="bandline" id="bandLine"></p>
 
@@ -145,6 +148,9 @@
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
 <script src="core.js?v=31"></script>
+<!-- The record's progress bar, read-only here; the player owns the editable one. -->
+<script src="progress.js?v=6"></script>
+<script src="progress-ui.js?v=1"></script>
 <script type="module">
 // This page is the front door, so it inherits every link ever shared before it
 // existed — back when index.html WAS the player. Anything carrying a song, a
@@ -181,6 +187,11 @@ async function init(){
     if (!lib) return showGate(band, true);
     curBandTitle = lib.title || band;
     tally('tallyMusic', (lib.songs || []).length, 'song', 'songs');
+    // How far along the record is, at the top of the page the band lands on.
+    // Read-only here and linked to the player, which is where it is filled in.
+    // In the background: the doors must not wait on it.
+    PROGRESS_UI.mount($('albumProgMini'),
+      { href: 'music.html?b=' + encodeURIComponent(curBand), bandTitle: curBandTitle });
   } catch (err){
     if (isAuthErr(err)){ clearAuth(band); return showGate(band, true); }
     curBandTitle = band;

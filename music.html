@@ -941,6 +941,24 @@
      nothing on it a person could tick. Saying so is better than showing an
      empty phase and letting it read as something that failed to load. */
   .pauto { font-size: 12.5px; color: var(--text-dim); padding: 4px 6px; }
+  /* The averaged phase shown as its working: one row per song, so the record's
+     number stops being a verdict and starts being a list of what is left. */
+  .pbreak { padding: 2px 6px 0; }
+  .pbrow {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; padding: 2px 0; color: var(--text-dim);
+  }
+  .pbrow .n { flex: none; width: 14px; text-align: right; color: var(--text-mute);
+    font-variant-numeric: tabular-nums; }
+  .pbrow .t { flex: 1 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .pbrow .b { flex: 0 0 60px; height: 4px; border-radius: 2px;
+    background: var(--field); border: 1px solid var(--line); overflow: hidden; }
+  .pbrow .b span { display: block; height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+  .pbrow .p { flex: none; width: 34px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  .pbrow.full .t, .pbrow.full .p { color: var(--accent-2); font-weight: 600; }
   .pauto b { color: var(--text); font-variant-numeric: tabular-nums; }
   .pnote { font-size: 12px; color: var(--text-mute); padding: 2px 6px 6px; }
 </style>
@@ -2396,26 +2414,50 @@ function barHtml(pct, cls){
 // The checklist itself. `auto` phases have no boxes — the album's 50% song
 // average is the mean of the songs and there is nothing on it a person could
 // tick — so they render as a sentence saying what the number came from.
+// The averaged phase, which has no boxes because it is worked out from the songs
+// rather than ticked. Shown as the arithmetic rather than as a single number,
+// because "31%" tells him nothing about what to do next and a list of songs with
+// their own scores tells him exactly which ones are holding the record back.
+//
+// The formula, stated once here and nowhere else:
+//   album %  =  (album's own ticked weights, out of 50)
+//             +  50 x (mean of every song's own %) / 100
+// A song's own % is the sum of its ticked stage weights, so a song part-way
+// through the pipeline contributes part-way. That is what makes this work for
+// any mix of stages: three finished, one being mastered and two still being
+// written all fall out of the same average without a special case.
+function autoPhaseHtml(ref, ph){
+  const al = albumsInView().find(a => a.slug === ref);
+  const inAlbum = al ? al.songs : [];
+  const pcts = inAlbum.map(songPctOf);
+  const mean = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : 0;
+  const done = pcts.filter(p => p >= 100).length;
+  const pts = mean / 100 * ph.weight;
+  return `<div class="pphase pphase-auto">
+    <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
+    <div class="pauto">Worked out from the songs, never ticked. The average of every
+      song on the record, including ones nobody has started, is <b>${mean.toFixed(1)}%</b>
+      &mdash; ${done} of ${pcts.length} finished &mdash; which is
+      <b>${pts.toFixed(1)}</b> of the ${ph.weight} points here.</div>
+    <div class="pbreak">
+      ${inAlbum.map((sg, n) => {
+        const w = songPctOf(sg);
+        return `<div class="pbrow ${w >= 100 ? 'full' : ''}">
+          <span class="n">${n + 1}</span>
+          <span class="t">${esc(sg.title)}</span>
+          <span class="b"><span style="width:${Math.round(w)}%"></span></span>
+          <span class="p">${Math.round(w)}%</span>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="pnote">Pick any of them in the dropdown above to fill it in, and this moves.</div>
+  </div>`;
+}
+
 function accHtml(list, scope, ref){
   const ticks = ticksFor(scope, ref);
   return list.map(ph => {
-    // The averaged phase has no boxes: it is worked out from the songs and
-    // there is nothing on it a person could tick. Saying where the number came
-    // from beats showing an empty phase that reads as something failing to load.
-    if (ph.auto){
-      const al = albumsInView().find(a => a.slug === ref);
-      const inAlbum = al ? al.songs : [];
-      const mean = inAlbum.length
-        ? inAlbum.reduce((a, s) => a + songPctOf(s), 0) / inAlbum.length : 0;
-      const done = inAlbum.filter(s => songPctOf(s) >= 100).length;
-      return `<div class="pphase">
-        <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
-        <div class="pauto">Worked out from the songs, not ticked.
-          <b>${Math.round(mean)}%</b> across ${inAlbum.length} song${inAlbum.length === 1 ? '' : 's'},
-          ${done} of them finished, which is <b>${Math.round(mean / 100 * ph.weight)}</b>
-          of the ${ph.weight} points here. Fill a song in from the dropdown above and this moves.</div>
-      </div>`;
-    }
+    if (ph.auto) return autoPhaseHtml(ref, ph);
     return `<div class="pphase">
       <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
       ${ph.tasks.map(t => {
@@ -2507,18 +2549,8 @@ function refreshProgressNumbers(except){
   // something different when the tick was on a song rather than on this record.
   if (except && !except.hidden && except.dataset.scope === 'album'){
     const auto = PROGRESS.ALBUM.find(ph => ph.auto);
-    const note = except.querySelector('.pauto');
-    if (auto && note){
-      const al = albumsInView().find(a => a.slug === except.dataset.ref);
-      const inAlbum = al ? al.songs : [];
-      const mean = inAlbum.length
-        ? inAlbum.reduce((a, s) => a + songPctOf(s), 0) / inAlbum.length : 0;
-      const done = inAlbum.filter(s => songPctOf(s) >= 100).length;
-      note.innerHTML = `Worked out from the songs, not ticked.
-        <b>${Math.round(mean)}%</b> across ${inAlbum.length} song${inAlbum.length === 1 ? '' : 's'},
-        ${done} of them finished, which is <b>${Math.round(mean / 100 * auto.weight)}</b>
-        of the ${auto.weight} points here. Fill a song in from the dropdown above and this moves.`;
-    }
+    const phase = except.querySelector('.pphase-auto');
+    if (auto && phase) phase.outerHTML = autoPhaseHtml(except.dataset.ref, auto);
   }
 }
 

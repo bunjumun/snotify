@@ -155,11 +155,20 @@ judged after reading the code rather than taken from how the item was phrased. T
 ledger row goes in *before* the code either way, so a session that dies still
 leaves the reading behind. Commits name the item: `CR-2: ...`.
 
-Three things stay his even when work is running unattended: **`git push`**, which
-is the whole deploy; **anything genuinely destructive to live Supabase data** —
-a `drop`, a `delete`, a `truncate`, a column type change that discards values —
-which stops and asks with the exact statement quoted; and **deleting or
-overwriting his files**. Work on a named branch, commit freely, stop there.
+**The push is Claude's, as of 2026-08-15**, and this file said the opposite for a
+day after he had stopped meaning it. He cannot be notified and is not at the
+screen, so a fix that is committed and never pushed is a fix he never receives:
+the branch is not the delivery, the live site is. Work on a named branch, commit,
+push it yourself, and then **confirm on the live site rather than believing
+git** — a successful push is not a confirmed deploy. Any migration the code needs
+runs before the push, never after. Say in chat what was pushed, onto which
+branch, and what the live check came back with.
+
+Still his, and these stop and ask first: **anything genuinely destructive to live
+Supabase data** — a `drop`, a `delete`, a `truncate`, a column type change that
+discards values — quoted exactly before it runs; **`git push --force`** or
+anything else that rewrites published history; **deleting a remote branch**; and
+**deleting or overwriting his files**.
 
 **Migrations themselves are not on that list, as of 2026-08-15.** They were
 ("migrations included"), and he changed it: asked whether they should go through
@@ -171,11 +180,15 @@ window onto the statement: the migration still lands as a numbered file in
 `supabase/` before it runs, and the chat message says which file ran, what it
 creates, and what the verification came back with.
 
-**One line above is unsettled and should not be resolved by guessing.** The note's
-COMPLETED log for 15 Aug records him saying the push is Claude's and always was,
-and a session shipped on that basis; but this file and the user-level playbook
-both still say the push is his. Those two readings differ by a deploy. It is on
-the outbox as a question. Until he answers it, treat the push as his.
+**How the push question got settled, because the shape of the mistake is worth
+keeping.** For a day this file and the user-level playbook both said the push was
+his while the note's COMPLETED log recorded him saying it was Claude's and always
+had been. A session shipped on the note's reading; the next one found the
+contradiction, stopped a finished bug fix at the deploy, and asked. He settled it
+on 15 Aug in Claude's favour. The lesson is not about pushing: **when a rule file
+and his own recent word disagree, the word is newer than the file, and the file is
+what needs fixing** — say so and fix it, rather than obeying the stale copy and
+leaving the next session to hit the same wall.
 
 ## Things that will bite you
 

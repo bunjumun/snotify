@@ -894,19 +894,28 @@
   .pbar.done .pct { color: var(--accent-2); }
   /* Nothing ticked reads as an invitation rather than as a failure. */
   .pbar.zero .pct { color: var(--text-mute); font-weight: 600; }
-  .premixchip { flex: none; font-size: 12px; line-height: 1; color: var(--warn, #e0a94a);
-    margin-right: -2px; }
-  /* The remix toggle inside a checklist. */
-  .premix {
+  /* The link that turns a checklist into an editor of itself, at the foot of
+     the panel. Its two labels are both rendered and CSS picks one, so that
+     repainting the panel (which happens on every tick) cannot get the label out
+     of step with the mode. */
+  .pedit {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     padding: 8px 6px 2px; margin-top: 4px; border-top: 1px solid var(--line);
   }
-  .premix.on { color: var(--warn, #e0a94a); }
-  .premix .rlbl { font-size: 12px; color: var(--text-dim); }
-  .premix.on .rlbl { color: var(--warn, #e0a94a); }
-  .premix .lnk { font-size: 12px; cursor: pointer; color: var(--accent-2);
+  .pedit .lnk { font-size: 12px; cursor: pointer; color: var(--accent-2);
     border-bottom: 1px dotted var(--accent-2); }
-  .premix .lnk:hover { color: var(--text); border-bottom-color: var(--text); }
+  .pedit .lnk:hover { color: var(--text); border-bottom-color: var(--text); }
+  .pacc:not(.editing) .e-on,
+  .pacc.editing .e-off { display: none; }
+  /* Everything that changes the SHAPE of the list rather than what is ticked on
+     it, hidden until asked for. He opens this panel to tick two boxes far more
+     often than to redesign it, and a delete control on every row is a trap at
+     the moment you are aiming for a checkbox. Nothing is taken away, it is one
+     click further in. */
+  .pacc:not(.editing) .pdrop,
+  .pacc:not(.editing) .padd,
+  .pacc:not(.editing) .phidden,
+  .pacc:not(.editing) .pnote.editonly { display: none; }
 
   /* The album's own bar, above the list. Wider, because it is the one number
      the page is actually about when you are looking at a record. */
@@ -1744,7 +1753,7 @@
 <script src="core.js?v=31"></script>
 <!-- The two checklists and the arithmetic. No DOM, no network; it throws at
      load if the weights stop summing to 100, which is deliberate. -->
-<script src="progress.js?v=9"></script>
+<script src="progress.js?v=10"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -1790,7 +1799,7 @@ let curProject = null;             // project scoping the current view (via #/p/
 let progress = Object.create(null);
 // His own additions and removals, raw as the server returns them. One object
 // for the whole band; PROGRESS.shapeFor narrows it to one song or one record.
-let progShape = { items: [], hidden: [], remix: [] };
+let progShape = { items: [], hidden: [] };
 const shapeOf = (scope, ref) => PROGRESS.shapeFor(progShape, scope, ref);
 let order = [], pos = -1;          // play order over songs
 let shuffle = false, repeat = 'off';
@@ -2489,7 +2498,7 @@ async function loadProgress(){
       libRpc('progress_all', {}),
       // Older databases have no v27, and that must not take the bars down with
       // it: no custom items is a perfectly good answer.
-      libRpc('progress_shape', {}).catch(() => ({ items: [], hidden: [], remix: [] })),
+      libRpc('progress_shape', {}).catch(() => ({ items: [], hidden: [] })),
     ]);
   }
   catch (e){
@@ -2498,7 +2507,7 @@ async function loadProgress(){
     return;
   }
   progress = Object.create(null);
-  progShape = shape || { items: [], hidden: [], remix: [] };
+  progShape = shape || { items: [], hidden: [] };
   for (const r of (rows || [])) ticksFor(r.scope, r.ref).add(r.key);
   // The ticks usually land AFTER renderList has already drawn the rows, because
   // this is fired off in the background rather than awaited. Drawing bars that
@@ -2510,11 +2519,9 @@ async function loadProgress(){
   renderAlbumProgress();
 }
 
-function barHtml(pct, cls, remixing){
+function barHtml(pct, cls){
   const w = Math.round(pct);
-  return `<span class="pbar ${cls || ''}${w >= 100 ? ' done' : ''}${w === 0 ? ' zero' : ''}"
-      title="${remixing ? 'Sent back for a remix — ' : 'Production progress — '}click for the checklist">
-      ${remixing ? '<span class="premixchip" title="Being remixed">↻</span>' : ''}
+  return `<span class="pbar ${cls || ''}${w >= 100 ? ' done' : ''}${w === 0 ? ' zero' : ''}" title="Production progress — click for the checklist">
       <span class="track"><span class="fill" style="width:${w}%"></span></span>
       <span class="pct">${w}%</span>
     </span>`;
@@ -2593,28 +2600,27 @@ function accHtml(list, scope, ref){
     </div>`;
   }).join('')
   + hiddenHtml(list, scope, ref)
-  + remixHtml(scope, ref, shape)
-  + `<div class="pnote">Click a category heading to fill it in or empty it. Removing a
-       step shares its weight out inside its own category, so this still adds up to 100.</div>`;
+  + `<div class="pnote editonly">Click a category heading to fill it in or empty it. Removing a
+       step shares its weight out inside its own category, so this still adds up to 100.</div>`
+  + peditHtml();
 }
 
-// The remix toggle. Offered on ANY song or record, at his word "this function
-// should be possible for any completed tracks" — restricting it to ones already
-// at 100 would mean it is not there the moment it is actually needed, since a
-// remix is decided the moment the mix stops satisfying him, not after he has
-// gone hunting for the toggle first.
-function remixHtml(scope, ref, shape){
-  const cost = PROGRESS.remixCost(scope, scope === 'album' ? PROGRESS.ALBUM : PROGRESS.SONG, shape);
-  if (shape.remix){
-    const since = shape.remixSince ? new Date(shape.remixSince).toLocaleDateString() : '';
-    return `<div class="premix on" data-remix="${esc(scope)}:${esc(ref)}">
-      <span class="rlbl">Sent back for a remix${since ? ' on ' + esc(since) : ''} —
-        holding ${cost.toFixed(0)} points back until it is remastered.</span>
-      <span class="lnk" data-remixoff="1">Mark remastered</span>
-    </div>`;
-  }
-  return `<div class="premix" data-remix="${esc(scope)}:${esc(ref)}">
-    <span class="lnk" data-remixon="1">Send back for a remix</span>
+// The link at the foot of a checklist that turns it into an editor of itself,
+// named in his own words. Both labels are always in the markup and CSS shows one
+// of them, because the panel is repainted on every tick and a label rendered
+// from a mode variable would need that variable carried through every repaint
+// path — the class on the container survives innerHTML replacement, so it is the
+// one place the mode can live without being reset by an unrelated click.
+//
+// Takes no arguments and reads nothing: the mode belongs to the panel on screen,
+// not to a song. Opening a different song's checklist starts it as a checklist
+// again, which is the right default for a control you reach for rarely.
+function peditHtml(){
+  return `<div class="pedit">
+    <span class="lnk" data-editcrit="1">
+      <span class="e-off">Edit progress criteria</span>
+      <span class="e-on">Done editing</span>
+    </span>
   </div>`;
 }
 
@@ -2739,15 +2745,10 @@ function wireAcc(el){
       return;
     }
 
-    const remixOn = e.target.closest('[data-remixon]');
-    const remixOff = e.target.closest('[data-remixoff]');
-    if (remixOn || remixOff){
-      const scope = el.dataset.scope, ref = el.dataset.ref, on = !!remixOn;
-      const list = progShape.remix.filter(r => !(r.scope === scope && r.ref === ref));
-      progShape.remix = on ? list.concat([{ scope, ref, since: new Date().toISOString() }]) : list;
-      paintAcc(el); refreshProgressNumbers(null);
-      libRpc('progress_remix_set', { scope_in: scope, ref_in: ref, on_in: on })
-        .catch(err => { alert('Could not save that: ' + (err.message || err)); loadProgress(); });
+    // Editing mode is a class on the panel and nothing else — nothing is saved,
+    // because which mode a panel is in is not a fact about the record.
+    if (e.target.closest('[data-editcrit]')){
+      el.classList.toggle('editing');
       return;
     }
 
@@ -2828,12 +2829,6 @@ function refreshProgressNumbers(except){
     bar.querySelector('.pct').textContent = w + '%';
     bar.classList.toggle('done', w >= 100);
     bar.classList.toggle('zero', w === 0);
-    const remixing = shapeOf('song', s.folder).remix;
-    if (!!bar.querySelector('.premixchip') !== remixing){
-      bar.querySelector('.track').insertAdjacentHTML('beforebegin',
-        remixing ? '<span class="premixchip" title="Being remixed">↻</span>' : '');
-      if (!remixing) bar.querySelector('.premixchip')?.remove();
-    }
   });
   document.querySelectorAll('#albumProg .aprog').forEach(el => {
     const al = albumsInView().find(a => a.slug === el.dataset.slug);
@@ -2875,8 +2870,7 @@ function renderProgressBars(){
     if (!s || !progressable(s) || el.querySelector(':scope > .meta .pbar')) return;
     const sub = el.querySelector(':scope > .meta .sub');
     if (!sub) return;
-    sub.insertAdjacentHTML('beforeend',
-      barHtml(songPctOf(s), '', shapeOf('song', s.folder).remix));
+    sub.insertAdjacentHTML('beforeend', barHtml(songPctOf(s)));
     const bar = sub.querySelector('.pbar');
     const acc = document.createElement('div');
     acc.className = 'pacc'; acc.hidden = true;

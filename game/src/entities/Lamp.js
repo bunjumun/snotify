@@ -23,6 +23,22 @@
 //  3. A lens glow, so the source reads even when the beam points away from
 //     camera. Helmets only, and only once you can see who's holding it.
 //
+// THE HELMETS LOOK AT THINGS. The four of them no longer hold a fixed fan: each
+// rider claims a nearby findable and swings onto it, and takes his fan position
+// back when there is nothing to see. That is four people behaving like four
+// people, and it is also a hint you can miss, which is the only kind this game
+// allows.
+//
+// It is fenced hard, because the pillar it brushes against is the strictest one
+// in the build — "No waypoint, ever. The fog IS the game" (Clues.js). A beam that
+// swings onto something across the lake is a waypoint wearing a hat. So a rider
+// may only look at what he could plausibly have SEEN: inside CFG.lamp.lookRange,
+// which is about a quarter of the way to the fog wall, and roughly in front of
+// her. The caller decides what counts as findable and the chest is never on that
+// list at any range. The EYES are not part of this. They are hers, they are the
+// headlights, they point where she is going, and `illumination()` still measures
+// off them — so nothing about how a pickup glints when you find it changed.
+//
 // Two states throughout. Before the lighter everything is a feeble cold glow
 // that barely reaches past the divers' own boots; after, it's warm and flickers
 // like a flame. That transition is the opening's payoff.
@@ -99,15 +115,29 @@ export class Lamp {
 
     // ---- The rope. One per rider, fanned so four beams read as four people
     // rather than as one hot stripe down the middle of the screen.
+    /** Index of the first helmet in `heads`. The two eyes come first and are
+     *  never targeted, so everything about looking-at starts here. */
+    this.firstHelmet = this.heads.length;
     for (let i = 0; i < riders; i++) {
       const t = riders > 1 ? (i / (riders - 1)) * 2 - 1 : 0;   // -1..1
-      this.heads.push(this._makeHead(scene, {
+      const h = this._makeHead(scene, {
         base: L.helmetIntensity, angle: L.helmetAngle,
         yaw: t * L.helmetSpread,
         pitch: (i % 2 ? 1 : -1) * L.helmetSpread * 0.45,
         tint: L.tintHelmet,
         beam: false, glow: true,
-      }));
+      });
+      // Where this rider is actually looking, as a world direction, eased toward
+      // whatever the fan or a target asks for. Kept per head rather than
+      // recomputed, because the easing IS the effect: an instant swing is a
+      // turret and a slow one is a man noticing something.
+      h.look = new THREE.Vector3(0, 0, -1);
+      // `h.target` is already taken: it is the SpotLight's aim Object3D. The
+      // world point this rider has decided to look at is `lookAt`, and confusing
+      // the two silently aims every beam at the origin.
+      h.lookAt = null;            // world point, or null for the fan position
+      h.hold = 0;                 // seconds left before he gives up on it
+      this.heads.push(h);
     }
 
     if (this.enabled) scene.add(this.glow);
@@ -125,6 +155,8 @@ export class Lamp {
     this._right = new THREE.Vector3();
     this._up = new THREE.Vector3();
     this._fwd = new THREE.Vector3(0, 0, -1);
+    this._want = new THREE.Vector3();
+    this._lastDt = 1 / 60;   // setLookTargets can run before the first update()
     this._warm = new THREE.Color(L.color);
     this._cold = new THREE.Color(L.dimColor);
     this._col = new THREE.Color();
@@ -184,7 +216,70 @@ export class Lamp {
    *   two eyes first, then a helmet per rider. Short arrays are tolerated — a
    *   head with nowhere to be is switched off rather than left at the origin.
    */
+  /**
+   * Hand the riders a list of things worth looking at.
+   *
+   * Called before `update()`, with world points in rough priority order. The
+   * caller owns the policy — what is findable right now, and what must never be
+   * (the chest) — because that is a game question and this class only knows about
+   * light. Passing an empty list or never calling this at all returns every
+   * helmet to its fan position, which is exactly the old behaviour.
+   *
+   * One target per rider, nearest first, and no two riders on the same thing:
+   * four beams converging on one baggie is a spotlight, and a spotlight is the
+   * waypoint we are not allowed to build. Spread over four things it reads as
+   * four people looking around, which is the whole idea.
+   *
+   * @param {THREE.Vector3[]} points candidates, already filtered for relevance
+   * @param {THREE.Vector3} at where she is, for the range test
+   */
+  setLookTargets(points, at) {
+    const L = CFG.lamp;
+    const n = this.heads.length - this.firstHelmet;
+    if (n <= 0) return;
+    if (!L.lookAt || !points || points.length === 0) {
+      for (let i = 0; i < n; i++) this.heads[this.firstHelmet + i].lookAt = null;
+      return;
+    }
+
+    // Range and heading gates. Both exist to keep this a thing a rider could
+    // have seen rather than a compass — see the header.
+    //
+    // `this._dir` is last frame's heading, because this runs before update()
+    // recomputes it. At the rate she turns and the rate a beam crosses, one frame
+    // of staleness is invisible; the alternative is calling this after update and
+    // acting on the targets a frame late instead, which is the same lag wearing a
+    // different hat.
+    const near = this._cand || (this._cand = []);
+    near.length = 0;
+    for (const p of points) {
+      const d = this._tmp.copy(p).sub(at).length();
+      if (d > L.lookRange) continue;
+      if (this._tmp.divideScalar(d || 1).dot(this._dir) < L.lookAhead) continue;
+      near.push({ p, d });
+    }
+    near.sort((a, b) => a.d - b.d);
+
+    for (let i = 0; i < n; i++) {
+      const h = this.heads[this.firstHelmet + i];
+      const claim = near[i];
+      if (claim) {
+        h.lookAt = claim.p;
+        h.hold = L.lookHold;
+      } else if (h.hold > 0) {
+        // Keep the last one a moment longer. Without this a rider strobes on and
+        // off every time a target crosses the range gate, which is the ugliest
+        // possible version of this effect.
+        h.hold -= this._lastDt;
+        if (h.hold <= 0) h.lookAt = null;
+      } else {
+        h.lookAt = null;
+      }
+    }
+  }
+
   update(dt, origins, baseRot, aimIntent, react = null) {
+    this._lastDt = dt;
     const L = CFG.lamp;
     this._t += dt;
     const r = react || ZERO;
@@ -237,6 +332,33 @@ export class Lamp {
         .addScaledVector(this._right, h.yaw)
         .addScaledVector(this._up, h.pitch)
         .normalize();
+
+      // ...and a rider with something to look at leaves that fan position for it.
+      // The eyes have no `look` field at all, so this whole block is helmets only
+      // and her headlights keep pointing where she is going.
+      if (h.look) {
+        this._want.copy(this._headDir);
+        if (h.lookAt) {
+          this._tmp.copy(h.lookAt).sub(at);
+          const d = this._tmp.length();
+          if (d > 0.001) {
+            this._tmp.divideScalar(d);
+            // Clamped against the FAN position, not against her heading: the cap
+            // is "how far a man turns his head", and measuring it off her would
+            // let the outermost rider swing further than the innermost for no
+            // reason anyone could see.
+            const dot = THREE.MathUtils.clamp(this._tmp.dot(this._headDir), -1, 1);
+            const off = Math.acos(dot);
+            // Past the cap he looks as far that way as he can and no further,
+            // which reads as a man craning rather than as a beam refusing.
+            const w = off > L.lookMax ? L.lookMax / off : 1;
+            this._want.lerp(this._tmp, w).normalize();
+          }
+        }
+        // Eased, and this easing is the effect. Instant is a turret.
+        h.look.lerp(this._want, 1 - Math.exp(-L.lookRate * dt)).normalize();
+        this._headDir.copy(h.look);
+      }
 
       h.light.position.copy(at);
       h.target.position.copy(at).addScaledVector(this._headDir, 25);

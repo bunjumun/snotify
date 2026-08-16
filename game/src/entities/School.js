@@ -203,7 +203,11 @@ export class School {
     const W = F.weights;
     // Loud passages tighten the ball. This is the most visible thing the analyser
     // does to the world, so it's worth being generous with.
-    this._tighten += (react * F.reactTighten - this._tighten) * Math.min(1, dt * 2.5);
+    // The gain is CFG.reactive.shoals rather than a second number beside
+    // reactTighten: this one says how hard the environment listens as a whole,
+    // and reactTighten says what a school does about it.
+    this._tighten += (react * F.reactTighten * CFG.reactive.shoals - this._tighten)
+                   * Math.min(1, dt * 2.5);
     const cohesion = W.cohesion * (1 + this._tighten * 2.2);
     const separation = W.separation * (1 - this._tighten * 0.45);
 

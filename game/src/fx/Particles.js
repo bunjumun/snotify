@@ -105,13 +105,27 @@ export class Particles {
   }
 
   update(dt, cameraPos, trip = 0, kick = 0) {
+    // The water stirs on the kick. The silt used to drift at a fixed rate no
+    // matter what was playing, which meant the one thing filling every frame of
+    // the screen was the one thing deaf to the record. It is a MULTIPLIER on the
+    // drift each mote already has rather than a shared shove, so the cloud
+    // quickens without acquiring a direction — a common push would read as the
+    // camera moving, which is a different and much worse sensation.
+    //
+    // Eased, and eased slowly on the way down: a kick is a transient, and letting
+    // it fall at the rate it arrived makes the silt flicker rather than surge.
+    this._stir = (this._stir || 0);
+    const stirTarget = kick * CFG.reactive.motes;
+    this._stir += (stirTarget - this._stir) * Math.min(1, dt * (stirTarget > this._stir ? 14 : 3));
+    const drift = 1 + this._stir;
+
     // Silt wraps around the camera so we're always inside the cloud.
     const half = this.box / 2;
     for (let i = 0; i < SILT; i++) {
       const i3 = i * 3;
-      this.pos[i3] += this.vel[i3] * dt;
-      this.pos[i3 + 1] += this.vel[i3 + 1] * dt;
-      this.pos[i3 + 2] += this.vel[i3 + 2] * dt;
+      this.pos[i3] += this.vel[i3] * drift * dt;
+      this.pos[i3 + 1] += this.vel[i3 + 1] * drift * dt;
+      this.pos[i3 + 2] += this.vel[i3 + 2] * drift * dt;
       for (let k = 0; k < 3; k++) {
         const c = k === 0 ? cameraPos.x : k === 1 ? cameraPos.y : cameraPos.z;
         let d = this.pos[i3 + k] - c;

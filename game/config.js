@@ -35,6 +35,65 @@ export const CFG = {
     strainTrauma: 0.40,
   },
 
+  // ---------- Flora ----------
+  // The kelp bed. One InstancedMesh, swayed in the vertex shader, so the count
+  // here costs vertex work and nothing else: no extra draw call, no extra file,
+  // no page weight. That is the only reason it can be this generous.
+  //
+  // Height and width are DELIBERATELY separate numbers. They used to be one
+  // scalar with a small width jitter on top, which meant a tall strand was always
+  // a wide strand and the whole bed read as one plant photographed at several
+  // distances. Real weed does not work like that: a stand can be tall and thin,
+  // or squat and broad, and it is the disagreement between the two that stops a
+  // field of instanced quads looking instanced.
+  flora: {
+    count: 860,           // was 520. One draw call either way.
+    tries: 6,             // placement attempts per strand before giving up
+
+    // Three classes, DEALT rather than rolled. Rolling each strand independently
+    // against these odds is uniform over thousands and lumpy over the few hundred
+    // a lake actually plants — the same defect that produced two seeds with no
+    // half-jars in them on 2026-08-16. Dealing from a shuffled bag guarantees the
+    // mix and leaves the randomness where it belongs: the order, the placement,
+    // and the jitter inside each class.
+    //
+    // `h` is the height multiplier band, `w` the width band, `weight` how many of
+    // that class go into the bag. Turf is the floor of the bed, stands are the
+    // rare tall ones you can actually navigate by.
+    classes: [
+      { name: 'turf',  weight: 5, h: [0.35, 0.75], w: [0.75, 1.5]  },
+      { name: 'bed',   weight: 8, h: [0.7,  1.5],  w: [0.55, 1.15] },
+      { name: 'stand', weight: 3, h: [1.5,  2.9],  w: [0.4,  0.85] },
+    ],
+
+    // Lean. A strand planted dead vertical looks pinned; a couple of degrees of
+    // permanent tilt off true makes the bed look like it grew rather than got
+    // placed. Radians, applied about a random horizontal axis.
+    leanMax: 0.22,
+    sink: 0.3,            // how far the root is pushed under the seabed surface
+    shelfDepth: 4,        // kelp skips anything more than this far below floorY
+  },
+
+  // ---------- The record, in the world ----------
+  // How hard the ENVIRONMENT moves with the music. Every one of these numbers
+  // used to live inside the module that consumed it, which meant "make the world
+  // breathe harder" was a hunt through five files.
+  //
+  // Kept deliberately apart from `CFG.trip` and `CFG.bongHit`, which were calmed
+  // on 2026-08-16 and are a different question. Those play over his own record
+  // while the screen is already doing the most it ever does; these play while you
+  // are simply swimming, and are the whole reason the lake feels like it is
+  // listening. Raising one is not a reason to raise the other, in either
+  // direction. Do not merge these sections.
+  reactive: {
+    kelpSway: 1.75,       // was 1.15 baked into Flora's shader — lows, the big bend
+    kelpRipple: 0.9,      // NEW: mids, as a wave travelling across the bed
+    godrays: 1.6,         // multiplier on the low-band shaft brightness
+    motes: 1.5,           // multiplier on the kick push through the particulate
+    shoals: 1.45,         // multiplier on how hard the mids turn a school
+    ease: 6,              // shared smoothing rate; a snare must not snap the bed
+  },
+
   // Superior is cold, green and close. Visibility is the single biggest lever on
   // both mood and framerate: everything past `fogFar` is culled, so the art
   // direction and the performance budget are the same decision.
@@ -157,6 +216,62 @@ export const CFG = {
     gripRecoverPerSec: 22,  // while not
     regrabRadius: 3.2,
     adriftDrainMult: 1.5,
+
+    // ---- How they turn ----
+    // Every rider used to slerp toward the SAME quaternion at the SAME rate, so
+    // the rope threw four men apart in space while their bodies held parade
+    // formation. Three separate fixes, and they are separate on purpose because
+    // each is a different lie the old code told.
+    //
+    // 1. Follow rate falls off down the rope. The man on her back reads her turn
+    //    almost at once; the man four links back finds out about it late, which
+    //    is what being on the end of a rope actually feels like.
+    faceRate: 7.0,        // rider 0; this is the old shared number
+    // Multiplied per rider down the line. 0.85 and not lower, which was measured
+    // rather than guessed: at 0.62 the last rider follows at 1.7 per second, and
+    // on a hard circling turn at full surge he falls a THIRD OF A LAP behind her
+    // heading and reads as a man facing backwards. 0.85 gives the tail of the
+    // line about 25 degrees of lag at the same speed, which is lag you feel and
+    // never mistake for a broken transform.
+    faceRateFalloff: 0.85,
+    // The hard ceiling on lag, radians. An exponential chase can fall arbitrarily
+    // far behind a sustained turn, and it did: a trailing rider was measured 174
+    // degrees off her heading on a hard circle, which reads as a man riding
+    // backwards rather than as a man being dragged. ~34 degrees is generous
+    // enough that the falloff above still does all the visible work and nothing
+    // is ever clamped on an ordinary turn.
+    faceMaxLag: 0.6,
+    // 2. Bank. Roll comes from the sideways component of THAT rider's own chain
+    //    velocity, so a hard turn rolls the outside man further than the inside
+    //    one and they come out of it at different times. Radians per unit per
+    //    second of sideways travel, then clamped.
+    //
+    //    THE NUMBER IS SET BY WHERE IT SATURATES, not by where it looks nice on
+    //    one turn. A sustained circle at maxSpeed throws a rider sideways at
+    //    9 to 16 units a second, so at the 0.09 this started at every one of the
+    //    four sat pinned against the clamp for a seventh of a hard turn — four
+    //    men locked at the same extreme angle, which is the parade formation this
+    //    was built to get rid of, arrived at from the other direction. At 0.045 a
+    //    hard sustained circle rides around 25 degrees and the clamp is reserved
+    //    for a genuine whip.
+    bank: 0.045,
+    bankMax: 0.6,         // ~34 degrees; past this he reads as falling off
+    bankRate: 5.0,        // how fast roll chases the velocity, per second
+    // 3. Pitch with rise and fall, so a man being dragged upward noses up rather
+    //    than staying flat and sliding through the water like a plank. Weaker
+    //    than the bank on purpose: vertical travel is smaller and more constant,
+    //    and matching the bank here just makes everyone permanently nose-down.
+    pitch: 0.06,
+    pitchMax: 0.5,
+
+    // ---- How they look ----
+    // Per-rider build variation, as a fraction. 0 is the lead rider's build; the
+    // rest are pushed away from it by up to this much on each dimension. Kept
+    // modest: these are four men in the same navy-issue suit, not four species,
+    // and anything larger reads as a scaling bug rather than as casting.
+    varyBuild: 0.16,
+    varyDazzle: 0.35,     // how much the dazzle texture's scale varies
+    varyBrass: 0.1,       // hue shift on the brass, so helmets are not identical
   },
 
   // ---------- Lamp ----------
@@ -220,6 +335,33 @@ export const CFG = {
     helmetIntensity: 85,
     helmetAngle: 0.5,
     helmetSpread: 0.2,    // how far the four fan apart, radians
+
+    // ---- The riders look at things ----
+    // The four helmets swing onto findables instead of holding a fixed fan. It
+    // is the crew doing what a crew would: four people on a rope, looking around,
+    // and one of them notices something in the silt.
+    //
+    // THE PILLAR THIS MUST NOT BREAK, and it is the hardest rule in the game:
+    // "No waypoint, ever. The fog IS the game." (see Clues.js). A beam that
+    // swings onto something across the lake is a waypoint with better manners. So
+    // a rider may only look at what he could plausibly have SEEN: inside
+    // `lookRange`, which is well inside the fog, and roughly in front of her. The
+    // chest is never a target at any range — that one belongs to the fish, and
+    // the entire clue system exists to keep it there.
+    lookAt: true,
+    lookRange: 34,        // units; fog reaches 130, so this is arm's length by
+                          // comparison and cannot function as a compass
+    lookAhead: -0.15,     // min dot with her heading. Slightly behind is allowed,
+                          // because a rider IS behind her and something she has
+                          // just passed is the most natural thing for him to turn
+                          // and look at.
+    lookMax: 0.85,        // radians a helmet may swing off its fan position
+    lookRate: 2.6,        // how fast a beam crosses onto a target, per second.
+                          // Slow: this is a man turning his head, and anything
+                          // quick reads as a targeting system.
+    lookHold: 1.1,        // seconds a rider stays on a target after it stops
+                          // qualifying, so a beam does not flick on and off at
+                          // the edge of range
     beamStrength: 0.26,   // the visible shaft, per eye — two of these now
 
     intensity: 950,       // the reference pair; the ratio below is the dim state

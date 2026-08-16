@@ -17,6 +17,25 @@
 // The suit is dazzle-camouflaged, painted procedurally in _dazzleTexture(). It's
 // the site's own livery, it's period-correct for a wreck, and practically it
 // makes the one thing you have to keep track of legible in eighty units of murk.
+//
+// FOUR OF THEM, AND THEY ARE NOT THE SAME MAN. This mattered more than it
+// sounded. Every rider used to slerp toward the same quaternion at the same rate
+// off the same mesh, so the rope threw them apart in space while their bodies
+// held parade formation — a rigid object with four heads. Two halves to the fix,
+// and they are independent:
+//
+//   ROTATION. Follow rate falls off down the rope, so the man on her back reads
+//   her turn almost at once and the man on the end finds out late. On top of
+//   that each one BANKS into his own motion, roll taken from the sideways
+//   component of his own chain velocity, and PITCHES with his own rise and fall.
+//   None of it is authored; it is all read back out of the solver that was
+//   already running, which is the same trick the rope itself is.
+//
+//   IMAGE. Each rider is built from his index: helmet, collar, boots, shoulder
+//   width, arm splay and dazzle scale all shift, plus a small hue push on the
+//   brass. Rider 0 is the reference and barely varies, because he is the one the
+//   camera, the lamp and the lighter belong to. The variation is deliberately
+//   small — four men in the same navy-issue suit, not four species.
 
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
@@ -31,10 +50,49 @@ class Point {
 }
 
 export class Diver {
-  constructor() {
+  /**
+   * @param {number} [index] which rider on the rope, 0 = the one at her back and
+   *   the one everything else is measured against
+   * @param {number} [riders] how many there are, so the falloff can be spread
+   *   across however many the game decides to run with
+   */
+  constructor(index = 0, riders = 1) {
     const P = CFG.palette;
     const D = CFG.diver;
     this.group = new THREE.Group();
+
+    this.index = index;
+    // A stable signed number per rider, used for every build decision below so
+    // one man is consistently the big one rather than being tall in the boots and
+    // small in the helmet. Not seeded: which rider is which affects nothing a
+    // seed is meant to reproduce, and Rng belongs to worldgen.
+    //
+    // RIDER 0 IS EXACTLY ZERO, which is the whole point of the shape of this
+    // expression and was worth a bug to learn. The obvious `index / (riders - 1)`
+    // mapped to -1..1 puts the lead rider at one extreme, so the one man the
+    // camera actually looks at, who holds the lighter and carries the lamp, came
+    // out as the most distorted of the four. He is the reference silhouette; the
+    // other three spread evenly either side of him.
+    // The rest ALTERNATE either side of him, with the magnitude growing down the
+    // rope. Alternating rather than ramping is the point: neighbours differ most,
+    // and neighbours are what you see side by side when the orbit swings out. A
+    // straight ramp across -1..1 puts a rider on zero and hands you two identical
+    // men, which is the bug this replaced.
+    const v = index === 0 ? 0
+      : (index % 2 ? 1 : -1) * (0.4 + 0.6 * ((index - 1) / Math.max(1, riders - 2)));
+    this._who = v;
+    this._build = {
+      helmet: 1 + v * D.varyBuild,
+      torso: 1 - v * D.varyBuild * 0.55,
+      boots: 1 + v * D.varyBuild * 1.3,
+      shoulder: 1 + v * D.varyBuild * 0.8,
+      armSplay: v * D.varyBuild * 1.4,
+    };
+    // Follow rate falls off down the rope. The lead rider keeps the old shared
+    // number exactly, so nothing about the man you actually look at changed.
+    this._faceRate = D.faceRate * Math.pow(D.faceRateFalloff, index);
+    this._roll = 0;
+    this._pitch = 0;
 
     this.attached = true;
     this.grip = D.gripMax;
@@ -55,11 +113,22 @@ export class Diver {
     this._side = new THREE.Vector3();
     this._basis = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
+    // Bank and pitch scratch. The two axes are constants in his own model space,
+    // never mutated, and the two quaternions are rewritten in place each frame.
+    this._vel = new THREE.Vector3();
+    this._lean = new THREE.Quaternion();
+    this._nose = new THREE.Quaternion();
+    this._bodyAxis = new THREE.Vector3(0, 1, 0);  // head to boots
+    this._sideAxis = new THREE.Vector3(1, 0, 0);  // across the shoulders
 
     // ---- Materials ----
+    // The brass is nudged around the hue wheel per rider. Four identical helmets
+    // catching the same lamp is the single most photocopied-looking thing about a
+    // line of them, and a helmet is the brightest part of each man.
     this.brassMat = new THREE.MeshStandardMaterial({
       color: P.brass, roughness: 0.34, metalness: 0.85,
     });
+    if (index > 0) this.brassMat.color.offsetHSL(v * D.varyBrass, 0, v * D.varyBrass * 0.4);
     // White base: the dazzle texture carries the colour, and `color` is left
     // free to tint the whole suit when he goes adrift.
     this.canvasMat = new THREE.MeshStandardMaterial({
@@ -130,7 +199,11 @@ export class Diver {
 
     const tex = new THREE.CanvasTexture(cv);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(2, 1.4);
+    // Repeat varies per rider as well as the pattern itself: two different random
+    // patterns at the same stripe pitch still read as the same fabric from any
+    // distance where fog is doing the work, and that distance is most of them.
+    const dz = 1 + this._who * CFG.diver.varyDazzle;
+    tex.repeat.set(2 * dz, 1.4 * dz);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
     return tex;
@@ -138,18 +211,24 @@ export class Diver {
 
   _buildBody() {
     this.body = new THREE.Group();
+    // Every dimension below is the original number times one of these. At B all
+    // ones the mesh is bit-for-bit the old diver, which is what makes the lead
+    // rider a genuine reference rather than a near-miss.
+    const B = this._build;
 
     // Suit: bulky canvas, weighted low.
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.5, 4, 10), this.canvasMat);
+    const torso = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.34 * B.torso, 0.5 * B.torso, 4, 10), this.canvasMat);
     this.body.add(torso);
 
     // Helmet: the brass Mark V. Its porthole is the only warm colour on him and
     // the thing that catches the lamp, so it gets the extra geometry.
-    const helm = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 12), this.brassMat);
+    const helm = new THREE.Mesh(new THREE.SphereGeometry(0.3 * B.helmet, 14, 12), this.brassMat);
     helm.position.y = 0.62;
     this.body.add(helm);
 
-    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.36, 0.14, 12), this.brassMat);
+    const collar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.31 * B.helmet, 0.36 * B.helmet, 0.14, 12), this.brassMat);
     collar.position.y = 0.4;
     this.body.add(collar);
 
@@ -171,11 +250,15 @@ export class Diver {
     }
 
     // Arms, reaching forward toward the grip — the pose does the storytelling.
+    // Splay varies, which is the cheapest identity there is: one man has his
+    // elbows out and the next is tucked in, and you read that at any distance the
+    // silhouette survives at all.
     this.arms = [];
+    this._armRest = -1.15 + this._build.armSplay * 0.6;
     for (const s of [-1, 1]) {
       const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.62, 3, 6), this.canvasMat);
-      arm.position.set(s * 0.3, 0.24, 0.3);
-      arm.rotation.set(-1.15, 0, s * 0.22);
+      arm.position.set(s * 0.3 * B.shoulder, 0.24, 0.3);
+      arm.rotation.set(this._armRest, 0, s * (0.22 + this._build.armSplay));
       this.body.add(arm);
       this.arms.push(arm);
     }
@@ -188,12 +271,14 @@ export class Diver {
     this.hand.position.set(0.36, 0.46, 0.62);
     this.body.add(this.hand);
 
-    // Boots: heavy, and they hang. Weight is the whole silhouette.
+    // Boots: heavy, and they hang. Weight is the whole silhouette, so this is the
+    // variation that carries furthest through fog.
     for (const s of [-1, 1]) {
       const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.5, 3, 6), this.canvasMat);
       leg.position.set(s * 0.15, -0.55, 0);
       this.body.add(leg);
-      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.13, 0.3), this.brassMat);
+      const boot = new THREE.Mesh(
+        new THREE.BoxGeometry(0.19 * B.boots, 0.13 * B.boots, 0.3 * B.boots), this.brassMat);
       boot.position.set(s * 0.15, -0.86, 0.05);
       this.body.add(boot);
     }
@@ -282,20 +367,62 @@ export class Diver {
     // His model is built upright — local +Y is his head, local +Z is his face —
     // so the basis puts +Y along her heading and +Z pointing down at her.
     if (kelpie) {
+      const D = CFG.diver;
       this._fwd.set(0, 0, -1).applyQuaternion(kelpie.quaternion);
       this._down.set(0, -1, 0).applyQuaternion(kelpie.quaternion);
       this._side.crossVectors(this._fwd, this._down).normalize();
       this._basis.makeBasis(this._side, this._fwd, this._down);
       this._q.setFromRotationMatrix(this._basis);
+
+      // His own motion this frame, straight out of the verlet solver — no new
+      // state to keep in sync and nothing authored. `prev` is last frame's
+      // position, so the difference IS his velocity, in the units the solver
+      // already works in.
+      // Divided by dt rather than scaled by 60, so the lean is the same at 30 fps
+      // as at 144 — a per-frame displacement read raw would make him bank harder
+      // on a slower machine, which is the classic version of this bug.
+      this._vel.copy(head.pos).sub(head.prev).divideScalar(Math.max(dt, 1e-4));
+      // Bank into the turn. The sideways component is measured against HER side
+      // vector rather than the world's, so "sideways" still means sideways when
+      // she is rolled over, and the sign comes out right upside down.
+      const lateral = this._vel.dot(this._side);
+      const rise = this._vel.dot(this._up);
+      const bankTarget = THREE.MathUtils.clamp(-lateral * D.bank, -D.bankMax, D.bankMax);
+      const pitchTarget = THREE.MathUtils.clamp(rise * D.pitch, -D.pitchMax, D.pitchMax);
+      // Chased rather than assigned, and slower than the facing: roll is the
+      // heaviest thing a man on a rope does and snapping it looks like a glitch.
+      const bk = 1 - Math.exp(-D.bankRate * dt);
+      this._roll += (bankTarget - this._roll) * bk;
+      this._pitch += (pitchTarget - this._pitch) * bk;
+
+      // Applied to the TARGET, not to the body: banking after the slerp would
+      // fight the slerp every frame and settle at whatever the two happened to
+      // average out to. Right-multiplied, so both are local rotations — his model
+      // is built with +Y along his length and +X across his shoulders, so roll is
+      // about local Y and nosing up is about local X.
+      this._q.multiply(this._lean.setFromAxisAngle(this._bodyAxis, this._roll));
+      this._q.multiply(this._nose.setFromAxisAngle(this._sideAxis, this._pitch));
+
       // Slerped, not assigned, so the rope still throws him around a little on a
-      // hard turn instead of welding him to her heading.
-      this.body.quaternion.slerp(this._q, 1 - Math.exp(-7 * dt));
+      // hard turn instead of welding him to her heading — and at HIS rate, which
+      // falls off down the rope, so the tail of the line lags into a turn and
+      // straightens out of it late.
+      this.body.quaternion.slerp(this._q, 1 - Math.exp(-this._faceRate * dt));
+      // AND THEN CLAMPED, which is not belt-and-braces — it is the fix for a
+      // real failure the rate alone cannot prevent. An exponential chase has no
+      // bound on how far behind it can fall: on a sustained hard circle the
+      // trailing rider kept losing ground every frame and was measured 174
+      // degrees off her heading, which is a man riding backwards. Lag is the
+      // effect we want and unbounded lag is a bug, so the two are separated
+      // here: the rate says how he follows, this says how far behind he is ever
+      // allowed to get.
+      this.body.quaternion.rotateTowards(this._q, CFG.diver.faceMaxLag);
     }
 
     // Arms strain visibly as grip runs out — the warning before he lets go.
     const strain = 1 - this.grip / CFG.diver.gripMax;
     for (let i = 0; i < this.arms.length; i++) {
-      this.arms[i].rotation.x = -1.15 - strain * 0.45;
+      this.arms[i].rotation.x = this._armRest - strain * 0.45;
     }
     // Adrift, the dazzle goes muddy — he stops being the brightest thing down
     // here at exactly the moment you need to find him.

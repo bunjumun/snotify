@@ -186,10 +186,16 @@ export class Game {
     // much worse game, and you would never see three of them anyway.
     //
     // Each Diver paints its own dazzle at construction, so the four of them come
-    // out in four different patterns for free.
+    // out in four different patterns for free — but dazzle at eighty units of fog
+    // reads as texture and not as identity, which is why each one now also gets
+    // its INDEX. That is what varies the build (helmet, collar, boots, shoulders)
+    // and how loosely it follows her heading, so four men on a rope stop turning
+    // as one rigid object. Rider 0 is deliberately the least varied: he is the one
+    // the camera, the lamp and the lighter belong to, so he is the reference
+    // silhouette and everyone else is drawn away from him.
     this.divers = [];
     for (let i = 0; i < RIDERS; i++) {
-      const d = new Diver();
+      const d = new Diver(i, RIDERS);
       this.scene.add(d.group);
       this.divers.push(d);
     }
@@ -554,7 +560,7 @@ export class Game {
     // ---- FX ----
     const react = this.audio?.react ?? { low: 0, mid: 0, high: 0, kick: 0 };
     this.kelpie.setReact(react);
-    this.flora.update(dt, react.low, current);
+    this.flora.update(dt, react.low, current, react.mid);
     // Schools tighten in loud passages — the most visible thing the analyser does.
     this.shoals.update(dt, this.kelpie.position, react.mid);
     this.godrays.update(dt, react.low, this.weather.lightScale());
@@ -722,7 +728,46 @@ export class Game {
     const steer = this.input.intent.steer;
     aim.x = steer.x * CFG.lamp.aimLead;
     aim.y = -steer.y * CFG.lamp.aimLead * 0.8;
+    this.lamp.setLookTargets(this._findables(), this.kelpie.position);
     this.lamp.update(dt, srcs, this.kelpie.quaternion, aim, this.audio?.react);
+  }
+
+  /**
+   * What the riders behind you are allowed to shine a torch at.
+   *
+   * Deliberately the same policy the sonar uses, and for the same reason: the
+   * answer to "what am I looking for right now" changes with what you are
+   * carrying, so a bong you cannot light is not a findable and a baggie you do
+   * not need is not either. Anything else and the crew would be pointing at
+   * scenery.
+   *
+   * THE CHEST IS NOT IN HERE AND MUST NOT BE. "No waypoint, ever. The fog IS the
+   * game" (Clues.js) is the hardest rule in the build, and the chest is the one
+   * thing the whole clue system exists to make you work for. A torch that finds
+   * it, even at ten units, hands that back. The fish are how you find the chest.
+   *
+   * Range is not filtered here — Lamp does that, against its own reach, because
+   * how far a rider can see is a property of his lamp and not of the world.
+   */
+  _findables() {
+    const out = this._found || (this._found = []);
+    out.length = 0;
+
+    // Weed, while you still need weed. Once the bowl is packable these stop
+    // being interesting and the bongs start.
+    if (!this.stash.canPack) {
+      for (const b of this.stash.baggies) {
+        if (!b.taken) out.push(b.group.position);
+      }
+    } else if (this.progress.hasLighter) {
+      for (const b of this.bongs) out.push(b.position);
+    }
+    // Log pages are always worth a look: they persist across runs, so an unread
+    // one is worth finding whatever else you are in the middle of.
+    for (const p of this.logs.pages) {
+      if (!p.taken) out.push(p.group.position);
+    }
+    return out;
   }
 
   /**

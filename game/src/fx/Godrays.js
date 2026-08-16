@@ -76,8 +76,11 @@ export class Godrays {
   update(dt, react = 0, lightScale = 1) {
     for (const s of this.shafts) {
       s.uniforms.uTime.value += dt;
-      // The kick pushes them brighter; weather pulls them down.
-      s.uniforms.uOpacity.value = s.base * lightScale * (1 + react * 1.9);
+      // The kick pushes them brighter; weather pulls them down. The gain moved
+      // to CFG.reactive.godrays so the whole environment can be dialled from one
+      // place — it was 1.9 baked in here, which made "make the world breathe
+      // harder" a hunt through five files.
+      s.uniforms.uOpacity.value = s.base * lightScale * (1 + react * 1.9 * CFG.reactive.godrays);
     }
   }
 

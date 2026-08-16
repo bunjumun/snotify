@@ -234,6 +234,22 @@ canvas{display:block;width:100%;height:100%}
 .btn:hover{border-color:var(--accent-2)}
 .btn.primary{background:var(--weed);color:#04231a;border-color:var(--weed);font-weight:700}
 
+/* ---------- The controller's ring ----------
+   Where a pad is pointing, on every overlay. It has to read on a green primary
+   button, a bare dropdown and a volume slider alike, so it is drawn outside the
+   element with a ring rather than by recolouring it: nothing about the control's
+   own state gets overwritten, and a selected difficulty still looks selected
+   while the ring sits on it. The class is added and removed by PadMenu only, so
+   it never appears for a mouse. */
+/* Near-white rather than the weed green, because the ring has to read on the
+   green DIVE IN button as well as on a dark panel, and green on green is
+   invisible. The dark halo behind it does the same job in reverse. */
+.padfocus{outline:2px solid #e6fff0;outline-offset:3px;border-radius:8px;
+  box-shadow:0 0 0 6px rgba(2,8,10,.55), 0 0 14px rgba(125,224,138,.45)}
+button.padfocus,.btn.padfocus,.mode.padfocus{border-radius:999px}
+.mode.padfocus{border-radius:10px}
+input[type=range].padfocus{outline-offset:6px}
+
 /* ---------- Reward ---------- */
 #reward{background:radial-gradient(ellipse at 50% 40%, #4a3a14 0%, rgba(2,8,10,.97) 65%);
   display:flex;align-items:center;justify-content:center;z-index:42;padding:1.5rem}

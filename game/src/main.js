@@ -13,6 +13,7 @@
 import { Game } from './core/Game.js';
 import { CFG } from '../config.js';
 import { KEYS } from './core/Keys.js';
+import { PadMenu } from './input/PadMenu.js';
 
 const canvas = document.getElementById('c');
 
@@ -66,6 +67,16 @@ try {
     'site updates in place, and a half-cached update can land like this.');
   throw e;
 }
+
+// ------------------------------------------------------------- the pad's menus
+//
+// Attached here rather than inside Game, and attached NOW rather than on dive,
+// because the first screen a pad player meets is the start screen and the panel
+// that most needs a pad is the pause screen, which is up while the game loop is
+// stopped. It polls on its own frame and does nothing at all unless an overlay
+// is visible, so it costs one getGamepads() call while you are swimming.
+const padMenu = new PadMenu(game);
+padMenu.attach();
 
 // --------------------------------------------------------------- start screen
 
@@ -148,6 +159,7 @@ async function bootAudio() {
     // the module was still in flight when the button was pressed.
     await audio.unlock();
     game.audio = audio;
+    armSilentAudioRescue(audio);
     wireVolumes(audio);
 
     // The record announces itself on every change, and the ⏭ skips. Only the
@@ -170,6 +182,35 @@ async function bootAudio() {
   } catch (e) {
     console.warn('[lakehorse] audio unavailable, continuing silent', e);
   }
+}
+
+/**
+ * The one thing a controller is not allowed to do.
+ *
+ * Gamepad input does not count as a user gesture anywhere. Pressing A on DIVE IN
+ * starts the game perfectly well, and then `ctx.resume()` is refused and the lake
+ * comes up silent with nothing in the console to explain it — which, in a game
+ * built around a record, is close to the worst failure available.
+ *
+ * It cannot be fixed from here; the browser is right and the rule is the rule.
+ * So it is made visible instead: if the context did not actually come up running,
+ * say so once on the HUD and take the first touch, click or key as the gesture.
+ * Costs nothing on every normal load, because there the context is already
+ * running and this returns immediately.
+ */
+function armSilentAudioRescue(audio) {
+  if (!audio?.ctx || audio.ctx.state === 'running') return;
+  game.hud.say('Tap once to turn the sound on. A controller is not allowed to.', { seconds: 6 });
+  const wake = async () => {
+    try { await audio.unlock(); } catch { /* nothing else to try */ }
+    if (audio.ctx.state === 'running') {
+      removeEventListener('pointerdown', wake);
+      removeEventListener('keydown', wake);
+      game.hud.say('Sound on.', { seconds: 1.5 });
+    }
+  };
+  addEventListener('pointerdown', wake);
+  addEventListener('keydown', wake);
 }
 
 // ------------------------------------------------------------------- settings
@@ -272,3 +313,8 @@ document.addEventListener('visibilitychange', () => {
 });
 
 window.__lakehorse = game; // handy from the console; harmless in production
+// Exposed for the same reason, and for one specific one: a controller cannot be
+// simulated from a test harness, but PadMenu can be stepped by hand with a
+// stubbed navigator.getGamepads(), which is how its navigation was verified
+// without a pad in the room.
+window.__padMenu = padMenu;

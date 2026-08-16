@@ -184,6 +184,15 @@
                     <label for="bgColor">Background</label>
                     <input type="color" id="bgColor" value="#FFFFFF">
                 </div>
+                <label class="ld-field" for="imageBrightness">
+                    <span>Brightness <b id="imageBrightnessValue">0</b></span>
+                    <input type="range" id="imageBrightness" value="0" min="-100" max="100" step="1">
+                </label>
+                <label class="ld-field" for="imageContrast">
+                    <span>Contrast <b id="imageContrastValue">0</b></span>
+                    <input type="range" id="imageContrast" value="0" min="-100" max="100" step="1">
+                </label>
+                <div class="ld-note">Applied to the picture before the effect reads it, not after: displacement is driven by pixel value, so this changes how far a line pushes, not just how the picture looks.</div>
             </div>
         </details>
 
@@ -320,6 +329,10 @@
 
         const bgColor = document.getElementById('bgColor');
 
+        const imageBrightness = document.getElementById('imageBrightness');
+
+        const imageContrast = document.getElementById('imageContrast');
+
         const globalLineOpacity = document.getElementById('globalLineOpacity');
 
         const globalLineOpacityValue = document.getElementById('globalLineOpacityValue');
@@ -410,7 +423,35 @@
 
 
 
-        function drawImageDisplacedLines(ctx, image, lineSpacing, lineWidth, displacementStrength, displacementAxis, separateRGB, invertDisplacement, samplingPixelStep, globalRotation, redLineAngle = 0, greenLineAngle = 0, blueLineAngle = 0) {
+        // Mutates sampled pixel data in place, before any of the three draw
+        // paths (live preview, RGB plotter layers, grayscale plotter layer)
+        // reads it. Displacement comes straight off the pixel value, so doing
+        // this here changes how far a line pushes, not just the colour —
+        // done as a filter afterwards it would only ever change how the
+        // drawing looks, never how it is shaped.
+        function applyBrightnessContrast(pixels, brightness, contrast) {
+
+            const contrastFactor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+
+            for (let i = 0; i < pixels.length; i += 4) {
+
+                for (let ch = 0; ch < 3; ch++) {
+
+                    let v = pixels[i + ch] + brightness;
+
+                    v = contrastFactor * (v - 128) + 128;
+
+                    pixels[i + ch] = v < 0 ? 0 : (v > 255 ? 255 : v);
+
+                }
+
+            }
+
+        }
+
+
+
+        function drawImageDisplacedLines(ctx, image, lineSpacing, lineWidth, displacementStrength, displacementAxis, separateRGB, invertDisplacement, samplingPixelStep, globalRotation, redLineAngle = 0, greenLineAngle = 0, blueLineAngle = 0, brightness = 0, contrast = 0) {
 
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
@@ -449,6 +490,8 @@
             const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
 
             const pixels = imageData.data;
+
+            applyBrightnessContrast(pixels, brightness, contrast);
 
 
 
@@ -750,6 +793,10 @@
 
             const globalRot = parseFloat(globalRotation.value);
 
+            const brightnessVal = parseFloat(imageBrightness.value);
+
+            const contrastVal = parseFloat(imageContrast.value);
+
 
 
             const getDisplacementValueForPlotter = (pixelValue) => {
@@ -836,6 +883,8 @@
 
 
 
+
+                applyBrightnessContrast(pixels, brightnessVal, contrastVal);
 
                 layerCtx.beginPath();
 
@@ -1005,6 +1054,8 @@
 
 
 
+
+                applyBrightnessContrast(pixels, brightnessVal, contrastVal);
 
                 layerCtx.beginPath();
 
@@ -1296,6 +1347,10 @@
 
             const blueAngleVal = parseFloat(blueAngle.value);
 
+            const brightnessVal = parseFloat(imageBrightness.value);
+
+            const contrastVal = parseFloat(imageContrast.value);
+
 
 
             drawImageDisplacedLines(
@@ -1324,7 +1379,11 @@
 
                 greenAngleVal,
 
-                blueAngleVal
+                blueAngleVal,
+
+                brightnessVal,
+
+                contrastVal
 
             );
 

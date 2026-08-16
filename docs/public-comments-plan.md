@@ -1,5 +1,17 @@
 # Comments on a public link — the plan, not yet built
 
+> **SHELVED 2026-08-16, at his word: "lets do no comments on public links for
+> now and resolve that."** Nothing was built and nothing was un-built — the live
+> database was checked rather than this document, and it already behaves the way
+> he asked: `get_shared` carries no comments, `get_comments(b, p)` still takes
+> the band password, and none of the columns or functions below exist
+> (`share_comments`, `via_share`, `hidden`, `add_public_comment` — all absent).
+> So "no comments on public links" is the state of the site today and required no
+> change. The open question at the foot of this file is parked with it, unanswered
+> and no longer in his outbox. **Do not build this, do not re-plan it, and do not
+> raise it again unless he does.** The file stays because the reasoning is worth
+> having if he ever changes his mind, not because it is queued.
+
 **His line, in BUGS on 16 Aug:** *"Public links should not show any comments, add
 'allow comments' option to public share link and when this is activated do not
 show comments made by other users but allow new comments to be made by public

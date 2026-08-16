@@ -74,6 +74,17 @@ When an item ships, append a dated line to `COMPLETED`. If the line it came from
 sits above the separator, say so in chat and leave it: striking it through would
 mean writing into his half.
 
+**↳ AMENDED 2026-08-16 — the finished capture-zone line is struck through in
+place and moved down to `COMPLETED`, keeping his wording.** The paragraph above
+is superseded by the user-level playbook rule he settled on 16 Aug ("Finished
+QUEUE lines move, they don't vanish"), and by the note's own legend, which has
+told him for days that this is what happens. Leaving it was protecting the wrong
+thing: an unstruck line under `BUGS` reads as a live bug to the next cold run and
+gets built, which is precisely what loose end 6 was raised to prevent after the
+public-comments item sat there decided-against and unmarked. Still true, and the
+reason the old line existed: never touch a capture-zone line that has *not*
+finished, and never reword one that has. Strike, move, keep the words.
+
 **The marker is `<`, and writing it back is a trap that has now drawn blood
 twice.** It was `#game` until 2026-08-14, when he wrote "You keep removing my
 hashtags on this list" into BUGS. He was right, and it was Claude: a hashtag
@@ -105,6 +116,23 @@ text `&lt`. Repair on the way in, escape on the way out:
 
 **Always read the note back after writing it** and confirm his markers survived.
 Both losses were caught that way and only that way.
+
+**Write through AppleScript's raw body, not `update_note_content`, and never write
+back what `get_note_content` returned.** On 2026-08-16 the connector's reader gave
+the first line as `Snalbum &amp outbox`; the raw body actually holds
+`Snalbum ideas &amp outbox`. The reader had silently dropped the word **ideas**.
+Apple Notes re-derives a note's *name* from its first line on every body write, so
+writing that output back would have renamed the note to "Snalbum & outbox" — and
+the name is its address, which `/brief`, `manager-snalbum` and both rule files look
+up by that exact string, all failing with `Invalid index (-1719)`. The raw route
+has no such gap and no clipboard in it: AppleScript `get body of note id
+"x-coredata://…/ICNote/p977"` written to a file `as «class utf8»`, patched as
+exact-string replacements in Python with each replacement asserted to hit once,
+then `set body` from that file read back `as «class utf8»`. Diff before against
+after and confirm three things before writing: the first line is byte-identical,
+the `&lt` count is unchanged (36 as of 16 Aug), and nothing outside the intended
+edits moved. Notes will normalise nested `<i><strike>` into split runs on its own;
+that is the only difference a clean write should show on read-back.
 
 Tags are `[bug]` and `[?]` only. Both legends live in the note and the ledger.
 

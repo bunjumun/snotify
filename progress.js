@@ -34,10 +34,11 @@
    * earlier the same day; he read it, gave his own process instead, and chose
    * to replace rather than merge. Nothing was ticked under version 1 — the
    * table was confirmed empty before the swap — so no band lost a tick and
-   * there is no migration. The number still moves, because a stored row saying
-   * it was ticked under a list that no longer exists is worth being able to
-   * spot later. */
-  const CHECKLIST_VERSION = 2;
+   * there is no migration. Version 3 is the album adopting the same list as a
+   * song, again against an empty table. The number moves on every change to
+   * what the lists MEAN, because a stored row claiming a list that no longer
+   * exists is worth being able to spot later. */
+  const CHECKLIST_VERSION = 3;
 
   /* The song checklist: nine stages, 27 leaves, 100 points.
    *
@@ -129,38 +130,33 @@
     ]},
   ];
 
-  /* The album checklist: five phases, 100 points, of which 50 are not ticked by
-   * anyone. `auto: true` marks the phase the doc calls "Song Completion
-   * Aggregate" — it is the mean of the songs' own percentages, so it has no box
-   * and cannot be ticked. It is in the list rather than bolted on beside it so
-   * that the phases still add to 100 and the accordion can show it in the
-   * running order the doc gives it, second of five. */
-  const ALBUM = [
-    { key: 'a', name: 'Material & Track Selection', weight: 10, tasks: [
-      { key: 'a.vision', weight: 3, name: 'Album vision & tracklist shortlist defined' },
-      { key: 'a.flow', weight: 3, name: 'Key / tempo / sequence flow rough drafted' },
-      { key: 'a.slots', weight: 4, name: 'All song track slots initialised & assigned' },
-    ]},
-    { key: 'avg', name: 'Song Completion Aggregate', weight: 50, auto: true, tasks: [] },
-    { key: 'i', name: 'Album Integration & Master Flow', weight: 15, tasks: [
-      { key: 'i.assembly', weight: 4, name: 'Full album rough assembly / sequencing render uploaded' },
-      { key: 'i.transitions', weight: 4, name: 'Transitions, interludes & crossfades dialled in' },
-      { key: 'i.seq_ok', weight: 3, name: 'Full album sequence approved by band' },
-      { key: 'i.master', weight: 4, name: 'Final album master received & sequence approved' },
-    ]},
-    { key: 'v', name: 'Visuals, Assets & Packaging', weight: 15, tasks: [
-      { key: 'v.cover', weight: 5, name: 'Front & back cover artwork uploaded & finalised' },
-      { key: 'v.credits', weight: 3, name: 'Album credits, liner notes & lyrics formatted' },
-      { key: 'v.packaging', weight: 4, name: 'Physical packaging layout completed' },
-      { key: 'v.promo', weight: 3, name: 'Promotional assets & press kit ready' },
-    ]},
-    { key: 'd', name: 'Distribution, Rights & Release Strategy', weight: 10, tasks: [
-      { key: 'd.codes', weight: 2, name: 'ISRC / UPC codes generated & metadata locked' },
-      { key: 'd.upload', weight: 3, name: 'Distribution upload & pre-order scheduled' },
-      { key: 'd.manufacture', weight: 2, name: 'Physical manufacturing submitted' },
-      { key: 'd.campaign', weight: 3, name: 'Promo campaign schedule & release date locked' },
-    ]},
-  ];
+  /* THE ALBUM USES THE SAME LIST AS A SONG, at his word: "we'll need to refine
+   * progress criteria per song verses album eventually but for now use the same
+   * metrics for both". So there is one checklist, applied at two levels.
+   *
+   * What this replaced: a separate generated album list — material selection,
+   * integration and master flow, visuals and packaging, distribution — with a
+   * fifty-point phase that was the mean of the songs and could not be ticked by
+   * anyone. It is in the git history if it is ever wanted back, and
+   * docs/song-workflow-plan.md records why it went.
+   *
+   * TWO CONSEQUENCES WORTH KNOWING, because neither is obviously right.
+   *
+   * The album's score is now its OWN ticks and nothing else — it no longer
+   * moves on its own as the songs fill in. "The album is mastered" is a
+   * different claim from "every song is mastered", and this measures the first.
+   * If he wants the songs to feed it again that is one phase back in the list.
+   *
+   * The same task key can now exist at both scopes for the same band. That is
+   * fine and always was: the stored row carries `scope`, and the unique key is
+   * (band, scope, ref, task_key). Ticking Mastering on the album does not tick
+   * it on any song.
+   *
+   * He also said the music page is the album for now, and that it splits into
+   * releases once there is more than one. Nothing here has to change for that:
+   * the album is keyed on the album slug, and a second album starts its own
+   * row set the day a song is given one. */
+  const ALBUM = SONG;
 
   /* Every leaf in reading order, which is also backfill order: the cascade
    * prompt in phase 4 means "everything above this line", and "above" is this
@@ -194,13 +190,15 @@
    * marks. Dividing by zero and calling it complete would say a record with
    * nothing on it is half made. */
   function albumPct(ticks, songPcts) {
+    const auto = ALBUM.find(ph => ph.auto);
     const manual = pct(ALBUM, ticks);
+    if (!auto) return manual;              // the album is ticked, not averaged
     const mean = songPcts.length
       ? songPcts.reduce((a, b) => a + b, 0) / songPcts.length
       : 0;
-    const auto = ALBUM.find(ph => ph.auto);
     return manual + (mean / 100) * auto.weight;
   }
+
 
   /* Everything above a given task, for the cascade backfill. Returns the keys
    * that are not already ticked, so the prompt can say how many it would
@@ -233,10 +231,14 @@
       if (total !== 100)
         throw new Error(`progress.js: the ${name} checklist sums to ${total}, not 100`);
     }
-    const keys = new Set();
-    for (const t of SONG_TASKS.concat(ALBUM_TASKS)) {
-      if (keys.has(t.key)) throw new Error(`progress.js: duplicate task key ${t.key}`);
-      keys.add(t.key);
+    /* Per list, not across both. The two scopes deliberately share their keys
+     * now, and the stored row separates them by `scope`. */
+    for (const [name, tasks] of [['song', SONG_TASKS], ['album', ALBUM_TASKS]]) {
+      const keys = new Set();
+      for (const t of tasks) {
+        if (keys.has(t.key)) throw new Error(`progress.js: duplicate ${name} task key ${t.key}`);
+        keys.add(t.key);
+      }
     }
   }
   assertWeights();

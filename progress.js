@@ -170,6 +170,83 @@
     ]},
   ];
 
+  /* ------------------------------------------------------------------------
+   * HIS OWN ITEMS, AND THE WEIGHTS STRETCHING TO FIT
+   *
+   * At his word: "allow me to add or remove tems to album progress list that
+   * are unique to particular item i am editing on, these should stretch or
+   * compress completion weghts appropriately".
+   *
+   * THE RULE, and it is one sentence: a category keeps its declared weight, and
+   * the items inside it share that weight in proportion to their base weights.
+   *
+   * Everything follows from that. Remove a box from Editing and its points go to
+   * the boxes still in Editing, not to Mixing. Add one and they all give a
+   * little. The record still totals 100 with nothing renormalised anywhere else,
+   * so a song with three extra boxes and a song with none are still directly
+   * comparable — which matters, because the record's score is the average of
+   * them and an average of numbers on different scales would be meaningless.
+   *
+   * The one case that needs its own answer: a category emptied completely. Its
+   * weight cannot stay with it, so it is shared out across the surviving
+   * categories in proportion to theirs. Dropping the category and letting the
+   * total fall to 90 would mean a song that can never reach 100.
+   *
+   * A custom item with weight 0 means "an ordinary one", resolved here to the
+   * average of the built-ins in its category, so adding a box never asks him to
+   * think about numbers. That is why the default is 0 rather than some fixed
+   * figure: what counts as ordinary differs per category.
+   * --------------------------------------------------------------------------- */
+
+  /* Build the list as it actually stands for one song or one record: built-ins
+   * minus what he has hidden, plus what he has added, with every weight resolved
+   * to its effective value. Everything else in this file works on the result, so
+   * nothing downstream needs to know that custom items exist. */
+  function shapedList(list, shape) {
+    const hidden = (shape && shape.hidden) || new Set();
+    const added  = (shape && shape.items) || [];
+    const phases = [];
+    for (const ph of list) {
+      if (ph.auto) { phases.push({ ...ph, tasks: [] }); continue; }
+      const kept = ph.tasks.filter(t => !hidden.has(t.key));
+      const mine = added.filter(i => i.phase === ph.key);
+      if (!kept.length && !mine.length) continue;          // emptied; see below
+      // "An ordinary one" = the average of this category's built-ins, so the
+      // default is meaningful per category rather than a fixed number.
+      const avg = ph.tasks.length
+        ? ph.tasks.reduce((a, t) => a + t.weight, 0) / ph.tasks.length : 1;
+      const tasks = kept.map(t => ({ ...t, base: t.weight }))
+        .concat(mine.map(i => ({
+          key: 'c.' + i.id, name: i.label, custom: true, id: i.id,
+          base: i.weight > 0 ? i.weight : avg,
+        })));
+      phases.push({ ...ph, tasks });
+    }
+    // A category that lost every box takes its weight with it, so what is left
+    // is scaled back up to 100. Without this a song could never finish.
+    const total = phases.reduce((a, ph) => a + ph.weight, 0) || 1;
+    const scale = 100 / total;
+    return phases.map(ph => {
+      const w = ph.weight * scale;
+      const sum = ph.tasks.reduce((a, t) => a + t.base, 0) || 1;
+      return { ...ph, weight: w, tasks: ph.tasks.map(t => ({ ...t, weight: w * t.base / sum })) };
+    });
+  }
+
+  /* The shape for one song or record, out of the raw rows the server returns.
+   * Kept here rather than in the page so that the read-only bar on the other two
+   * pages gets the same answer without repeating any of it. */
+  function shapeFor(raw, scope, ref) {
+    if (!raw) return { hidden: new Set(), items: [] };
+    return {
+      hidden: new Set((raw.hidden || [])
+        .filter(h => h.scope === scope && h.ref === ref).map(h => h.key)),
+      items: (raw.items || [])
+        .filter(i => i.scope === scope && i.ref === ref)
+        .sort((a, b) => (a.sort || 0) - (b.sort || 0)),
+    };
+  }
+
   /* Every leaf in reading order, which is also backfill order: the cascade
    * prompt in phase 4 means "everything above this line", and "above" is this
    * order and nothing else. Flattened once at load rather than per render. */
@@ -188,7 +265,7 @@
 
   /* The song percentage: just the sum of what is ticked, because every point on
    * a song is manual. */
-  function songPct(ticks) { return pct(SONG, ticks); }
+  function songPct(ticks, shape) { return pct(shapedList(SONG, shape), ticks); }
 
   /* The album percentage: the manual half plus the mean of the songs.
    *
@@ -218,9 +295,10 @@
    * manually engaging the options on the webpage so dont worry about auto
    * filling". The averaged phase is worked out rather than ticked, which is a
    * different thing — it has no boxes to fill in by hand or otherwise. */
-  function albumPct(ticks, songPcts) {
-    const manual = pct(ALBUM, ticks);
-    const auto = ALBUM.find(ph => ph.auto);
+  function albumPct(ticks, songPcts, shape) {
+    const list = shapedList(ALBUM, shape);
+    const manual = pct(list, ticks);
+    const auto = list.find(ph => ph.auto);
     if (!auto) return manual;
     const mean = songPcts.length
       ? songPcts.reduce((a, b) => a + b, 0) / songPcts.length
@@ -277,6 +355,6 @@
   global.PROGRESS = {
     VERSION: CHECKLIST_VERSION,
     SONG, ALBUM, SONG_TASKS, ALBUM_TASKS,
-    songPct, albumPct, priorTo,
+    songPct, albumPct, priorTo, shapedList, shapeFor,
   };
 })(window);

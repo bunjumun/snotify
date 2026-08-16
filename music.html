@@ -7,7 +7,7 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=32" />
+<link rel="stylesheet" href="core.css?v=33" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
@@ -976,7 +976,36 @@
   .ptask input { margin: 2px 0 0; flex: none; accent-color: var(--accent); cursor: pointer; }
   .ptask label { cursor: pointer; flex: 1 1 auto; min-width: 0; }
   .ptask.on label { color: var(--text-dim); text-decoration: line-through; text-decoration-thickness: 1px; }
-  .ptask .w { flex: none; font-size: 11px; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+  .ptask .w { flex: none; font-size: 11px; color: var(--text-mute); font-variant-numeric: tabular-nums;
+    min-width: 30px; text-align: right; }
+  /* His own steps, so it is obvious which ones are not the standard list. */
+  .ptask.mine label { border-bottom: 1px dotted var(--accent-2); }
+  /* The remove control stays out of the way until the row is under the pointer:
+     a row of crosses beside every box would read as a list of things to delete. */
+  .ptask .pdrop {
+    flex: none; width: 16px; text-align: center; cursor: pointer;
+    color: var(--text-mute); opacity: 0; transition: opacity .12s, color .12s;
+    font-size: 14px; line-height: 1;
+  }
+  .ptask:hover .pdrop { opacity: 1; }
+  .ptask .pdrop:hover { color: var(--danger, #e0567a); }
+  .padd { padding: 3px 6px 2px; }
+  .padd .lnk {
+    font-size: 12px; color: var(--text-mute); cursor: pointer;
+    border-bottom: 1px dotted transparent;
+  }
+  .padd .lnk:hover { color: var(--accent-2); border-bottom-color: var(--accent-2); }
+  /* What has been taken off this one song, so removing is visibly reversible. */
+  .phidden { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    padding: 8px 6px 2px; margin-top: 4px; border-top: 1px solid var(--line); }
+  .phidden .hl { font-size: 11.5px; color: var(--text-mute); }
+  .hchip {
+    font-size: 11.5px; color: var(--text-dim); cursor: pointer;
+    background: var(--field); border: 1px solid var(--line);
+    border-radius: 999px; padding: 2px 8px;
+  }
+  .hchip:hover { color: var(--text); border-color: var(--accent-2); }
+  .hchip b { color: var(--accent-2); }
   /* The aggregate phase has no boxes: it is the mean of the songs and there is
      nothing on it a person could tick. Saying so is better than showing an
      empty phase and letting it read as something that failed to load. */
@@ -1702,7 +1731,7 @@
 <script src="core.js?v=31"></script>
 <!-- The two checklists and the arithmetic. No DOM, no network; it throws at
      load if the weights stop summing to 100, which is deliberate. -->
-<script src="progress.js?v=7"></script>
+<script src="progress.js?v=8"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -1746,6 +1775,10 @@ let curProject = null;             // project scoping the current view (via #/p/
 // state and there is no third value to reason about. Empty until the band is
 // logged in; a shared link never loads it, because progress is band data.
 let progress = Object.create(null);
+// His own additions and removals, raw as the server returns them. One object
+// for the whole band; PROGRESS.shapeFor narrows it to one song or one record.
+let progShape = { items: [], hidden: [] };
+const shapeOf = (scope, ref) => PROGRESS.shapeFor(progShape, scope, ref);
 let order = [], pos = -1;          // play order over songs
 let shuffle = false, repeat = 'off';
 let curVolume = parseFloat(localStorage.getItem('mp_vol') ?? '0.9');
@@ -2402,7 +2435,8 @@ function ticksFor(scope, ref){
 // A song with no folder is a legacy flat row with no stable key to hang
 // progress on. It gets no bar rather than a bar that cannot be saved.
 const progressable = (s) => !!(s && s.folder) && !!window.PROGRESS;
-const songPctOf = (s) => progressable(s) ? PROGRESS.songPct(ticksFor('song', s.folder)) : 0;
+const songPctOf = (s) => progressable(s)
+  ? PROGRESS.songPct(ticksFor('song', s.folder), shapeOf('song', s.folder)) : 0;
 // WHAT AN ALBUM IS HERE, because the first cut of this got it wrong and it is
 // worth writing down so nobody repeats it. A `project` is NOT an album: it is a
 // share link minted by the film-strip button, and there are a dozen of them
@@ -2430,19 +2464,28 @@ function albumsInView(){
 // that phase and not half of it. Adding a song lowers the bar, which is honest:
 // the record did just get further from being done.
 function albumPctOf(al){
-  return PROGRESS.albumPct(ticksFor('album', al.slug), al.songs.map(songPctOf));
+  return PROGRESS.albumPct(ticksFor('album', al.slug), al.songs.map(songPctOf),
+                           shapeOf('album', al.slug));
 }
 
 async function loadProgress(){
   if (!window.PROGRESS || !curBand || !bandPass(curBand)) return;
-  let rows;
-  try { rows = await libRpc('progress_all', {}); }
+  let rows, shape;
+  try {
+    [rows, shape] = await Promise.all([
+      libRpc('progress_all', {}),
+      // Older databases have no v27, and that must not take the bars down with
+      // it: no custom items is a perfectly good answer.
+      libRpc('progress_shape', {}).catch(() => ({ items: [], hidden: [] })),
+    ]);
+  }
   catch (e){
     // v25 not applied yet, or a network blip. Bars simply do not appear; there
     // is nothing half-drawn to explain, so nothing is said.
     return;
   }
   progress = Object.create(null);
+  progShape = shape || { items: [], hidden: [] };
   for (const r of (rows || [])) ticksFor(r.scope, r.ref).add(r.key);
   // The ticks usually land AFTER renderList has already drawn the rows, because
   // this is fired off in the background rather than awaited. Drawing bars that
@@ -2507,31 +2550,51 @@ function autoPhaseHtml(ref, ph){
 
 function accHtml(list, scope, ref){
   const ticks = ticksFor(scope, ref);
-  return list.map(ph => {
+  const shaped = PROGRESS.shapedList(list, shapeOf(scope, ref));
+  return shaped.map(ph => {
     if (ph.auto) return autoPhaseHtml(ref, ph);
-    // The whole category is a control. Clicking the heading fills the category
-    // in, or empties it if it was already full — a toggle rather than two
-    // buttons, because the heading can only sensibly mean one thing at a time
-    // and the state it is in says which.
     const full = ph.tasks.length && ph.tasks.every(t => ticks.has(t.key));
     return `<div class="pphase">
       <div class="pphase-h clickable" data-phase="${esc(ph.key)}"
            title="${full ? 'Clear every box in ' + esc(ph.name) : 'Tick every box in ' + esc(ph.name)}">
-        ${esc(ph.name)} <span class="w">${ph.weight}%</span>
+        ${esc(ph.name)} <span class="w">${Math.round(ph.weight)}%</span>
         <span class="phall">${full ? 'clear' : 'tick all'}</span>
       </div>
       ${ph.tasks.map(t => {
         const on = ticks.has(t.key);
-        return `<div class="ptask ${on ? 'on' : ''}" data-key="${esc(t.key)}">
-          <input type="checkbox" id="pt-${esc(scope)}-${esc(ref)}-${esc(t.key)}" ${on ? 'checked' : ''} />
-          <label for="pt-${esc(scope)}-${esc(ref)}-${esc(t.key)}">${esc(t.name)}</label>
-          <span class="w">${t.weight}%</span>
+        const id = `pt-${esc(scope)}-${esc(ref)}-${esc(t.key)}`;
+        return `<div class="ptask ${on ? 'on' : ''} ${t.custom ? 'mine' : ''}" data-key="${esc(t.key)}">
+          <input type="checkbox" id="${id}" ${on ? 'checked' : ''} />
+          <label for="${id}">${esc(t.name)}</label>
+          <span class="w">${t.weight.toFixed(t.weight < 10 ? 1 : 0)}%</span>
+          <span class="pdrop" title="${t.custom ? 'Delete this item' : 'Remove this step from this one only'}"
+                data-drop="${esc(t.key)}" data-mine="${t.custom ? esc(t.id) : ''}">&times;</span>
         </div>`;
       }).join('')}
+      <div class="padd" data-addphase="${esc(ph.key)}">
+        <span class="lnk">+ add a step to ${esc(ph.name)}</span>
+      </div>
     </div>`;
   }).join('')
-  + `<div class="pnote">Click a category heading to fill it in or empty it. Anyone in
-       the band can tick or untick these, and a tick carries no name.</div>`;
+  + hiddenHtml(list, scope, ref)
+  + `<div class="pnote">Click a category heading to fill it in or empty it. Removing a
+       step shares its weight out inside its own category, so this still adds up to 100.</div>`;
+}
+
+// What he has taken off THIS song or record, so removing something is visibly
+// reversible rather than a one-way door. Absent entirely when nothing is hidden.
+function hiddenHtml(list, scope, ref){
+  const hid = shapeOf(scope, ref).hidden;
+  if (!hid.size) return '';
+  const names = [];
+  for (const ph of list) for (const t of (ph.tasks || []))
+    if (hid.has(t.key)) names.push(t);
+  if (!names.length) return '';
+  return `<div class="phidden">
+    <span class="hl">Not counted here:</span>
+    ${names.map(t => `<span class="hchip" data-restore="${esc(t.key)}"
+        title="Put this step back">${esc(t.name)} <b>+</b></span>`).join('')}
+  </div>`;
 }
 
 // The bulk row that sits above a checklist. Separate from accHtml's output only
@@ -2539,7 +2602,8 @@ function accHtml(list, scope, ref){
 // the list rather than as another line inside it.
 function bulkHtml(list, scope, ref){
   const ticks = ticksFor(scope, ref);
-  const all = list.filter(ph => !ph.auto).flatMap(ph => ph.tasks);
+  const all = PROGRESS.shapedList(list, shapeOf(scope, ref))
+    .filter(ph => !ph.auto).flatMap(ph => ph.tasks);
   const on = all.filter(t => ticks.has(t.key)).length;
   return `<div class="pbulk">
     <span class="bcount">${on} of ${all.length} ticked</span>
@@ -2583,9 +2647,10 @@ async function bulkSet(el, keys, on){
 function wireAcc(el){
   el.addEventListener('click', (e) => {
     e.stopPropagation();                                    // never plays the song
-    const scope = el.dataset.scope;
-    const list = scope === 'album' ? PROGRESS.ALBUM : PROGRESS.SONG;
-    const ticks = ticksFor(scope, el.dataset.ref);
+    const scope = el.dataset.scope, ref = el.dataset.ref;
+    const list = PROGRESS.shapedList(scope === 'album' ? PROGRESS.ALBUM : PROGRESS.SONG,
+                                     shapeOf(scope, ref));
+    const ticks = ticksFor(scope, ref);
 
     const bulk = e.target.closest('[data-bulk]');
     if (bulk){
@@ -2594,6 +2659,66 @@ function wireAcc(el){
       // Send only what actually changes. Clearing a list that is already half
       // empty should not ask the server to delete rows that were never there.
       return bulkSet(el, all.filter(k => ticks.has(k) !== want), want);
+    }
+
+    // --- his own items: add, remove, put back -----------------------------
+    const drop = e.target.closest('[data-drop]');
+    if (drop){
+      const key = drop.dataset.drop, mine = drop.dataset.mine;
+      if (mine){
+        // His own item. Deleting it takes its tick with it, which is why this
+        // asks: a built-in can be restored from the chip below, a typed one
+        // cannot be recovered once the words are gone.
+        if (!confirm('Delete this step? It only exists here, so this cannot be undone.')) return;
+        progShape.items = progShape.items.filter(i => i.id !== mine);
+        ticksFor(el.dataset.scope, el.dataset.ref).delete(key);
+        paintAcc(el); refreshProgressNumbers(null);
+        libRpc('progress_item_del', { id_in: mine }).catch(err => {
+          alert('Could not delete that: ' + (err.message || err)); loadProgress();
+        });
+      } else {
+        // A built-in, taken off this one song. Reversible from the chip, so it
+        // does not ask first.
+        progShape.hidden = progShape.hidden.concat(
+          [{ scope: el.dataset.scope, ref: el.dataset.ref, key }]);
+        ticksFor(el.dataset.scope, el.dataset.ref).delete(key);
+        paintAcc(el); refreshProgressNumbers(null);
+        libRpc('progress_hide', { scope_in: el.dataset.scope, ref_in: el.dataset.ref,
+                                  key_in: key, hide: true })
+          .catch(err => { alert('Could not remove that: ' + (err.message || err)); loadProgress(); });
+      }
+      return;
+    }
+
+    const back = e.target.closest('[data-restore]');
+    if (back){
+      const key = back.dataset.restore;
+      progShape.hidden = progShape.hidden.filter(h =>
+        !(h.scope === el.dataset.scope && h.ref === el.dataset.ref && h.key === key));
+      paintAcc(el); refreshProgressNumbers(null);
+      libRpc('progress_hide', { scope_in: el.dataset.scope, ref_in: el.dataset.ref,
+                                key_in: key, hide: false })
+        .catch(err => { alert('Could not put that back: ' + (err.message || err)); loadProgress(); });
+      return;
+    }
+
+    const add = e.target.closest('[data-addphase]');
+    if (add){
+      const phase = add.dataset.addphase;
+      const label = (prompt('What is the step called? It will only exist on this one.') || '').trim();
+      if (!label) return;
+      const scope = el.dataset.scope, ref = el.dataset.ref;
+      libRpc('progress_item_add', { scope_in: scope, ref_in: ref,
+                                    phase_in: phase, label_in: label, weight_in: 0 })
+        .then(id => {
+          // The server hands back the id, so the item can appear without a
+          // second round trip to ask what was just made.
+          progShape.items = progShape.items.concat(
+            [{ id, scope, ref, phase, label, weight: 0, sort: 999 }]);
+          paintAcc(el); refreshProgressNumbers(null);
+        })
+        .catch(err => alert('Could not add that: ' + (err.message || err)));
+      return;
     }
 
     const head = e.target.closest('.pphase-h[data-phase]');

@@ -42,11 +42,16 @@
   async function mount(host, opts) {
     opts = opts || {};
     if (!host || !global.PROGRESS || typeof libRpc !== 'function') return;
-    let lib, rows;
+    let lib, rows, shape;
     try {
-      [lib, rows] = await Promise.all([
+      [lib, rows, shape] = await Promise.all([
         libRpc('get_library', {}),
         libRpc('progress_all', {}),
+        // His own added and removed steps. Fetched here rather than ignored,
+        // because a bar that does not know about them would quietly disagree
+        // with the player about the same record — and two different numbers for
+        // one thing is worse than no number at all.
+        libRpc('progress_shape', {}).catch(() => ({ items: [], hidden: [] })),
       ]);
     } catch { return; }                    // see "silent on failure" above
     const songs = ((lib && lib.songs) || []).filter(s => s && s.folder);
@@ -70,8 +75,11 @@
     }
 
     host.innerHTML = albums.map(a => {
-      const pcts = a.songs.map(s => global.PROGRESS.songPct(setFor('song', s.folder)));
-      const w = Math.round(global.PROGRESS.albumPct(setFor('album', a.slug), pcts));
+      const P = global.PROGRESS;
+      const pcts = a.songs.map(s =>
+        P.songPct(setFor('song', s.folder), P.shapeFor(shape, 'song', s.folder)));
+      const w = Math.round(
+        P.albumPct(setFor('album', a.slug), pcts, P.shapeFor(shape, 'album', a.slug)));
       const done = pcts.filter(p => p >= 100).length;
       const tag = opts.href ? 'a' : 'div';
       const href = opts.href ? ` href="${esc(opts.href)}"` : '';

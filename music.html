@@ -382,6 +382,12 @@
     text-transform: uppercase; letter-spacing: .5px; font-weight: 700;
   }
   .pcard h3 .pcount { color: var(--text-mute); font-weight: 600; }
+  /* The one card header that is a control rather than a label. It carries the
+     song's own bar, and clicking it is what opens the checklist. */
+  .pcard h3.proghead { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .pcard h3.proghead .pbar { flex: 1 1 auto; max-width: 320px; }
+  .pcard h3.proghead .phall { margin-left: auto; }
+  .pcard h3.proghead:hover .phall { color: var(--accent-2); }
 
   /* The version chooser the dock's little menu could never be. */
   .pver {
@@ -1425,14 +1431,21 @@
       <div class="pwave" id="pWave"></div>
 
       <!-- The song's own progress, on the song's own page. The library row has
-           the same checklist behind its bar, but this is the page you are on
-           when you are thinking about one song rather than scanning a shelf,
-           and it is the natural place to fill it in. Open by default: there is
-           no ambiguity about which song it belongs to here, so a fold would be
-           a click for nothing. -->
+           the same checklist behind its bar, and this is the page you are on
+           when you are thinking about one song rather than scanning a shelf.
+           FOLDED by default, at his word: "dont go into the progress details
+           unless progress bar for song is clicked and also allow hide on
+           reclick". It used to open with the checklist already down, which put
+           two dozen tick boxes between him and the versions and comments he had
+           actually come for - "Opening track detailed view is stuck in song
+           progress view". The bar stays, because the number is worth seeing
+           from here; only the boxes fold. -->
       <section class="pcard" id="pProgCard">
-        <h3>Progress <span class="pcount" id="pProgPct"></span></h3>
-        <div class="pacc" id="pProgAcc"></div>
+        <h3 class="proghead clickable" id="pProgHead">Progress
+          <span class="pcount" id="pProgPct"></span>
+          <span class="phall" id="pProgToggle"></span>
+        </h3>
+        <div class="pacc" id="pProgAcc" hidden></div>
       </section>
 
       <div class="pcols">
@@ -2846,8 +2859,7 @@ function refreshProgressNumbers(except){
     paintAcc(acc);
   });
   document.querySelectorAll('#albumProg .aprog').forEach(showPickPct);
-  if (profiling && activeSong && $('pProgPct'))
-    $('pProgPct').textContent = Math.round(songPctOf(activeSong)) + '%';
+  if (profiling && activeSong && $('pProgPct')) paintProfileProgHead();
   // The one under the pointer keeps its focus, so it is not redrawn. The only
   // part of it that can have gone stale is the averaged phase, and that can be
   // swapped on its own without touching a single checkbox — and only ever says
@@ -5703,12 +5715,42 @@ function renderProfileProgress(){
             && document.body.classList.contains('authed');
   card.style.display = show ? '' : 'none';
   if (!show){ acc.innerHTML = ''; return; }
-  acc.hidden = false;
+
+  // A DIFFERENT song means a fresh page, and a fresh page starts folded. The
+  // SAME song means this is a repaint - a tick landing, a comment arriving -
+  // and a repaint that folded the list would shut it under his hand the moment
+  // he ticked the first box. So the fold is reset by the song changing and by
+  // nothing else.
+  if (acc.dataset.ref !== s.folder) acc.hidden = true;
   acc.dataset.scope = 'song'; acc.dataset.ref = s.folder;
   if (!acc.dataset.wired){ acc.dataset.wired = '1'; wireAcc(acc); }
-  paintAcc(acc);
-  $('pProgPct').textContent = Math.round(songPctOf(s)) + '%';
+  if (!acc.hidden) paintAcc(acc);
+  paintProfileProgHead();
 }
+
+// The header: the song's own bar, and the word for what a click will do. Split
+// out because a tick has to move the number here without redrawing the card
+// around it, exactly as refreshProgressNumbers does for the library rows.
+function paintProfileProgHead(){
+  const acc = $('pProgAcc'), s = activeSong;
+  if (!acc || !s) return;
+  $('pProgPct').innerHTML = barHtml(songPctOf(s));
+  $('pProgToggle').textContent = acc.hidden ? 'show the checklist' : 'hide';
+}
+
+// Clicking the header opens the checklist, and clicking it again puts it away,
+// per his line. Painting is deferred to the moment it opens rather than done
+// up front: a folded list nobody looks at is not worth the work, and this is
+// the same rule the library rows already follow.
+function toggleProfileProg(){
+  const acc = $('pProgAcc');
+  if (!acc) return;
+  acc.hidden = !acc.hidden;
+  if (!acc.hidden) paintAcc(acc);
+  paintProfileProgHead();
+}
+
+$('pProgHead').addEventListener('click', toggleProfileProg);
 
 // Kept separate from the rest of the header because the comment pool arrives
 // after the page does: the chips have to be able to catch up on their own,

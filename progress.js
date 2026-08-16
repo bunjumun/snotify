@@ -30,122 +30,85 @@
 (function (global) {
   'use strict';
 
-  /* Version 2 is HIS workflow. Version 1 was the Gemini checklist that shipped
-   * earlier the same day; he read it, gave his own process instead, and chose
-   * to replace rather than merge. Nothing was ticked under version 1 — the
-   * table was confirmed empty before the swap — so no band lost a tick and
-   * there is no migration. Version 3 is the album adopting the same list as a
-   * song, again against an empty table. The number moves on every change to
-   * what the lists MEAN, because a stored row claiming a list that no longer
-   * exists is worth being able to spot later. */
-  const CHECKLIST_VERSION = 6;
+  /* Bumped on every change to what the lists MEAN, so a stored row claiming a
+   * shape that no longer exists stays possible to spot. 1 was the generated
+   * checklist; 2 his own pipeline; 3 the album borrowing the song's list; 4 the
+   * album blended half and half; 5 the album back to its own variables plus the
+   * song average; 6 a quarter fewer boxes; 7 half again.
+   *
+   * Versions 1 to 6 were all changed against an empty or near-empty table, so
+   * nothing was ever silently reinterpreted. Version 7 was not: it kept the four
+   * keys whose meaning survived the merge (w.idea, w.written, f.main, a.body) so
+   * that the ticks already on the board carried over rather than being wiped.
+   * He offered to let progress be reset to zero to save the trouble; it was not
+   * needed, and throwing away real ticks to avoid a few minutes of care would
+   * have been the wrong trade. */
+  const CHECKLIST_VERSION = 7;
 
-  /* The song checklist: ten stages, 24 leaves, 100 points.
+  /* The song checklist: six stages, 12 leaves, 100 points.
    *
-   * TRIMMED BY A QUARTER at his word ("simplify opitons by 25%"), from 32
-   * leaves to 24. Nothing was dropped that was a real step; what went was
-   * granularity that made the list a chore to read without telling him
-   * anything he did not already know from the neighbouring box. The vocal
-   * tournament is the clearest case: eight to four to two to one was four
-   * boxes describing one afternoon, and what actually matters is that takes
-   * exist, that they have been comped to one, and that it is finished. Session
-   * cleanup folded into the edit pass it happens during, sweetening became one
-   * act rather than two, credits and promo became the one errand they are, and
-   * physical manufacturing left the song entirely because pressing a record is
-   * the record's job and is on the album list.
-   *
-   * No stage weights changed, so nothing already ticked moved: the freed points
-   * stayed inside the stage they came from. Every surviving key kept its name,
-   * so the ticks already on the board survived the trim untouched.
-   *
-   * WHY IT LOOKS NOTHING LIKE THE FIRST ONE. The shipped list was generated,
-   * and it put vocals in tracking — two stages before mixing. He records vocals
-   * AFTER the instrumental mix is basically done, on purpose: it lets him sing
-   * to something that already sounds like a record rather than fighting a muddy
-   * bass, and it puts the longest and most important job last instead of in the
-   * middle. Those two orders cannot both be true, and it is his record.
+   * WHY IT LOOKS NOTHING LIKE THE GENERATED ONE. That list put vocals in
+   * tracking, two stages before mixing. He records vocals AFTER the
+   * instrumental mix is basically done, on purpose: it lets him sing to
+   * something that already sounds like a record rather than fighting a muddy
+   * bass, and it puts the longest job last instead of in the middle. Those two
+   * orders cannot both be true, and it is his record.
    *
    * WHY THE NAMES POINT AT THINGS ON THIS SITE. At his word: "tailor naming and
-   * criteria to the assets that exist on the site already when possible". So a
-   * prototype is a version on the stack rather than an abstract demo, a rough
-   * mix is an upload the band can comment on, revising mixes is the to-do list
-   * filling and emptying, and the final mix is the one wearing the star. A box
-   * you can settle by looking at the page beats one you have to remember.
+   * criteria to the assets that exist on the site already when possible". A
+   * prototype is a version on the stack, a rough mix is an upload the band can
+   * comment on, the final mix is the one wearing the star. A box he can settle
+   * by looking at the page beats one he has to remember.
    *
-   * WHY THE WEIGHTS ARE LOPSIDED. Also his: weight by effort, not by
-   * importance. Editing is 18 because he calls it by far the most mind-numbing
-   * part of the whole process, and vocals are 22 because the tournament comp is
-   * the longest. Mixing is 9 despite being the thing that makes or breaks a
-   * record, because a veteran does 90% of it in an hour. The bar measures work
-   * remaining, not how much each stage matters. */
+   * WHY THE WEIGHTS ARE LOPSIDED. Also his: weight by effort, not importance.
+   * Recording and arrangement carry 24 and vocals 18 because that is where the
+   * hours go; mixing carries 9 despite making or breaking a record, because a
+   * veteran does most of it in an hour. The bar measures work remaining.
+   *
+   * HOW IT GOT HERE, since the shape moved a lot in one day: 22 generated ->
+   * 27 (his own pipeline) -> 32 (a song's release made as full as a record's)
+   * -> 24 ("simplify by 25%") -> 12 ("way too granular, tone it down 50%").
+   * Not one of those needed a migration, because the list lives in code. */
   const SONG = [
-    /* Three boxes, not the five in his written process. He collapsed Gestation
-     * and Development into "prototypes", which is the better word here because
-     * it names something that exists — a scratch sitting on the stack — where
-     * gestation names a state of mind nobody can tick honestly. */
+    /* Six stages, twelve boxes. Halved at his word ("your song completion list
+     * is way too granular, tone it down 50%"), from 24.
+     *
+     * The cut is not more merging of neighbours — that was the last pass, and
+     * doing it again would have produced twelve boxes with three-clause names.
+     * This is a different question: what is the smallest set of moments where a
+     * song genuinely changes state? Tempo and the main instrument are one act of
+     * sitting down to record. Body, filler and atmospheres are one act of
+     * arranging. Sweetening and mastering are the same afternoon of finishing.
+     * A box earns its place if he would ever be half way between it and its
+     * neighbour; if he would not, it was never a step, only a description.
+     *
+     * FOUR KEYS ARE DELIBERATELY REUSED — w.idea, w.written, f.main, a.body —
+     * so the ticks already on Light survive the halving instead of being wiped.
+     * Where a merged box means the same thing as one of the old ones, it keeps
+     * the old key rather than taking a tidier new one. */
     { key: 'w', name: 'Songwriting', weight: 12, tasks: [
-      { key: 'w.idea', weight: 3, name: 'Idea landed — a riff, an image, a line worth chasing' },
-      { key: 'w.proto', weight: 4, name: 'Prototypes recorded — a scratch or two up on the stack' },
-      { key: 'w.written', weight: 5, name: 'Written through — structure, lyrics and arrangement settled' },
+      { key: 'w.idea', weight: 4, name: 'Idea landed, and a prototype or two on the stack' },
+      { key: 'w.written', weight: 8, name: 'Written through — structure, lyrics and arrangement settled' },
     ]},
-    /* His tempo rule is in the task name on purpose. It is the one step in the
-     * whole process with a trap in it: whatever you pick on day one feels right
-     * because you have spent an hour acclimatising to the tempo below it. */
-    { key: 'f', name: 'Recording: foundation', weight: 10, tasks: [
-      { key: 'f.tempo', weight: 4, name: 'Tempo settled — tried either side of it, and slept on before committing' },
-      { key: 'f.main', weight: 6, name: 'Main instrument tracked — the one you would play it on alone' },
-    ]},
-    /* His three arranging categories, which were already three ticks waiting to
-     * happen. The weighting says what he says: body is the song, the other two
-     * are the difference between a local band and the radio. */
-    { key: 'a', name: 'Arrangement', weight: 14, tasks: [
-      { key: 'a.body', weight: 7, name: 'Body tracked — what a five-piece would play live' },
-      { key: 'a.filler', weight: 4, name: 'Filler tracked — the parts nobody notices and everybody hears' },
-      { key: 'a.atmos', weight: 3, name: 'Atmospheres tracked — the reverb-drenched background mass' },
+    { key: 'f', name: 'Recording & arrangement', weight: 24, tasks: [
+      { key: 'f.main', weight: 10, name: 'Tempo settled and the main instrument tracked' },
+      { key: 'a.body', weight: 14, name: 'Arranged and tracked — body, filler and atmospheres' },
     ]},
     { key: 'e', name: 'Editing', weight: 16, tasks: [
-      { key: 'e.body', weight: 7, name: 'Body edited — transients pulled tight without going inhuman' },
-      { key: 'e.rest', weight: 6, name: 'Filler and atmospheres edited, session cleaned up' },
-      { key: 'e.rough', weight: 3, name: 'Rough mix uploaded as a version for the band to pick at' },
+      { key: 'e.body', weight: 10, name: 'Edited tight without going inhuman' },
+      { key: 'e.rough', weight: 6, name: 'Cleaned up and a rough mix out to the band' },
     ]},
-    /* Three STATES, not three jobs, and that is exactly what he asked for:
-     * "just have me verify when we are in mix phase, when we are revising mixes
-     * and when we have chosen a final mix and ready to move to next phase". A
-     * mix is not a checklist, it is a place the song is in. */
     { key: 'm', name: 'Mixing', weight: 9, tasks: [
-      { key: 'm.in', weight: 2, name: 'In the mix phase' },
-      { key: 'm.revising', weight: 3, name: 'Revising mixes — notes coming in on the to-do and being answered' },
-      { key: 'm.final', weight: 4, name: 'Final mix chosen — the starred one — and ready to move on' },
+      { key: 'm.in', weight: 4, name: 'Mixing under way and revisions coming back' },
+      { key: 'm.final', weight: 5, name: 'Final mix chosen — the starred one' },
     ]},
-    /* The heaviest stage, and last rather than middle. The tournament is his,
-     * down to the number: eight takes because it halves cleanly three times. */
     { key: 'v', name: 'Vocals', weight: 18, tasks: [
-      { key: 'v.takes', weight: 6, name: 'Takes recorded against the finished mix — eight of them' },
-      { key: 'v.comp1', weight: 7, name: 'Comped down to one elite take' },
-      { key: 'v.mix', weight: 5, name: 'Pitch corrected and mixed' },
+      { key: 'v.comp1', weight: 11, name: 'Takes recorded and comped down to one' },
+      { key: 'v.mix', weight: 7, name: 'Pitch corrected and mixed' },
     ]},
-    { key: 's', name: 'Sweetening', weight: 6, tasks: [
-      { key: 's.automation', weight: 6, name: 'Sweetened — automation, builds, doubles, transition effects' },
-    ]},
-    { key: 'r', name: 'Mastering', weight: 5, tasks: [
-      { key: 'r.eq', weight: 2, name: 'Master EQ — top-end sparkle, bass weight, mids in check' },
-      { key: 'r.limit', weight: 3, name: 'Compression and limiting — level sits with everything else' },
-    ]},
-    /* A SONG'S RELEASE IS AS FULL AS AN ALBUM'S, at his word: a finished song is
-     * "choosable as a single release", so it needs everything a record needs —
-     * artwork, credits, codes, a distributor. These two stages are what the old
-     * generated album list called Visuals & Packaging and Distribution, Rights
-     * & Release Strategy, folded into the one shared list so both levels get
-     * them. Physical packaging and manufacturing read oddly on a single and are
-     * kept anyway: he ticks these by hand, so a box that does not apply is one
-     * he leaves alone, and dropping it would lose it for the album. */
-    { key: 'x', name: 'Visuals & assets', weight: 5, tasks: [
-      { key: 'x.art', weight: 3, name: 'Cover artwork finalised and uploaded' },
-      { key: 'x.credits', weight: 2, name: 'Credits, lyrics and promo assets ready' },
-    ]},
-    { key: 'd', name: 'Distribution & rights', weight: 5, tasks: [
-      { key: 'd.codes', weight: 2, name: 'ISRC code generated and metadata locked' },
-      { key: 'd.out', weight: 3, name: 'Out — Soundcloud, or live through the distributor' },
+    { key: 'r', name: 'Mastering & release', weight: 21, tasks: [
+      { key: 'r.master', weight: 11, name: 'Sweetened and mastered' },
+      { key: 'd.out', weight: 10, name: 'Artwork, metadata and out — Soundcloud or a distributor' },
     ]},
   ];
 

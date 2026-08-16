@@ -2380,17 +2380,6 @@ function barHtml(pct, cls){
 function accHtml(list, scope, ref){
   const ticks = ticksFor(scope, ref);
   return list.map(ph => {
-    if (ph.auto){
-      const al = albumsInView().find(a => a.slug === ref);
-      const done = al ? al.songs : [];
-      const mean = done.length ? done.reduce((a, s) => a + songPctOf(s), 0) / done.length : 0;
-      return `<div class="pphase">
-        <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
-        <div class="pauto">Worked out from the songs, not ticked: <b>${Math.round(mean)}%</b>
-          across ${done.length} song${done.length === 1 ? '' : 's'}, which is
-          <b>${Math.round(mean / 100 * ph.weight)}</b> of the ${ph.weight} points here.</div>
-      </div>`;
-    }
     return `<div class="pphase">
       <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
       ${ph.tasks.map(t => {
@@ -2403,7 +2392,28 @@ function accHtml(list, scope, ref){
       }).join('')}
     </div>`;
   }).join('')
+  + albumSplitNote(scope, ref)
   + `<div class="pnote">Anyone in the band can tick or untick these, and a tick carries no name.</div>`;
+}
+
+// The album's bar is not the sum of the boxes above it, and a reader who ticks
+// all ten stages and sees 50% deserves to be told why rather than left to think
+// it is broken. Half the album's score is its own list; the other half is how
+// far its songs have got. Shown with the live numbers, so it doubles as the
+// answer to "which songs are holding this up".
+function albumSplitNote(scope, ref){
+  if (scope !== 'album') return '';
+  const al = albumsInView().find(a => a.slug === ref);
+  if (!al) return '';
+  const own = PROGRESS.songPct(ticksFor('album', ref));   // same list at both scopes
+  const pcts = al.songs.map(songPctOf);
+  const mean = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : 0;
+  const done = pcts.filter(p => p >= 100).length;
+  return `<div class="pauto">The boxes above are <b>half</b> this record's score
+    (currently <b>${Math.round(own)}%</b>). The other half is how far its songs have
+    got: <b>${Math.round(mean)}%</b> across ${pcts.length} song${pcts.length === 1 ? '' : 's'},
+    ${done} of them finished. So the record cannot read complete until both its own
+    list and every song on it are.</div>`;
 }
 
 // Wire one accordion. Delegated on the container, so re-rendering its innards

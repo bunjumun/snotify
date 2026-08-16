@@ -38,7 +38,7 @@
    * song, again against an empty table. The number moves on every change to
    * what the lists MEAN, because a stored row claiming a list that no longer
    * exists is worth being able to spot later. */
-  const CHECKLIST_VERSION = 3;
+  const CHECKLIST_VERSION = 4;
 
   /* The song checklist: nine stages, 27 leaves, 100 points.
    *
@@ -82,15 +82,15 @@
     /* His three arranging categories, which were already three ticks waiting to
      * happen. The weighting says what he says: body is the song, the other two
      * are the difference between a local band and the radio. */
-    { key: 'a', name: 'Arrangement', weight: 15, tasks: [
+    { key: 'a', name: 'Arrangement', weight: 14, tasks: [
       { key: 'a.body', weight: 7, name: 'Body tracked — what a five-piece would play live' },
       { key: 'a.filler', weight: 4, name: 'Filler tracked — the parts nobody notices and everybody hears' },
-      { key: 'a.atmos', weight: 4, name: 'Atmospheres tracked — the reverb-drenched background mass' },
+      { key: 'a.atmos', weight: 3, name: 'Atmospheres tracked — the reverb-drenched background mass' },
     ]},
-    { key: 'e', name: 'Editing', weight: 18, tasks: [
-      { key: 'e.body', weight: 8, name: 'Body edited — transients pulled tight without going inhuman' },
+    { key: 'e', name: 'Editing', weight: 16, tasks: [
+      { key: 'e.body', weight: 7, name: 'Body edited — transients pulled tight without going inhuman' },
       { key: 'e.rest', weight: 4, name: 'Filler and atmospheres edited' },
-      { key: 'e.gain', weight: 3, name: 'Gain staging and session cleanup' },
+      { key: 'e.gain', weight: 2, name: 'Gain staging and session cleanup' },
       { key: 'e.rough', weight: 3, name: 'Rough mix uploaded as a version for the band to pick at' },
     ]},
     /* Three STATES, not three jobs, and that is exactly what he asked for:
@@ -104,12 +104,12 @@
     ]},
     /* The heaviest stage, and last rather than middle. The tournament is his,
      * down to the number: eight takes because it halves cleanly three times. */
-    { key: 'v', name: 'Vocals', weight: 22, tasks: [
-      { key: 'v.takes', weight: 5, name: 'Eight takes recorded against the finished mix' },
-      { key: 'v.comp4', weight: 4, name: 'Comped down to four' },
-      { key: 'v.comp2', weight: 4, name: 'Comped down to two' },
+    { key: 'v', name: 'Vocals', weight: 18, tasks: [
+      { key: 'v.takes', weight: 4, name: 'Eight takes recorded against the finished mix' },
+      { key: 'v.comp4', weight: 3, name: 'Comped down to four' },
+      { key: 'v.comp2', weight: 3, name: 'Comped down to two' },
       { key: 'v.pitch', weight: 3, name: 'Final two pitch corrected' },
-      { key: 'v.comp1', weight: 3, name: 'Comped down to one elite take' },
+      { key: 'v.comp1', weight: 2, name: 'Comped down to one elite take' },
       { key: 'v.mix', weight: 3, name: 'Vocal mixed' },
     ]},
     { key: 's', name: 'Sweetening', weight: 6, tasks: [
@@ -120,13 +120,24 @@
       { key: 'r.eq', weight: 2, name: 'Master EQ — top-end sparkle, bass weight, mids in check' },
       { key: 'r.limit', weight: 3, name: 'Compression and limiting — level sits with everything else' },
     ]},
-    /* At song level as well as album level, at his word. A song can go out as a
-     * single ahead of the record, which is a real thing he does, so the album's
-     * own distribution tasks are not a duplicate of this — they are the record
-     * shipping as one object. */
-    { key: 'x', name: 'Release', weight: 3, tasks: [
-      { key: 'x.assets', weight: 1, name: 'Artwork and lyrics attached to the song' },
-      { key: 'x.out', weight: 2, name: 'Released — Soundcloud, or out through a distributor' },
+    /* A SONG'S RELEASE IS AS FULL AS AN ALBUM'S, at his word: a finished song is
+     * "choosable as a single release", so it needs everything a record needs —
+     * artwork, credits, codes, a distributor. These two stages are what the old
+     * generated album list called Visuals & Packaging and Distribution, Rights
+     * & Release Strategy, folded into the one shared list so both levels get
+     * them. Physical packaging and manufacturing read oddly on a single and are
+     * kept anyway: he ticks these by hand, so a box that does not apply is one
+     * he leaves alone, and dropping it would lose it for the album. */
+    { key: 'x', name: 'Visuals & assets', weight: 5, tasks: [
+      { key: 'x.art', weight: 3, name: 'Cover artwork finalised and uploaded' },
+      { key: 'x.credits', weight: 1, name: 'Credits, liner notes and lyrics formatted' },
+      { key: 'x.promo', weight: 1, name: 'Promo assets and press kit ready' },
+    ]},
+    { key: 'd', name: 'Distribution & rights', weight: 5, tasks: [
+      { key: 'd.codes', weight: 1, name: 'ISRC / UPC codes generated and metadata locked' },
+      { key: 'd.upload', weight: 2, name: 'Distribution upload and pre-save scheduled' },
+      { key: 'd.physical', weight: 1, name: 'Physical manufacturing submitted' },
+      { key: 'd.out', weight: 1, name: 'Out — Soundcloud, or live through the distributor' },
     ]},
   ];
 
@@ -189,15 +200,37 @@
    * An album with no songs in it scores zero for the phase rather than full
    * marks. Dividing by zero and calling it complete would say a record with
    * nothing on it is half made. */
+  /* THE ALBUM IS HALF ITS OWN TICKS AND HALF ITS SONGS, at his word: "songs
+   * have their own completion status that feeds into album completion status.
+   * so 3 of 5 songs could be complete and choosable as single releases but the
+   * album that includes them and yet to be completed songs would read as not
+   * complete."
+   *
+   * That sentence rules out both simple answers. If the album were only its own
+   * checklist it would not budge as songs finished, and three finished songs
+   * would show nothing. If it were only the mean of its songs it would have no
+   * room for the work that is the record's alone — sequencing it, mastering it
+   * as a whole, getting the artwork made. So it is a blend, an even one: half
+   * the album's own ticks over the same nine stages, half how far its songs
+   * have got.
+   *
+   * Three of five songs finished and nothing else touched therefore reads 30%,
+   * and cannot read complete until both halves are, which is the behaviour he
+   * described. A song's own score is one number wherever it is looked at — as
+   * part of the record or as a single — because it is stored against the song,
+   * not against the context it is viewed in.
+   *
+   * Nothing is auto-ticked from what is on the site, deliberately: "for now i'm
+   * manually engaging the options on the webpage so dont worry about auto
+   * filling". Every box here is his to tick. */
+  const ALBUM_OWN_SHARE = 0.5;
   function albumPct(ticks, songPcts) {
-    const auto = ALBUM.find(ph => ph.auto);
-    const manual = pct(ALBUM, ticks);
-    if (!auto) return manual;              // the album is ticked, not averaged
-    const mean = songPcts.length
-      ? songPcts.reduce((a, b) => a + b, 0) / songPcts.length
-      : 0;
-    return manual + (mean / 100) * auto.weight;
+    const own = pct(ALBUM, ticks);
+    if (!songPcts.length) return own;
+    const mean = songPcts.reduce((a, b) => a + b, 0) / songPcts.length;
+    return own * ALBUM_OWN_SHARE + mean * (1 - ALBUM_OWN_SHARE);
   }
+
 
 
   /* Everything above a given task, for the cascade backfill. Returns the keys

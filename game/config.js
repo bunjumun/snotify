@@ -480,11 +480,14 @@ export const CFG = {
     // never quite countable, and small enough that the proportions still hold
     // over a single level rather than only over a long session.
     bagSize: 48,
-    // How much bigger a half-jar is than an eighth-jar, drawn as the cube root
-    // of the ratio so the eye reads volume rather than height: 0.79, 1.0, 1.26
-    // against the quarter. Anything stronger and an eighth is a speck inside a
-    // pickup radius of 4, which is the exact mismatch the jar was drawn to fix.
-    sizeExponent: 1 / 3,
+    // How much bigger a half-jar is than an eighth-jar. Was the cube root
+    // (1/3), which read as 0.79/1.0/1.26 against the quarter — correct but
+    // subtle. Raised at his word ("make jars dimensionally larger in relation
+    // to amount"), to 0.79/1.0/1.46 -> now 0.68/1.0/1.46. Still short of
+    // linear (0.5/1.0/2.0), which would put an eighth close to a speck inside
+    // a pickup radius of 4; this keeps the small jar findable while making the
+    // half genuinely read as twice the eighth rather than a fifth larger.
+    sizeExponent: 0.55,
     // Grown with the prop rather than left behind it. A baggie was half a unit
     // tall inside a radius of 2.6, so the collision was five times the size of
     // the thing drawn and picking one up felt like it happened *near* the jar
@@ -990,11 +993,11 @@ export const CFG = {
     // hit landing and you can still hear what is playing underneath it, which
     // is the entire point of pillar 3.
     // The phaser over the record during a hit. `maxWet` came down from 0.6 with
-    // the rest of the hit: at 0.6 the band's own mix spends the sequence sounding
-    // like it is being played through the effect rather than coloured by it, and
-    // the record is the one thing here that is not ours to smear. 0.42 still
-    // swims and still leaves the vocal where he put it.
-    phaser: { stages: 6, rateHz: 0.28, depth: 1100, baseFreq: 340, feedback: 0.55, maxWet: 0.42 },
+    // the rest of the hit, then again at his word after playing it
+    // ("reduce wetness or phaser on audio track as well"): 0.42 -> 0.28. At
+    // 0.28 the sweep still reads as motion over the mix rather than under it,
+    // and the mix is the one thing here that is not ours to smear.
+    phaser: { stages: 6, rateHz: 0.28, depth: 1100, baseFreq: 340, feedback: 0.55, maxWet: 0.28 },
 
     // ---------- The bong hit ----------
     // The bubble of the pull itself. Turned down at his word: it was 22 bubbles

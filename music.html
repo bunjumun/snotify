@@ -1017,6 +1017,23 @@
   }
   .ptask:hover .pdrop { opacity: 1; }
   .ptask .pdrop:hover { color: var(--danger, #e0567a); }
+  /* Assignee initials: always visible when set, since it is the one badge the
+     plan asks to survive a collapsed row, not just a hover state. */
+  .ptask .pwho {
+    flex: none; font-size: 9.5px; font-weight: 700; letter-spacing: .02em;
+    color: var(--bg); background: var(--accent-2); border-radius: 999px;
+    width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
+  }
+  /* The inspector pencil, same fade-in-on-hover idiom as the remove cross
+     beside it, so the row does not carry two permanent icons for a rarely
+     used control. */
+  .ptask .pinsp {
+    flex: none; width: 16px; text-align: center; cursor: pointer;
+    color: var(--text-mute); opacity: 0; transition: opacity .12s, color .12s;
+    font-size: 12px; line-height: 1;
+  }
+  .ptask:hover .pinsp { opacity: 1; }
+  .ptask .pinsp:hover { color: var(--accent-2); }
   .padd { padding: 3px 6px 2px; }
   .padd .lnk {
     font-size: 12px; color: var(--text-mute); cursor: pointer;
@@ -1302,6 +1319,26 @@
       </details>
 
       <div class="actions"><button class="btn ghost" id="refClose">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Progress inspector: assignee, notes, due date on one task. Phase 2 of
+       the album-progress plan; reuses the plain modal shell rather than
+       growing a fourth dialog idiom. -->
+  <div class="modal-back" id="progModal">
+    <div class="modal" style="max-width:420px">
+      <h2 id="progInspTitle">Task</h2>
+      <label>Assignee</label>
+      <input type="text" id="progInspWho" maxlength="80" placeholder="Whose job is this…" />
+      <label>Due</label>
+      <input type="date" id="progInspDue" />
+      <label>Notes</label>
+      <textarea id="progInspNotes" maxlength="2000" placeholder="Anything worth remembering about this one…"></textarea>
+      <div class="status" id="progInspStatus"></div>
+      <div class="actions">
+        <button class="btn ghost" id="progInspClose">Close</button>
+        <button class="btn primary" id="progInspSave">Save</button>
+      </div>
     </div>
   </div>
 
@@ -1810,6 +1847,12 @@ let curProject = null;             // project scoping the current view (via #/p/
 // state and there is no third value to reason about. Empty until the band is
 // logged in; a shared link never loads it, because progress is band data.
 let progress = Object.create(null);
+// Assignee, notes and due date per task, keyed 'scope/ref/key' → {assignee,
+// notes, due_on}. Separate from `progress` because a task can carry meta
+// without being ticked — that is the whole point of phase 2 — so this is not
+// a Set and does not share progKey's per-scope shape.
+let progMeta = Object.create(null);
+const metaKey = (scope, ref, key) => scope + '/' + ref + '/' + key;
 // His own additions and removals, raw as the server returns them. One object
 // for the whole band; PROGRESS.shapeFor narrows it to one song or one record.
 let progShape = { items: [], hidden: [] };
@@ -2462,6 +2505,11 @@ function showEmpty() {
 // accordion and then rebuilding the list underneath it would close the thing
 // you are using. So a tick patches the two numbers it can change — this song's
 // bar and the album's — and leaves every element where it is.
+// First letters of up to two words, for the collapsed-row badge. "Sam" -> S,
+// "Sam Lee" -> SL. Never more than two, so a full name typed by accident does
+// not stretch the row.
+const initials = (name) => String(name || '').trim().split(/\s+/).slice(0, 2)
+  .map(w => w[0]).join('').toUpperCase();
 const progKey = (scope, ref) => scope + '/' + ref;
 function ticksFor(scope, ref){
   const k = progKey(scope, ref);
@@ -2520,8 +2568,14 @@ async function loadProgress(){
     return;
   }
   progress = Object.create(null);
+  progMeta = Object.create(null);
   progShape = shape || { items: [], hidden: [] };
-  for (const r of (rows || [])) ticksFor(r.scope, r.ref).add(r.key);
+  for (const r of (rows || [])) {
+    if (r.done) ticksFor(r.scope, r.ref).add(r.key);
+    if (r.assignee || r.notes || r.due_on)
+      progMeta[metaKey(r.scope, r.ref, r.key)] =
+        { assignee: r.assignee || '', notes: r.notes || '', due_on: r.due_on || '' };
+  }
   // The ticks usually land AFTER renderList has already drawn the rows, because
   // this is fired off in the background rather than awaited. Drawing bars that
   // are missing and then correcting the numbers on the ones already there are
@@ -2599,10 +2653,13 @@ function accHtml(list, scope, ref){
       ${ph.tasks.map(t => {
         const on = ticks.has(t.key);
         const id = `pt-${esc(scope)}-${esc(ref)}-${esc(t.key)}`;
+        const meta = progMeta[metaKey(scope, ref, t.key)];
         return `<div class="ptask ${on ? 'on' : ''} ${t.custom ? 'mine' : ''}" data-key="${esc(t.key)}">
           <input type="checkbox" id="${id}" ${on ? 'checked' : ''} />
           <label for="${id}">${esc(t.name)}</label>
+          ${meta && meta.assignee ? `<span class="pwho" title="Assigned to ${esc(meta.assignee)}">${esc(initials(meta.assignee))}</span>` : ''}
           <span class="w">${t.weight.toFixed(t.weight < 10 ? 1 : 0)}%</span>
+          <span class="pinsp" title="Assignee, notes, due date" data-inspect="${esc(t.key)}">&#9998;</span>
           <span class="pdrop" title="${t.custom ? 'Delete this item' : 'Remove this step from this one only'}"
                 data-drop="${esc(t.key)}" data-mine="${t.custom ? esc(t.id) : ''}">&times;</span>
         </div>`;
@@ -2715,6 +2772,13 @@ function wireAcc(el){
       // Send only what actually changes. Clearing a list that is already half
       // empty should not ask the server to delete rows that were never there.
       return bulkSet(el, all.filter(k => ticks.has(k) !== want), want);
+    }
+
+    const insp = e.target.closest('[data-inspect]');
+    if (insp){
+      const task = list.flatMap(ph => ph.tasks).find(t => t.key === insp.dataset.inspect);
+      if (task) openInspector(scope, ref, task);
+      return;
     }
 
     // --- his own items: add, remove, put back -----------------------------
@@ -4915,6 +4979,48 @@ function closeReference(){
 $('refToggle').onclick = () => openReference();
 $('refClose').onclick = closeReference;
 $('refModal').addEventListener('click', (e) => { if (e.target === $('refModal')) closeReference(); });
+
+// The progress inspector. `progInspTarget` is set on open and read on save,
+// same shape as refSubject above: one slot, remembered between the two calls
+// rather than threaded through the DOM.
+let progInspTarget = null;
+function openInspector(scope, ref, task){
+  progInspTarget = { scope, ref, key: task.key };
+  const meta = progMeta[metaKey(scope, ref, task.key)] || {};
+  $('progInspTitle').textContent = task.name;
+  $('progInspWho').value = meta.assignee || '';
+  $('progInspDue').value = meta.due_on || '';
+  $('progInspNotes').value = meta.notes || '';
+  $('progInspStatus').textContent = '';
+  $('progInspStatus').className = 'status';
+  $('progModal').classList.add('open');
+}
+function closeInspector(){ $('progModal').classList.remove('open'); progInspTarget = null; }
+$('progInspClose').onclick = closeInspector;
+$('progModal').addEventListener('click', (e) => { if (e.target === $('progModal')) closeInspector(); });
+$('progInspSave').onclick = async () => {
+  if (!progInspTarget) return;
+  const { scope, ref, key } = progInspTarget;
+  const assignee = $('progInspWho').value.trim();
+  const notes = $('progInspNotes').value.trim();
+  const due = $('progInspDue').value || null;
+  $('progInspStatus').textContent = 'Saving…';
+  try {
+    await libRpc('progress_set_meta', { scope_in: scope, ref_in: ref, key_in: key,
+      assignee_in: assignee, notes_in: notes, due_in: due, ver_in: PROGRESS.VERSION });
+    const k = metaKey(scope, ref, key);
+    if (assignee || notes || due) progMeta[k] = { assignee, notes, due_on: due || '' };
+    else delete progMeta[k];
+    // Rows carrying meta but no tick are invisible to a bare accordion repaint
+    // unless it is told to run — same reason a tick calls paintAcc rather than
+    // trusting the DOM already matches.
+    document.querySelectorAll(`.pacc[data-scope="${scope}"][data-ref="${CSS.escape(ref)}"]`)
+      .forEach(paintAcc);
+    closeInspector();
+  } catch (err){
+    $('progInspStatus').textContent = 'Could not save that: ' + (err.message || err);
+  }
+};
 
 $('refVersions').addEventListener('click', (e) => {
   const v = e.target.closest('[data-rv]');

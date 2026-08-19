@@ -1,12 +1,14 @@
 // Bongs — stations, not pickups.
 //
 // A bong needs the lighter and a full bowl. Short of that it sits dark and
-// unlit; at eight eighths it lights, and its positional hum comes up loud enough to be
-// heard through fog well before it can be seen.
+// unlit; at eight eighths it lights.
 //
-// That last part is the design working: "I'm loaded" stops being a number on the
-// HUD and becomes a sense. You get your fourth baggie, the lake starts humming at
-// you, and you follow it. Nothing has to explain that.
+// UNBUILT: this file's own header used to promise a positional hum that would
+// carry through the fog once loaded, so "I'm loaded" would stop being a number
+// on the HUD and become a sense. No such sound was ever wired into
+// AudioDirector; the only cue a loaded bong gives at range is the light below,
+// which fades out well inside the fog line. Raised in the outbox and answered
+// at his word: not building the hum, and Intro.js no longer promises it.
 
 import * as THREE from 'three';
 import { CFG } from '../../config.js';

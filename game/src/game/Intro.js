@@ -221,8 +221,11 @@ export class Intro {
       g.hud.say(`Something is glowing ${this._bearingTo(this.fish1.group.position)}.`, { seconds: 4 });
     } else if (this.step === 0 && g.nearestBong) {
       // Before the fish exists, the only thing to point at is the pipe — which
-      // is the whole of beat 0 now.
-      g.hud.say(`There's a pipe ${this._bearingTo(g.nearestBong.position)}. It's humming.`, { seconds: 4 });
+      // is the whole of beat 0 now. Used to promise it was humming; nothing in
+      // AudioDirector ever gave a loaded bong a sound at range (CR-11 / the
+      // outbox), so the line was a promise the game could not keep. Removed
+      // rather than the sound built, at his word.
+      g.hud.say(`There's a pipe ${this._bearingTo(g.nearestBong.position)}.`, { seconds: 4 });
     } else if (this.step === 2 && g.nearestBong) {
       g.hud.say(`The pipe is ${this._bearingTo(g.nearestBong.position)}.`, { seconds: 4 });
     } else if (this.step === 3 && this.fish2) {

@@ -4131,12 +4131,13 @@ function confirmEditingOthers(c){
   if (!c.name || !mine || c.name.trim().toLowerCase() === mine) return true;
   return confirm(`This comment was posted by "${c.name}" — are you sure you want to edit it?`);
 }
-async function editComment(cid, text){
+async function editComment(cid, text, newTimeS = null){
   text = text.trim();
   if (!text || !activeSong) return;
   const name = $('cname').value.trim();
   try {
-    const row = await libRpc('edit_comment', { cid, txt: text, who: name });
+    const row = await libRpc('edit_comment', { cid, txt: text, who: name,
+      new_time_s: (newTimeS !== null && isFinite(newTimeS)) ? newTimeS : null });
     const list = commentCache[activeSong.id] || [];
     const i = list.findIndex(c => c.id === cid);
     if (i !== -1) list[i] = { ...list[i], ...mapRow({ ...row, dismissed_versions: list[i].dismissedVersions }) };
@@ -4349,7 +4350,7 @@ function renderComments(){
     <div class="cmt" data-id="${r.id}" data-t="${r.time}">
       <div class="body">
         ${cEditId === r.id
-          ? `<div class="cedit"><input type="text" value="${esc(r.text)}" maxlength="280" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`
+          ? `<div class="cedit"><input type="text" value="${esc(r.text)}" maxlength="280" /><input type="text" class="ctime" value="${fmt(r.time)}" data-orig="${fmt(r.time)}" size="5" maxlength="8" title="Timestamp (m:ss)" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`
           : `<div class="txt">${esc(r.text)}</div>`}
         <div class="who">${r.name ? `<b>${esc(r.name)}</b> · ` : ''}${timeago(r.at)}${r.editedAt ? ' · <span class="edited-tag">edited</span>' : ''}</div>
         <div class="cactions"><span class="act-edit">Edit</span></div>
@@ -4369,7 +4370,7 @@ function renderComments(){
         <span class="t">${fmt(c.time)}</span>
         <div class="body">
           ${cEditId === c.id
-            ? `<div class="cedit"><input type="text" value="${esc(c.text)}" maxlength="280" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`
+            ? `<div class="cedit"><input type="text" value="${esc(c.text)}" maxlength="280" /><input type="text" class="ctime" value="${fmt(c.time)}" data-orig="${fmt(c.time)}" size="5" maxlength="8" title="Timestamp (m:ss)" /><button class="save">Save</button><button class="cancel">Cancel</button></div>`
             : `<div class="txt">${esc(c.text)}</div>`}
           <div class="who">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}${timeago(c.at)}${c.editedAt ? ' · <span class="edited-tag">edited</span>' : ''} ${carried}${c.resolved ? `<span class="cbadge resolved">✓ resolved</span>` : ''}${tagChips(c.tags)}${crefLink(c)}</div>
           <div class="cactions">
@@ -4432,7 +4433,19 @@ function handleClistClick(e){
     const val = input.value.trim();
     if (!val) return;
     if (cReplyTo){ const pid = cReplyTo; cReplyTo = null; addComment(val, pid); }
-    else if (cEditId){ const eid = cEditId; cEditId = null; editComment(eid, val); }
+    else if (cEditId){
+      const eid = cEditId; cEditId = null;
+      // The time box only exists on an edit row, never the reply composer.
+      // Compared against what was rendered into it rather than parsed
+      // unconditionally: fmt() truncates to whole seconds, so a comment stored
+      // at 125.4s renders "2:05", and sending that back on a text-only edit
+      // would quietly move the marker. Untouched means untouched. A blank or
+      // unparsable entry means "leave it" too, the same forgiving read
+      // parseTime already gives every other time field.
+      const timeInput = e.target.parentElement.querySelector('.ctime');
+      const touched = timeInput && timeInput.value.trim() !== timeInput.dataset.orig;
+      editComment(eid, val, touched ? parseTime(timeInput.value) : null);
+    }
     return;
   }
   if (e.target.classList.contains('cancel')){ cReplyTo = null; cEditId = null; renderComments(); return; }

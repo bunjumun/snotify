@@ -154,6 +154,9 @@ header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px;
 .cactions span.on { color: var(--accent-2); }
 .cedit { display: flex; gap: 6px; margin-top: 4px; }
 .cedit input { flex: 1; background: var(--field); border: 1px solid var(--accent); color: var(--text); border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 13px; outline: none; }
+/* The timestamp box on a comment edit — CR-57. Fixed narrow width rather than
+   flex:1 like the text input beside it, since m:ss never needs the room. */
+.cedit input.ctime { flex: 0 0 56px; text-align: center; }
 .cedit button { flex: none; background: none; border: none; color: var(--text-mute); font-size: 11px; font-weight: 600; cursor: pointer; }
 .cedit button:hover { color: var(--accent); }
 .cbadge { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-left: 6px; letter-spacing: .2px; }

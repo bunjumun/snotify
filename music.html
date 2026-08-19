@@ -5052,7 +5052,11 @@ async function refSave(ref){
   }
   renderReference();
   if (sc === 'version') renderVersions();
-  if (sc === 'comment') renderComments();
+  // A comment and a to-do row are the same object under two headings, and
+  // CR-58 lets the attach happen from either — so both lists redraw, or the
+  // one you were not looking at keeps showing the old state until something
+  // else happens to rebuild it.
+  if (sc === 'comment'){ renderComments(); renderTodo(); }
   $('refStatus').className = 'status ok';
   $('refStatus').textContent = ref ? 'Attached.' : 'Removed.';
   return true;
@@ -6098,6 +6102,14 @@ function renderTodo(){
           ${nReplies ? `<span class="replies">💬 ${nReplies}</span>` : ''}
           ${c.resolved && c.resolvedBy ? `<span>resolved by ${esc(c.resolvedBy)}</span>` : ''}
           ${chips}
+          <!-- CR-58. A to-do IS the root comment that spawned it, so attaching
+               here writes the same slot the comment drawer already reads and
+               renders: attach a video to a resolved job and it is waiting on
+               the original note, with no join and nothing to keep in step.
+               Offered on open notes too, not only resolved ones — it is one
+               object shown under two tabs, and hiding it under Open would only
+               make it seem to come and go. -->
+          ${crefLink(c)}
         </div>
         <!-- Categorise it now: most notes are only recognisable as a job when
              somebody reads them back here, long after they were written. -->
@@ -6114,6 +6126,15 @@ function renderTodo(){
 $('todoList').addEventListener('click', (e) => {
   const row = e.target.closest('.todo-row');
   if (!row || !activeSong) return;
+  // Attaching a reference is not "take me to this note" either, and it has to
+  // be caught before the navigate-away below: the row's own click closes this
+  // modal, which would shut the reference modal's ground out from under it.
+  const crefEl = e.target.closest('[data-cref]');
+  if (crefEl){
+    closeTodo();
+    openReference({ scope: 'comment', cid: crefEl.dataset.cref });
+    return;
+  }
   // Ticking a category is not "take me to this note" — it stays put.
   const tagBtn = e.target.closest('.tagpick.row [data-tag]');
   if (tagBtn){

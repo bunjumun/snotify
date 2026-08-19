@@ -189,6 +189,15 @@ header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px;
 .todo-row .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .todo-row .meta { color: var(--text-mute); font-size: 11.5px; margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .todo-row .replies { color: var(--text-mute); }
+/* CR-58: the same reference chip the comment byline carries, in the to-do
+   row's meta line. Restated rather than widened to `.cref` alone, because the
+   comment rules are scoped to `.cmt` and a bare selector would also catch the
+   chip in the upload dialog's tick list, where there is nothing to click. */
+.todo-row .cref { color: var(--accent); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.todo-row .cref:hover { text-decoration: underline; }
+.todo-row .cref.none { color: var(--text-mute); opacity: 0; transition: opacity .15s; }
+.todo-row:hover .cref.none { opacity: 1; }
+@media (hover: none) { .todo-row .cref.none { opacity: .7; } }
 /* The same list, in the upload dialog. Two differences, both because of where
    it sits: a row here is a checkbox you tick rather than a link you follow, so
    it loses the pointer cursor the modal's rows have; and the dialog is already

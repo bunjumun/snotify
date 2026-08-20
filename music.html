@@ -250,6 +250,19 @@
   .ref-ver.on { background: rgba(108,92,231,.16); color: var(--text); }
   .ref-ver .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ref-ver .dt { color: var(--text-mute); font-size: 11px; flex: none; }
+  /* CR-70. Which mix the note was written on, and which one answered it.
+     flex:none so they never squeeze the mix's own name, which is the thing
+     you actually click. Muted rather than loud: they are labels on a list you
+     are reading, not two more buttons competing with it. */
+  .ref-ver .rv-tag { flex: none; font-size: 9.5px; font-weight: 800; letter-spacing: .06em;
+    text-transform: uppercase; padding: 1px 6px; border-radius: 20px; color: var(--text-mute);
+    border: 1px solid var(--line); white-space: nowrap; }
+  .ref-ver .rv-tag.fix { color: var(--text); border-color: currentColor; }
+  /* The note this modal was opened from, above the stack it applies to. */
+  .ref-cmt { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px;
+    background: var(--bg-hover); border: 1px solid var(--line); }
+  .ref-cmt .rc-txt { font-size: 13px; line-height: 1.4; }
+  .ref-cmt .rc-meta { margin-top: 4px; font-size: 11px; color: var(--text-mute); }
   .ref-transport { display: flex; align-items: center; gap: 9px; margin-top: 4px; }
   .ref-play { flex: none; width: 32px; height: 32px; border-radius: 50%; border: none; cursor: pointer; background: var(--text); color: var(--bg); font-size: 12px; }
   .ref-play:hover { filter: brightness(1.1); }
@@ -1255,6 +1268,11 @@
       <div class="ref-grid">
         <div class="ref-side">
           <h3>This song</h3>
+          <!-- CR-70. The note itself, when this modal was opened from one.
+               Without it the left pane is a stack of mixes with no statement
+               of what you are listening FOR, which is most of the value of
+               opening it from a comment in the first place. -->
+          <div class="ref-cmt" id="refCmt" style="display:none"></div>
           <div class="ref-stack" id="refVersions"></div>
           <div class="ref-transport">
             <button class="ref-play" id="refMixPlay" title="Play this mix">▶</button>
@@ -4941,11 +4959,30 @@ function refPauseEmbed(){
 
 function renderRefVersions(){
   const vs = activeSong ? activeSong.versions : [];
+  // CR-70. Opened from a note, the stack says which mix the note was written
+  // on and which one resolved it. He would otherwise have to remember both,
+  // which is the exact job a compare tool exists to take off him. The pair
+  // comes from compareSides — the same derivation the drawer's toggle uses,
+  // because two readings of "the mix that resolved this" in two places is a
+  // defect waiting to happen.
+  const c = refSubject.scope === 'comment' ? refComment(refSubject.cid) : null;
+  const sides = c && activeSong ? compareSides(activeSong, c) : null;
+  const mark = (i) => !sides ? ''
+    : i === sides.origin ? '<span class="rv-tag">commented here</span>'
+    : i === sides.fixed  ? '<span class="rv-tag fix">resolved here</span>' : '';
   $('refVersions').innerHTML = vs.map((v, i) => `
     <div class="ref-ver ${i === refVerIdx ? 'on' : ''}" data-rv="${i}">
-      <span class="nm">${esc(v.name)}</span>
+      <span class="nm">${esc(v.name)}</span>${mark(i)}
       ${i === 0 ? '<span class="dt">latest</span>' : (v.date ? `<span class="dt">${esc(v.date)}</span>` : '')}
     </div>`).join('') || `<div class="ref-none">No mixes yet.</div>`;
+  // The note, above the stack. Every mix here loads at its timestamp already,
+  // so saying the timestamp once beats repeating it on each row.
+  const box = $('refCmt');
+  if (!c){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = 'block';
+  box.innerHTML = `<div class="rc-txt">${esc(c.text)}</div>`
+    + `<div class="rc-meta">${c.name ? `${esc(c.name)} · ` : ''}at ${fmt(c.time)}`
+    + `${sides ? ' · every mix below starts here, so pick one and then the other to A/B' : ''}</div>`;
 }
 
 function refLoadMix(i){

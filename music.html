@@ -7,7 +7,7 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=33" />
+<link rel="stylesheet" href="core.css?v=34" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
@@ -3546,6 +3546,7 @@ let objectUrls = [];
 let openGen = 0; // guards async version loads against song switches
 
 function destroyPlayers(){
+  stopCompare();   // CR-69: a comparison cannot survive the song it was about
   wsByVer.forEach(w => { try { w.destroy(); } catch(e){} });
   wsByVer = []; layerByVer = []; readyByVer = [];
   objectUrls.forEach(u => URL.revokeObjectURL(u));
@@ -4072,6 +4073,12 @@ const mapRow = (r) => ({ id: r.id, time: r.time_s, text: r.text, name: r.name ||
                          version: r.version || '', versionId: r.version_id || null,
                          parentId: r.parent_id || null, resolved: !!r.resolved,
                          resolvedBy: r.resolved_by || '', editedAt: r.edited_at ? Date.parse(r.edited_at) : null,
+                         // WHEN it was resolved, which is how the mix that fixed
+                         // it is found (CR-69). The column has existed since
+                         // schema v6 and get_comments has always returned it in
+                         // to_jsonb(c); it was simply never named here, and this
+                         // builds a new object, so unnamed meant dropped.
+                         resolvedAt: r.resolved_at ? Date.parse(r.resolved_at) : null,
                          tags: Array.isArray(r.tags) ? r.tags : [],
                          // Evidence in this one argument. Its own slot, sharing
                          // nothing with the song's or the mix's — see the
@@ -4087,10 +4094,95 @@ function countComments(id){ return rootsFor(id).length; }
 // showing on every version made after that — until it's resolved, or marked
 // not-relevant to that one version on a whim. Replies just follow their root.
 function versionById(song, vid){ return (song.versions || []).find(v => v.id === vid) || null; }
+
+// ---------- CR-69: comparing a resolved note against the mix that fixed it ----
+// Which comment is currently being A/B'd, and which side of it is playing.
+// Null means nobody is comparing, which is the state everything else assumes.
+// Which side is playing is NOT stored: it is read off activeVer at the moment
+// it is needed. He can hit a version chip mid-compare, and a remembered "side"
+// would then label the button with a mix that is not the one in his ears.
+let compareCid = null;
+
+// The mix that resolved a note. Nothing stores this as a link, and it does not
+// need to: resolved_at is a timestamp and every version carries created_at, so
+// the answer is "the newest mix that already existed when the tick happened".
+// That is right on both paths into resolving. Through the upload dialog, the
+// new version row is written a moment BEFORE the notes it fixes are ticked, so
+// it is the newest one and it wins. Resolved by hand with no upload, the newest
+// mix is simply the one he was listening to when he decided it was fixed.
+// Returns an index into song.versions, or -1 — never an order assumption, since
+// the array is newest-first today and that is not worth depending on.
+function fixedOnIndex(song, c){
+  if (!song || !c || !c.resolved || !c.resolvedAt) return -1;
+  let best = -1, bestAt = -Infinity;
+  (song.versions || []).forEach((v, vi) => {
+    if (!v.created_at) return;
+    const t = Date.parse(v.created_at);
+    if (!(t <= c.resolvedAt)) return;
+    if (t > bestAt){ bestAt = t; best = vi; }
+  });
+  return best;
+}
+// A compare is only offered when there are genuinely two different mixes to
+// hear. A note resolved on the same mix it was written on has nothing to A/B,
+// and offering a button that swaps nothing is worse than offering none.
+function compareSides(song, c){
+  const origin = (song.versions || []).findIndex(v => v.id === c.versionId);
+  const fixed  = fixedOnIndex(song, c);
+  if (origin === -1 || fixed === -1 || origin === fixed) return null;
+  return { origin, fixed };
+}
+
+// One click starts it on the original mix, every click after that flips sides.
+// Starting on the original rather than the fix is deliberate: the point of an
+// A/B is to hear the complaint before the answer, and the resolving mix is
+// usually the one already playing anyway.
+function toggleCompare(cid){
+  if (!activeSong) return;
+  const c = commentsFor(activeSong.id).find(x => x.id === cid);
+  if (!c) return;
+  const sides = compareSides(activeSong, c);
+  if (!sides) return;
+  // Fresh start goes to the original. Otherwise flip away from whichever side
+  // is actually playing; if he has wandered off both, treat that as a fresh
+  // start rather than guessing which one he meant to come back to.
+  const fresh = compareCid !== cid || (activeVer !== sides.origin && activeVer !== sides.fixed);
+  compareCid = cid;
+  const to = fresh ? sides.origin : (activeVer === sides.origin ? sides.fixed : sides.origin);
+  compareGoto(to, c.time);
+  renderComments();
+}
+// Seek first, then swap. switchVersion carries the playhead and the play/pause
+// state across for us, and re-asserts the position on media that had not
+// buffered — doing it in this order means the compare inherits all of that
+// rather than reimplementing it. It also means a version that is slow to load
+// keeps the current one playing until it is ready, so the swap lands a few
+// seconds further into the song rather than dropping to silence. For an A/B
+// that is the better failure: you keep listening.
+function compareGoto(vi, t){
+  seekTo(t);
+  const w = curWS(); if (w && !w.isPlaying()) w.play();
+  if (vi === activeVer) return;
+  // A version's player is built asynchronously when the song opens, so on a
+  // very early click the target may not exist yet. One retry rather than a
+  // dead button.
+  if (wsByVer[vi]) switchVersion(vi);
+  else setTimeout(() => { if (compareCid && wsByVer[vi]) switchVersion(vi); }, 600);
+}
+// Anything that moves the ground under a comparison ends it: the exemption in
+// commentRelevantTo is a deliberate hole in the version-scoping rule and must
+// not outlive the thing it was opened for.
+function stopCompare(){ compareCid = null; compareSide = 'fixed'; }
+
 function commentRelevantTo(c, song, ver){
   if (!ver) return false;
   if (c.dismissedVersions.includes(ver.id)) return false;
   if (c.versionId === ver.id) return true;
+  // Exempt while, and only while, it is the note under comparison. Without
+  // this the toggle is a one-way trip: the rule below hides a resolved note on
+  // every mix but its origin, so the first swap to the resolving mix would
+  // delete the row carrying the button that drove it.
+  if (c.id === compareCid) return true;
   if (c.resolved) return false;
   const origin = versionById(song, c.versionId);
   // Origin unknown (posted on a since-renamed or deleted mix): show it
@@ -4428,8 +4520,25 @@ function renderComments(){
     const carried = origin && ver && origin.id !== ver.id
       ? `<span class="carried">· from ${esc(origin.name)}</span>` : '';
     const replies = repliesFor(activeSong.id, c.id);
+    // CR-69. Only resolved notes with two genuinely different mixes behind them
+    // get the control, and the thread drops its strike-through while the
+    // ORIGINAL side is playing — his "remove strike out of original comment",
+    // read as: show me the note as it stood while I listen to what I was
+    // complaining about.
+    const sides = c.resolved ? compareSides(activeSong, c) : null;
+    const cmping = compareCid === c.id;
+    const onOrigin = cmping && activeVer === sides.origin;
+    const onFixed  = cmping && activeVer === sides.fixed;
+    const cmpBtn = sides
+      ? `<span class="act-compare ${cmping ? 'on' : ''}" title="${
+           esc(activeSong.versions[sides.origin].name)} (as commented) against ${
+           esc(activeSong.versions[sides.fixed].name)} (what resolved it), from ${fmt(c.time)}">${
+           onOrigin || onFixed
+             ? `▶ ${esc(activeSong.versions[onOrigin ? sides.origin : sides.fixed].name)} · switch`
+             : 'Compare'}</span>`
+      : '';
     return `
-    <div class="cthread ${c.resolved ? 'resolved' : ''}" data-root="${c.id}">
+    <div class="cthread ${c.resolved ? 'resolved' : ''}${onOrigin ? ' as-written' : ''}" data-root="${c.id}">
       <div class="cmt" data-id="${c.id}" data-t="${c.time}">
         <span class="t">${fmt(c.time)}</span>
         <div class="body">
@@ -4441,6 +4550,7 @@ function renderComments(){
             <span class="act-reply">Reply</span>
             <span class="act-edit">Edit</span>
             <span class="act-resolve ${c.resolved ? 'on' : ''}">${c.resolved ? 'Reopen' : 'Resolve'}</span>
+            ${cmpBtn}
             <span class="act-dismiss ${dismissedHere ? 'on' : ''}">${dismissedHere ? 'Relevant here' : 'Not relevant here'}</span>
           </div>
         </div>
@@ -4487,6 +4597,7 @@ function handleClistClick(e){
   if (e.target.classList.contains('act-resolve')){
     toggleResolve(rootId, !threadEl.classList.contains('resolved')); return;
   }
+  if (e.target.classList.contains('act-compare')){ toggleCompare(rootId); return; }
   if (e.target.classList.contains('act-dismiss')){
     const ver = activeSong.versions[activeVer];
     const c = commentsFor(activeSong.id).find(x => x.id === rootId);
@@ -6282,6 +6393,7 @@ function openDrawer(open){
   if (open){ $('vlogDrawer').classList.remove('open'); $('vlogToggle').classList.remove('active'); }
   if (open){ $('lyricDrawer').classList.remove('open'); $('lyricToggle').classList.remove('active'); }
   $('drawer').classList.toggle('open', open); $('cToggle').classList.toggle('active', open);
+  if (!open) stopCompare();   // CR-69: the toggle is gone, so its exemption goes too
   if (open) renderComments();
 }
 $('cToggle').onclick = () => openDrawer(!$('drawer').classList.contains('open'));

@@ -143,6 +143,21 @@ header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px;
 /* Threads: replies, resolve/dismiss, inline edit */
 .cthread { border-radius: 8px; }
 .cthread.resolved > .cmt .body .txt { color: var(--text-mute); text-decoration: line-through; text-decoration-color: var(--line); }
+/* CR-69. While the ORIGINAL mix is playing under a compare, the note is shown
+   as it stood when it was written — no strike, full-strength text. You are
+   listening to the complaint, so it should not look like it was already dealt
+   with. The strike comes straight back the moment the fix is playing. */
+.cthread.resolved.as-written > .cmt .body .txt { color: var(--text); text-decoration: none; }
+/* The compare control reads as a transport rather than another verb in the
+   row: it is the only thing here that makes noise, so once it is running it
+   gets a pill the other actions do not have. Its wash follows --accent rather
+   than naming a colour, because theme-dazzle.css repaints --accent white and a
+   hardcoded purple pill would be the one stubbornly indigo thing on a
+   monochrome page. The flat rgba first is the fallback for anything without
+   color-mix. */
+.cactions span.act-compare.on { color: var(--accent); background: rgba(140,140,150,.18);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-radius: 20px; padding: 1px 8px; margin: -1px 0; }
 .cmt .carried { color: var(--accent-2); font-weight: 600; }
 .cmt .edited-tag { color: var(--text-mute); }
 .creplies { margin-left: 52px; display: flex; flex-direction: column; gap: 2px; }

@@ -183,8 +183,8 @@ footer{ font-size:.8125rem; color:var(--muted); text-align:center; }
 <header>
   <p class="eyebrow">Pitch · token spend</p>
   <h1>The Idle Hour</h1>
-  <p class="standfirst">Two tasks wake up every hour, read everything you own, find nothing has changed, and go back to sleep. That reading is the bill. A model already sitting on your laptop can answer the same question in 1.25 seconds for nothing.</p>
-  <p class="byline">21 August 2026 · measured on your M1</p>
+  <p class="standfirst">Two tasks wake up every hour, read everything you own, find nothing has changed, and go back to sleep. That reading is the bill. A small model on a second machine can answer the same question in 1.25 seconds for nothing.</p>
+  <p class="byline">21 August 2026 · measured on your M1 · plan lives in <span class="mono">local model host</span></p>
 </header>
 
 <section>
@@ -244,26 +244,34 @@ footer{ font-size:.8125rem; color:var(--muted); text-align:center; }
   <p>Ollama has enforced JSON since 0.3.0, so the answer is constrained at the token level rather than parsed hopefully out of prose. A malformed reply is mechanically impossible, and anything unexpected falls through to running the paid pass. <strong>The gate fails open, always.</strong></p>
 </section>
 
+<section>
+  <p class="eyebrow">Your call, 21 Aug</p>
+  <h2>Putting it on a second machine settles the worst of this</h2>
+  <p>This was pitched to run on the M1, and the honest catch was that staying at 1.25 seconds meant holding 3.3 GB of your 16 GB permanently. You asked for a separate machine instead. <strong>That removes the catch entirely</strong>, and buys three things beyond it:</p>
+  <p>The 42 second cold load happens once at boot rather than on an hourly gamble, because nothing else on that box competes for its memory. This Mac keeps all 16 GB while you work. And the model ceiling stops being 4B: on a dedicated box a 7B or 8B fits, which is meaningfully more reliable on exactly the subtle changes the small model is unproven on.</p>
+  <p>The full build plan now lives in <code>local model host</code> in your claude folder.</p>
+</section>
+
 <section class="honest">
-  <p class="eyebrow">What it costs you</p>
+  <p class="eyebrow">What it still costs you</p>
   <ul>
-    <li><strong>3.3 GB of your 16 GB, held permanently.</strong> The 1.25 second figure only holds while the model stays resident. Cold, it is 42 seconds. On a 16 GB M1 that is real memory you will feel in other apps.</li>
-    <li><strong>No MLX speedup on your machine.</strong> Ollama's faster backend needs 32 GB or more, so your M1 stays on the older Metal path. The numbers above are what you get, not a floor.</li>
-    <li><strong>A missed change costs an hour.</strong> If the model wrongly says UNCHANGED, work waits until the next run. Worth capping with one unconditional full run a day regardless of the gate.</li>
-    <li><strong>Untested on subtle edits.</strong> It caught an obvious new bug line three times out of three. I have not proven it catches you quietly reordering two QUEUE lines.</li>
+    <li><strong>A machine that stays on.</strong> An old Mac, a Linux box, a NUC, or a 16 GB Pi all clear the bar. It needs a reserved IP so the address does not move, and it must stay awake.</li>
+    <li><strong>One new failure mode: the host can be unreachable.</strong> Handled by failing open. Host down, timeout, odd reply, anything that is not a confident UNCHANGED runs the paid pass exactly as today. The gate can only save money, never lose work.</li>
+    <li><strong>A missed change costs an hour.</strong> If the model wrongly says UNCHANGED, work waits for the next run. Capped by one unconditional full run a day.</li>
+    <li><strong>Untested on subtle edits.</strong> It caught an obvious new bug line three times out of three. I have not proven it catches you quietly reordering two QUEUE lines, which is why the plan dry-runs it for a few days before it is allowed to skip anything.</li>
   </ul>
 </section>
 
 <section class="ask">
-  <p class="eyebrow">The decision</p>
-  <h2>This one is yours</h2>
-  <p>It changes your scheduled tasks and your spend, which the playbook puts on your side of the line. So it is a pitch and not a branch.</p>
+  <p class="eyebrow">What I need from you</p>
+  <h2>Which machine?</h2>
+  <p>The plan is written machine-agnostic on purpose, but the model choice and the first setup step both depend on the answer, and there is no sense guessing at hardware sitting in your house.</p>
   <div class="opts">
-    <div class="opt"><b>A</b><span>Build the gate. I wire it into both hourly tasks with a daily unconditional run as the backstop, and pull a stronger model (<code>qwen2.5-coder:7b</code>) while I am there.</span></div>
-    <div class="opt"><b>B</b><span>Simpler and free today: drop <code>stenographer</code> to daily and leave <code>manager-snalbum</code> hourly. Half the bill, no new machinery, no memory held.</span></div>
-    <div class="opt"><b>C</b><span>Both. B this week because it is one setting, A after, because B alone still pays full price 24 times a day to find nothing.</span></div>
+    <div class="opt"><b>Own it</b><span>An old Mac or laptop you already have. Cheapest, quickest to stand up. Only needs to stay on and awake.</span></div>
+    <div class="opt"><b>Box</b><span>An always-on Linux machine or NUC. Tidiest: headless, restarts clean, nothing competing for memory.</span></div>
+    <div class="opt"><b>Buying</b><span>Then the spec table in the plan is the shopping list, and 16 GB is the number that matters most.</span></div>
   </div>
-  <p class="default-note">If you say nothing: the tasks keep running hourly and keep spending the weekly allowance on cold reads. Nothing breaks. It just stays rationed, the way it was between 17 and 19 August.</p>
+  <p class="default-note">Free today, and separate from all of the above: dropping <code>stenographer</code> to daily halves the polling immediately, needs no hardware, and is one setting. Say the word and I will do it without waiting on the machine question.<br><br>If you say nothing at all: both tasks keep running hourly and keep spending the weekly allowance on cold reads. Nothing breaks. It stays rationed, the way it was between 17 and 19 August.</p>
 </section>
 
 <footer>Measured 21 Aug 2026 · Apple M1, 16 GB, macOS 14.2.1 · ollama 0.32.1 · gemma3:4b</footer>

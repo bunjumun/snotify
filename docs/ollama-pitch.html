@@ -1,0 +1,271 @@
+<meta charset="utf-8">
+<title>The Idle Hour</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;700&display=swap">
+
+<style>
+:root{
+  --ground:#F4F6F5;
+  --raised:#FFFFFF;
+  --ink:#16201E;
+  --muted:#5E6B67;
+  --hair:#D8DEDB;
+  --local:#1F6F5C;
+  --local-wash:#E3EFEA;
+  --paid:#B4552D;
+  --paid-wash:#F6E7DE;
+  --shadow:0 1px 2px rgba(22,32,30,.05), 0 8px 24px -12px rgba(22,32,30,.18);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#101614;
+    --raised:#18201E;
+    --ink:#E6EDEA;
+    --muted:#94A39E;
+    --hair:#2A3532;
+    --local:#4FBFA0;
+    --local-wash:#16302A;
+    --paid:#E08A5F;
+    --paid-wash:#32211A;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#101614;
+  --raised:#18201E;
+  --ink:#E6EDEA;
+  --muted:#94A39E;
+  --hair:#2A3532;
+  --local:#4FBFA0;
+  --local-wash:#16302A;
+  --paid:#E08A5F;
+  --paid-wash:#32211A;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.6);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:"Source Serif 4",Georgia,serif;
+  font-size:1.0625rem;
+  line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{
+  max-width:40rem;
+  margin:0 auto;
+  padding:2.5rem 1.25rem 5rem;
+  display:flex;
+  flex-direction:column;
+  gap:2.75rem;
+}
+@media (min-width:40rem){ .wrap{ padding:4rem 2rem 6rem; } }
+
+h1,h2,h3,.eyebrow,.stat-n,.tag,.bar-label{ font-family:Archivo,"Helvetica Neue",Arial,sans-serif; }
+code,.mono,.stat-n,.bar-num{ font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; }
+
+.eyebrow{
+  font-size:.6875rem; font-weight:700; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--muted); margin:0 0 .6rem;
+}
+h1{
+  font-size:clamp(2.1rem,8vw,3rem); font-weight:700; letter-spacing:-.028em;
+  line-height:1.05; margin:0; text-wrap:balance;
+}
+.standfirst{ font-size:1.1875rem; color:var(--muted); margin:1rem 0 0; text-wrap:balance; }
+h2{
+  font-size:1.375rem; font-weight:600; letter-spacing:-.018em;
+  margin:0 0 .85rem; text-wrap:balance;
+}
+h3{ font-size:1rem; font-weight:600; letter-spacing:-.01em; margin:0 0 .4rem; }
+p{ margin:0 0 1rem; }
+p:last-child{ margin-bottom:0; }
+section{ display:flex; flex-direction:column; }
+strong{ font-weight:600; }
+code{ font-size:.86em; background:var(--local-wash); color:var(--ink);
+      padding:.12em .38em; border-radius:3px; }
+
+header{ border-bottom:2px solid var(--ink); padding-bottom:1.75rem; }
+.byline{
+  margin-top:1.25rem; font-family:Archivo,sans-serif; font-size:.75rem;
+  letter-spacing:.06em; text-transform:uppercase; color:var(--muted);
+}
+
+/* the measured hour: two costed paths */
+.paths{ display:flex; flex-direction:column; gap:.75rem; }
+.path{
+  background:var(--raised); border:1px solid var(--hair); border-radius:6px;
+  padding:1rem 1.1rem; box-shadow:var(--shadow);
+  border-left:3px solid var(--edge);
+}
+.path.now{ --edge:var(--paid); }
+.path.proposed{ --edge:var(--local); }
+.path-head{ display:flex; align-items:baseline; justify-content:space-between; gap:1rem; }
+.tag{
+  font-size:.625rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+  padding:.2rem .45rem; border-radius:3px;
+}
+.now .tag{ background:var(--paid-wash); color:var(--paid); }
+.proposed .tag{ background:var(--local-wash); color:var(--local); }
+.path-cost{
+  font-family:"JetBrains Mono",monospace; font-size:1.25rem; font-weight:700;
+  font-variant-numeric:tabular-nums; letter-spacing:-.02em;
+}
+.now .path-cost{ color:var(--paid); }
+.proposed .path-cost{ color:var(--local); }
+.path-desc{ font-size:.9375rem; color:var(--muted); margin:.5rem 0 0; }
+.bar{ height:7px; border-radius:4px; background:var(--hair); margin-top:.8rem; overflow:hidden; }
+.bar span{ display:block; height:100%; border-radius:4px; }
+.now .bar span{ background:var(--paid); width:100%; }
+.proposed .bar span{ background:var(--local); width:2%; min-width:3px; }
+
+/* measurements */
+.measure{
+  width:100%; border-collapse:collapse; font-size:.9375rem;
+  font-variant-numeric:tabular-nums;
+}
+.scroller{ overflow-x:auto; }
+.measure th{
+  text-align:left; font-family:Archivo,sans-serif; font-size:.6875rem;
+  font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--muted); padding:0 .7rem .5rem 0; border-bottom:1px solid var(--hair);
+  white-space:nowrap;
+}
+.measure td{ padding:.6rem .7rem .6rem 0; border-bottom:1px solid var(--hair); vertical-align:top; }
+.measure th:last-child,.measure td:last-child{ padding-right:0; }
+.measure td:first-child{ font-family:"JetBrains Mono",monospace; font-size:.8125rem; white-space:nowrap; }
+.measure td:nth-child(2){ font-family:"JetBrains Mono",monospace; font-size:.8125rem; }
+.measure tr:last-child td{ border-bottom:none; }
+.n{ font-family:"JetBrains Mono",monospace; font-weight:700; white-space:nowrap; }
+.n.good{ color:var(--local); }
+.n.bad{ color:var(--paid); }
+
+.callout{
+  background:var(--local-wash); border-radius:6px; padding:1.15rem 1.25rem;
+  font-size:1rem;
+}
+.callout p{ margin-bottom:.7rem; }
+.callout .eyebrow{ color:var(--local); }
+
+.honest{
+  border:1px dashed var(--hair); border-radius:6px; padding:1.15rem 1.25rem;
+}
+.honest .eyebrow{ color:var(--paid); }
+.honest ul{ margin:0; padding-left:1.15rem; }
+.honest li{ margin-bottom:.55rem; }
+.honest li:last-child{ margin-bottom:0; }
+
+.ask{
+  background:var(--raised); border:1px solid var(--hair); border-top:3px solid var(--local);
+  border-radius:6px; padding:1.4rem 1.35rem; box-shadow:var(--shadow);
+}
+.ask h2{ margin-bottom:.6rem; }
+.opts{ display:flex; flex-direction:column; gap:.6rem; margin-top:1rem; }
+.opt{ display:flex; gap:.7rem; align-items:flex-start; font-size:.9375rem; }
+.opt b{
+  font-family:Archivo,sans-serif; font-size:.6875rem; font-weight:700;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--local);
+  background:var(--local-wash); padding:.22rem .45rem; border-radius:3px;
+  white-space:nowrap; flex:none; margin-top:.1rem;
+}
+.default-note{
+  margin-top:1.1rem; padding-top:.9rem; border-top:1px solid var(--hair);
+  font-size:.875rem; color:var(--muted);
+}
+footer{ font-size:.8125rem; color:var(--muted); text-align:center; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Pitch · token spend</p>
+  <h1>The Idle Hour</h1>
+  <p class="standfirst">Two tasks wake up every hour, read everything you own, find nothing has changed, and go back to sleep. That reading is the bill. A model already sitting on your laptop can answer the same question in 1.25 seconds for nothing.</p>
+  <p class="byline">21 August 2026 · measured on your M1</p>
+</header>
+
+<section>
+  <p class="eyebrow">What it costs now</p>
+  <h2>One hour of the current arrangement</h2>
+  <p>Item 11 in the notebook already caught this the expensive way: of 153 scheduled runs since 17 August, <strong>138 died on "you have hit your weekly limit"</strong> and 149 never made a single tool call. The limit was not broken. It was spent.</p>
+  <p>Not on building anything. On <em>looking</em>. <code>manager-snalbum</code> fires at :05 and <code>stenographer</code> at :20, both confirmed still enabled. Each one starts cold, with no memory of the last, and re-reads the world to find out whether the world moved.</p>
+
+  <div class="paths">
+    <div class="path now">
+      <div class="path-head">
+        <span class="tag">Today</span>
+        <span class="path-cost">~40–90K</span>
+      </div>
+      <div class="bar"><span></span></div>
+      <p class="path-desc">Paid tokens per run, before a single line of work. The ledger alone is 57K tokens, the note another 10K, the two rule files 11.7K. Times 48 runs a day.</p>
+    </div>
+    <div class="path proposed">
+      <div class="path-head">
+        <span class="tag">Proposed</span>
+        <span class="path-cost">0</span>
+      </div>
+      <div class="bar"><span></span></div>
+      <p class="path-desc">Local model reads the note, compares it to last hour, answers CHANGED or UNCHANGED. The paid run only starts on CHANGED.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">The measurement</p>
+  <h2>Run on your machine, not quoted from a benchmark</h2>
+  <p>You already have <code>gemma3:4b</code> installed. It has sat untouched for four months. I gave it the actual job, three times, comparing an old BUGS section against a new one carrying a real bug line:</p>
+
+  <div class="scroller">
+    <table class="measure">
+      <thead><tr><th>Run</th><th>Answer</th><th>Time</th><th>Correct</th></tr></thead>
+      <tbody>
+        <tr><td>cold</td><td>CHANGED</td><td class="n bad">42.6 s</td><td class="n good">yes</td></tr>
+        <tr><td>warm</td><td>CHANGED</td><td class="n good">1.27 s</td><td class="n good">yes</td></tr>
+        <tr><td>warm</td><td>CHANGED</td><td class="n good">1.25 s</td><td class="n good">yes</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout" style="margin-top:1.25rem">
+    <p class="eyebrow">The point</p>
+    <p>A local 4B model is <strong>far too slow and too weak to write your code</strong>. It generates at 6 to 10 tokens a second. If this pitch were about moving the building onto your laptop, it would be a pitch against.</p>
+    <p style="margin-bottom:0">But it is not slow at <strong>deciding</strong>. Deciding costs five tokens. And deciding is what 149 of your 153 runs were doing.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">The proposal</p>
+  <h2>A gate, not a replacement</h2>
+  <p>The local model gets exactly one job and no others. It never writes code, never touches the note, never picks what to build, never talks to the database. It reads two things and says one word.</p>
+  <p>Before each hourly run: hash the note and the git head, hand the model the old BUGS and QUEUE against the new, ask CHANGED or UNCHANGED. On UNCHANGED, the paid run never starts. On CHANGED, everything proceeds exactly as it does today.</p>
+  <p>Ollama has enforced JSON since 0.3.0, so the answer is constrained at the token level rather than parsed hopefully out of prose. A malformed reply is mechanically impossible, and anything unexpected falls through to running the paid pass. <strong>The gate fails open, always.</strong></p>
+</section>
+
+<section class="honest">
+  <p class="eyebrow">What it costs you</p>
+  <ul>
+    <li><strong>3.3 GB of your 16 GB, held permanently.</strong> The 1.25 second figure only holds while the model stays resident. Cold, it is 42 seconds. On a 16 GB M1 that is real memory you will feel in other apps.</li>
+    <li><strong>No MLX speedup on your machine.</strong> Ollama's faster backend needs 32 GB or more, so your M1 stays on the older Metal path. The numbers above are what you get, not a floor.</li>
+    <li><strong>A missed change costs an hour.</strong> If the model wrongly says UNCHANGED, work waits until the next run. Worth capping with one unconditional full run a day regardless of the gate.</li>
+    <li><strong>Untested on subtle edits.</strong> It caught an obvious new bug line three times out of three. I have not proven it catches you quietly reordering two QUEUE lines.</li>
+  </ul>
+</section>
+
+<section class="ask">
+  <p class="eyebrow">The decision</p>
+  <h2>This one is yours</h2>
+  <p>It changes your scheduled tasks and your spend, which the playbook puts on your side of the line. So it is a pitch and not a branch.</p>
+  <div class="opts">
+    <div class="opt"><b>A</b><span>Build the gate. I wire it into both hourly tasks with a daily unconditional run as the backstop, and pull a stronger model (<code>qwen2.5-coder:7b</code>) while I am there.</span></div>
+    <div class="opt"><b>B</b><span>Simpler and free today: drop <code>stenographer</code> to daily and leave <code>manager-snalbum</code> hourly. Half the bill, no new machinery, no memory held.</span></div>
+    <div class="opt"><b>C</b><span>Both. B this week because it is one setting, A after, because B alone still pays full price 24 times a day to find nothing.</span></div>
+  </div>
+  <p class="default-note">If you say nothing: the tasks keep running hourly and keep spending the weekly allowance on cold reads. Nothing breaks. It just stays rationed, the way it was between 17 and 19 August.</p>
+</section>
+
+<footer>Measured 21 Aug 2026 · Apple M1, 16 GB, macOS 14.2.1 · ollama 0.32.1 · gemma3:4b</footer>
+
+</div>

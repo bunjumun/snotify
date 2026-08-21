@@ -4190,7 +4190,7 @@ function compareGoto(vi, t){
 // Anything that moves the ground under a comparison ends it: the exemption in
 // commentRelevantTo is a deliberate hole in the version-scoping rule and must
 // not outlive the thing it was opened for.
-function stopCompare(){ compareCid = null; compareSide = 'fixed'; }
+function stopCompare(){ compareCid = null; }
 
 function commentRelevantTo(c, song, ver){
   if (!ver) return false;

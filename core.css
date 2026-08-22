@@ -140,6 +140,11 @@ header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px;
 .cmt:hover .del { opacity: 1; } .cmt .del:hover { color: #ff6b6b; }
 .cempty { color: var(--text-mute); font-size: 13px; padding: 6px 10px; }
 
+/* CR-74. Same label.check pattern the modal and dz-grid already use, scoped
+   to the drawer since bare label.check carries no layout of its own. */
+.drawer label.check { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-dim); cursor: pointer; }
+.drawer label.check input { margin: 0; }
+
 /* Threads: replies, resolve/dismiss, inline edit */
 .cthread { border-radius: 8px; }
 .cthread.resolved > .cmt .body .txt { color: var(--text-mute); text-decoration: line-through; text-decoration-color: var(--line); }

@@ -7,7 +7,7 @@
 <meta name="description" content="Sn'art — versioned artwork with comments pinned to a region of the image." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with index.html -->
-<link rel="stylesheet" href="core.css?v=34" />
+<link rel="stylesheet" href="core.css?v=35" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
@@ -366,6 +366,7 @@
           <input id="cinput" type="text" placeholder="Leave a comment…" maxlength="280" />
           <button id="caddBtn">Add</button>
         </div>
+        <label class="check" id="cHideResolvedRow" style="margin:4px 0 0"><input type="checkbox" id="cHideResolved" /> Hide resolved</label>
         <div class="clist" id="clist"></div>
       </div>
     </div>
@@ -951,6 +952,10 @@ $('linkSel').addEventListener('change', async (e) => {
 // differs — a box instead of a timestamp.
 let commentCache = {};
 let cReplyTo = null, cEditId = null;
+// CR-74. Resolved notes stay in the list, struck through — this only hides
+// them from the render, and it is off by default so nothing changes for
+// anyone who does not tick it.
+let hideResolved = false;
 const mapRow = (r) => ({ id: r.id, time: r.time_s, text: r.text, name: r.name || '',
                          version: r.version || '', versionId: r.version_id || null,
                          parentId: r.parent_id || null, resolved: !!r.resolved,
@@ -1067,6 +1072,13 @@ function renderComments(){
   if (!activePiece){ $('clist').innerHTML = `<div class="cempty">Open a piece to leave comments.</div>`; return; }
   if (!list.length){ $('clist').innerHTML = `<div class="cempty">No open comments on this revision — drag a box on the image to add one.</div>`; return; }
 
+  // CR-74. Hides resolved notes from the rendered list only — cCount and the
+  // .txt download still carry the true set. The selected box is exempt: the
+  // row is what gets scrolled to and highlighted when a box is clicked, so
+  // hiding it would make clicking a resolved box do nothing at all.
+  const shown = hideResolved ? list.filter(c => !c.resolved || c.id === activeBoxId) : list;
+  if (!shown.length){ $('clist').innerHTML = `<div class="cempty">Everything here is resolved — untick “Hide resolved” to see it.</div>`; return; }
+
   const replyRow = (r) => `
     <div class="cmt" data-id="${r.id}">
       <div class="body">
@@ -1080,7 +1092,7 @@ function renderComments(){
     </div>`;
 
   const sid = subjectId(activePiece);
-  $('clist').innerHTML = list.map(c => {
+  $('clist').innerHTML = shown.map(c => {
     const dismissedHere = ver && c.dismissedVersions.includes(ver.id);
     const origin = versionById(activePiece, c.versionId);
     const carried = origin && ver && origin.id !== ver.id
@@ -1186,6 +1198,7 @@ $('clist').addEventListener('keydown', (e) => {
 });
 
 $('caddBtn').onclick = () => addComment();
+$('cHideResolved').addEventListener('change', () => { hideResolved = $('cHideResolved').checked; renderComments(); });
 $('cinput').addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); addComment(); } });
 $('cname').value = localStorage.getItem('mp_name') || '';
 $('cname').addEventListener('change', () => localStorage.setItem('mp_name', $('cname').value.trim()));

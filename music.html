@@ -7,7 +7,7 @@
 <meta name="description" content="S'notify — a personal music player with version stacking and comments." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>" />
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
-<link rel="stylesheet" href="core.css?v=34" />
+<link rel="stylesheet" href="core.css?v=35" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
@@ -1583,6 +1583,7 @@
              what every comment written before this existed carries, and it
              still reads as a plain note. -->
         <div class="tagpick" id="cTags"></div>
+        <label class="check" id="cHideResolvedRow" style="margin:4px 0 0"><input type="checkbox" id="cHideResolved" /> Hide resolved</label>
         <div class="clist" id="clist"></div>
       </div>
     </div>
@@ -3025,7 +3026,7 @@ function renderAlbumProgress(){
   if (!albums.length){ host.innerHTML = ''; return; }
   // Rebuild only when the set of albums changes, so an open accordion survives
   // a background refresh.
-  const sig = albums.map(a => a.slug).join(' ');
+  const sig = albums.map(a => a.slug).join('\u0000');
   if (host.dataset.sig !== sig){
     host.dataset.sig = sig;
     host.innerHTML = albums.map(a => `
@@ -4087,6 +4088,11 @@ function crefLink(c){
 
 let commentCache = {};   // song_id -> [comments], mirrors the shared table
 let cReplyTo = null, cEditId = null;   // which thread/comment has an inline compose box open
+// CR-74. Resolved comments still show in the drawer, struck through, per
+// commentRelevantTo above — this only hides them from the *rendered* list.
+// Deliberately not folded into commentsForActiveVersion itself: the badge
+// count (cCount) and the .txt download both want the true, unfiltered set.
+let hideResolved = false;
 const mapRow = (r) => ({ id: r.id, time: r.time_s, text: r.text, name: r.name || '',
                          version: r.version || '', versionId: r.version_id || null,
                          parentId: r.parent_id || null, resolved: !!r.resolved,
@@ -4520,6 +4526,14 @@ function renderComments(){
   if (!activeSong){ $('clist').innerHTML = `<div class="cempty">Play a song to leave comments.</div>`; return; }
   if (!list.length){ $('clist').innerHTML = `<div class="cempty">No open comments on this version — seek to a spot and add one.</div>`; return; }
 
+  // The checkbox filters what renders, not what cCount counts or the .txt
+  // carries — both of those want the true set, resolved included.
+  // The note under an active compare is exempt, for the same reason
+  // commentRelevantTo exempts it: hiding it would delete the row carrying the
+  // button driving the comparison, and the compare would be a one-way trip.
+  const shown = hideResolved ? list.filter(c => !c.resolved || c.id === compareCid) : list;
+  if (!shown.length){ $('clist').innerHTML = `<div class="cempty">Everything here is resolved — untick “Hide resolved” to see it.</div>`; return; }
+
   const replyRow = (r) => `
     <div class="cmt" data-id="${r.id}" data-t="${r.time}">
       <div class="body">
@@ -4532,7 +4546,7 @@ function renderComments(){
       <span class="del" title="Delete">×</span>
     </div>`;
 
-  $('clist').innerHTML = list.map(c => {
+  $('clist').innerHTML = shown.map(c => {
     const dismissedHere = ver && c.dismissedVersions.includes(ver.id);
     const origin = versionById(activeSong, c.versionId);
     const carried = origin && ver && origin.id !== ver.id
@@ -6473,6 +6487,7 @@ function openVlog(open){
 $('vlogToggle').onclick = () => openVlog(!$('vlogDrawer').classList.contains('open'));
 $('nowLog').onclick = () => openVlog(true);
 $('caddBtn').onclick = () => addComment();   // no args — reads #cinput, posts a root comment
+$('cHideResolved').addEventListener('change', () => { hideResolved = $('cHideResolved').checked; renderComments(); });
 $('cinput').addEventListener('keydown', (e) => { if (e.key==='Enter'){ e.preventDefault(); addComment(); } });
 // Commenter name — remembered on this device.
 $('cname').value = localStorage.getItem('mp_name') || '';

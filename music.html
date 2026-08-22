@@ -1822,7 +1822,7 @@
 <script src="core.js?v=31"></script>
 <!-- The two checklists and the arithmetic. No DOM, no network; it throws at
      load if the weights stop summing to 100, which is deliberate. -->
-<script src="progress.js?v=14"></script>
+<script src="progress.js?v=15"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -2677,7 +2677,9 @@ function accHtml(list, scope, ref){
           <input type="checkbox" id="${id}" ${on ? 'checked' : ''} />
           <label for="${id}">${esc(t.name)}</label>
           ${meta && meta.assignee ? `<span class="pwho" title="Assigned to ${esc(meta.assignee)}">${esc(initials(meta.assignee))}</span>` : ''}
-          <span class="w">${t.weight > 0 ? t.weight.toFixed(t.weight < 10 ? 1 : 0) + '%' : '&minus;2 / +4%'}</span>
+          <!-- His own to-do items do not carry a share of the 100; they swing
+               the bar instead, so the badge says what they actually do. -->
+          <span class="w">${t.custom ? '&minus;2 / +4%' : t.weight.toFixed(t.weight < 10 ? 1 : 0) + '%'}</span>
           <span class="pinsp" title="Assignee, notes, due date" data-inspect="${esc(t.key)}">&#9998;</span>
           <span class="pdrop" title="${t.custom ? 'Delete this item' : 'Remove this step from this one only'}"
                 data-drop="${esc(t.key)}" data-mine="${t.custom ? esc(t.id) : ''}">&times;</span>

@@ -109,23 +109,8 @@
     { key: 'r', name: 'Mastering & release', weight: 21, tasks: [
       { key: 'r.master', weight: 11, name: 'Sweetened and mastered' },
       { key: 'd.out', weight: 10, name: 'Artwork, metadata and out — Soundcloud or a distributor' },
-      /* CR-64 again, 2026-08-22. The swing was album-only on the first cut and
-       * he caught it the same afternoon: "mango tree and currency still read
-       * 67% same as prechange". He was looking at the song bars, and his line
-       * had said "album progress", which is why it landed on the album list
-       * alone. Asked which he wanted and he chose the swing on songs, not a
-       * re-weighting of this list, so every song carries the same box now and
-       * the song weights above are untouched. Zero weight, same as the album's:
-       * songPct() applies the -2/+4 by hand. See SONG_SWING_KEY. */
-      { key: 'r.swing', weight: 0, name: 'Sequencing and packaging confirmed. Worth +4% on top of the estimate above once you actually have it, and reads -2% until you do' },
     ]},
   ];
-
-  /* One per list rather than one shared constant. The two lists deliberately
-   * share some keys and the stored row separates them by `scope`, so this would
-   * work either way — but a song's box reading `ai.` would be a lie about where
-   * it lives, and the next person to grep for it would look in the wrong list. */
-  const SONG_SWING_KEY = 'r.swing';
 
   /* THE ALBUM IS THE AVERAGE OF ITS SONGS PLUS ITS OWN VARIABLES, at his word:
    * "song level has the production pipeline. album completion is determined
@@ -171,12 +156,8 @@
    * what a box is worth inside its own category changed, only how much of
    * the record's 100 points that category can reach.
    *
-   * Second half of his line: "I'd like a to do item to bring progress back
-   * 2% ... and bring progress forward 4% when that item is resolved." That
-   * is a flat swing on top of the 75/25 split above, not another slice of
-   * the 100-point budget — `ai.swing` below carries weight 0 so it never
-   * moves the ordinary sum, and `albumPct` applies its -2/+4 by hand after
-   * the weighted total is worked out. See the note there. */
+   * Second half of his line is NOT in this list, and putting it here was the
+   * mistake. See "THE TO-DO SWING" below. */
   const ALBUM = [
     { key: 'am', name: 'Material & track selection', weight: 5, tasks: [
       { key: 'am.vision', weight: 1, name: 'Album vision and shortlist defined' },
@@ -189,10 +170,6 @@
       { key: 'ai.transitions', weight: 2, name: 'Transitions, interludes and crossfades dialled in' },
       { key: 'ai.seq_ok', weight: 2, name: 'Running order approved by the band' },
       { key: 'ai.master', weight: 2, name: 'Final album master received and the sequence signed off' },
-      // Weight 0 on purpose — see the comment above the list and on SWING_KEY
-      // below. It rides in the checklist like any other box but never takes a
-      // share of the 100-point budget; albumPct() gives it its own -2/+4.
-      { key: 'ai.swing', weight: 0, name: 'Sequencing and packaging confirmed. Worth +4% on top of the estimate above once you actually have it, and reads -2% until you do' },
     ]},
     { key: 'av', name: 'Visuals, assets & packaging', weight: 7, tasks: [
       { key: 'av.cover', weight: 2, name: 'Front and back cover artwork finalised and uploaded' },
@@ -208,17 +185,53 @@
     ]},
   ];
 
-  // The key albumPct() treats specially, beside SONG_SWING_KEY above. Kept as
-  // constants rather than literals at the use site, because a typo in either
-  // spot would silently turn the swing into a dead checkbox instead of throwing.
-  const ALBUM_SWING_KEY = 'ai.swing';
+  /* ------------------------------------------------------------------------
+   * THE TO-DO SWING, and the two readings it took to get right
+   *
+   * At his word: "I'd like a to do item to bring progress back 2% a small
+   * amount and bring progress forward 4% when that item is resolved", and then,
+   * when the first two attempts missed: "i asked for the progress to regress
+   * when a new to do item is made and then progress past the pre todo item
+   * creation when the todo item is completed."
+   *
+   * So this belongs to the items HE ADDS, not to any box shipped in the lists
+   * above. Both earlier attempts invented a fixed box — one on the album, then
+   * one on every song — which docked everything 2% permanently and dropped two
+   * finished songs to 98% for a reason he never asked for. That was wrong twice
+   * for the same underlying reason: a standing penalty is not a swing, because
+   * nothing about it is tied to an event.
+   *
+   * THE RULE. Make a to-do item and the bar goes back 2. Resolve it and the bar
+   * goes 4 PAST where it stood before you made it. So relative to the baseline
+   * without the item at all: -2 open, +4 done, a six-point jump on the tick.
+   *
+   * WHY CUSTOM ITEMS NO LONGER TAKE A SHARE OF THE WEIGHTS. They used to, at an
+   * older word of his ("these should stretch or compress completion weights
+   * appropriately"). They cannot do both: if adding an item also dilutes its
+   * category, the drop on creation is some number that depends on what happens
+   * to be ticked there, not 2, and the promise above is unkeepable. His newer
+   * word is the specific one and it wins. The dilution was also failing him
+   * quietly in the commonest case — adding an item to a category with nothing
+   * ticked in it moved the bar by exactly nothing, which is the "progress does
+   * not regress" he was reporting.
+   *
+   * Every stored custom item carries weight 0 today, and the "+ add a step"
+   * control has only ever written 0, so no item anywhere loses a weight it was
+   * relying on. There is no migration in this.
+   * --------------------------------------------------------------------------- */
+  const TODO_OPEN = -2, TODO_DONE = 4;
 
-  /* Both swings are the same rule, so it is written once: -2 while the box is
-   * unticked, +4 once it is, applied AFTER the weighted total and clamped, so
-   * neither can push a bar past its ends on its own. Clamping here rather than
-   * at each call site is what stops an empty record reading -2%. */
-  const applySwing = (total, ticks, key) =>
-    Math.max(0, Math.min(100, total + (ticks.has(key) ? 4 : -2)));
+  /* Summed over every to-do item he has added to this song or record. Reads the
+   * shaped list rather than the raw shape so it sees exactly the items the
+   * checklist is showing him, which is what the number has to agree with. */
+  function todoSwing(list, ticks) {
+    let d = 0;
+    for (const ph of list) for (const t of ph.tasks)
+      if (t.custom) d += ticks.has(t.key) ? TODO_DONE : TODO_OPEN;
+    return d;
+  }
+
+  const clampPct = (n) => Math.max(0, Math.min(100, n));
 
   /* ------------------------------------------------------------------------
    * HIS OWN ITEMS, AND THE WEIGHTS STRETCHING TO FIT
@@ -242,10 +255,13 @@
    * categories in proportion to theirs. Dropping the category and letting the
    * total fall to 90 would mean a song that can never reach 100.
    *
-   * A custom item with weight 0 means "an ordinary one", resolved here to the
-   * average of the built-ins in its category, so adding a box never asks him to
-   * think about numbers. That is why the default is 0 rather than some fixed
-   * figure: what counts as ordinary differs per category.
+   * SUPERSEDED IN PART, 2026-08-22. Custom items no longer take a share of any
+   * category's weight — they carry the to-do swing instead, and the reasoning is
+   * under "THE TO-DO SWING" above. The rule in this header still governs the
+   * BUILT-IN boxes, which is most of what it was written for: hide one and its
+   * points go to its neighbours in the same category, empty a category and its
+   * points go to the surviving categories. What has changed is only that adding
+   * an item of his own no longer moves anybody else's number.
    * --------------------------------------------------------------------------- */
 
   /* Build the list as it actually stands for one song or one record: built-ins
@@ -261,24 +277,22 @@
       const kept = ph.tasks.filter(t => !hidden.has(t.key));
       const mine = added.filter(i => i.phase === ph.key);
       if (!kept.length && !mine.length) continue;          // emptied; see below
-      // "An ordinary one" = the average of this category's built-ins, so the
-      // default is meaningful per category rather than a fixed number.
-      const avg = ph.tasks.length
-        ? ph.tasks.reduce((a, t) => a + t.weight, 0) / ph.tasks.length : 1;
+      // His own items ride at base 0: they score through the to-do swing, not
+      // through the weights, so adding one leaves every other box exactly where
+      // it was. That is what makes "back 2 on creation" an honest 2.
       const tasks = kept.map(t => ({ ...t, base: t.weight }))
         .concat(mine.map(i => ({
-          key: 'c.' + i.id, name: i.label, custom: true, id: i.id,
-          base: i.weight > 0 ? i.weight : avg,
+          key: 'c.' + i.id, name: i.label, custom: true, id: i.id, base: 0,
         })));
       phases.push({ ...ph, tasks });
     }
     // A category that lost every box takes its weight with it, so what is left
     // is scaled back up to 100. Without this a song could never finish.
     //
-    // "Lost every box" means every box that can SCORE, not every box. CR-64's
-    // swing rides in the list at weight 0, so hiding the four real Integration
-    // steps would otherwise leave that category holding its points with nothing
-    // able to claim them — a bar that stops short of 100 for no visible reason,
+    // "Lost every box" means every box that can SCORE, not every box. His own
+    // to-do items ride at base 0, so a category left holding nothing but those
+    // would otherwise keep its points with nothing able to claim them — a bar
+    // that stops short of 100 for no visible reason,
     // which is the exact defect the assertion at the foot of this file exists
     // to prevent. The swing stays visible and tickable either way; albumPct
     // reads its tick directly rather than through this list.
@@ -342,7 +356,8 @@
   /* The song percentage: just the sum of what is ticked, because every point on
    * a song is manual. */
   function songPct(ticks, shape) {
-    return applySwing(pct(shapedList(SONG, shape), ticks), ticks, SONG_SWING_KEY);
+    const list = shapedList(SONG, shape);
+    return clampPct(pct(list, ticks) + todoSwing(list, ticks));
   }
 
   /* The album percentage: the manual half plus the mean of the songs.
@@ -381,14 +396,12 @@
       ? songPcts.reduce((a, b) => a + b, 0) / songPcts.length
       : 0;
     const base = auto ? manual + (mean / 100) * auto.weight : manual;
-    /* The record's own swing. Note the songs it averages carry theirs already,
-     * inside the numbers handed in as `songPcts`, so a record feels the swing
-     * twice over: once through the mean and once here. That is deliberate
-     * rather than double counting. They are different claims — "this track is
-     * not on a sequenced record yet" and "this record is not sequenced yet" —
-     * and both are true until the day the sequencing happens, when both turn
-     * positive together. The whole effect is a handful of points either way. */
-    return applySwing(base, ticks, ALBUM_SWING_KEY);
+    /* Only the record's OWN to-do items swing the record. A song's items have
+     * already moved that song's own number, which reaches here through the mean
+     * and is diluted by however many songs there are — so a to-do on one track
+     * nudges the record slightly, which is right, and does not get counted a
+     * second time at full strength, which would not be. */
+    return clampPct(base + todoSwing(list, ticks));
   }
 
 

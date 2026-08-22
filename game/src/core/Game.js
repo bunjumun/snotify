@@ -973,31 +973,32 @@ export class Game {
    */
   _updateBongs(dt) {
     const canUse = this.progress.hasLighter && this.stash.canPack;
-    let nearest = null, nearestD = Infinity;
+    let nearest = null, nearestD = Infinity, hit = null;
 
     for (const b of this.bongs) {
       b.update(dt, this.time, canUse, this.audio?.react);
       const d = b.distanceTo(this.kelpie.position);
       b.plume(dt, this.bubbles, this.smoke, d);
       if (d < nearestD) { nearestD = d; nearest = b; }
+      // Tested for EVERY bong, not just whichever is nearest by bowl distance.
+      // Contact is a column running the full height of the prop (Bong.hitTest),
+      // and "nearest by distance to the bowl" is a straight-line measure that
+      // does not agree with "which column you are standing in" — pass close to
+      // the base of one bong while a second bong's bowl happens to be nearer in
+      // 3D space, and the one you are actually inside never got hit-tested. That
+      // is the bug he reported: bongs he swam straight into not going off.
+      if (canUse && !hit && b.hitTest(this.kelpie.position)) hit = b;
     }
     this.nearestBong = nearest;
     this.nearestBongDistance = nearestD;
 
-    if (this.trip.active || !nearest) return;
+    if (this.trip.active) return;
 
-    // No stopping, no lining up on the last two metres. You charge a lit bong and
-    // the lit bong happens to you.
-    //
-    // Tested ABOVE the useRadius gate on purpose. Contact is a column now rather
-    // than a ball on the bowl (see Bong.hitTest), and the top of that column is
-    // further from the bowl than useRadius is wide — so leaving the test down
-    // below would reintroduce, by another route, the exact overfly miss the
-    // column exists to fix.
-    if (canUse && nearest.hitTest(this.kelpie.position)) {
-      this._useBong(nearest);
-      return;
-    }
+    // No stopping, no lining up on the last two metres. You charge a lit bong
+    // and the lit bong happens to you — and now any lit bong you are standing
+    // inside, not only whichever one is nearest.
+    if (hit) { this._useBong(hit); return; }
+    if (!nearest) return;
 
     if (nearestD > CFG.bong.useRadius) return;
 

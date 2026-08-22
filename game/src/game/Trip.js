@@ -38,12 +38,25 @@ export class Trip {
     this.orbitWeight = 0;    // how much of the orbit camera pose to apply
     this.orbitProgress = 0;  // 0..1 around the circle
     this.pullT = 0;          // 0..1 through the PULL beat, eased
+    // How far the camera is pulled back off the normal orbit: 1 out at the wide
+    // pull framing, 0 in on the usual one. Held at 1 for the whole pull, then
+    // let go across the rise, so the shot dollies in as the picture blooms
+    // rather than cutting between two distances.
+    this.wideness = 0;
 
     this.onStart = null;     // contact — fires at the top of PULL
     this.onPullEnd = null;   // she's arrived at the bowl; RISE (and the launch) begins
     this.onHoldEnd = null;   // camera is coming home; taper begins
     this.onEnd = null;
   }
+
+  /**
+   * Where the pull has carried the orbit angle to, in radians, which the rig
+   * adds to its own sweep. Held at its final value once the pull is over, so
+   * the hold's revolution continues from where the pull's ended instead of
+   * snapping back to zero.
+   */
+  get orbitPhase() { return this.pullT * Math.PI * 2 * CFG.trip.pullRevolutions; }
 
   get active() { return this.phase !== TripPhase.IDLE; }
   /** True only while the camera is off the player — input is ignored here. */
@@ -68,8 +81,21 @@ export class Trip {
 
     switch (this.phase) {
       case TripPhase.PULL: {
-        this.pullT = easeInOut(Math.min(1, this.t / T.pullTime));
+        // Linear through the circle, for the same reason the hold's revolution
+        // is linear: an eased sweep looks better for a moment and then visibly
+        // wrong for the rest of it. The EASED value is what moves her body
+        // (pullT), so she is drawn in on a curve while the camera circles at a
+        // constant rate.
+        const k = Math.min(1, this.t / T.pullTime);
+        this.pullT = easeInOut(k);
+        this.wideness = 1;
+        // The swing out happens here now, over the front of the pull, rather
+        // than over the rise where it used to live. Same easeInOut and the same
+        // reasoning: the rig has a spring on the far side of this, so a softer
+        // curve reads as being let go rather than held back.
+        this.orbitWeight = easeInOut(Math.min(1, this.t / (T.pullTime * 0.4)));
         if (this.t >= T.pullTime) {
+          this.pullT = 1;             // land the angle exactly, not one frame short
           this.phase = TripPhase.RISE;
           this.t = 0;
           if (this.onPullEnd) this.onPullEnd();
@@ -80,11 +106,14 @@ export class Trip {
       case TripPhase.RISE: {
         const k = Math.min(1, this.t / T.riseTime);
         this.value = easeSmoother(k);
-        // The camera stays on the softer curve. It has a spring of its own on the
-        // far side of this, and stacking smootherstep on top of that made the
-        // swing out feel like it was being held back rather than let go.
-        this.orbitWeight = easeInOut(k);
-        if (this.t >= T.riseTime) { this.phase = TripPhase.HOLD; this.t = 0; }
+        // Already swung out by the pull, so this no longer ramps from nothing.
+        // Ramping it again would drag the camera back to her shoulder and then
+        // push it out a second time, which is a cut in all but name.
+        this.orbitWeight = 1;
+        // What the rise moves instead is the distance: the wide pull framing
+        // closes to the normal orbit as the picture blooms in.
+        this.wideness = 1 - easeInOut(k);
+        if (this.t >= T.riseTime) { this.phase = TripPhase.HOLD; this.t = 0; this.wideness = 0; }
         break;
       }
 
@@ -127,6 +156,7 @@ export class Trip {
     this.orbitWeight = 0;
     this.orbitProgress = 0;
     this.pullT = 0;
+    this.wideness = 0;
     this.t = 0;
   }
 }

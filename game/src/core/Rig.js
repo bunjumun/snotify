@@ -13,6 +13,9 @@ import { CFG } from '../../config.js';
 
 const smoothstep = (t) => t * t * (3 - 2 * t);
 
+/** How far above the seabed the wide pull camera is kept. See update(). */
+const CAMERA_CLEARANCE = 3;
+
 /** Frame-rate independent exponential smoothing. */
 const approach = (rate, dt) => 1 - Math.exp(-rate * dt);
 
@@ -36,6 +39,21 @@ export class Rig {
     // Driven externally by Trip.js.
     this.orbitWeight = 0;   // 0 = pure follow, 1 = pure orbit
     this.orbitProgress = 0; // 0..1 across the whole revolution
+    this.orbitPhase = 0;    // radians the pull already carried the angle through
+    // 0 = the usual orbit, tight on her. 1 = the wide pull framing, which is a
+    // bigger radius around a point that is NOT her: see orbitCenter.
+    this.orbitWide = 0;
+    // What to circle, when it should not be the kelpie herself. The pull orbits
+    // the whole tableau — her, the riders behind her and the bong she is being
+    // drawn into — so the game hands the midpoint in. Null means orbit her, as
+    // every other phase does.
+    this.orbitCenter = null;
+    // Optional terrain probe, (x, z) => floor height. Only consulted while the
+    // camera is pulled wide, because a 40-unit radius reaches ground the usual
+    // 21-unit one never did. Left off the normal orbit deliberately rather than
+    // by oversight: that path has shipped for weeks and this is not the change
+    // to quietly alter it in.
+    this.floorAt = null;
 
     this._pos = new THREE.Vector3(0, 5, 20);
     this._look = new THREE.Vector3();
@@ -90,17 +108,40 @@ export class Rig {
     // ---- Orbit pose ----
     // A full revolution around the pair, rising slightly, so you see the diver
     // swing past the horse for the whole sweep.
+    //
+    // The same circle serves the bong pull, just bigger and around something
+    // else: `orbitWide` opens the radius out and `orbitCenter` moves what is
+    // being circled from her to the whole tableau. One orbit rather than two
+    // means the pull can hand over to the hold without a cut — the angle runs
+    // straight on through `orbitPhase`, and only the distance changes.
     const w = smoothstep(THREE.MathUtils.clamp(this.orbitWeight, 0, 1));
     if (w > 0.0001) {
-      const a = this.orbitProgress * Math.PI * 2 * CFG.trip.orbitRevolutions;
-      const elev = CFG.trip.orbitElevation * (0.6 + 0.4 * Math.sin(this.orbitProgress * Math.PI));
-      this._orbitPos.set(
-        target.position.x + Math.cos(a) * CFG.trip.orbitRadius,
-        target.position.y + elev,
-        target.position.z + Math.sin(a) * CFG.trip.orbitRadius,
+      const T = CFG.trip;
+      const wide = THREE.MathUtils.clamp(this.orbitWide, 0, 1);
+      const centre = this.orbitCenter || target.position;
+      const radius = THREE.MathUtils.lerp(T.orbitRadius, T.pullRadius, wide);
+      // The near-orbit elevation breathes with the sweep; the pull's is steady,
+      // because during the pull `orbitProgress` is still 0 and that formula
+      // would sit it at its lowest point for the whole circuit.
+      const elev = THREE.MathUtils.lerp(
+        T.orbitElevation * (0.6 + 0.4 * Math.sin(this.orbitProgress * Math.PI)),
+        T.pullElevation,
+        wide,
       );
+      const a = this.orbitPhase + this.orbitProgress * Math.PI * 2 * T.orbitRevolutions;
+      this._orbitPos.set(
+        centre.x + Math.cos(a) * radius,
+        centre.y + elev,
+        centre.z + Math.sin(a) * radius,
+      );
+      // A 40-unit radius reaches ground the 21-unit one never did, so the wide
+      // framing gets a floor and the normal orbit is left exactly as it was.
+      if (wide > 0.0001 && this.floorAt) {
+        const floor = this.floorAt(this._orbitPos.x, this._orbitPos.z) + CAMERA_CLEARANCE;
+        if (this._orbitPos.y < floor) this._orbitPos.y = floor;
+      }
       this._pos.copy(this._followPos).lerp(this._orbitPos, w);
-      this._look.copy(this._followLook).lerp(target.position, w);
+      this._look.copy(this._followLook).lerp(centre, w);
     } else {
       this._pos.copy(this._followPos);
       this._look.copy(this._followLook);
@@ -184,6 +225,10 @@ export class Rig {
   snapTo(target) {
     this.trauma = 0;
     this._shakeRoll = 0;
+    // A retry must not inherit the last run's pull framing for even one frame.
+    this.orbitWide = 0;
+    this.orbitPhase = 0;
+    this.orbitCenter = null;
     const c = CFG.camera;
     this._back.set(0, c.rideHeight, c.rideBack).applyQuaternion(target.quaternion);
     this._followPos.copy(target.position).add(this._back);

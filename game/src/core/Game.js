@@ -323,6 +323,9 @@ export class Game {
     this.trip.onEnd = () => this.audio?.tripEnd();
 
     this.rig = new Rig(innerWidth / innerHeight);
+    // Only consulted by the wide pull framing, which swings far enough out to
+    // find rising ground the normal orbit never reaches. See Rig.update().
+    this.rig.floorAt = (x, z) => this.seabed.heightAt(x, z);
     this.intro = new Intro(this);
 
     // Phase 2: the chest, the fish that know where it is, and the log.
@@ -583,6 +586,16 @@ export class Game {
     this._applyTrip(this.trip.value);
     this.rig.orbitWeight = this.trip.orbitWeight;
     this.rig.orbitProgress = this.trip.orbitProgress;
+    this.rig.orbitPhase = this.trip.orbitPhase;
+    this.rig.orbitWide = this.trip.wideness;
+    // What the wide shot circles: the midpoint between her and the bong's mouth,
+    // which holds her, the riders strung out behind her and the glass all in one
+    // frame. It converges on the bong as she is drawn in, so by the time the
+    // rise takes over the centre is already where she is and the handover to the
+    // usual her-centred orbit has nothing to jump across.
+    this.rig.orbitCenter = this.trip.wideness > 0.0001 && this._tripBong
+      ? this._orbitMid(this._tripBong, this.trip.wideness)
+      : null;
 
     // ---- FX ----
     const react = this.audio?.react ?? { low: 0, mid: 0, high: 0, kick: 0 };
@@ -899,6 +912,27 @@ export class Game {
     if (!this.stash.canPack) {
       this.hud.say(`Not enough to pack. <b>${this.stash.fraction} of a bowl</b>`, { seconds: 2 });
     }
+  }
+
+  /**
+   * What the wide shot circles: the midpoint between the kelpie and a bong's
+   * mouth, which frames her, the riders behind her and the glass together.
+   *
+   * It converges onto her as `wide` falls away, and that is not cosmetic. The
+   * rig drops back to orbiting her the moment the wide framing is fully gone,
+   * so a centre still sitting at the midpoint at that instant would jump the
+   * camera by half the distance she had climbed — measured at 9 units in one
+   * frame before this converged, which is a visible lurch out of the bloom.
+   *
+   * Scratch vector for the reason every other one in here is: this runs in the
+   * render loop and a fresh Vector3 per frame is a GC stutter on mobile.
+   */
+  _orbitMid(bong, wide) {
+    const m = this._orbitMidV || (this._orbitMidV = new THREE.Vector3());
+    m.copy(bong.position);
+    m.y += bong.useHeight * 1.15;          // the mouth, not the bowl
+    m.lerp(this.kelpie.position, 0.5);     // the tableau's middle
+    return m.lerp(this.kelpie.position, 1 - wide);
   }
 
   _useBong(bong) {

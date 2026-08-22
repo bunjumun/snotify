@@ -699,8 +699,31 @@ export const CFG = {
     // pullTime is the beat BEFORE this one, added for CR-30: contact stretch-
     // pulls her to the bowl before any of the above starts blooming, so the hit
     // reads as being drawn into the bong rather than detonating on contact.
-    // Short on purpose — it is a snap into place, not its own scene.
-    pullTime: 0.45,
+    //
+    // **Was 0.45, and that was too short to see, which is the whole of his note
+    // on it.** At his word on 22 Aug the pull is now a shot rather than a snap:
+    // the camera swings out wide and makes one full circuit of the horse, the
+    // riders and the bong while she is drawn in. A revolution needs time to
+    // read — at 0.45s it would have been a whip-pan, which is a different and
+    // much worse effect. This lengthens the uncontrollable stretch to about
+    // 13.7s all in (2.2 + 1.5 rise + 10 hold), against 11.5s before.
+    pullTime: 2.2,
+    // One full circuit. **Any value is safe to change this to, including a
+    // fractional one** — the rig carries wherever the pull left the angle
+    // through into the hold as `orbitPhase`, so the two always run on without a
+    // seam. Measured rather than assumed: the worst camera step across a phase
+    // boundary is 0.288 units at 0.5, 0.75, 1 and 2 revolutions alike.
+    //
+    // One is a feel choice, not a constraint. It puts the sweep at about 164
+    // degrees a second, which is brisk against the hold's 36 — and the contrast
+    // is the point, since being yanked into the glass should not move at the
+    // same pace as the drift afterwards.
+    pullRevolutions: 1,
+    // Wide enough to hold the whole tableau. The glass is over 12 tall, the
+    // kelpie 5.2 nose to tail, and four riders string out on ~4.5 units of rope
+    // behind her, so the thing being circled is roughly 30 across.
+    pullRadius: 40,
+    pullElevation: 14,   // looking down on it a little, not level with it
     riseTime: 1.5,
     holdTime: 10.0,       // exactly one camera revolution
     taperTime: 60.0,

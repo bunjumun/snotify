@@ -109,8 +109,23 @@
     { key: 'r', name: 'Mastering & release', weight: 21, tasks: [
       { key: 'r.master', weight: 11, name: 'Sweetened and mastered' },
       { key: 'd.out', weight: 10, name: 'Artwork, metadata and out — Soundcloud or a distributor' },
+      /* CR-64 again, 2026-08-22. The swing was album-only on the first cut and
+       * he caught it the same afternoon: "mango tree and currency still read
+       * 67% same as prechange". He was looking at the song bars, and his line
+       * had said "album progress", which is why it landed on the album list
+       * alone. Asked which he wanted and he chose the swing on songs, not a
+       * re-weighting of this list, so every song carries the same box now and
+       * the song weights above are untouched. Zero weight, same as the album's:
+       * songPct() applies the -2/+4 by hand. See SONG_SWING_KEY. */
+      { key: 'r.swing', weight: 0, name: 'Sequencing and packaging confirmed. Worth +4% on top of the estimate above once you actually have it, and reads -2% until you do' },
     ]},
   ];
+
+  /* One per list rather than one shared constant. The two lists deliberately
+   * share some keys and the stored row separates them by `scope`, so this would
+   * work either way — but a song's box reading `ai.` would be a lie about where
+   * it lives, and the next person to grep for it would look in the wrong list. */
+  const SONG_SWING_KEY = 'r.swing';
 
   /* THE ALBUM IS THE AVERAGE OF ITS SONGS PLUS ITS OWN VARIABLES, at his word:
    * "song level has the production pipeline. album completion is determined
@@ -193,10 +208,17 @@
     ]},
   ];
 
-  // The one key albumPct() treats specially. Kept as a constant rather than a
-  // literal in two places, because a typo in either spot would silently turn
-  // the swing into a dead checkbox instead of throwing.
-  const SWING_KEY = 'ai.swing';
+  // The key albumPct() treats specially, beside SONG_SWING_KEY above. Kept as
+  // constants rather than literals at the use site, because a typo in either
+  // spot would silently turn the swing into a dead checkbox instead of throwing.
+  const ALBUM_SWING_KEY = 'ai.swing';
+
+  /* Both swings are the same rule, so it is written once: -2 while the box is
+   * unticked, +4 once it is, applied AFTER the weighted total and clamped, so
+   * neither can push a bar past its ends on its own. Clamping here rather than
+   * at each call site is what stops an empty record reading -2%. */
+  const applySwing = (total, ticks, key) =>
+    Math.max(0, Math.min(100, total + (ticks.has(key) ? 4 : -2)));
 
   /* ------------------------------------------------------------------------
    * HIS OWN ITEMS, AND THE WEIGHTS STRETCHING TO FIT
@@ -320,7 +342,7 @@
   /* The song percentage: just the sum of what is ticked, because every point on
    * a song is manual. */
   function songPct(ticks, shape) {
-    return pct(shapedList(SONG, shape), ticks);
+    return applySwing(pct(shapedList(SONG, shape), ticks), ticks, SONG_SWING_KEY);
   }
 
   /* The album percentage: the manual half plus the mean of the songs.
@@ -359,14 +381,14 @@
       ? songPcts.reduce((a, b) => a + b, 0) / songPcts.length
       : 0;
     const base = auto ? manual + (mean / 100) * auto.weight : manual;
-    // CR-64's swing, applied after the weighted total rather than folded into
-    // it: -2 while unresolved, +4 once it is, clamped so it cannot push the
-    // record over 100 or under 0 by itself. shapedList() can drop the phase
-    // ai.swing lives in if he ever hides every one of its boxes, so this
-    // checks the tick directly rather than trusting the shaped list to still
-    // carry the key.
-    const swing = ticks.has(SWING_KEY) ? 4 : -2;
-    return Math.max(0, Math.min(100, base + swing));
+    /* The record's own swing. Note the songs it averages carry theirs already,
+     * inside the numbers handed in as `songPcts`, so a record feels the swing
+     * twice over: once through the mean and once here. That is deliberate
+     * rather than double counting. They are different claims — "this track is
+     * not on a sequenced record yet" and "this record is not sequenced yet" —
+     * and both are true until the day the sequencing happens, when both turn
+     * positive together. The whole effect is a handful of points either way. */
+    return applySwing(base, ticks, ALBUM_SWING_KEY);
   }
 
 

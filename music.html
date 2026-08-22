@@ -4295,7 +4295,10 @@ async function addComment(text, parentId = null){
     (commentCache[activeSong.id] ||= []).push(mapRow(row));
   } catch (err){ alert('Could not post the comment: ' + (err.message || err)); return; }
   if (!parentId){ $('cinput').value = ''; draftTags = []; renderTagPicker(); }
-  renderComments(); renderMarkers(); refreshListBadges();
+  // A new root note is a new open to-do, worth -1% on this song's bar. A reply
+  // is not a note of its own and does not count, but refreshing on both is
+  // simpler than refreshing on one and being wrong the day that changes.
+  renderComments(); renderMarkers(); refreshListBadges(); refreshProgressNumbers();
 }
 
 // Categorising after the fact — a note often only turns out to be a job once
@@ -4317,8 +4320,11 @@ async function deleteComment(cid){
   if (!activeSong || !isAuthed(curBand)) return;
   try { await libRpc('delete_comment', { cid }); }
   catch (err){ alert('Could not delete: ' + (err.message || err)); return; }
+  // parent_id is `on delete cascade`, so the server takes the replies with it
+  // and this mirrors that locally rather than leaving orphans in the cache.
   commentCache[activeSong.id] = (commentCache[activeSong.id]||[]).filter(c => c.id !== cid && c.parentId !== cid);
-  renderComments(); renderMarkers(); refreshListBadges();
+  // Deleting a note changes the song's to-do count, so it changes the bar.
+  renderComments(); renderMarkers(); refreshListBadges(); refreshProgressNumbers();
 }
 // Honor system: the server lets any bandmate edit any comment (same trust
 // level delete already had) — the one check that matters happens here, before

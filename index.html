@@ -28,13 +28,16 @@
   .door.art .glyph { background: linear-gradient(135deg, #e0567a, var(--warn)); box-shadow: 0 8px 24px rgba(224,86,122,.3); }
   /* Lake water, so the game door reads as its own place at a glance. */
   .door.game .glyph { background: linear-gradient(135deg, #12706b, #7de08a); box-shadow: 0 8px 24px rgba(18,112,107,.34); }
+  /* CR-76. Amber, so a fifth door reads as its own place rather than a
+     re-tint of one of the first four. */
+  .door.release .glyph { background: linear-gradient(135deg, #c98a2c, #e0567a); box-shadow: 0 8px 24px rgba(201,138,44,.3); }
   .door h2 { margin: 0; font-size: 21px; letter-spacing: -.2px; }
   .door p { margin: 6px 0 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.5; }
   .door .tally { margin-top: 14px; color: var(--text-mute); font-size: 12.5px; font-weight: 600; }
   .bandline { color: var(--text-dim); font-size: 14px; margin: 0 0 22px; }
   /* Sibling links sit in the header of every page, this one included */
-  #musicBtn, #artBtn { display: none; }
-  body.authed #musicBtn, body.authed #artBtn { display: inline-flex; }
+  #musicBtn, #artBtn, #releaseBtn { display: none; }
+  body.authed #musicBtn, body.authed #artBtn, body.authed #releaseBtn { display: inline-flex; }
   /* The game and the assets shelf are Lakehorse's. Hidden by default and put
      up by the body classes applyTheme() sets from BAND_FEATURES, so a band
      without them never sees them flash on the way past. */
@@ -93,6 +96,7 @@
       <a class="addbtn" id="artBtn" href="art.html" title="Sn'art — the band's artwork">🎨 Art</a>
       <a class="addbtn" id="gameBtn" href="game/" title="Lakehorse Swimulator — the game">🐴 Game</a>
       <a class="addbtn" id="assetsBtn" href="assets.html" title="Band assets — the lore document">📖 Assets</a>
+      <a class="addbtn" id="releaseBtn" href="release-builder.html" title="Release Builder">🚀 Release</a>
       <button class="addbtn" id="toolsBtn" title="Graphic tools">▨ Tools ▾</button>
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
       <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
@@ -142,6 +146,17 @@
            one you mark live is the one the game tells.</p>
         <div class="tally" id="tallyAssets">&nbsp;</div>
       </a>
+
+      <!-- CR-76, 2026-08-22, at his word ("Create 'Release Builder'... this new
+           page"): a fifth door, empty behind it on purpose. He asked for the
+           section left blank for now — the door and the page exist, nothing
+           behind either is built yet. -->
+      <a class="door release" id="doorRelease" href="release-builder.html">
+        <div class="glyph">🚀</div>
+        <h2 data-txt="door.release.title">Release Builder</h2>
+        <p data-txt="door.release.blurb">Not built yet. The door is here so the page has somewhere to grow.</p>
+        <div class="tally">&nbsp;</div>
+      </a>
     </div>
   </div>
 
@@ -149,7 +164,7 @@
      script, so everything it declares is in scope for the module below. -->
 <script src="core.js?v=31"></script>
 <!-- The record's progress bar, read-only here; the player owns the editable one. -->
-<script src="progress.js?v=10"></script>
+<script src="progress.js?v=13"></script>
 <script src="progress-ui.js?v=3"></script>
 <script type="module">
 // This page is the front door, so it inherits every link ever shared before it

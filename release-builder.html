@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Release Builder</title>
+<meta name="description" content="Release Builder — the band's release checklist and packaging, in one place." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>" />
+<!-- Palette, page frame, modals, gate — shared with index.html, music.html, art.html -->
+<link rel="stylesheet" href="core.css?v=35" />
+<!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
+<link rel="stylesheet" href="theme-dazzle.css?v=31" />
+<style>
+  /* CR-76. The door and the page exist; what's behind it does not yet — he
+     asked for it left empty. This is the whole of the page-only surface. */
+  .rbempty {
+    color: var(--text-dim); font-size: 14px; line-height: 1.6; max-width: 46em;
+    background: var(--bg-row); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 26px 24px;
+  }
+  .rbempty h2 { margin: 0 0 8px; color: var(--text); font-size: 18px; }
+</style>
+</head>
+<body class="locked">
+
+  <!-- Band gate — same two-step front door as every other page, same
+       localStorage entry, so one band password opens all of them. The
+       markup is duplicated; the logic behind it lives once, in core.js. -->
+  <div class="modal-back" id="gateModal">
+    <div class="modal" style="max-width:360px">
+      <h2 data-txt="release.gate.title">🚀 Release Builder</h2>
+
+      <div id="gateStep1">
+        <div class="hint" style="margin-bottom:6px">Enter your band to continue.</div>
+        <label>Band name</label>
+        <input type="text" id="gateName" autocomplete="off" autocapitalize="none" />
+        <div class="status err" id="gateErr1"></div>
+        <div id="gateSuggest" style="display:none"></div>
+        <div class="actions"><button class="btn primary" id="gateNext">Continue</button></div>
+      </div>
+
+      <div id="gateStep2" style="display:none">
+        <div class="hint" style="margin-bottom:6px">Password for <b id="gateBandLabel"></b>.</div>
+        <label>Band password</label>
+        <input type="password" id="gatePass" autocomplete="off" />
+        <div class="status err" id="gateErr2"></div>
+        <div class="actions">
+          <button class="btn ghost" id="gateBack">Back</button>
+          <button class="btn primary" id="gateGo">Enter</button>
+        </div>
+      </div>
+
+      <div class="hint" style="margin-top:14px;text-align:center">
+        <span class="linky" id="adminOpenLink">Site admin</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <header class="app">
+      <div class="logo">🚀</div>
+      <div>
+        <h1 data-txt="release.title">Release Builder</h1>
+        <p data-txt="release.tagline">Not built yet — the door is here so the page has somewhere to grow</p>
+      </div>
+      <div class="count" id="bandCount"></div>
+      <a class="addbtn" id="musicBtn" href="music.html" title="S'notify — the band's music">🎵 Music</a>
+      <a class="addbtn" id="homeBtn" href="index.html" title="Sn'Album — the band's home">💿</a>
+      <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
+      <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
+    </header>
+
+    <div class="rbempty" id="rbEmpty">
+      <h2>Nothing built here yet</h2>
+      <p>CR-76 asked for this section left empty for now. When there's something
+         to put on it, it lands here rather than on a sixth page.</p>
+    </div>
+  </div>
+
+<!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
+     script, so everything it declares is in scope for the module below. -->
+<script src="core.js?v=31"></script>
+<script type="module">
+// core.js owns the gate, the route and every Supabase call — these are the
+// two moments it has to hand control back to this page. Nothing else here,
+// deliberately: there is no content to load yet.
+App.init   = () => init();
+App.onLock = () => {};
+
+async function init(){
+  let band = route.band && bandSlugOf(route.band);
+  if (!band) band = wantsHome() ? '' : lastBand();
+  if (!band){ showGate(null, true, lastBand() || null); return; }
+  if (!isAuthed(band)){ showGate(band, true); return; }
+
+  curBand = band;
+  applyTheme(curBand);
+  curBandTitle = curBand;
+  try {
+    const lib = await libRpc('get_library', {});
+    curBandTitle = (lib && lib.title) || curBand;
+  } catch (err) {
+    if (isAuthErr(err)){ clearAuth(band); return showGate(band, true); }
+    // A failed title fetch is not worth blocking an empty page over.
+  }
+  document.title = 'Release Builder · ' + curBandTitle;
+  document.body.classList.add('authed');
+  unlockView();
+}
+
+if (curBand || route.band){
+  const b = encodeURIComponent(bandSlugOf(route.band || curBand));
+  $('musicBtn').href = 'music.html?b=' + b;
+  $('homeBtn').href  = 'index.html?b=' + b;
+}
+
+init();
+</script>
+</body>
+</html>

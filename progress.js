@@ -143,32 +143,60 @@
    * and its distribution are its own; the album's cover, liner notes, packaging
    * and pre-order are the record's. A song can go out as a single long before
    * the record is packaged, and both need saying. */
+  /* CR-64, 2026-08-22, his reading confirmed as both halves at once.
+   *
+   * "album progress for tracks done but not sequenced or packaged can be
+   * considered 75% done" — a record whose songs are all finished but never
+   * sequenced, mastered or packaged used to read 50%, because the averaged
+   * phase below only carried 50 of the album's 100 points. That is now 75:
+   * the four album-only categories, which used to split the other half
+   * fifty-fifty against the average, now share a quarter between them in the
+   * same rough proportion they always had (am 10/ai 15/av 15/ad 10 -> am
+   * 5/ai 8/av 7/ad 5, the nearest integers on the same shape). Nothing about
+   * what a box is worth inside its own category changed, only how much of
+   * the record's 100 points that category can reach.
+   *
+   * Second half of his line: "I'd like a to do item to bring progress back
+   * 2% ... and bring progress forward 4% when that item is resolved." That
+   * is a flat swing on top of the 75/25 split above, not another slice of
+   * the 100-point budget — `ai.swing` below carries weight 0 so it never
+   * moves the ordinary sum, and `albumPct` applies its -2/+4 by hand after
+   * the weighted total is worked out. See the note there. */
   const ALBUM = [
-    { key: 'am', name: 'Material & track selection', weight: 10, tasks: [
-      { key: 'am.vision', weight: 3, name: 'Album vision and shortlist defined' },
-      { key: 'am.flow', weight: 3, name: 'Key, tempo and sequence flow rough drafted' },
-      { key: 'am.slots', weight: 4, name: 'Every track slot filled — the songs that are on it are on it' },
+    { key: 'am', name: 'Material & track selection', weight: 5, tasks: [
+      { key: 'am.vision', weight: 1, name: 'Album vision and shortlist defined' },
+      { key: 'am.flow', weight: 2, name: 'Key, tempo and sequence flow rough drafted' },
+      { key: 'am.slots', weight: 2, name: 'Every track slot filled — the songs that are on it are on it' },
     ]},
-    { key: 'avg', name: 'Song completion average', weight: 50, auto: true, tasks: [] },
-    { key: 'ai', name: 'Integration & master flow', weight: 15, tasks: [
-      { key: 'ai.assembly', weight: 4, name: 'Full album assembly uploaded as one sequenced render' },
-      { key: 'ai.transitions', weight: 4, name: 'Transitions, interludes and crossfades dialled in' },
-      { key: 'ai.seq_ok', weight: 3, name: 'Running order approved by the band' },
-      { key: 'ai.master', weight: 4, name: 'Final album master received and the sequence signed off' },
+    { key: 'avg', name: 'Song completion average', weight: 75, auto: true, tasks: [] },
+    { key: 'ai', name: 'Integration & master flow', weight: 8, tasks: [
+      { key: 'ai.assembly', weight: 2, name: 'Full album assembly uploaded as one sequenced render' },
+      { key: 'ai.transitions', weight: 2, name: 'Transitions, interludes and crossfades dialled in' },
+      { key: 'ai.seq_ok', weight: 2, name: 'Running order approved by the band' },
+      { key: 'ai.master', weight: 2, name: 'Final album master received and the sequence signed off' },
+      // Weight 0 on purpose — see the comment above the list and on SWING_KEY
+      // below. It rides in the checklist like any other box but never takes a
+      // share of the 100-point budget; albumPct() gives it its own -2/+4.
+      { key: 'ai.swing', weight: 0, name: 'Sequencing and packaging confirmed. Worth +4% on top of the estimate above once you actually have it, and reads -2% until you do' },
     ]},
-    { key: 'av', name: 'Visuals, assets & packaging', weight: 15, tasks: [
-      { key: 'av.cover', weight: 5, name: 'Front and back cover artwork finalised and uploaded' },
-      { key: 'av.credits', weight: 3, name: 'Album credits, liner notes and lyrics formatted' },
-      { key: 'av.packaging', weight: 4, name: 'Physical packaging layout completed' },
-      { key: 'av.promo', weight: 3, name: 'Promotional assets and press kit ready' },
+    { key: 'av', name: 'Visuals, assets & packaging', weight: 7, tasks: [
+      { key: 'av.cover', weight: 2, name: 'Front and back cover artwork finalised and uploaded' },
+      { key: 'av.credits', weight: 1, name: 'Album credits, liner notes and lyrics formatted' },
+      { key: 'av.packaging', weight: 2, name: 'Physical packaging layout completed' },
+      { key: 'av.promo', weight: 2, name: 'Promotional assets and press kit ready' },
     ]},
-    { key: 'ad', name: 'Distribution, rights & release', weight: 10, tasks: [
-      { key: 'ad.codes', weight: 2, name: 'ISRC and UPC codes generated, metadata locked' },
-      { key: 'ad.upload', weight: 3, name: 'Distribution upload and pre-order scheduled' },
-      { key: 'ad.physical', weight: 2, name: 'Physical manufacturing submitted' },
-      { key: 'ad.campaign', weight: 3, name: 'Promo campaign and release date locked' },
+    { key: 'ad', name: 'Distribution, rights & release', weight: 5, tasks: [
+      { key: 'ad.codes', weight: 1, name: 'ISRC and UPC codes generated, metadata locked' },
+      { key: 'ad.upload', weight: 2, name: 'Distribution upload and pre-order scheduled' },
+      { key: 'ad.physical', weight: 1, name: 'Physical manufacturing submitted' },
+      { key: 'ad.campaign', weight: 1, name: 'Promo campaign and release date locked' },
     ]},
   ];
+
+  // The one key albumPct() treats specially. Kept as a constant rather than a
+  // literal in two places, because a typo in either spot would silently turn
+  // the swing into a dead checkbox instead of throwing.
+  const SWING_KEY = 'ai.swing';
 
   /* ------------------------------------------------------------------------
    * HIS OWN ITEMS, AND THE WEIGHTS STRETCHING TO FIT
@@ -224,12 +252,21 @@
     }
     // A category that lost every box takes its weight with it, so what is left
     // is scaled back up to 100. Without this a song could never finish.
-    const total = phases.reduce((a, ph) => a + ph.weight, 0) || 1;
+    //
+    // "Lost every box" means every box that can SCORE, not every box. CR-64's
+    // swing rides in the list at weight 0, so hiding the four real Integration
+    // steps would otherwise leave that category holding its points with nothing
+    // able to claim them — a bar that stops short of 100 for no visible reason,
+    // which is the exact defect the assertion at the foot of this file exists
+    // to prevent. The swing stays visible and tickable either way; albumPct
+    // reads its tick directly rather than through this list.
+    const scores = (ph) => ph.auto || ph.tasks.some(t => t.base > 0);
+    const total = phases.reduce((a, ph) => a + (scores(ph) ? ph.weight : 0), 0) || 1;
     const scale = 100 / total;
     return phases.map(ph => {
-      const w = ph.weight * scale;
-      const sum = ph.tasks.reduce((a, t) => a + t.base, 0) || 1;
-      return { ...ph, weight: w, tasks: ph.tasks.map(t => ({ ...t, weight: w * t.base / sum })) };
+      const w = scores(ph) ? ph.weight * scale : 0;
+      const sum = ph.tasks.reduce((a, t) => a + t.base, 0);
+      return { ...ph, weight: w, tasks: ph.tasks.map(t => ({ ...t, weight: sum ? w * t.base / sum : 0 })) };
     });
   }
 
@@ -318,11 +355,18 @@
     const list = shapedList(ALBUM, shape);
     const manual = pct(list, ticks);
     const auto = list.find(ph => ph.auto);
-    if (!auto) return manual;
     const mean = songPcts.length
       ? songPcts.reduce((a, b) => a + b, 0) / songPcts.length
       : 0;
-    return manual + (mean / 100) * auto.weight;
+    const base = auto ? manual + (mean / 100) * auto.weight : manual;
+    // CR-64's swing, applied after the weighted total rather than folded into
+    // it: -2 while unresolved, +4 once it is, clamped so it cannot push the
+    // record over 100 or under 0 by itself. shapedList() can drop the phase
+    // ai.swing lives in if he ever hides every one of its boxes, so this
+    // checks the tick directly rather than trusting the shaped list to still
+    // carry the key.
+    const swing = ticks.has(SWING_KEY) ? 4 : -2;
+    return Math.max(0, Math.min(100, base + swing));
   }
 
 

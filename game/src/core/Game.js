@@ -729,10 +729,14 @@ export class Game {
     // The exception is non-negotiable: once he's adrift you have to be able to
     // find him, and hiding the thing the player is required to go and collect is
     // not a camera decision, it's a bug.
-    // CR-30: also shown through PULL, or the "horse AND riders" stretch-pull
-    // into the bong plays with an invisible rope — orbitWeight is still 0 here,
-    // this beat comes before the reveal orbit starts blooming in.
-    const showDiver = this.trip.phase === TripPhase.PULL || this.rig.orbitWeight > 0.02 || this.diver.adrift;
+    // CR-30 moved the reveal earlier: they now show for the whole cinematic
+    // rather than from the orbit alone, because the pull-in IS the reveal now
+    // and it happens before the orbit blooms. Gating on orbitWeight for the
+    // front of the sequence made them flicker — visible through PULL, hidden
+    // again for the first fifth of a second of RISE while orbitWeight was still
+    // under the threshold, then back. The taper side stays on orbitWeight, so
+    // they still fade out as the camera comes home rather than snapping off.
+    const showDiver = this.trip.cinematic || this.rig.orbitWeight > 0.02 || this.diver.adrift;
     for (const d of this.divers) d.group.visible = showDiver;
     // The helmet lens glows go with them. They mark where the flashlights ARE,
     // which is worth seeing when you can see who's holding them and is otherwise

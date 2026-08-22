@@ -219,15 +219,31 @@
    * control has only ever written 0, so no item anywhere loses a weight it was
    * relying on. There is no migration in this.
    * --------------------------------------------------------------------------- */
-  const TODO_OPEN = -2, TODO_DONE = 4;
+  /* -1 and +4, at his word on 2026-08-22 once he saw the real counts. He had
+   * said 2 originally; shown that Currency carries 32 open notes and that a flat
+   * -2 apiece would drop it to 11%, he set the open side to -1 and kept the
+   * resolved side at 4, with "dont let us go past 100". So an open note is a
+   * nudge and a resolved one is a genuine reward, which is the asymmetry he
+   * wanted all along: finishing things has to outrun writing them down. */
+  const TODO_OPEN = -1, TODO_DONE = 4;
 
-  /* Summed over every to-do item he has added to this song or record. Reads the
-   * shaped list rather than the raw shape so it sees exactly the items the
-   * checklist is showing him, which is what the number has to agree with. */
-  function todoSwing(list, ticks) {
+  /* WHAT COUNTS AS A TO-DO ITEM, and it took three wrong answers to find out.
+   *
+   * Two things, and he means both: the notes on a song, which is the list
+   * behind the to-do button, and any extra step he adds to a checklist himself.
+   * Not a fixed box shipped in the lists above — that was invented twice and he
+   * rejected it twice, most plainly as "i did not ask for this".
+   *
+   * `todos` is {open, done} counted the way HIS to-do modal counts: ROOTS ONLY,
+   * replies excluded. That is not a detail — the modal's tabs say "Open (16)"
+   * and a bar computed off 21 because it counted replies too would disagree
+   * with the screen he is reading it against, and two numbers for one thing is
+   * the failure this file already warns about elsewhere. */
+  function todoSwing(list, ticks, todos) {
     let d = 0;
     for (const ph of list) for (const t of ph.tasks)
       if (t.custom) d += ticks.has(t.key) ? TODO_DONE : TODO_OPEN;
+    if (todos) d += (todos.open || 0) * TODO_OPEN + (todos.done || 0) * TODO_DONE;
     return d;
   }
 
@@ -353,11 +369,12 @@
     return got;
   }
 
-  /* The song percentage: just the sum of what is ticked, because every point on
-   * a song is manual. */
-  function songPct(ticks, shape) {
+  /* The song percentage: the sum of what is ticked, then the to-do swing.
+   * `todos` is optional {open, done} — a caller that has not loaded the notes
+   * yet gets the checklist number rather than a wrong one. */
+  function songPct(ticks, shape, todos) {
     const list = shapedList(SONG, shape);
-    return clampPct(pct(list, ticks) + todoSwing(list, ticks));
+    return clampPct(pct(list, ticks) + todoSwing(list, ticks, todos));
   }
 
   /* The album percentage: the manual half plus the mean of the songs.

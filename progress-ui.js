@@ -42,9 +42,9 @@
   async function mount(host, opts) {
     opts = opts || {};
     if (!host || !global.PROGRESS || typeof libRpc !== 'function') return;
-    let lib, rows, shape;
+    let lib, rows, shape, notes;
     try {
-      [lib, rows, shape] = await Promise.all([
+      [lib, rows, shape, notes] = await Promise.all([
         libRpc('get_library', {}),
         libRpc('progress_all', {}),
         // His own added and removed steps. Fetched here rather than ignored,
@@ -52,6 +52,11 @@
         // with the player about the same record — and two different numbers for
         // one thing is worse than no number at all.
         libRpc('progress_shape', {}).catch(() => ({ items: [], hidden: [] })),
+        // The notes on each song, for the same reason: since 2026-08-22 an open
+        // note costs a song 1% and a resolved one pays 4%, so a bar drawn
+        // without them is not a rounder version of the player's number, it is a
+        // different number.
+        libRpc('get_comments', {}).catch(() => []),
       ]);
     } catch { return; }                    // see "silent on failure" above
     const songs = ((lib && lib.songs) || []).filter(s => s && s.folder);
@@ -65,6 +70,25 @@
     };
     for (const r of (rows || [])) setFor(r.scope, r.ref).add(r.key);
 
+    // song_id -> {open, done}, counting ROOTS ONLY so this agrees with the
+    // player's to-do tabs. A reply is part of a note, not a note of its own.
+    const todos = Object.create(null);
+    for (const c of (notes || [])) {
+      if (c.parent_id) continue;
+      const t = todos[c.song_id] || (todos[c.song_id] = { open: 0, done: 0 });
+      c.resolved ? t.done++ : t.open++;
+    }
+    /* `get_library` hands back a bare song id ("this-is-war") while a comment
+     * is keyed by the band-qualified one ("lakehorse/this-is-war"). The player
+     * builds that key in its own normalize(); this rebuilds it the same way
+     * rather than matching on the bare id, which would silently find nothing
+     * and quietly show every song its checklist-only number. */
+    const bandOf = (lib && lib.slug) || (typeof curBand === 'string' ? curBand : '');
+    const todosFor = (s) => {
+      const id = s && (s.id || slug(s.title || ''));
+      return (id && todos[bandOf + '/' + id]) || { open: 0, done: 0 };
+    };
+
     const title = opts.bandTitle || (lib && lib.title) || '';
     const albums = [], seen = new Map();
     for (const s of songs) {
@@ -77,7 +101,7 @@
     host.innerHTML = albums.map(a => {
       const P = global.PROGRESS;
       const pcts = a.songs.map(s =>
-        P.songPct(setFor('song', s.folder), P.shapeFor(shape, 'song', s.folder)));
+        P.songPct(setFor('song', s.folder), P.shapeFor(shape, 'song', s.folder), todosFor(s)));
       const w = Math.round(
         P.albumPct(setFor('album', a.slug), pcts, P.shapeFor(shape, 'album', a.slug)));
       const done = pcts.filter(p => p >= 100).length;

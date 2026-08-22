@@ -1822,7 +1822,7 @@
 <script src="core.js?v=31"></script>
 <!-- The two checklists and the arithmetic. No DOM, no network; it throws at
      load if the weights stop summing to 100, which is deliberate. -->
-<script src="progress.js?v=15"></script>
+<script src="progress.js?v=16"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -2537,8 +2537,18 @@ function ticksFor(scope, ref){
 // A song with no folder is a legacy flat row with no stable key to hang
 // progress on. It gets no bar rather than a bar that cannot be saved.
 const progressable = (s) => !!(s && s.folder) && !!window.PROGRESS;
+// His to-do list for a song IS its root comments, so the bar counts them the
+// same way the to-do modal's Open/Resolved tabs do — rootsFor(), replies
+// excluded. Counting replies too would put a number on the bar that disagrees
+// with the tab heading right beside it.
+function todosOf(s){
+  const roots = (s && s.id) ? rootsFor(s.id) : [];
+  let open = 0, done = 0;
+  for (const c of roots) (c.resolved ? done++ : open++);
+  return { open, done };
+}
 const songPctOf = (s) => progressable(s)
-  ? PROGRESS.songPct(ticksFor('song', s.folder), shapeOf('song', s.folder)) : 0;
+  ? PROGRESS.songPct(ticksFor('song', s.folder), shapeOf('song', s.folder), todosOf(s)) : 0;
 // WHAT AN ALBUM IS HERE, because the first cut of this got it wrong and it is
 // worth writing down so nobody repeats it. A `project` is NOT an album: it is a
 // share link minted by the film-strip button, and there are a dozen of them
@@ -4236,6 +4246,11 @@ async function loadComments(){
   } catch { return; }   // offline / stale password — leave what we have
   if (activeSong){ refreshListBadges(); renderComments(); renderMarkers(); }
   else if (songs.length) refreshListBadges();
+  // The notes are part of every bar now, and this call lands after the bars
+  // were first drawn — so they are wrong until it does. Redraw them here or a
+  // song sits on its checklist-only number until something else happens to
+  // refresh it.
+  if (songs.length) refreshProgressNumbers();
   // The upload dialog shows this same list, so a refresh that lands while it is
   // open has to reach it too — otherwise a note a bandmate resolved a moment ago
   // is still sitting there with a tickbox beside it.
@@ -4335,7 +4350,9 @@ async function toggleResolve(cid, resolve){
     const i = list.findIndex(c => c.id === cid);
     if (i !== -1) list[i] = { ...list[i], ...mapRow({ ...row, dismissed_versions: list[i].dismissedVersions }) };
   } catch (err){ alert('Could not update: ' + (err.message || err)); return; }
-  renderComments(); renderMarkers(); refreshListBadges();
+  // Resolving a note is worth +4 to the song and takes back the -1 it was
+  // costing, so the bar has to move on the same click that moved the dot.
+  renderComments(); renderMarkers(); refreshListBadges(); refreshProgressNumbers();
 }
 async function toggleDismiss(cid, versionId, dismiss){
   if (!activeSong) return;

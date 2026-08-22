@@ -2828,8 +2828,13 @@ function wireAcc(el){
           alert('Could not delete that: ' + (err.message || err)); loadProgress();
         });
       } else {
-        // A built-in, taken off this one song. Reversible from the chip, so it
-        // does not ask first.
+        // A built-in, taken off this one song. Reversible from the chip below,
+        // so this used to go through without asking. It asks now, at his word
+        // on 22 Aug ("if I am removing, ask me if I'm sure first"), unqualified
+        // as to which kind. Worded to say it IS reversible, so the two prompts
+        // are not mistaken for each other: the one above warns that typed words
+        // are gone for good, this one only confirms the intent.
+        if (!confirm('Remove this step from this one? You can put it back from the chip below.')) return;
         progShape.hidden = progShape.hidden.concat(
           [{ scope: el.dataset.scope, ref: el.dataset.ref, key }]);
         ticksFor(el.dataset.scope, el.dataset.ref).delete(key);

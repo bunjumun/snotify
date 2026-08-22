@@ -13,6 +13,17 @@
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
 
+// The glass tube's own dimensions, in the 1x model space everything here is
+// built in. Kept beside the class rather than inside it because the containment
+// test and the CylinderGeometry in the constructor have to agree exactly, and
+// two copies of 2.6 in different scopes is how they stop agreeing.
+const TUBE_TOP = 2.6;
+const BORE_BOTTOM = 0.62;
+const BORE_TOP = 0.42;
+// Where the downstem lands on the tube axis, and so where the vortex starts.
+// Same figure throatPoint() returns; see its note for how it is derived.
+const THROAT_Y = 0.637;
+
 export class Bong {
   constructor(position, rng) {
     const P = CFG.palette;
@@ -83,6 +94,128 @@ export class Bong {
     this.light = new THREE.PointLight(CFG.bong.hueWhenReady, 0, CFG.bong.humRadius * 0.7, 1.4);
     this.light.position.y = 1.2;
     this.group.add(this.light);
+  }
+
+  /**
+   * A point modelled at 1x, in world space. Everything in the constructor is
+   * built at 1x and then scaled and spun as one object, so a landmark on the
+   * prop has to be put through the same two steps to come out in the right
+   * place — and the spin is per-bong and random, so skipping it puts the bowl
+   * on the wrong side of four bongs out of five.
+   */
+  _localToWorld(out, x, y, z) {
+    const s = this.scale, r = this.group.rotation.y;
+    const c = Math.cos(r), sn = Math.sin(r);
+    return out.set(
+      this.position.x + (x * c + z * sn) * s,
+      this.position.y + y * s,
+      this.position.z + (-x * sn + z * c) * s,
+    );
+  }
+
+  /**
+   * The bowl, out on the end of the downstem — where the pull draws her IN.
+   * Matches the cone's own placement in the constructor; keep the two together.
+   */
+  bowlPoint(out) { return this._localToWorld(out, 0.86, 1.42, 0); }
+
+  /**
+   * Where the downstem actually meets the tube axis — the far end of the stem,
+   * not the middle of it. Derived from the stem mesh rather than guessed: it is
+   * 1.1 long, centred (0.42, 1.0), laid over at -0.85 rad, so its ends land on
+   * (0.833, 1.363), which is the bowl, and (0.007, 0.637), which is this. Note
+   * it is BELOW the bowl and below the waterline: the way in goes down the stem
+   * before it goes up the tube, and a path that does not dip here leaves the
+   * glass through the side.
+   */
+  throatPoint(out) { return this._localToWorld(out, 0, 0.637, 0); }
+
+  /** The top of the tube — where she is fired OUT. Tube is 2.6 tall, centred at 1.3. */
+  mouthPoint(out) { return this._localToWorld(out, 0, 2.6, 0); }
+
+  /** The middle of the glass, which is what a camera should frame the prop by. */
+  framePoint(out) { return this._localToWorld(out, 0, 1.3, 0); }
+
+  /**
+   * A point on the vortex: a helix rising up the inside of the tube, from the
+   * throat to the mouth, which is what the group is drawn up on (CR-30).
+   *
+   * The orbit radius is taken as a share of the BORE AT THAT HEIGHT rather than
+   * a fixed distance, so the spiral automatically narrows with the glass, and
+   * then narrows again on top of that toward the mouth. The two together make
+   * it funnel into the hole instead of running parallel to the wall and
+   * arriving off to one side of it.
+   *
+   * @param {THREE.Vector3} out
+   * @param {number} u 0 at the throat, 1 at the mouth
+   * @param {number} turns how many times round on the way up
+   * @param {number} radiusFrac share of the bore to orbit at
+   * @param {number} [phase] where on the circle it starts
+   */
+  vortexPoint(out, u, turns, radiusFrac, phase = 0) {
+    const k = u < 0 ? 0 : u > 1 ? 1 : u;
+    const y = THROAT_Y + (TUBE_TOP - THROAT_Y) * k;
+    const bore = BORE_BOTTOM + (BORE_TOP - BORE_BOTTOM) * (y / TUBE_TOP);
+    const r = bore * radiusFrac * (1 - k * 0.55);
+    const a = phase + k * turns * Math.PI * 2;
+    return this._localToWorld(out, Math.cos(a) * r, y, Math.sin(a) * r);
+  }
+
+  /** The bore radius at a world point's height, in world units. Read-only. */
+  boreAt(p) {
+    const y = Math.min(TUBE_TOP, Math.max(0, (p.y - this.position.y) / this.scale));
+    return (BORE_BOTTOM + (BORE_TOP - BORE_BOTTOM) * (y / TUBE_TOP)) * this.scale;
+  }
+
+  /**
+   * The inside of the glass, as a hard boundary (CR-30).
+   *
+   * Clamps a world point into the tube and returns the bore RADIUS available at
+   * that height, in world units, so the caller can also size itself to fit.
+   * Nothing gets out through the side while this is being applied: the tube is
+   * the wall, and the only way on is up and out of the mouth.
+   *
+   * The bore tapers — 0.62 local at the water, 0.42 at the mouth — so the room
+   * a rider has depends on how far up it has got, which is the taper doing the
+   * distortion for free rather than a number anyone has to tune.
+   *
+   * @param {THREE.Vector3} p world point, clamped in place
+   * @param {number} [clearance] world units to stay off the glass by
+   * @param {number} [amount] 0..1 how much of the correction to apply. Below 1
+   *   the point is eased toward the wall's answer rather than snapped to it,
+   *   which is what lets the glass switch on without a jolt as they enter it.
+   * @returns {number} world-space bore radius at the clamped height
+   */
+  containInTube(p, clearance = 0, amount = 1) {
+    const s = this.scale, r = this.group.rotation.y;
+    const c = Math.cos(r), sn = Math.sin(r);
+    // World to local. The forward map in _localToWorld is
+    //   wx = px + (x*c + z*sn)*s ,  wz = pz + (-x*sn + z*c)*s
+    // so this is its exact inverse, not an approximation of it.
+    const dx = (p.x - this.position.x) / s, dz = (p.z - this.position.z) / s;
+    let x = dx * c - dz * sn;
+    let z = dx * sn + dz * c;
+    let y = (p.y - this.position.y) / s;
+
+    // The tube runs 0 to 2.6. Held inside both ends: the base is solid and the
+    // mouth is not a way out until the launch takes over from this.
+    y = y < 0 ? 0 : y > TUBE_TOP ? TUBE_TOP : y;
+    const bore = BORE_BOTTOM + (BORE_TOP - BORE_BOTTOM) * (y / TUBE_TOP);
+    const room = Math.max(0, bore - clearance / s);
+
+    const rho = Math.hypot(x, z);
+    if (rho > room) { const k = room / rho; x *= k; z *= k; }
+
+    const wx = this.position.x + (x * c + z * sn) * s;
+    const wy = this.position.y + y * s;
+    const wz = this.position.z + (-x * sn + z * c) * s;
+    if (amount >= 1) p.set(wx, wy, wz);
+    else {
+      p.x += (wx - p.x) * amount;
+      p.y += (wy - p.y) * amount;
+      p.z += (wz - p.z) * amount;
+    }
+    return bore * s;
   }
 
   /**

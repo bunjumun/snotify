@@ -58,6 +58,13 @@ export const State = { TITLE: 'title', PLAY: 'play', PAUSED: 'paused', DEAD: 'de
 /** One rider per band member. They only ever come into frame on the bong orbit. */
 const RIDERS = 4;
 
+// How much of the trip through the bong is spent in the downstem rather than in
+// the tube. Kept in step with Trip's PIPE_ENDS, which is where she stops being
+// squeezed thin and starts being smushed against the chamber glass: the shape
+// has to change at the same instant the path does, or she is still stem-sized
+// out in the open tube, or chamber-sized while still in the pipe.
+const PIPE_LEG = 0.42;
+
 // Public by design — see supabase/schema-v19.sql. lore_active() serves only the
 // draft the band deliberately promoted, which is why it needs no password.
 const LORE_URL = 'https://twgukeyoayfqldnojrkg.supabase.co';
@@ -285,14 +292,22 @@ export class Game {
       // at the bowl would read as late.
       this.audio?.tripStart();
       // Where she was when the bong caught her, so the PULL beat (Game.update)
-      // has a start point to lerp from toward the bowl's mouth.
+      // has a start point to reel her in from. Her velocity is deliberately NOT
+      // cleared here: the pull derives it from her real movement each frame, and
+      // stopping her dead on contact was half of the jolt at the start of the
+      // sequence.
       this._pullFrom = (this._pullFrom || new THREE.Vector3()).copy(this.kelpie.position);
-      this.kelpie.velocity.set(0, 0, 0);
     };
     // She's arrived at the bowl (CR-30's PULL beat has finished) — this is
     // everything that used to fire on contact, moved to fire on arrival instead,
     // so the launch reads as coming FROM the bong rather than from the tap.
     this.trip.onPullEnd = () => {
+      // Out of the top at full size. Reset here rather than trusting the last
+      // PULL frame to have landed on zero: the shape is only written inside the
+      // pull branch, so whatever it held on the final frame would otherwise
+      // stick for the rest of the run.
+      this.kelpie.setPullShape(0, 0, 0);
+      for (const d of this.divers) d.setPullShape(0, 0);
       // Everything at once. This is the moment the whole run is paid for, and it
       // costs a whole bowl — it is allowed to be too much.
       // Fewer than it was, and it is the same note as the rise time: 120 bubbles
@@ -421,6 +436,11 @@ export class Game {
     if (this.state === State.DEAD) return;
     this.state = State.DEAD;
     this.trip.cancel();
+    // Dying mid-pull is near impossible (the hit refills the tank), but the
+    // death screen watches her sink for as long as he leaves it there, and a
+    // horse sinking at a fifth of her size would be a strange last image.
+    this.kelpie.setPullShape(0, 0, 0);
+    for (const d of this.divers) d.setPullShape(0, 0);
     this.audio?.death();
     document.getElementById('death').classList.remove('hide');
   }
@@ -534,18 +554,71 @@ export class Game {
     }
 
     // ---- CR-30: the PULL beat ----
-    // Stretch-pulled to the bong's mouth before anything else about the hit
-    // fires. Overriding position (not just the visual group) rather than
-    // driving her there with force, because the riders' rope sim reads its
-    // anchor off gripPoint() every frame (_followEntities, right below) — move
-    // her logical position and the whole rope follows for free, which is what
+    // In through the BOWL and out of the TOP, which is the path he asked for
+    // and not the one this first shipped with: the first cut drew her straight
+    // to the mouth, so she went in the wrong end of the thing.
+    //
+    // Overriding position (not just the visual group) rather than driving her
+    // there with force, because the riders' rope sim reads its anchor off
+    // gripPoint() every frame (_followEntities, right below) — move her logical
+    // position and the whole rope funnels in behind her for free, which is what
     // sells "horse AND riders" without a second system for the riders alone.
     if (this.trip.phase === TripPhase.PULL && this._tripBong && this._pullFrom) {
-      const mouth = this._pullTo || (this._pullTo = new THREE.Vector3());
-      mouth.copy(this._tripBong.position);
-      mouth.y += this._tripBong.useHeight * 1.15; // the mouth, not the bowl — see Bong.plume()
-      this.kelpie.position.lerpVectors(this._pullFrom, mouth, this.trip.pullT);
-      this.kelpie.velocity.set(0, 0, 0);
+      const b = this._tripBong;
+      const p = this._pullTo || (this._pullTo = new THREE.Vector3());
+      const was = this._pullPrev || (this._pullPrev = new THREE.Vector3());
+      was.copy(this.kelpie.position);
+      if (this.trip.pullThrough <= 0) {
+        // Reeled in to the bowl, out on the end of the downstem.
+        b.bowlPoint(p);
+        this.kelpie.position.lerpVectors(this._pullFrom, p, this.trip.pullIn);
+      } else {
+        // Then down the stem and up the glass, as two straight runs rather than
+        // one curve. A quadratic through the throat was the first attempt and it
+        // was wrong in a way that showed: a bezier never reaches its control
+        // point, so she cut the corner and left through the side of the stem.
+        // The prop's own path has a real kink in it — the stem runs DOWN from
+        // the bowl to below the waterline before the tube goes up — and the only
+        // way to stay inside the glass is to follow both legs of it.
+        const q = this._pullVia || (this._pullVia = new THREE.Vector3());
+        const t = this.trip.pullThrough;
+        if (t < PIPE_LEG) {
+          // Down the stem, straight, because the stem is straight.
+          b.bowlPoint(p); b.throatPoint(q);
+          this.kelpie.position.lerpVectors(p, q, t / PIPE_LEG);
+        } else {
+          // Then up the vortex rather than straight up the middle: a helix from
+          // the throat to the mouth, tightening as it climbs, entirely inside
+          // the bore. See Bong.vortexPoint().
+          const T = CFG.trip;
+          b.vortexPoint(this.kelpie.position, (t - PIPE_LEG) / (1 - PIPE_LEG),
+            T.pullVortexTurns, T.pullVortexRadius);
+        }
+      }
+      // The glass is a wall while she is in the chamber: she is clamped inside
+      // the bore rather than merely aimed along a path that ought to stay in it.
+      // The clamp also reports how much room she has, and her girth is sized to
+      // that, so the tube's own taper squeezes her as she rises. Done BEFORE the
+      // velocity below, so what she reports moving is where she actually ended
+      // up rather than where the path wanted to put her.
+      if (this.trip.chamber > 0.01) b.containInTube(this.kelpie.position, 0.2, this.trip.chamber);
+      // Velocity follows the pull rather than being zeroed. Killing it outright
+      // stopped her dead on contact while the eased pull started from nothing,
+      // which read as a hitch at exactly the moment the sequence begins — and it
+      // lied to everything downstream that reads velocity, including the
+      // camera's look-ahead and her own speed uniform. Deriving it from the
+      // movement she is actually making keeps all of that honest, and leaves her
+      // carrying real upward speed out of the mouth for blastOff to build on.
+      if (dt > 0) this.kelpie.velocity.copy(this.kelpie.position).sub(was).divideScalar(dt);
+      // Drawn out on the way in, tiny for the whole trip through, and turned to
+      // face the hole she is about to be fired through.
+      this.kelpie.setPullShape(this.trip.stretch, this.trip.inside, this.trip.chamber);
+      this.kelpie.setPullAim(this.trip.aim);
+      for (const d of this.divers) d.setPullShape(this.trip.inside, this.trip.chamber);
+      // The bong reacting with them inside it. sustain() rather than addShake()
+      // for the reason its own comment gives: this is a state that lasts, and a
+      // per-frame top-up cannot hold a level against a linear decay.
+      if (this.trip.inside > 0.05) this.rig.sustain(0.18 * this.trip.inside);
     }
 
     this._followEntities(dt);
@@ -596,6 +669,20 @@ export class Game {
     this.rig.orbitCenter = this.trip.wideness > 0.0001 && this._tripBong
       ? this._orbitMid(this._tripBong, this.trip.wideness)
       : null;
+    // Two shots inside the one pull. Wide while she is reeled in, then in close
+    // on the glass while she rides up it, which is the only way to actually see
+    // four riders at a fifth of their size inside a tube. Set during the pull
+    // only: the rise leaves them where the pull left them and fades `wideness`
+    // instead, so the shot opens out from the close-up to the usual orbit.
+    if (this.trip.phase === TripPhase.PULL) {
+      const T = CFG.trip;
+      // Over the first third of the trip up the glass, so the push-in is a move
+      // rather than a snap the moment she reaches the bowl.
+      const k = Math.min(1, this.trip.pullThrough / 0.33);
+      const closeness = k * k * (3 - 2 * k);
+      this.rig.wideRadius = THREE.MathUtils.lerp(T.pullRadius, T.pullCloseRadius, closeness);
+      this.rig.wideElevation = THREE.MathUtils.lerp(T.pullElevation, T.pullCloseElevation, closeness);
+    }
 
     // ---- FX ----
     const react = this.audio?.react ?? { low: 0, mid: 0, high: 0, kick: 0 };
@@ -728,10 +815,22 @@ export class Game {
     // strung along it — the first holds on, everyone else holds the man in
     // front. It also means rider 0 losing his grip takes the whole line with
     // him, which is the correct and much funnier outcome.
+    // The rope reels right in for the stem and stays short in the chamber, so
+    // the line of them goes into the glass with her instead of streaming out
+    // through the side of it. Two different lengths for the two bores.
+    const T = CFG.trip;
+    const reel = THREE.MathUtils.lerp(
+      1, THREE.MathUtils.lerp(T.pullPipeReel, T.pullChamberReel, this.trip.chamber), this.trip.inside);
+    // Same wall the kelpie gets, handed to the rope solver so it is negotiated
+    // rather than imposed. Ramped by `chamber` so the glass fades in as they
+    // arrive in the tube instead of appearing around them, and gated on it too
+    // because the stem leg runs OUTSIDE the tube's bore and must not be clamped
+    // into it.
+    const walled = this.trip.chamber > 0.01 && this._tripBong ? this._tripBong : null;
     for (let i = 0; i < this.divers.length; i++) {
       if (i === 0) this.kelpie.gripPoint(anchor);
       else this.divers[i - 1].hitchPoint(anchor);
-      this.divers[i].update(dt, anchor, this.kelpie);
+      this.divers[i].update(dt, anchor, this.kelpie, reel, walled, this.trip.chamber);
     }
 
     // He is not in frame while you're navigating. The camera sits at his eyeline
@@ -742,14 +841,18 @@ export class Game {
     // The exception is non-negotiable: once he's adrift you have to be able to
     // find him, and hiding the thing the player is required to go and collect is
     // not a camera decision, it's a bug.
-    // CR-30 moved the reveal earlier: they now show for the whole cinematic
-    // rather than from the orbit alone, because the pull-in IS the reveal now
-    // and it happens before the orbit blooms. Gating on orbitWeight for the
-    // front of the sequence made them flicker — visible through PULL, hidden
-    // again for the first fifth of a second of RISE while orbitWeight was still
-    // under the threshold, then back. The taper side stays on orbitWeight, so
-    // they still fade out as the camera comes home rather than snapping off.
-    const showDiver = this.trip.cinematic || this.rig.orbitWeight > 0.02 || this.diver.adrift;
+    // Back on orbitWeight alone, and it matters that it is not `trip.cinematic`.
+    // Revealing them the instant the pull starts put four bodies and a lamp glow
+    // into existence one frame after contact, directly in front of a camera that
+    // had not begun to swing out yet — which is the jarring jump at the start of
+    // the sequence he reported on 22 Aug. On orbitWeight they arrive a tenth of
+    // a second later, while the camera is already moving, which is what masked
+    // the same pop before any of this existed.
+    //
+    // The flicker that first drove the change cannot come back: orbitWeight used
+    // to restart from 0 in RISE, and now it ramps once during PULL and stays at
+    // 1 until the taper, so this reads monotonically across the whole sequence.
+    const showDiver = this.rig.orbitWeight > 0.02 || this.diver.adrift;
     for (const d of this.divers) d.group.visible = showDiver;
     // The helmet lens glows go with them. They mark where the flashlights ARE,
     // which is worth seeing when you can see who's holding them and is otherwise
@@ -929,8 +1032,7 @@ export class Game {
    */
   _orbitMid(bong, wide) {
     const m = this._orbitMidV || (this._orbitMidV = new THREE.Vector3());
-    m.copy(bong.position);
-    m.y += bong.useHeight * 1.15;          // the mouth, not the bowl
+    bong.framePoint(m);                    // the middle of the glass
     m.lerp(this.kelpie.position, 0.5);     // the tableau's middle
     return m.lerp(this.kelpie.position, 1 - wide);
   }

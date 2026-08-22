@@ -705,9 +705,63 @@ export const CFG = {
     // the camera swings out wide and makes one full circuit of the horse, the
     // riders and the bong while she is drawn in. A revolution needs time to
     // read — at 0.45s it would have been a whip-pan, which is a different and
-    // much worse effect. This lengthens the uncontrollable stretch to about
-    // 13.7s all in (2.2 + 1.5 rise + 10 hold), against 11.5s before.
-    pullTime: 2.2,
+    // much worse effect.
+    //
+    // **Then 2.2 -> 5.5 at his word the same day: "spend more time on the
+    // getting pulled into bong and launched part, and make the launch and
+    // travel happen faster, so the sequence takes the same amount of time but
+    // there is more spent on the bong part."** The total is held exactly: 5.5 +
+    // 1.5 rise + 6.7 hold is 13.7s, the same as 2.2 + 1.5 + 10 was. What moved
+    // is where the time is spent. The rise was deliberately NOT cut to pay for
+    // it — see riseTime below, whose length is the whole of an earlier fix.
+    pullTime: 5.5,
+    // Of that pull, the share spent getting her to the stem opening. The rest is
+    // her travelling through the glass and out the top.
+    // **0.34 -> 0.13 at his word, 22 Aug: "have the group go straight to the
+    // pipe stem opening as soon as bong is triggered, there is a few second lull
+    // before they find their way around."** That lull was this number: 1.9s of
+    // being reeled in, on a curve that eased out of nothing, so the first half
+    // second after the trigger barely moved them. Now it is 0.7s and the curve
+    // starts at full speed (see Trip's PULL case), so the bong takes them the
+    // instant it fires. It also buys the inside of the bong another 1.2s, which
+    // is where he wanted the time spent anyway.
+    pullInFraction: 0.13,
+    // How far she draws out while being reeled in, as a fraction of her length.
+    // Volume is preserved (see Kelpie.setPullShape), so she thins as she pulls.
+    pullStretch: 0.9,
+    // Two different shapes inside the bong, not one, at his word on 22 Aug:
+    // "they should be smushed against the glass sort of when they are inside,
+    // not so tiny once in the bong, just tiny as they pass through the pipe."
+    //
+    // THE PIPE — the downstem, bore 0.84 across. Nothing goes through that at
+    // any appreciable size, so this is the tiny one.
+    pullPipeShrink: 0.12,
+    // THE CHAMBER — the glass tube, bore 5.2 across at the water and 3.5 at the
+    // mouth, and 10.9 tall.
+    //
+    // **The smush is gone, at his word on 22 Aug: "the horse is still bloating
+    // out of the tube boundaries, i'd prefer we go back to tiny characters
+    // following a vortex up the stem of the tube inside of the tube's
+    // boundaries."** Bulging her girth to press the glass could not be made to
+    // work, and the reason is worth keeping: containment clamps where she IS,
+    // her POSITION, while the bulge scales how big she is. Put her centre on the
+    // axis and swell her past the bore and she is still, correctly, contained —
+    // and still visibly outside the glass. Sizing her to fit needs her real
+    // silhouette, not her origin, and that is a bounding-volume problem the
+    // clamp was never going to solve by tightening a number.
+    //
+    // Tiny sidesteps it completely: at a fifth of herself nothing she has can
+    // reach the glass, so the boundary holds without having to measure her.
+    pullChamberScale: 0.2,
+    // The vortex she rides up on. Turns are how many times round on the way up,
+    // radius is the share of the bore she orbits at, and the spiral tightens
+    // toward the mouth on its own so it funnels rather than running parallel.
+    pullVortexTurns: 2.5,
+    pullVortexRadius: 0.5,
+    // The riders' rope shortens to these, so the line of them stays in the
+    // glass with her rather than trailing eighteen units out through the side.
+    pullPipeReel: 0.12,
+    pullChamberReel: 0.3,
     // One full circuit. **Any value is safe to change this to, including a
     // fractional one** — the rig carries wherever the pull left the angle
     // through into the hold as `orbitPhase`, so the two always run on without a
@@ -722,10 +776,24 @@ export const CFG = {
     // Wide enough to hold the whole tableau. The glass is over 12 tall, the
     // kelpie 5.2 nose to tail, and four riders string out on ~4.5 units of rope
     // behind her, so the thing being circled is roughly 30 across.
-    pullRadius: 40,
+    // **40 -> 30 at his word, 22 Aug: "don't zoom quite as far out."**
+    pullRadius: 30,
     pullElevation: 14,   // looking down on it a little, not level with it
+    // And then it comes IN, once she is in the glass — also his: "give us a
+    // view of the squished kelpie and divers inside of the bong tube." The
+    // reel-in is the wide shot, the trip up the tube is this one. Close enough
+    // to read four riders at a fifth of their size through 42% opaque glass.
+    // **9 -> 14 after looking at it:** at 9 the camera was close enough that the
+    // base and the water cylinder filled the frame and she was a dark speck
+    // behind them. 14 sits outside the glass looking in, which is the shot.
+    pullCloseRadius: 14,
+    pullCloseElevation: 4,
     riseTime: 1.5,
-    holdTime: 10.0,       // exactly one camera revolution
+    // Still exactly one camera revolution, just a quicker one: 10 -> 6.7 to pay
+    // for the longer pull without lengthening the whole sequence. The travel it
+    // covers was sped up to match (see the launch block below), so she still
+    // arrives among the fish well inside it rather than being cut off short.
+    holdTime: 6.7,
     taperTime: 60.0,
     orbitRadius: 21,      // wider than it needs to be, on purpose
     orbitElevation: 7.0,
@@ -749,13 +817,21 @@ export const CFG = {
     // this launched her ninety-six units on a fifty-two unit budget and nearly
     // put her through the surface. Steering the velocity instead means the
     // ceiling is where she actually stops.
-    launchKick: 14,       // instant vertical shove on the hit — this is the bang
-    launchClimb: 30,      // units/sec she's driven toward while the lift lasts
-    launchTime: 3.2,      // seconds a straight-up climb lasts (x3 when school-bound)
+    // **All sped up on 22 Aug at his word ("make the launch and travel happen
+    // faster").** The hold that contains this travel came down from 10s to
+    // 6.7s to pay for the longer pull, so the climb has to cover the same
+    // ground in about two thirds of the time or she would still be on her way
+    // up when the camera came home. The ceiling logic is what makes this safe
+    // to raise: the climb is a velocity TARGET against a computed ceiling, not
+    // a force, so a faster climb still stops where it was always going to stop
+    // rather than overshooting through the surface.
+    launchKick: 20,       // instant vertical shove on the hit — this is the bang
+    launchClimb: 48,      // units/sec she's driven toward while the lift lasts
+    launchTime: 2.2,      // seconds a straight-up climb lasts (x3 when school-bound)
     launchArrive: 10,     // how close to the school counts as having arrived
-    launchSeek: 8.0,      // seconds she'll chase one before giving up on it
-    launchEase: 16,       // units below the ceiling where she starts arriving
-    launchSpeed: 22,      // extra speed cap, or the clamp eats the climb
+    launchSeek: 5.0,      // seconds she'll chase one before giving up on it
+    launchEase: 22,       // units below the ceiling where she starts arriving
+    launchSpeed: 36,      // extra speed cap, or the clamp eats the climb
     launchRise: 52,       // how far above the hit she can get
   },
 

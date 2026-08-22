@@ -780,6 +780,72 @@ export class Kelpie {
   }
 
   /**
+   * The shape she takes while the bong has hold of her (CR-30).
+   *
+   * Two things, at two moments on the way through:
+   *
+   * - `stretch` draws her out along her length as she is reeled to the bowl.
+   *   Volume preserving, so she thins as she draws — which is the difference
+   *   between reading as squash-and-stretch and reading as a scaling bug.
+   * - `inside` shrinks her, uniformly, for the whole time the bong has her.
+   *
+   * **The shrink is what makes the glass hold.** An earlier cut bulged her
+   * girth to press the tube instead, and it could not be made to work: the
+   * containment clamps her ORIGIN and the bulge scales her BODY, so a horse
+   * correctly held on the axis still had her flanks outside the glass. Sizing
+   * to fit would mean testing her real silhouette against the bore every frame.
+   * Small enough that nothing she has can reach the wall sidesteps all of it.
+   *
+   * Local Z is her long axis, the same one gripPoint() measures along.
+   *
+   * @param {number} stretch 0..1 drawn out toward the bowl
+   * @param {number} inside 0..1 how far into the bong she is
+   * @param {number} chamber 0..1 in the tube rather than the stem. Only picks
+   *   which of the two sizes she is at: the stem's bore is a fifth of the
+   *   tube's and cannot hold her at the size the tube can.
+   */
+  setPullShape(stretch, inside, chamber) {
+    const T = CFG.trip;
+    const s = THREE.MathUtils.clamp(stretch, 0, 1);
+    const i = THREE.MathUtils.clamp(inside, 0, 1);
+    const m = THREE.MathUtils.clamp(chamber, 0, 1);
+    const drawn = 1 + s * T.pullStretch;
+    const thin = 1 / Math.sqrt(drawn);
+    const size = THREE.MathUtils.lerp(
+      1, THREE.MathUtils.lerp(T.pullPipeShrink, T.pullChamberScale, m), i);
+    this.group.scale.set(thin * size, thin * size, drawn * size);
+  }
+
+  /**
+   * Turn her nose up the tube, so the top hole is dead ahead before she is
+   * fired out of it (CR-30).
+   *
+   * Written straight onto the quaternion rather than through `pitch`, and that
+   * is not a shortcut: `pitch` is clamped to CFG.kelpie.pitchClamp, 1.15 rad or
+   * about 66 degrees, to stop the horizon flipping during normal swimming. This
+   * needs a full 90, so going through the clamped field would leave her aimed a
+   * quarter of the way off the hole she is about to go through. The group's
+   * quaternion is written too because update() has already run by the time this
+   * is called, and would otherwise not see the change until the next frame.
+   *
+   * The base pitch is latched on the first frame of the aim so the turn eases
+   * from wherever she happened to be, rather than re-lerping from a moving
+   * value and easing at the wrong rate.
+   *
+   * @param {number} amount 0..1, 1 being nose straight up
+   */
+  setPullAim(amount) {
+    const a = THREE.MathUtils.clamp(amount, 0, 1);
+    if (a <= 0) { this._aimFrom = null; return; }
+    if (this._aimFrom == null) this._aimFrom = this.pitch;
+    const e = this._aimEuler || (this._aimEuler = new THREE.Euler(0, 0, 0, 'YXZ'));
+    e.set(THREE.MathUtils.lerp(this._aimFrom, Math.PI / 2, a), this.yaw, this.roll, 'YXZ');
+    this.quaternion.setFromEuler(e);
+    this.forward.set(0, 0, -1).applyQuaternion(this.quaternion);
+    this.group.quaternion.copy(this.quaternion);
+  }
+
+  /**
    * The bong hit: she comes up out of the dark and keeps climbing through the
    * whole orbit.
    *
@@ -1054,6 +1120,8 @@ export class Kelpie {
     this._yawVel = this._pitchVel = 0;
     this.surge = 0; this.kickPulse = 0; this._kickCd = 0; this.kicked = false;
     this.lift = 0; this._climbTarget = null; this._climbT = 0;
+    this.group.scale.set(1, 1, 1);   // a retry must not inherit a bong's grip on her
+    this._aimFrom = null;
     this.quaternion.setFromEuler(new THREE.Euler(0, this.yaw, 0, 'YXZ'));
     this.forward.set(0, 0, -1).applyQuaternion(this.quaternion);
     this.group.position.copy(this.position);

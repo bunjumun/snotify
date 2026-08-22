@@ -49,6 +49,9 @@ class Point {
   }
 }
 
+/** How far off the glass a rider is held, in world units. */
+const WALL_CLEARANCE = 0.15;
+
 export class Diver {
   /**
    * @param {number} [index] which rider on the rope, 0 = the one at her back and
@@ -299,7 +302,18 @@ export class Diver {
   }
 
   /** @param {THREE.Vector3} anchor where the kelpie's grip point is this frame */
-  update(dt, anchor, kelpie) {
+  /**
+   * @param {number} [reel] 1 normally. Below 1 the rope is shortened by that
+   *   factor, which is how the riders get INTO the bong with her (CR-30) rather
+   *   than trailing eighteen units of rope out through the side of the glass.
+   *   Fed through the constraint rather than by moving the nodes, so the solver
+   *   draws them in over a few frames instead of teleporting them.
+   * @param {import('./Bong.js').Bong|null} [wall] the glass to stay inside of,
+   *   or null out in open water.
+   * @param {number} [wallAmount] 0..1 how firmly the glass holds them, ramped
+   *   so it comes on as they enter rather than switching on under them.
+   */
+  update(dt, anchor, kelpie, reel = 1, wall = null, wallAmount = 1) {
     const D = CFG.diver;
 
     // ---- Grip strain ----
@@ -324,10 +338,25 @@ export class Diver {
     }
 
     this._integrate(this.chain, dt, D.drag, D.gravity);
-    for (let it = 0; it < D.solverIterations; it++) this._constrain(this.chain, D.linkLength, D.stiffness);
+    // The glass is solved WITH the rope, not after it. Clamping once at the end
+    // of the frame set the two against each other: the constraint pass pushed a
+    // man out through the tube to keep his link length, the clamp shoved him
+    // back, and the pair of them traded him back and forth every frame, which is
+    // the containment glitching. Inside the loop they negotiate instead, exactly
+    // as a verlet collision constraint is meant to.
+    const link = D.linkLength * reel;
+    for (let it = 0; it < D.solverIterations; it++) {
+      this._constrain(this.chain, link, D.stiffness);
+      if (wall) for (const n of this.chain) wall.containInTube(n.pos, WALL_CLEARANCE, wallAmount);
+    }
+    // `prev` is deliberately NOT clamped. Dragging it along with the position
+    // zeroes the implied velocity, and a rope with no velocity at the wall goes
+    // dead and then snaps when it is let go. Leaving it lets the contact bleed
+    // off as damping, which is what a body sliding against glass should do.
 
     const head = this.chain[this.chain.length - 1];
     this._placeBody(head, dt, kelpie);
+    if (wall) wall.containInTube(this.body.position, WALL_CLEARANCE, wallAmount);
     this._layRope(this.ropeSegs, this.chain);
   }
 
@@ -477,6 +506,28 @@ export class Diver {
     return out;
   }
 
+  /**
+   * Shrink a rider while the bong has him (CR-30). Scaled on `body` and not on
+   * `group`: the rope segments are children of the group positioned in WORLD
+   * space off the chain, so scaling the group would drag them toward the origin
+   * rather than making them smaller. The rope keeps its own thickness, which at
+   * 0.035 units is not something anyone will notice going through a bong.
+   *
+   * Same two sizes the kelpie gets, for the same reason: small enough that
+   * nothing of him can reach the glass, so the tube's boundary holds without
+   * anyone measuring him against it.
+   *
+   * @param {number} inside 0..1 how far into the bong he is
+   * @param {number} chamber 0..1 in the tube rather than the stem
+   */
+  setPullShape(inside, chamber) {
+    const T = CFG.trip;
+    const i = THREE.MathUtils.clamp(inside, 0, 1);
+    const m = THREE.MathUtils.clamp(chamber, 0, 1);
+    this.body.scale.setScalar(THREE.MathUtils.lerp(
+      1, THREE.MathUtils.lerp(T.pullPipeShrink, T.pullChamberScale, m), i));
+  }
+
   setTrip(v) {
     this.glassMat.emissiveIntensity = 0.5 + v * 2.2;
     this.brassMat.metalness = 0.85 - v * 0.3;
@@ -486,6 +537,8 @@ export class Diver {
     this.attached = true;
     this.adrift = false;
     this.grip = CFG.diver.gripMax;
+    this.body.scale.setScalar(1);   // as on the kelpie: no inherited bong shape
+
     // Up and back from the grip, which is where he actually rides.
     for (let i = 0; i < this.chain.length; i++) {
       this.chain[i].pos.copy(anchor).add(this._tmp.set(0, 0.3 * i, CFG.diver.linkLength * i));

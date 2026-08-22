@@ -40,9 +40,14 @@ export class Rig {
     this.orbitWeight = 0;   // 0 = pure follow, 1 = pure orbit
     this.orbitProgress = 0; // 0..1 across the whole revolution
     this.orbitPhase = 0;    // radians the pull already carried the angle through
-    // 0 = the usual orbit, tight on her. 1 = the wide pull framing, which is a
-    // bigger radius around a point that is NOT her: see orbitCenter.
+    // 0 = the usual orbit, tight on her. 1 = the pull framing, which orbits a
+    // point that is NOT her (see orbitCenter) at its own distance. That distance
+    // is not a constant: the pull opens wide while she is reeled in and then
+    // comes right in on the glass while she travels up it, so the game drives
+    // both numbers per frame and these are only the fallbacks.
     this.orbitWide = 0;
+    this.wideRadius = CFG.trip.pullRadius;
+    this.wideElevation = CFG.trip.pullElevation;
     // What to circle, when it should not be the kelpie herself. The pull orbits
     // the whole tableau — her, the riders behind her and the bong she is being
     // drawn into — so the game hands the midpoint in. Null means orbit her, as
@@ -119,13 +124,13 @@ export class Rig {
       const T = CFG.trip;
       const wide = THREE.MathUtils.clamp(this.orbitWide, 0, 1);
       const centre = this.orbitCenter || target.position;
-      const radius = THREE.MathUtils.lerp(T.orbitRadius, T.pullRadius, wide);
+      const radius = THREE.MathUtils.lerp(T.orbitRadius, this.wideRadius, wide);
       // The near-orbit elevation breathes with the sweep; the pull's is steady,
       // because during the pull `orbitProgress` is still 0 and that formula
       // would sit it at its lowest point for the whole circuit.
       const elev = THREE.MathUtils.lerp(
         T.orbitElevation * (0.6 + 0.4 * Math.sin(this.orbitProgress * Math.PI)),
-        T.pullElevation,
+        this.wideElevation,
         wide,
       );
       const a = this.orbitPhase + this.orbitProgress * Math.PI * 2 * T.orbitRevolutions;
@@ -229,6 +234,8 @@ export class Rig {
     this.orbitWide = 0;
     this.orbitPhase = 0;
     this.orbitCenter = null;
+    this.wideRadius = CFG.trip.pullRadius;
+    this.wideElevation = CFG.trip.pullElevation;
     const c = CFG.camera;
     this._back.set(0, c.rideHeight, c.rideBack).applyQuaternion(target.quaternion);
     this._followPos.copy(target.position).add(this._back);

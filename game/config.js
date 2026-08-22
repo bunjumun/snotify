@@ -695,6 +695,12 @@ export const CFG = {
     //
     // This does NOT lengthen the sequence: the hold is a fixed ten seconds of
     // its own and the taper is a minute. It only spends longer arriving.
+    //
+    // pullTime is the beat BEFORE this one, added for CR-30: contact stretch-
+    // pulls her to the bowl before any of the above starts blooming, so the hit
+    // reads as being drawn into the bong rather than detonating on contact.
+    // Short on purpose — it is a snap into place, not its own scene.
+    pullTime: 0.45,
     riseTime: 1.5,
     holdTime: 10.0,       // exactly one camera revolution
     taperTime: 60.0,

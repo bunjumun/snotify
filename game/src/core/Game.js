@@ -42,7 +42,7 @@ import { Difficulty } from '../game/Difficulty.js';
 import { Progress } from '../game/Progress.js';
 import { Breath, BreathState } from '../game/Breath.js';
 import { Stash } from '../game/Stash.js';
-import { Trip } from '../game/Trip.js';
+import { Trip, TripPhase } from '../game/Trip.js';
 import { Intro } from '../game/Intro.js';
 import { Clues } from '../game/Clues.js';
 import { LogPages } from '../game/LogPages.js';
@@ -280,7 +280,19 @@ export class Game {
 
     this.trip = new Trip();
     this.trip.onStart = () => {
+      // Contact. The sound fires here, at the instant of the hit — PULL is the
+      // beat before the payoff, and a hit sound that waited for her to arrive
+      // at the bowl would read as late.
       this.audio?.tripStart();
+      // Where she was when the bong caught her, so the PULL beat (Game.update)
+      // has a start point to lerp from toward the bowl's mouth.
+      this._pullFrom = (this._pullFrom || new THREE.Vector3()).copy(this.kelpie.position);
+      this.kelpie.velocity.set(0, 0, 0);
+    };
+    // She's arrived at the bowl (CR-30's PULL beat has finished) — this is
+    // everything that used to fire on contact, moved to fire on arrival instead,
+    // so the launch reads as coming FROM the bong rather than from the tap.
+    this.trip.onPullEnd = () => {
       // Everything at once. This is the moment the whole run is paid for, and it
       // costs a whole bowl — it is allowed to be too much.
       // Fewer than it was, and it is the same note as the rise time: 120 bubbles
@@ -518,6 +530,21 @@ export class Game {
       this.audio?.sfx('kick', { force: 1 - Math.min(1, this.kelpie.speed / 20) });
     }
 
+    // ---- CR-30: the PULL beat ----
+    // Stretch-pulled to the bong's mouth before anything else about the hit
+    // fires. Overriding position (not just the visual group) rather than
+    // driving her there with force, because the riders' rope sim reads its
+    // anchor off gripPoint() every frame (_followEntities, right below) — move
+    // her logical position and the whole rope follows for free, which is what
+    // sells "horse AND riders" without a second system for the riders alone.
+    if (this.trip.phase === TripPhase.PULL && this._tripBong && this._pullFrom) {
+      const mouth = this._pullTo || (this._pullTo = new THREE.Vector3());
+      mouth.copy(this._tripBong.position);
+      mouth.y += this._tripBong.useHeight * 1.15; // the mouth, not the bowl — see Bong.plume()
+      this.kelpie.position.lerpVectors(this._pullFrom, mouth, this.trip.pullT);
+      this.kelpie.velocity.set(0, 0, 0);
+    }
+
     this._followEntities(dt);
 
     // ---- Breath ----
@@ -702,7 +729,10 @@ export class Game {
     // The exception is non-negotiable: once he's adrift you have to be able to
     // find him, and hiding the thing the player is required to go and collect is
     // not a camera decision, it's a bug.
-    const showDiver = this.rig.orbitWeight > 0.02 || this.diver.adrift;
+    // CR-30: also shown through PULL, or the "horse AND riders" stretch-pull
+    // into the bong plays with an invisible rope — orbitWeight is still 0 here,
+    // this beat comes before the reveal orbit starts blooming in.
+    const showDiver = this.trip.phase === TripPhase.PULL || this.rig.orbitWeight > 0.02 || this.diver.adrift;
     for (const d of this.divers) d.group.visible = showDiver;
     // The helmet lens glows go with them. They mark where the flashlights ARE,
     // which is worth seeing when you can see who's holding them and is otherwise
@@ -870,6 +900,8 @@ export class Game {
   _useBong(bong) {
     this.stash.spend();
     this.breath.fill();
+    // Read by the PULL beat (Game.update) to know where she's being pulled to.
+    this._tripBong = bong;
     this.trip.start();
 
     // The exhale: a cloud where the hit happened, and a smaller one off the

@@ -6,7 +6,8 @@
 // value, so picture and sound cannot drift apart — they aren't synchronised, they
 // are the same number.
 //
-// Four phases:
+// Five phases:
+//   PULL   0.45s  she's stretch-pulled to the bong's mouth; nothing blooms yet
 //   RISE   1.5s   everything blooms in, on a smootherstep
 //   HOLD   10s    exactly one camera revolution at full intensity
 //   TAPER  60s    colour and phaser bleed out slowly...
@@ -16,7 +17,7 @@
 
 import { CFG } from '../../config.js';
 
-export const TripPhase = { IDLE: 'idle', RISE: 'rise', HOLD: 'hold', TAPER: 'taper' };
+export const TripPhase = { IDLE: 'idle', PULL: 'pull', RISE: 'rise', HOLD: 'hold', TAPER: 'taper' };
 
 const CAMERA_RETURN = 1.2; // seconds into the taper before the rig is fully back
 const easeInOut = (t) => t * t * (3 - 2 * t);
@@ -36,20 +37,25 @@ export class Trip {
     this.value = 0;          // uTrip 0..1 — the spine
     this.orbitWeight = 0;    // how much of the orbit camera pose to apply
     this.orbitProgress = 0;  // 0..1 around the circle
+    this.pullT = 0;          // 0..1 through the PULL beat, eased
 
-    this.onStart = null;
+    this.onStart = null;     // contact — fires at the top of PULL
+    this.onPullEnd = null;   // she's arrived at the bowl; RISE (and the launch) begins
     this.onHoldEnd = null;   // camera is coming home; taper begins
     this.onEnd = null;
   }
 
   get active() { return this.phase !== TripPhase.IDLE; }
   /** True only while the camera is off the player — input is ignored here. */
-  get cinematic() { return this.phase === TripPhase.RISE || this.phase === TripPhase.HOLD; }
+  get cinematic() {
+    return this.phase === TripPhase.PULL || this.phase === TripPhase.RISE || this.phase === TripPhase.HOLD;
+  }
 
   start() {
     if (this.active) return false;
-    this.phase = TripPhase.RISE;
+    this.phase = TripPhase.PULL;
     this.t = 0;
+    this.pullT = 0;
     this.orbitProgress = 0;
     if (this.onStart) this.onStart();
     return true;
@@ -61,6 +67,16 @@ export class Trip {
     this.t += dt;
 
     switch (this.phase) {
+      case TripPhase.PULL: {
+        this.pullT = easeInOut(Math.min(1, this.t / T.pullTime));
+        if (this.t >= T.pullTime) {
+          this.phase = TripPhase.RISE;
+          this.t = 0;
+          if (this.onPullEnd) this.onPullEnd();
+        }
+        break;
+      }
+
       case TripPhase.RISE: {
         const k = Math.min(1, this.t / T.riseTime);
         this.value = easeSmoother(k);
@@ -110,6 +126,7 @@ export class Trip {
     this.value = 0;
     this.orbitWeight = 0;
     this.orbitProgress = 0;
+    this.pullT = 0;
     this.t = 0;
   }
 }

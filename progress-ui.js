@@ -62,6 +62,14 @@
     const songs = ((lib && lib.songs) || []).filter(s => s && s.folder);
     if (!songs.length) return;
 
+    // Same effective-exclusion rule as the player (CR-81, music.html): a song
+    // excludes itself, or inherits exclusion from the folder it currently sits
+    // in. `get_library`'s raw song/folder rows carry both flags directly, so
+    // this needs no normalize() step the way the player's does.
+    const foldersById = new Map(((lib && lib.folders) || []).map(f => [f.id, f]));
+    const excludedFromAlbumPct = (s) =>
+      !!(s && (s.excluded || (s.music_folder_id && (foldersById.get(s.music_folder_id) || {}).excluded)));
+
     // scope+ref → Set of ticked task keys, the same shape the player keeps.
     const ticks = Object.create(null);
     const setFor = (scope, ref) => {
@@ -100,11 +108,15 @@
 
     host.innerHTML = albums.map(a => {
       const P = global.PROGRESS;
-      const pcts = a.songs.map(s =>
-        P.songPct(setFor('song', s.folder), P.shapeFor(shape, 'song', s.folder), todosFor(s)));
+      const pctOf = (s) => P.songPct(setFor('song', s.folder), P.shapeFor(shape, 'song', s.folder), todosFor(s));
+      // Excluded songs still count toward "N of M songs finished" below — only
+      // what feeds the percentage mean excludes them. See music.html's
+      // albumPctOf, which keeps the same split for the same reason.
+      const allPcts = a.songs.map(pctOf);
+      const countedPcts = a.songs.filter(s => !excludedFromAlbumPct(s)).map(pctOf);
       const w = Math.round(
-        P.albumPct(setFor('album', a.slug), pcts, P.shapeFor(shape, 'album', a.slug)));
-      const done = pcts.filter(p => p >= 100).length;
+        P.albumPct(setFor('album', a.slug), countedPcts, P.shapeFor(shape, 'album', a.slug)));
+      const done = allPcts.filter(p => p >= 100).length;
       const tag = opts.href ? 'a' : 'div';
       const href = opts.href ? ` href="${esc(opts.href)}"` : '';
       return `<${tag} class="aprogmini${w >= 100 ? ' done' : ''}"${href}

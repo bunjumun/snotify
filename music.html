@@ -803,6 +803,7 @@
   .ec:hover { background: var(--bg-soft); color: var(--text); }
   .ec.danger:hover { color: #ff6b6b; }
   .ec.disabled { opacity: .25; pointer-events: none; }
+  .ec.on { color: var(--accent); }
   body.editing .song { cursor: default; }
   body.editing .song .title, body.editing .veritem .vname {
     cursor: text; text-decoration: underline dotted var(--text-mute);
@@ -1107,6 +1108,8 @@
   .pbrow .p { flex: none; width: 34px; text-align: right;
     font-variant-numeric: tabular-nums; }
   .pbrow.full .t, .pbrow.full .p { color: var(--accent-2); font-weight: 600; }
+  .pbrow.excluded { opacity: .5; }
+  .pbrow.excluded .t i { font-style: normal; color: var(--text-mute); }
   .pauto b { color: var(--text); font-variant-numeric: tabular-nums; }
   .pnote { font-size: 12px; color: var(--text-mute); padding: 2px 6px 6px; }
 </style>
@@ -2504,6 +2507,7 @@ function normalize(data){
     return {
       folder: s.folder || null,   // stable key for project membership + deep links
       folderId: s.music_folder_id || null,   // which music_folders row, if any (v33)
+      excluded: !!s.excluded,   // own exclude-from-album-% flag, independent of the folder's (v34)
       // Stable id, band-scoped so songs in different bands never share a
       // comment pool: <band>/<slug-of-title>.
       id: curBand + '/' + (s.id || slug(s.title || filename(versions[0].src)) || 'song-' + i),
@@ -2582,6 +2586,14 @@ function todosOf(s){
 }
 const songPctOf = (s) => progressable(s)
   ? PROGRESS.songPct(ticksFor('song', s.folder), shapeOf('song', s.folder), todosOf(s)) : 0;
+// Effective exclusion from the album %, CR-81. A song excludes itself, or
+// inherits exclusion from whichever folder it currently sits in — nothing is
+// copied onto the song row, so moving it in or out of an excluded folder
+// changes this on the next render with no extra step, per his own word on the
+// one open question here ("it would inherit the characteristics of that
+// parent folder").
+const excludedFromAlbumPct = (s) =>
+  !!(s && (s.excluded || (s.folderId && (folders.find(f => f.id === s.folderId) || {}).excluded)));
 // WHAT AN ALBUM IS HERE, because the first cut of this got it wrong and it is
 // worth writing down so nobody repeats it. A `project` is NOT an album: it is a
 // share link minted by the film-strip button, and there are a dozen of them
@@ -2607,9 +2619,15 @@ function albumsInView(){
 // The album's number, including the mean of every song IN THE ALBUM — songs
 // nobody has touched included, so ten songs with one finished is a tenth of
 // that phase and not half of it. Adding a song lowers the bar, which is honest:
-// the record did just get further from being done.
+// the record did just get further from being done. A song excluded via CR-81
+// is the one deliberate exception: it is left out of the mean entirely rather
+// than counted as untouched, because "exclude from album percentage" asked for
+// it to stop moving the number at all, not to move it as a zero. `al.songs`
+// itself is untouched by this — the song still shows in the record's own list
+// and counts toward "N of M songs finished"; only what feeds the mean changes.
 function albumPctOf(al){
-  return PROGRESS.albumPct(ticksFor('album', al.slug), al.songs.map(songPctOf),
+  const counted = al.songs.filter(s => !excludedFromAlbumPct(s));
+  return PROGRESS.albumPct(ticksFor('album', al.slug), counted.map(songPctOf),
                            shapeOf('album', al.slug));
 }
 
@@ -2674,22 +2692,28 @@ function barHtml(pct, cls){
 function autoPhaseHtml(ref, ph){
   const al = albumsInView().find(a => a.slug === ref);
   const inAlbum = al ? al.songs : [];
-  const pcts = inAlbum.map(songPctOf);
+  // CR-81: an excluded song is left out of the mean this phase explains, same
+  // as albumPctOf — this is the one place that shows the arithmetic behind
+  // the number, so it has to agree with it. Still listed below, tagged, so an
+  // excluded song doesn't just silently vanish from its own record's page.
+  const counted = inAlbum.filter(s => !excludedFromAlbumPct(s));
+  const pcts = counted.map(songPctOf);
   const mean = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : 0;
   const done = pcts.filter(p => p >= 100).length;
   const pts = mean / 100 * ph.weight;
   return `<div class="pphase pphase-auto">
     <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
     <div class="pauto">Worked out from the songs, never ticked. The average of every
-      song on the record, including ones nobody has started, is <b>${mean.toFixed(1)}%</b>
+      counted song on the record, including ones nobody has started, is <b>${mean.toFixed(1)}%</b>
       &mdash; ${done} of ${pcts.length} finished &mdash; which is
       <b>${pts.toFixed(1)}</b> of the ${ph.weight} points here.</div>
     <div class="pbreak">
       ${inAlbum.map((sg, n) => {
+        const excl = excludedFromAlbumPct(sg);
         const w = songPctOf(sg);
-        return `<div class="pbrow ${w >= 100 ? 'full' : ''}">
+        return `<div class="pbrow ${w >= 100 ? 'full' : ''} ${excl ? 'excluded' : ''}">
           <span class="n">${n + 1}</span>
-          <span class="t">${esc(sg.title)}</span>
+          <span class="t">${esc(sg.title)}${excl ? ' <i>(excluded from %)</i>' : ''}</span>
           <span class="b"><span style="width:${Math.round(w)}%"></span></span>
           <span class="p">${Math.round(w)}%</span>
         </div>`;
@@ -3136,6 +3160,9 @@ function songRowHtml(s, i){
       <span class="ec ${i===songs.length-1?'disabled':''}" data-act="down" title="Move down">▼</span>
       <span class="ec" data-act="stack" title="Stack “${esc(s.title)}” into another song as versions">⧉</span>
       <span class="ec" data-act="folder" title="Move “${esc(s.title)}” to a folder, or take it out of one">📁</span>
+      <span class="ec ${s.excluded ? 'on' : ''}" data-act="exclude" title="${s.excluded
+        ? `Excluded from the album percentage — click to count “${esc(s.title)}” again`
+        : `Exclude “${esc(s.title)}” from the album percentage`}">%</span>
       <span class="ec danger" data-act="trash" title="Move “${esc(s.title)}” to the trash">🗑</span>
     </div>`
   : `<div class="sacts">
@@ -3197,6 +3224,9 @@ function renderList() {
         ${editing ? `
         <div class="editctl">
           <span class="ec" data-fact="rename" title="Rename “${esc(f.name)}”">✎</span>
+          <span class="ec ${f.excluded ? 'on' : ''}" data-fact="exclude" title="${f.excluded
+            ? `Excluded from the album percentage — every song here counts again once you click`
+            : `Exclude every song in “${esc(f.name)}” from the album percentage`}">%</span>
           <span class="ec danger" data-fact="delete" title="Delete “${esc(f.name)}” — asks what to do with the songs inside, if any">🗑</span>
         </div>` : ''}
       </div>
@@ -3217,6 +3247,9 @@ function renderList() {
             const name = (prompt('Rename folder:', f ? f.name : '') || '').trim();
             if (!name) return;
             await libRpc('rename_music_folder', { fid, new_name: name });
+            await refreshLibrary();
+          } else if (fact.dataset.fact === 'exclude'){
+            await libRpc('set_folder_excluded', { fid, on_: !(f && f.excluded) });
             await refreshLibrary();
           } else if (fact.dataset.fact === 'delete'){
             const inFolder = songs.filter(s => s.folderId === fid);
@@ -3505,6 +3538,9 @@ async function songAct(act, i){
       }
       await libRpc('set_song_folder', { f: key, fid });
       if (fid) openFolders.add(fid);
+      await refreshLibrary();
+    } else if (act === 'exclude'){
+      await libRpc('set_song_excluded', { f: key, on_: !s.excluded });
       await refreshLibrary();
     }
   } catch (err){ alert(String(err.message || err)); }

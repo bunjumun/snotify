@@ -6,20 +6,19 @@
 // second copy of the story to keep in step. Promote a new draft and the next
 // conversation in the game is the new one.
 //
-// Three rules it follows, and each one exists because the alternative is worse:
+// Two rules it follows, and each one exists because the alternative is worse:
 //
 //  1. FALL BACK, ALWAYS. No network, no draft promoted, a document with no
 //     exchanges in it — any of those and the game uses the LORE table compiled
 //     into Clues.js. The fish must never run out of things to say because a
 //     database was slow.
-//  2. RE-CHECK ON NARRATIVE ACTIONS, not on a timer. The game asks for a
-//     refresh each time a fish is about to speak; the fetch only actually goes
-//     out if the last one was more than `ttl` ago. So a doc edited mid-session
-//     lands within a minute, and standing still costs nothing.
-//  3. NEVER BLOCK. The refresh is fire-and-forget. Whoever asked for it gets
-//     whatever is in hand right now, and the new text arrives for the line
-//     after. A fish that pauses mid-sentence waiting on an HTTP round trip is
-//     worse than a fish that is one line out of date.
+//  2. FETCH ONCE, AT SESSION START, THEN HOLD. Same rule as LogFeed: a draft
+//     promoted mid-session must not change what the fish are already saying
+//     under a player's nose. The story for this session is whatever was live
+//     the moment it started; a new session (or a hard reload) is what picks
+//     up a promoted draft. Until 23 Aug this re-checked on every narrative
+//     beat instead, on a short TTL — changed at his word, in the outbox, on
+//     the "band lore not the live version" bug.
 //
 // The parse is deliberately loose. Prose stays prose; only lines that announce
 // themselves as a question or an answer are picked up, in pairs, in order:
@@ -37,37 +36,21 @@ export class LoreFeed {
    * @param {string} band
    * @param {string} supaUrl
    * @param {string} supaKey publishable — lore_active() is public by design
-   * @param {{ttl?:number}} [opt]
    */
-  constructor(band, supaUrl, supaKey, opt = {}) {
+  constructor(band, supaUrl, supaKey) {
     this.band = band;
     this.url = supaUrl;
     this.key = supaKey;
-    this.ttl = opt.ttl ?? 60;      // seconds between fetches, at most
 
     /** @type {{ask:string,say:string}[]|null} null until a draft says otherwise */
     this.exchanges = null;
     this.draftName = null;
     this.updated = null;
     this.source = 'built-in';
-    this._at = -Infinity;
-    this._busy = false;
   }
 
-  /**
-   * Ask for fresh lore. Cheap to call on every narrative beat — it returns
-   * immediately and only goes to the network when the TTL has run out.
-   */
-  touch(now = performance.now() / 1000) {
-    if (this._busy || now - this._at < this.ttl) return;
-    this._at = now;
-    this._busy = true;
-    this._fetch().finally(() => { this._busy = false; });
-  }
-
-  /** Same, but you can await it — used once at startup. */
+  /** Fetch once. Called at session start; never again during play. */
   async refresh() {
-    this._at = performance.now() / 1000;
     try { await this._fetch(); } catch { /* the built-in lore stands */ }
   }
 

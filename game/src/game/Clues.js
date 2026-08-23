@@ -354,10 +354,9 @@ export class Clues {
     // the one who came down from there, so he's the one who'd know — and it
     // gives him the only lines he has in the whole game. The answer lands on a
     // timer in update() so the two of them aren't talking over each other.
-    // Live draft if the band has promoted one, the built-in table if not. The
-    // touch() is what keeps a mid-session edit landing: it costs nothing when
-    // the copy in hand is fresh, and never makes the fish wait on a fetch.
-    this.lore.touch(g.time);
+    // Live draft if the band had one promoted at session start, the built-in
+    // table if not — fetched once in the constructor and held for the whole
+    // session; see LoreFeed.js.
     const lines = this.lore.lines(LORE);
     const l = lines[this._lore++ % lines.length];
     g.hud.say(l.ask, { who, seconds: 3.8 });

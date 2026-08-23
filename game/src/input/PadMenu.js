@@ -45,6 +45,7 @@ const STICK_ON = 0.55;   // higher than the game deadzone: a lean, not a drift
 const PANELS = [
   { id: 'reward', back: (g) => g.reward?.hide() },
   { id: 'logbook', back: (g) => g.logbook?.hide() },
+  { id: 'lorebook', back: (g) => g.loreHistory?.hide() },
   { id: 'settings', back: (g) => g.togglePause() },
   { id: 'death', back: null },
   { id: 'start', back: null },

@@ -51,6 +51,7 @@ import { LogFeed } from '../game/LogFeed.js';
 import { HUD } from '../ui/HUD.js';
 import { RewardScreen } from '../ui/RewardScreen.js';
 import { Logbook } from '../ui/Logbook.js';
+import { LoreHistory } from '../ui/LoreHistory.js';
 import { KEYS } from './Keys.js';
 
 export const State = { TITLE: 'title', PLAY: 'play', PAUSED: 'paused', DEAD: 'dead' };
@@ -365,6 +366,7 @@ export class Game {
 
     this.reward = new RewardScreen(this);
     this.logbook = new Logbook(this);
+    this.loreHistory = new LoreHistory(this);
     this.onChestOpened = () => this.reward.show(this.audio?.treasure ?? []);
   }
 
@@ -449,6 +451,7 @@ export class Game {
     if (this.state === State.PLAY) {
       this.state = State.PAUSED;
       this.logbook.refreshCount();
+      this.loreHistory.refreshCount();
       document.getElementById('settings').classList.remove('hide');
       this.audio?.duck(true);
     } else if (this.state === State.PAUSED) {

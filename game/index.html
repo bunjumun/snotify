@@ -286,6 +286,12 @@ input[type=range].padfocus{outline-offset:6px}
   white-space:pre-wrap}
 .logempty{color:var(--text-mute);font-size:.8rem;line-height:1.6}
 
+/* ---------- Fish talk ---------- */
+#lorebook{background:rgba(2,8,10,.94);display:flex;align-items:center;justify-content:center;z-index:39;padding:1.5rem}
+#lorebook .panel{background:#0b1d21;border:1px solid #23484c;border-radius:14px;padding:1.3rem;
+  width:min(94vw,34rem);max-height:80vh;overflow-y:auto;display:flex;flex-direction:column;gap:.9rem}
+#lorebook h3{margin:0;font-size:1rem;letter-spacing:.1em}
+
 /* ---------- Settings / pause ---------- */
 #settings{background:rgba(2,8,10,.9);display:flex;align-items:center;justify-content:center;z-index:38}
 #settings .panel{background:#0b1d21;border:1px solid #23484c;border-radius:14px;
@@ -453,6 +459,16 @@ input[type=range].padfocus{outline-offset:6px}
   </div>
 </div>
 
+<!-- Fish talk. Every exchange the diver has actually had, oldest first, and it
+     persists across dives the same way the log pages do. -->
+<div class="layer on hide" id="lorebook">
+  <div class="panel">
+    <h3>WHAT THE FISH HAVE SAID</h3>
+    <div id="loreList"></div>
+    <button class="btn" id="loreClose">CLOSE</button>
+  </div>
+</div>
+
 <!-- Settings -->
 <div class="layer on hide" id="settings">
   <div class="panel">
@@ -469,6 +485,7 @@ input[type=range].padfocus{outline-offset:6px}
     <label class="row">Invert up/down <input type="checkbox" id="setInvert"></label>
     <div class="row"><span>Tilt steering</span><button class="btn" id="btnRecentre">RECENTRE</button></div>
     <div class="row"><span>Ship's log</span><button class="btn" id="btnLog">READ <span id="logCount"></span></button></div>
+    <div class="row"><span>Fish talk</span><button class="btn" id="btnLore">READ <span id="loreCount"></span></button></div>
     <button class="btn primary" id="btnResume">RESUME</button>
   </div>
 </div>

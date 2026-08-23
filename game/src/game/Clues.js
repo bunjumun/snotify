@@ -135,6 +135,10 @@ export class Clues {
       this._reply.at -= dt;
       if (this._reply.at <= 0) {
         g.hud.say(this._reply.text, { who: 'The diver', seconds: 7.5 });
+        // Logged here, not when the fish asks: an exchange that never gets its
+        // answer (a death or a retry mid-sentence) shouldn't show up half-told
+        // in the history panel.
+        g.progress.addLoreExchange(this._reply.ask, this._reply.text);
         this._reply = null;
       }
     }
@@ -358,7 +362,7 @@ export class Clues {
     const l = lines[this._lore++ % lines.length];
     g.hud.say(l.ask, { who, seconds: 3.8 });
     g.audio?.sfx('fish');
-    this._reply = { text: l.say, at: 3.2 };
+    this._reply = { text: l.say, ask: l.ask, at: 3.2 };
   }
 
   _afterHint() {

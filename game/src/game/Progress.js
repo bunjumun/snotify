@@ -20,7 +20,13 @@ const DEFAULTS = {
   subscribed: false,  // and they actually left an address while they were there
   logPages: [],
   runs: 0,
+  loreHistory: [],    // {ask, say} pairs the fish and diver have already had
 };
+
+// A dive with a bowl every few minutes can rack up a long conversation, and
+// nobody is going to scroll past this many exchanges looking for one. Capped
+// rather than left to grow the save file forever.
+const LORE_HISTORY_MAX = 60;
 
 export class Progress {
   constructor() {
@@ -71,11 +77,18 @@ export class Progress {
     if (!this.data.logPages.includes(id)) { this.data.logPages.push(id); this.save(); }
   }
 
+  /** Every fish exchange that has actually played out, oldest first. */
+  addLoreExchange(ask, say) {
+    this.data.loreHistory.push({ ask, say });
+    if (this.data.loreHistory.length > LORE_HISTORY_MAX) this.data.loreHistory.shift();
+    this.save();
+  }
+
   countRun() { this.data.runs++; this.save(); }
 
   /** Wipes everything — used by the debug overlay to re-test the opening. */
   reset() {
-    this.data = { ...DEFAULTS, logPages: [] };
+    this.data = { ...DEFAULTS, logPages: [], loreHistory: [] };
     this.save();
   }
 }

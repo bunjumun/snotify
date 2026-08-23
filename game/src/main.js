@@ -289,6 +289,7 @@ addEventListener('keydown', (e) => {
     // Escape backs out of whatever is on top before it touches the game state,
     // or closing the log would silently unpause underneath it.
     if (!document.getElementById('logbook').classList.contains('hide')) return game.logbook.hide();
+    if (!document.getElementById('lorebook').classList.contains('hide')) return game.loreHistory.hide();
     if (!document.getElementById('reward').classList.contains('hide')) return game.reward.hide();
     game.togglePause();
   }

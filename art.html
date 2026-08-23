@@ -171,8 +171,8 @@
   body.authed #addBtn { display: inline-flex; }
   #musicBtn, #homeBtn { display: none; }
   body.authed #musicBtn, body.authed #homeBtn { display: inline-flex; }
-  body.singlemix #musicBtn, body.singlemix #homeBtn, body.singlemix #adminBtn,
-  body.singlemix #toolsBtn { display: none !important; }
+  body.singlemix #musicBtn, body.singlemix #homeBtn,
+  body.singlemix #adminBtn { display: none !important; }
   body.singlemix #addBtn, body.singlemix #shareBtn, body.singlemix #cToggle,
   body.singlemix #todoToggle, body.singlemix .drawhint, body.singlemix .piece .pcpy { display: none !important; }
 
@@ -236,7 +236,6 @@
         <a class="navitem" id="musicBtn" href="music.html">🎵 Music</a>
         <a class="navitem" id="homeBtn" href="index.html">💿 Sn'Album</a>
       </div>
-      <button class="addbtn" id="toolsBtn" title="Graphic tools">▨ Tools ▾</button>
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
       <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
     </header>
@@ -424,7 +423,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=32"></script>
+<script src="core.js?v=33"></script>
 <!-- The record's progress bar, read-only here; the player owns the editable one. -->
 <script src="progress.js?v=16"></script>
 <script src="progress-ui.js?v=4"></script>
@@ -569,11 +568,9 @@ function hideDoors(){
   $('artDoors').style.display = 'none';
 }
 on('doorArt', 'click', () => { hideDoors(); renderList(); });
-on('doorTools', 'click', (e) => {
-  e.stopPropagation();
-  hideDoors(); renderList();
-  toolMenuOpen(true);
-});
+// Follow-up to CR-83, 23 Aug: he asked for a door per tool on its own page
+// rather than the dropdown this used to open — see art-tools.html.
+on('doorTools', 'click', () => { location.href = 'art-tools.html?b=' + encodeURIComponent(curBand); });
 
 function showBadLink(){
   document.body.classList.remove('locked');

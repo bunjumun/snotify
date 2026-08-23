@@ -1071,16 +1071,43 @@ function setToolBand(band){
 }
 function renderToolMenu(){
   const m = $('toolMenu');
-  if (!m) return;
-  // A band with no tools shouldn't carry a button that opens nothing.
-  const btn = $('toolsBtn');
-  if (btn) btn.style.display = toolList.length ? '' : 'none';
-  m.innerHTML = toolList.map(t => t.href
-    ? `<a class="toolitem" href="${esc(safeHref(t.href))}" target="_blank" rel="noopener">
-         <b>${esc(t.label)}</b><span>${esc(t.hint)}</span></a>`
-    : `<button class="toolitem" data-tool="${esc(t.id)}">
-         <b>${esc(t.label)}</b><span>${esc(t.hint)}</span></button>`).join('')
-    || `<div class="toolitem"><b>No tools</b><span>Add one from Site admin → Tools</span></div>`;
+  if (m){
+    // A band with no tools shouldn't carry a button that opens nothing.
+    const btn = $('toolsBtn');
+    if (btn) btn.style.display = toolList.length ? '' : 'none';
+    m.innerHTML = toolList.map(t => t.href
+      ? `<a class="toolitem" href="${esc(safeHref(t.href))}" target="_blank" rel="noopener">
+           <b>${esc(t.label)}</b><span>${esc(t.hint)}</span></a>`
+      : `<button class="toolitem" data-tool="${esc(t.id)}">
+           <b>${esc(t.label)}</b><span>${esc(t.hint)}</span></button>`).join('')
+      || `<div class="toolitem"><b>No tools</b><span>Add one from Site admin → Tools</span></div>`;
+  }
+  renderToolDoors();
+}
+// The image-tools page's own list (art-tools.html): a door per tool rather
+// than a dropdown item. A page with no #toolDoors element (everywhere else)
+// just skips this — same shared choke point as the menu above, so the door
+// grid never drifts out of sync with what the menu shows.
+function renderToolDoors(){
+  const d = $('toolDoors');
+  if (!d) return;
+  d.innerHTML = toolList.map(t => {
+    // Labels ship as "GLYPH  Title", same convention the menu's own <b> reads.
+    const m = /^(\S+)\s+(.*)$/.exec(t.label || '');
+    const icon = m ? m[1] : '▨';
+    const title = m ? m[2] : (t.label || '');
+    return t.href
+      ? `<a class="door" href="${esc(safeHref(t.href))}" target="_blank" rel="noopener">
+           <div class="dooricon">${esc(icon)}</div>
+           <div class="doortitle">${esc(title)}</div>
+           <div class="doorsub">${esc(t.hint)}</div>
+         </a>`
+      : `<button class="door" data-tool="${esc(t.id)}">
+           <div class="dooricon">${esc(icon)}</div>
+           <div class="doortitle">${esc(title)}</div>
+           <div class="doorsub">${esc(t.hint)}</div>
+         </button>`;
+  }).join('') || `<div class="hint">No tools yet. Add one from Site admin → Tools.</div>`;
 }
 
 document.body.insertAdjacentHTML('beforeend', `
@@ -1292,6 +1319,14 @@ on('toolMenu', 'click', (e) => {
   const b = e.target.closest('[data-tool]');
   if (!b) return;
   toolMenuOpen(false);
+  if (b.dataset.tool === 'dazzle') openDazzleTool();
+});
+// The door grid's own click routing — href doors are plain links (native
+// navigation, own tab), so only the id-based ones (just 'dazzle' today) need
+// a handler here.
+on('toolDoors', 'click', (e) => {
+  const b = e.target.closest('[data-tool]');
+  if (!b) return;
   if (b.dataset.tool === 'dazzle') openDazzleTool();
 });
 

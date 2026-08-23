@@ -471,5 +471,9 @@
     VERSION: CHECKLIST_VERSION,
     SONG, ALBUM, SONG_TASKS, ALBUM_TASKS,
     songPct, albumPct, priorTo, shapedList, shapeFor,
+    // Exported so a UI that wants to show the swing arithmetic (CR-86) reuses
+    // the exact numbers the bar itself moves by, rather than a second copy of
+    // -1/+4 that could drift from this file if he ever retunes them.
+    todoSwing, TODO_OPEN, TODO_DONE,
   };
 })(window);

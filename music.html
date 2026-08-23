@@ -2556,13 +2556,16 @@ function showEmpty() {
     </div>`;
 }
 
-// ---------- Progress: how far along is the record (CR-34 phase 1) ----------
-// From his "album progress strategy" doc. Two weighted checklists, a bar for
-// each, and clicking a bar drops the phase-grouped list in place. This is phase
-// one of four: ticking only. The inspector (assignee, notes, due date), the
-// attached links and the cascade backfill are phases two to four, and the v25
-// migration already carries the columns and the RPC for all of them — the page
-// is the only thing that does not offer them yet.
+// ---------- Progress: how far along is the record (CR-34) ----------
+// From his "album progress strategy" doc, docs/album-progress-plan.md. Two
+// weighted checklists, a bar for each, and clicking a bar drops the
+// phase-grouped list in place. Phase 1 (ticking), phase 2 (the inspector:
+// assignee, notes, due date — see progInsp* below, shipped at v32) and phase
+// 4 (the cascade backfill prompt, in the checkbox change handler below) are
+// all built and live. Phase 3, attached links, is not: progress_links (v25)
+// exists with no RPC reading or writing it yet, and no UI. This comment used
+// to say all of 2-4 were unbuilt long after 2 shipped — read the plan doc
+// and the schema before trusting a comment's phase count over them.
 //
 // WHY PROGRESS IS ONLY EVER SHOWN TO A LOGGED-IN BAND. It is band data behind
 // the same password as everything else, and two members have to see the same
@@ -3010,6 +3013,37 @@ function wireAcc(el){
       box.checked = !on; row.classList.toggle('on', !on);
       refreshProgressNumbers(el);
       alert('Could not save that tick: ' + (err.message || err));
+      return;
+    }
+    if (!on) return;
+    // Phase 4 of the album-progress plan, last of the four: "mark all prior
+    // steps... completed?" Cascade across every phase before this task, not
+    // just its own category — backfilling an imported song's furthest-along
+    // task should offer Writing and Tracking too, not just the rest of
+    // Mixing. Only offered on a tick, never an untick, and only when
+    // something earlier is genuinely still open, so ticking boxes in the
+    // normal top-to-bottom order never triggers it. Reuses progress_set_many
+    // exactly as the phase-heading "tick all" control already does — no new
+    // RPC, no migration.
+    const shaped = PROGRESS.shapedList(scope === 'album' ? PROGRESS.ALBUM : PROGRESS.SONG,
+                                       shapeOf(scope, ref));
+    const flat = shaped.filter(p => !p.auto).flatMap(p => p.tasks);
+    const idx = flat.findIndex(t => t.key === key);
+    const prior = idx > 0 ? flat.slice(0, idx).filter(t => !ticks.has(t.key)) : [];
+    if (prior.length && confirm('Mark all prior steps in this '
+        + (scope === 'album' ? 'record' : 'song') + ' as completed?')){
+      const keys = prior.map(t => t.key);
+      keys.forEach(k => ticks.add(k));
+      paintAcc(el);
+      refreshProgressNumbers(el);
+      try {
+        await libRpc('progress_set_many', { scope_in: scope, ref_in: ref, keys, ver_in: PROGRESS.VERSION });
+      } catch (err){
+        keys.forEach(k => ticks.delete(k));
+        paintAcc(el);
+        refreshProgressNumbers(el);
+        alert('Could not backfill those: ' + (err.message || err));
+      }
     }
   });
 }

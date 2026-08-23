@@ -1,8 +1,15 @@
 # Album and song progress, from his "album progress strategy" doc
 
-**Status as of 2026-08-16, fourth run: phase 1 is built and live.** The v25
+**Status as of 2026-08-23: phases 1, 2 and 4 are built and live.** The v25
 migration is applied, `progress.js` holds the two checklists, and the two bars
-tick. Phases 2 to 4 are unbuilt.
+tick (phase 1). The inspector — assignee, notes, due date — shipped at v32
+(phase 2). The cascade backfill prompt shipped 23 Aug, reusing
+`progress_set_many` with no new migration (phase 4). **Phase 3, attached
+links, is the only piece not built**: `progress_links` (v25) exists with no
+RPC reading or writing it and no UI. `music.html`'s own header comment on
+this section said phases 2-4 were all unbuilt for a week after phase 2
+shipped — this file is the one to trust; fix the code comment too if it
+drifts again.
 
 **Two things below were wrong and are corrected in place, at his word that the
 plan was written without enough context.** Both were found by reading the schema

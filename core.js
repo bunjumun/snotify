@@ -138,8 +138,11 @@ function applyTheme(band){
 // A band with no entry gets no game door, no assets shelf and no IN GAME tick.
 // Note this scopes what the SITE OFFERS, not who may play: game/ is a public
 // page with no gate, and a link to it works for anyone who has one.
+// 'goals' is band admin data, not fiction like the two above — dated
+// milestones toward finishing the record — but it hangs off the same
+// lore_docs/lore_versions store via a third slug, so it lives in this map too.
 const BAND_FEATURES = {
-  lakehorse: ['game', 'lore', 'log'],
+  lakehorse: ['game', 'lore', 'log', 'goals'],
 };
 // Defaults to the band on screen, which is what every call site wants; the
 // argument is there for the gate, which knows the band before it is logged in.
@@ -159,7 +162,8 @@ function applyFeatures(band){
   b.toggle('has-game',   has.includes('game'));
   b.toggle('has-lore',   has.includes('lore'));
   b.toggle('has-log',    has.includes('log'));
-  b.toggle('has-assets', has.includes('lore') || has.includes('log'));
+  b.toggle('has-goals',  has.includes('goals'));
+  b.toggle('has-assets', has.includes('lore') || has.includes('log') || has.includes('goals'));
 }
 
 // ---------- Dazzle generator ----------

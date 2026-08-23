@@ -27,9 +27,9 @@
      in core.js, which applyTheme() turns into these classes. A band holding
      neither can still reach this page by typing the address, and gets the
      sentence rather than an empty grid that looks like a loading failure. */
-  #cardLore, #cardLog, #shelfEmpty { display: none; }
-  body.has-lore #cardLore, body.has-log #cardLog { display: block; }
-  body.authed:not(.has-lore):not(.has-log) #shelfEmpty { display: block; }
+  #cardLore, #cardLog, #cardGoals, #shelfEmpty { display: none; }
+  body.has-lore #cardLore, body.has-log #cardLog, body.has-goals #cardGoals { display: block; }
+  body.authed:not(.has-lore):not(.has-log):not(.has-goals) #shelfEmpty { display: block; }
   #shelfEmpty { color: var(--text-dim); font-size: 14px; line-height: 1.55; max-width: 46em; }
 
   /* ---------- The document ---------- */
@@ -75,6 +75,26 @@
   }
   .parsed { color: var(--text-mute); font-size: 12.5px; }
   .parsed b { color: var(--text-dim); }
+
+  /* The goals doc is a list of dated milestones, not prose, so it gets its own
+     editor in place of the textarea — reusing .draft's ▲▼ reorder pattern
+     rather than auto-sorting by date, which would jump rows under a half-typed
+     one. */
+  .goals { display: none; flex-direction: column; gap: 8px; min-height: 58vh; }
+  .goal-row {
+    display: flex; align-items: center; gap: 8px; background: var(--bg-row);
+    border-radius: 8px; padding: 8px 10px;
+  }
+  .goal-row input[type="date"], .goal-row input.gtitle {
+    background: #0a0b0f; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 9px;
+  }
+  .goal-row input[type="date"] { flex: 0 0 152px; }
+  .goal-row input.gtitle { flex: 1; min-width: 0; }
+  .goal-row label.done { display: flex; align-items: center; gap: 5px; color: var(--text-dim); font-size: 12.5px; white-space: nowrap; }
+  .goal-row .rm { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 15px; padding: 0 2px; }
+  .goal-row .rm:hover { color: var(--text); }
+  .goals-add { align-self: flex-start; }
 
   #musicBtn, #homeBtn { display: none; }
   body.authed #musicBtn, body.authed #homeBtn { display: inline-flex; }
@@ -131,10 +151,10 @@
     <!-- The shelf. One asset for now; the grid is here because there will be
          more, and a one-item grid costs nothing. -->
     <div id="shelf">
-      <p id="shelfEmpty">The lore document and the ship's log belong to the band
-         whose game reads them, and this band holds neither. Nothing is missing
-         and nothing is broken: there is simply no writing filed under this
-         library yet.</p>
+      <p id="shelfEmpty">The lore document, the ship's log and band goals belong
+         to the band whose game reads them, and this band holds none of them.
+         Nothing is missing and nothing is broken: there is simply no writing
+         filed under this library yet.</p>
       <div class="cards">
         <div class="card" id="cardLore">
           <div class="glyph">📖</div>
@@ -151,6 +171,14 @@
              the slates scattered through the wreck — seven of them, found one at
              a time.</p>
           <div class="sub" id="logTally">&nbsp;</div>
+        </div>
+
+        <div class="card" id="cardGoals">
+          <div class="glyph">🎯</div>
+          <h2>Band Goals</h2>
+          <p>Dated milestones toward finishing the album, in drafts like the
+             others. The live one is the timeline you're working from.</p>
+          <div class="sub" id="goalsTally">&nbsp;</div>
         </div>
       </div>
     </div>
@@ -180,13 +208,17 @@
             <span class="status" id="docStatus"></span>
           </div>
           <textarea id="body" spellcheck="true"></textarea>
+          <div class="goals" id="goalsBox">
+            <div id="goalsRows"></div>
+            <button class="btn ghost goals-add" id="addGoalBtn">+ Add goal</button>
+          </div>
           <div class="parsed" id="parsed"></div>
         </div>
       </div>
     </div>
   </div>
 
-<script src="core.js?v=31"></script>
+<script src="core.js?v=32"></script>
 <script type="module">
 // The parser the GAME uses, imported rather than reimplemented — so what this
 // page reports as "12 exchanges" is what the fish will actually find.
@@ -217,6 +249,23 @@ const DOCS = {
                              : ` — one per slate, in this order.`)
                : 'No entries found. Start each one with <b>#</b> and a title, '
                  + 'then write underneath it.';
+    },
+  },
+  // A list of {date, title, done}, not prose — struct:true swaps the plain
+  // textarea for the row editor below, but still rides the same lore_save /
+  // body:text column as JSON. Order is manual (▲▼), not date-sorted, so a
+  // half-typed date never reshuffles the row out from under you.
+  goals: {
+    title: 'Band Goals', tally: 'goalsTally', struct: true,
+    count: (body) => {
+      const items = parseGoals(body);
+      if (!items.length) return 'No goals yet.';
+      const done = items.filter(g => g.done).length;
+      const next = items.find(g => !g.done);
+      return `<b>${done}</b> of <b>${items.length}</b> goal${items.length === 1 ? '' : 's'} reached`
+        + (next ? ` — next: <b>${esc(next.title || 'Untitled')}</b>`
+                  + (next.date ? ` (${esc(next.date)})` : '')
+                : ' — all done.');
     },
   },
 };
@@ -286,6 +335,7 @@ async function openDoc(slug){
   current = null;
   dirty = false;
   document.querySelector('#doc .dtitle').textContent = DOCS[slug].title;
+  setEditorMode(slug);
   showDoc();
   try {
     drafts = (await libRpc('lore_list', { d: slug })) || [];
@@ -298,8 +348,9 @@ async function openDoc(slug){
   if (start) open(start);
   else {
     $('draftName').value = 'First draft';
-    $('body').value = slug === 'log' ? LOG_TEMPLATE : TEMPLATE;
+    $('body').value = slug === 'log' ? LOG_TEMPLATE : slug === 'goals' ? '[]' : TEMPLATE;
     dirty = true;
+    if (slug === 'goals') renderGoals();
     reparse();
   }
 }
@@ -365,6 +416,7 @@ function open(d){
   $('draftName').value = d.name;
   $('body').value = d.body || '';
   dirty = false;
+  if (docSlug === 'goals') renderGoals();
   reparse();
   renderDrafts();
 }
@@ -372,6 +424,93 @@ function open(d){
 // ---------- Editing ----------
 function reparse(){
   $('parsed').innerHTML = DOCS[docSlug].count($('body').value);
+}
+
+function setEditorMode(slug){
+  const structured = !!(DOCS[slug] && DOCS[slug].struct);
+  $('body').style.display = structured ? 'none' : '';
+  $('goalsBox').style.display = structured ? 'flex' : 'none';
+}
+
+// ---------- Goals editor (struct:true docs only) ----------
+// The body column stays plain text everywhere else in this file; here it
+// holds JSON, [{date, title, done}, ...], read and written through these two
+// functions so save()/lore_save/lore_set_active need no changes at all.
+function parseGoals(body){
+  let items;
+  try { items = JSON.parse(body || '[]'); } catch { items = []; }
+  if (!Array.isArray(items)) return [];
+  return items.map(g => ({
+    date: typeof g?.date === 'string' ? g.date : '',
+    title: typeof g?.title === 'string' ? g.title : '',
+    done: !!g?.done,
+  }));
+}
+
+function writeGoals(items){
+  $('body').value = JSON.stringify(items);
+  dirty = true;
+  reparse();
+}
+
+function renderGoals(){
+  const items = parseGoals($('body').value);
+  const box = $('goalsRows');
+  box.innerHTML = '';
+  if (!items.length){
+    box.innerHTML = '<div class="hint" style="padding:8px 10px">No goals yet. '
+      + 'Add the first milestone below.</div>';
+    return;
+  }
+  items.forEach((g, i) => {
+    const row = document.createElement('div');
+    row.className = 'goal-row';
+
+    const ord = document.createElement('span');
+    ord.className = 'ord';
+    ord.innerHTML = `<button title="Move up" data-up="${i}">▲</button>`
+      + `<button title="Move down" data-dn="${i}">▼</button>`;
+    ord.addEventListener('click', (e) => {
+      const up = e.target.dataset.up !== undefined;
+      const dn = e.target.dataset.dn !== undefined;
+      if (!up && !dn) return;
+      const j = i + (up ? -1 : 1);
+      if (j < 0 || j >= items.length) return;
+      const [moved] = items.splice(i, 1);
+      items.splice(j, 0, moved);
+      writeGoals(items); renderGoals();
+    });
+
+    const date = document.createElement('input');
+    date.type = 'date'; date.value = g.date;
+    date.addEventListener('change', () => { items[i].date = date.value; writeGoals(items); });
+
+    const title = document.createElement('input');
+    title.type = 'text'; title.className = 'gtitle'; title.placeholder = 'Milestone';
+    title.value = g.title;
+    title.addEventListener('input', () => { items[i].title = title.value; writeGoals(items); });
+
+    const doneLabel = document.createElement('label');
+    doneLabel.className = 'done';
+    const doneBox = document.createElement('input');
+    doneBox.type = 'checkbox'; doneBox.checked = g.done;
+    doneBox.addEventListener('change', () => { items[i].done = doneBox.checked; writeGoals(items); });
+    doneLabel.append(doneBox, document.createTextNode(' Done'));
+
+    const rm = document.createElement('button');
+    rm.className = 'rm'; rm.title = 'Remove this goal'; rm.textContent = '✕';
+    rm.addEventListener('click', () => { items.splice(i, 1); writeGoals(items); renderGoals(); });
+
+    row.append(ord, date, title, doneLabel, rm);
+    box.appendChild(row);
+  });
+}
+
+function addGoal(){
+  const items = parseGoals($('body').value);
+  items.push({ date: '', title: '', done: false });
+  writeGoals(items);
+  renderGoals();
 }
 
 async function save(asNew){
@@ -403,17 +542,22 @@ async function makeLive(){
 // ---------- Wiring ----------
 on('cardLore', 'click', () => openDoc('lore'));
 on('cardLog',  'click', () => openDoc('log'));
+on('cardGoals', 'click', () => openDoc('goals'));
 on('backBtn', 'click', () => { showShelf(); });
 on('newBtn', 'click', () => {
   if (dirty && !confirm('Discard unsaved changes?')) return;
   current = null;
   $('draftName').value = 'New draft';
-  $('body').value = (live() && live().body) || (docSlug === 'log' ? LOG_TEMPLATE : TEMPLATE);
-  dirty = true; reparse(); renderDrafts();
+  $('body').value = (live() && live().body)
+    || (docSlug === 'log' ? LOG_TEMPLATE : docSlug === 'goals' ? '[]' : TEMPLATE);
+  dirty = true;
+  if (docSlug === 'goals') renderGoals();
+  reparse(); renderDrafts();
 });
 on('saveBtn', 'click', () => save(false));
 on('saveNewBtn', 'click', () => save(true));
 on('liveBtn', 'click', makeLive);
+on('addGoalBtn', 'click', addGoal);
 on('body', 'input', () => { dirty = true; reparse(); });
 addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 

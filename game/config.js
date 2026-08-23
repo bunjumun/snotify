@@ -217,6 +217,16 @@ export const CFG = {
     regrabRadius: 3.2,
     adriftDrainMult: 1.5,
 
+    // A regrab right after letting go put him back on at 55% grip while the
+    // kelpie was still boosting, which drains just as fast as it did the first
+    // time — so under sustained boost he could let go, drift back inside
+    // regrabRadius before the fling had carried him clear, and grab again, then
+    // repeat every second or so. Each cycle fires "He lost his grip." and "Got
+    // him." That's the loop CR-89 was reported against. This is the minimum time
+    // he has to spend adrift before a regrab is even considered, which gives the
+    // fling a moment to actually carry him outside the radius first.
+    minAdriftTime: 0.5,
+
     // ---- How they turn ----
     // Every rider used to slerp toward the SAME quaternion at the SAME rate, so
     // the rope threw four men apart in space while their bodies held parade

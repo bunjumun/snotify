@@ -100,6 +100,7 @@ export class Diver {
     this.attached = true;
     this.grip = D.gripMax;
     this.adrift = false;
+    this._adriftTime = 0;   // see D.minAdriftTime
 
     // ---- Chains ----
     this.chain = [];
@@ -333,8 +334,11 @@ export class Diver {
     } else {
       this.chain[0].pinned = false;
       // Adrift: drift gently and check whether the kelpie has come back for him.
+      // Gated on minAdriftTime so a regrab can't fire on the same beat as the
+      // let-go — see the note by D.minAdriftTime for the loop this stops.
+      this._adriftTime += dt;
       const d = this.chain[0].pos.distanceTo(anchor);
-      if (d < D.regrabRadius) this._grab();
+      if (this._adriftTime > D.minAdriftTime && d < D.regrabRadius) this._grab();
     }
 
     this._integrate(this.chain, dt, D.drag, D.gravity);
@@ -475,6 +479,7 @@ export class Diver {
     this.attached = false;
     this.adrift = true;
     this.grip = 0;
+    this._adriftTime = 0;
     // Fling him with whatever the kelpie was doing — the moment should read as
     // being thrown off, not as quietly detaching.
     const p0 = this.chain[0];
@@ -537,6 +542,7 @@ export class Diver {
     this.attached = true;
     this.adrift = false;
     this.grip = CFG.diver.gripMax;
+    this._adriftTime = 0;
     this.body.scale.setScalar(1);   // as on the kelpie: no inherited bong shape
 
     // Up and back from the grip, which is where he actually rides.

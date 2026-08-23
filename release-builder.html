@@ -11,14 +11,63 @@
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
-  /* CR-76. The door and the page exist; what's behind it does not yet — he
-     asked for it left empty. This is the whole of the page-only surface. */
-  .rbempty {
-    color: var(--text-dim); font-size: 14px; line-height: 1.6; max-width: 46em;
+  /* CR-79. A release is a named, ordered subset of the band's existing songs
+     — "aliases of the one master song" per his answer, so this page never
+     stores a song's own data, only which releases it belongs to. */
+  .rtoolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .rgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .rcard {
     background: var(--bg-row); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 26px 24px;
+    padding: 16px; cursor: pointer; transition: border-color .12s, background .12s;
+    display: flex; flex-direction: column; gap: 9px;
   }
-  .rbempty h2 { margin: 0 0 8px; color: var(--text); font-size: 18px; }
+  .rcard:hover { background: var(--bg-hover); border-color: var(--accent); }
+  .rcard h3 { margin: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rcard .rsub { font-size: 12px; color: var(--text-mute); }
+  .rcard .track { height: 8px; border-radius: 999px; background: var(--field); border: 1px solid var(--line); overflow: hidden; }
+  .rcard .fill { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .18s ease-out; }
+  .rcard .rbot { display: flex; align-items: center; justify-content: space-between; }
+  .rcard .rpct { font-size: 12px; font-weight: 700; color: var(--text-dim); }
+  .rcard .rdel { color: var(--text-mute); cursor: pointer; font-size: 13px; }
+  .rcard .rdel:hover { color: var(--err); }
+  .rempty2 { color: var(--text-dim); font-size: 14px; padding: 34px 10px; text-align: center; }
+
+  .rdetail-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+  .rdetail-head h2 { margin: 0; font-size: 20px; cursor: text; }
+  .rdetail-head h2:hover { text-decoration: underline dotted; text-underline-offset: 4px; }
+  .rdetail-head .rpctbig { font-size: 20px; font-weight: 800; color: var(--text-dim); margin-left: auto; }
+  .rsonglist { display: flex; flex-direction: column; gap: 6px; }
+  .relsong { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--bg-row); border: 1px solid var(--line); border-radius: 10px; }
+  .relsong img.rcov { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; flex: none; }
+  .relsong .rcovph { width: 36px; height: 36px; border-radius: 6px; flex: none; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .relsong .rmeta { flex: 1; min-width: 0; }
+  .relsong .rtitle { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .relsong .rartist { font-size: 11.5px; color: var(--text-mute); }
+  .relsong .rpct2 { font-size: 12.5px; color: var(--text-dim); font-weight: 700; flex: none; min-width: 38px; text-align: right; }
+  .relsong .rec { color: var(--text-mute); cursor: pointer; padding: 4px; flex: none; }
+  .relsong .rec:hover { color: var(--text); }
+  .relsong .rec.disabled { opacity: .3; cursor: default; }
+  .relsong .rec.disabled:hover { color: var(--text-mute); }
+  .relsong .rec.danger:hover { color: var(--err); }
+
+  /* The share chooser — copied from music.html's .trash-item.pick.share,
+     which is page-local there too. Two rows, each explaining its own
+     consequence before it's clicked, because "public" and "band" are not
+     symmetrical enough for a confirm()'s OK/Cancel to carry. */
+  .trash-item {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 9px 10px; border-radius: 8px;
+  }
+  .trash-item .tname { flex: 1 1 auto; min-width: 130px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .trash-item.pick.share { align-items: flex-start; border: 1px solid var(--line); margin-bottom: 8px; cursor: pointer; }
+  .trash-item.pick.share .tname { min-width: 0; }
+  .trash-item.pick.share .tsub {
+    flex: 1 0 100%; font-weight: 400; font-size: 12px;
+    color: var(--text-mute); line-height: 1.45; margin-top: 2px;
+  }
+  .trash-item.pick.share .tico { flex: none; font-size: 15px; }
+  .trash-item.pick.share.pub:hover { background: rgba(255,176,32,.10); border-color: var(--warn); }
+  .trash-item.pick.share.gated:hover { background: var(--bg-hover); border-color: var(--accent); }
 </style>
 </head>
 <body class="locked">
@@ -61,7 +110,7 @@
       <div class="logo">🚀</div>
       <div>
         <h1 data-txt="release.title">Release Builder</h1>
-        <p data-txt="release.tagline">Not built yet — the door is here so the page has somewhere to grow</p>
+        <p data-txt="release.tagline">Group songs from your library into albums, EPs, or any compilation</p>
       </div>
       <div class="count" id="bandCount"></div>
       <button class="addbtn" id="navBtn" title="Other pages">☰ Pages ▾</button>
@@ -73,22 +122,64 @@
       <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
     </header>
 
-    <div class="rbempty" id="rbEmpty">
-      <h2>Nothing built here yet</h2>
-      <p>CR-76 asked for this section left empty for now. When there's something
-         to put on it, it lands here rather than on a sixth page.</p>
+    <div class="rtoolbar">
+      <button class="addbtn" id="relBackBtn" style="display:none">← Releases</button>
+      <button class="addbtn" id="relNewBtn">+ New release</button>
+    </div>
+    <div id="relGrid" class="rgrid"></div>
+    <div id="relDetail" class="rdetail" style="display:none"></div>
+  </div>
+
+  <!-- Add-tracks picker. Reuses the upload dialog's checkbox-list styling
+       (.add-todo-list / .todo-row / .todo-tick) rather than inventing a new
+       list style for what is the same interaction: tick to include. -->
+  <div class="modal-back" id="pickerModal">
+    <div class="modal" style="max-width:420px">
+      <h2>Add tracks</h2>
+      <div class="hint" style="margin-bottom:8px">Tick a song to add it to this
+        release. Unticking removes it — nothing about the song itself changes,
+        it can sit in as many releases as you like.</div>
+      <div class="add-todo-list" id="pickerList"></div>
+      <div class="actions"><button class="btn ghost" id="pickerClose">Done</button></div>
+    </div>
+  </div>
+
+  <!-- Share chooser — same markup/ids/behaviour as music.html's #shareModal,
+       so a release's link offers the identical public/band choice every
+       other item on the site already offers. -->
+  <div class="modal-back" id="shareModal">
+    <div class="modal" style="max-width:400px">
+      <h2 id="shareTitle">Copy a link</h2>
+      <div class="hint" id="shareHint" style="margin-bottom:12px"></div>
+      <div id="shareList"></div>
+      <div class="actions"><button class="btn ghost" id="shareCancel">Cancel</button></div>
     </div>
   </div>
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
 <script src="core.js?v=33"></script>
+<!-- The song-completion maths (songPct), so a release's rollup is the exact
+     same number the player shows per song — never a second copy of it. -->
+<script src="progress.js?v=16"></script>
 <script type="module">
 // core.js owns the gate, the route and every Supabase call — these are the
-// two moments it has to hand control back to this page. Nothing else here,
-// deliberately: there is no content to load yet.
+// two moments it has to hand control back to this page.
 App.init   = () => init();
-App.onLock = () => {};
+App.onLock = () => { curReleaseId = null; };
+
+// ---------- State ----------
+// songs: the band's whole library (get_library), keyed by folder — a
+// release only ever stores folders, never a copy of title/cover/etc.
+// releases: [{id, title, songs: [folder,...]}], from get_releases.
+// curReleaseId: null = grid view, otherwise the release open in detail view.
+let songs = [], releases = [], curReleaseId = null;
+let ticks = Object.create(null), shapeRaw = { items: [], hidden: [] }, todosByKey = Object.create(null);
+// A band-link (?rel=<id>) opens straight into that release, once, the first
+// time loadAll() resolves after page load — read here rather than through
+// core.js's shared `route` (every other page's route shape), since this
+// page is the only one that needs it.
+let pendingRelId = new URLSearchParams(location.search).get('rel');
 
 async function init(){
   let band = route.band && bandSlugOf(route.band);
@@ -109,6 +200,7 @@ async function init(){
   document.title = 'Release Builder · ' + curBandTitle;
   document.body.classList.add('authed');
   unlockView();
+  loadAll();
 }
 
 if (curBand || route.band){
@@ -116,6 +208,315 @@ if (curBand || route.band){
   $('musicBtn').href = 'music.html?b=' + b;
   $('homeBtn').href  = 'index.html?b=' + b;
 }
+
+// ---------- Data ----------
+// The same four RPCs progress-ui.js already calls to draw the read-only bars
+// on index.html/art.html, plus get_releases. Loading them together means a
+// release's rollup is computed from exactly the same ticks/shape/todos a
+// song's own bar in music.html would use — never a second, driftable copy.
+async function loadAll(){
+  let lib, rows, shape, notes, rel;
+  try {
+    [lib, rows, shape, notes, rel] = await Promise.all([
+      libRpc('get_library', {}),
+      libRpc('progress_all', {}),
+      libRpc('progress_shape', {}).catch(() => ({ items: [], hidden: [] })),
+      libRpc('get_comments', {}).catch(() => []),
+      libRpc('get_releases', {}),
+    ]);
+  } catch (err) {
+    if (isAuthErr(err)){ clearAuth(curBand); showGate(curBand, true); return; }
+    alert('Could not load releases: ' + (err.message || err));
+    return;
+  }
+  songs = ((lib && lib.songs) || []).filter(s => s && s.folder);
+  releases = rel || [];
+  if (pendingRelId){
+    if (releases.some(r => r.id === pendingRelId)) curReleaseId = pendingRelId;
+    pendingRelId = null;
+  }
+
+  ticks = Object.create(null);
+  for (const r of (rows || [])) {
+    const k = r.scope + '/' + r.ref;
+    (ticks[k] || (ticks[k] = new Set())).add(r.key);
+  }
+  shapeRaw = shape || { items: [], hidden: [] };
+  // song_id -> {open, done}, ROOTS ONLY — same rule music.html's to-do tabs
+  // and progress-ui.js use, so this agrees with every other bar on the site.
+  todosByKey = Object.create(null);
+  for (const c of (notes || [])) {
+    if (c.parent_id) continue;
+    const t = todosByKey[c.song_id] || (todosByKey[c.song_id] = { open: 0, done: 0 });
+    c.resolved ? t.done++ : t.open++;
+  }
+  render();
+}
+
+const songByFolder = (f) => songs.find(s => s.folder === f);
+
+function todosFor(s){
+  const id = s && (s.id || slug(s.title || ''));
+  return (id && todosByKey[curBand + '/' + id]) || { open: 0, done: 0 };
+}
+
+function songPctOf(s){
+  if (!s || !s.folder || !window.PROGRESS) return 0;
+  const k = 'song/' + s.folder;
+  const set = ticks[k] || (ticks[k] = new Set());
+  return PROGRESS.songPct(set, PROGRESS.shapeFor(shapeRaw, 'song', s.folder), todosFor(s));
+}
+
+// A release with none of its tracks started reads 0%, not 100% — the same
+// "empty scores nothing" rule albumPct uses for the album's own average.
+function releaseRollup(r){
+  const list = (r.songs || []).map(songByFolder).filter(Boolean);
+  if (!list.length) return 0;
+  return Math.round(list.reduce((a, s) => a + songPctOf(s), 0) / list.length);
+}
+
+// ---------- Render ----------
+function render(){
+  if (curReleaseId && releases.some(r => r.id === curReleaseId)) renderDetail();
+  else { curReleaseId = null; renderGrid(); }
+}
+
+function renderGrid(){
+  $('relBackBtn').style.display = 'none';
+  $('relDetail').style.display = 'none';
+  const grid = $('relGrid');
+  grid.style.display = '';
+  if (!releases.length){
+    grid.innerHTML = `<div class="rempty2" style="grid-column:1/-1">No releases yet.
+      “+ New release” starts one — an EP, an album, any compilation pulled from
+      your existing library. Nothing here duplicates a song; it only groups it.</div>`;
+    return;
+  }
+  grid.innerHTML = releases.map(r => {
+    const n = (r.songs || []).length;
+    const pct = releaseRollup(r);
+    return `
+    <div class="rcard" data-rid="${esc(r.id)}">
+      <h3 title="${esc(r.title)}">${esc(r.title)}</h3>
+      <div class="rsub">${n} track${n===1?'':'s'}</div>
+      <div class="track"><span class="fill" style="width:${pct}%"></span></div>
+      <div class="rbot">
+        <span class="rpct">${pct}%</span>
+        <span class="rdel" data-rid="${esc(r.id)}" title="Delete “${esc(r.title)}” — the release only, not its songs">🗑</span>
+      </div>
+    </div>`;
+  }).join('');
+  grid.querySelectorAll('.rcard').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.rdel')) return;
+      curReleaseId = el.dataset.rid;
+      render();
+    });
+  });
+  grid.querySelectorAll('.rdel').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const r = releases.find(x => x.id === el.dataset.rid);
+      if (!r || !confirm(`Delete “${r.title}”? The release only — none of its songs are touched.`)) return;
+      try { await libRpc('delete_release', { rid: r.id }); await loadAll(); }
+      catch (err){ alert(String(err.message || err)); }
+    });
+  });
+}
+
+function relSongRowHtml(s, i, n){
+  const pct = songPctOf(s);
+  const cov = publicUrl(s.cover);
+  return `
+  <div class="relsong" data-f="${esc(s.folder)}">
+    ${cov ? `<img class="rcov" src="${esc(cov)}" alt="" loading="lazy" />` : `<div class="rcovph"></div>`}
+    <div class="rmeta">
+      <div class="rtitle">${esc(s.title)}</div>
+      ${s.artist ? `<div class="rartist">${esc(s.artist)}</div>` : ''}
+    </div>
+    <span class="rpct2">${pct}%</span>
+    <span class="rec ${i===0?'disabled':''}" data-act="up" title="Move up">▲</span>
+    <span class="rec ${i===n-1?'disabled':''}" data-act="down" title="Move down">▼</span>
+    <span class="rec" data-act="open" title="Open “${esc(s.title)}” in the player">▤</span>
+    <span class="rec danger" data-act="remove" title="Remove from this release — the song itself is untouched">✕</span>
+  </div>`;
+}
+
+function renderDetail(){
+  const r = releases.find(x => x.id === curReleaseId);
+  if (!r){ curReleaseId = null; return renderGrid(); }
+  $('relGrid').style.display = 'none';
+  $('relBackBtn').style.display = '';
+  const det = $('relDetail');
+  det.style.display = '';
+  const list = (r.songs || []).map(songByFolder).filter(Boolean);
+  const pct = releaseRollup(r);
+  det.innerHTML = `
+    <div class="rdetail-head">
+      <h2 id="relTitleEl" title="Click to rename">${esc(r.title)}</h2>
+      <button class="addbtn" id="relAddBtn">+ Add tracks</button>
+      <button class="addbtn" id="relShareBtn" title="Copy a link to this release — public or band-only">🔗</button>
+      <span class="rdel" id="relDeleteBtn" style="cursor:pointer;color:var(--text-mute)"
+            title="Delete this release — the release only, not its songs">🗑</span>
+      <span class="rpctbig">${pct}%</span>
+    </div>
+    <div class="rsonglist" id="relSongList">
+      ${list.length ? list.map((s, i) => relSongRowHtml(s, i, list.length)).join('')
+                    : `<div class="rempty2">Nothing in this release yet. “+ Add tracks” pulls from your library.</div>`}
+    </div>`;
+  $('relTitleEl').addEventListener('click', async () => {
+    const t = (prompt('Rename release:', r.title) || '').trim();
+    if (!t || t === r.title) return;
+    try { await libRpc('rename_release', { rid: r.id, new_title: t }); await loadAll(); }
+    catch (err){ alert(String(err.message || err)); }
+  });
+  $('relAddBtn').addEventListener('click', () => openPicker(r.id));
+  $('relShareBtn').addEventListener('click', () => offerReleaseShare(r));
+  $('relDeleteBtn').addEventListener('click', async () => {
+    if (!confirm(`Delete “${r.title}”? The release only — none of its songs are touched.`)) return;
+    try { await libRpc('delete_release', { rid: r.id }); curReleaseId = null; await loadAll(); }
+    catch (err){ alert(String(err.message || err)); }
+  });
+  det.querySelectorAll('.relsong').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      const f = el.dataset.f;
+      const act = e.target.closest('.rec');
+      if (!act || act.classList.contains('disabled')) return;
+      const order = list.map(s => s.folder);
+      const idx = order.indexOf(f);
+      try {
+        if (act.dataset.act === 'up' && idx > 0){
+          [order[idx-1], order[idx]] = [order[idx], order[idx-1]];
+          await libRpc('reorder_release_songs', { rid: r.id, folders: order });
+          await loadAll();
+        } else if (act.dataset.act === 'down' && idx > -1 && idx < order.length - 1){
+          [order[idx+1], order[idx]] = [order[idx], order[idx+1]];
+          await libRpc('reorder_release_songs', { rid: r.id, folders: order });
+          await loadAll();
+        } else if (act.dataset.act === 'remove'){
+          await libRpc('remove_release_song', { rid: r.id, f });
+          await loadAll();
+        } else if (act.dataset.act === 'open'){
+          location.href = 'music.html?b=' + encodeURIComponent(curBand) + '&s=' + encodeURIComponent(f);
+        }
+      } catch (err){ alert(String(err.message || err)); }
+    });
+  });
+}
+
+// ---------- Add-tracks picker ----------
+function openPicker(rid){
+  const r = releases.find(x => x.id === rid);
+  if (!r) return;
+  renderPicker(r);
+  $('pickerModal').classList.add('open');
+}
+
+function renderPicker(r){
+  const included = new Set(r.songs || []);
+  const list = songs.slice().sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  $('pickerList').innerHTML = list.length ? list.map(s => `
+    <div class="todo-row ${included.has(s.folder) ? 'ticked' : ''}" data-f="${esc(s.folder)}">
+      <input type="checkbox" class="todo-tick" ${included.has(s.folder) ? 'checked' : ''} />
+      <div class="body"><div class="txt">${esc(s.title)}${s.artist ? ' — ' + esc(s.artist) : ''}</div></div>
+    </div>`).join('') : `<div class="rempty2">No songs in the library yet.</div>`;
+  $('pickerList').querySelectorAll('.todo-tick').forEach(cb => {
+    cb.addEventListener('change', async (e) => {
+      const row = e.target.closest('.todo-row');
+      const f = row.dataset.f;
+      const on = e.target.checked;
+      try {
+        if (on) await libRpc('add_release_song', { rid: r.id, f });
+        else await libRpc('remove_release_song', { rid: r.id, f });
+        row.classList.toggle('ticked', on);
+        await loadAll();
+        // loadAll() just re-rendered the detail view underneath the modal;
+        // keep this picker's own `r` in sync so the next toggle in the same
+        // session reads the fresh membership rather than what was open when
+        // the picker was first shown.
+        const fresh = releases.find(x => x.id === r.id);
+        if (fresh) r.songs = fresh.songs;
+      } catch (err) {
+        alert(String(err.message || err));
+        e.target.checked = !on;
+      }
+    });
+  });
+}
+
+// ---------- Sharing ----------
+// Same two-kind choice as every other item on the site: a public link
+// (?t=<token>, no password, one auto-picked mix per song) or a band link
+// (password-gated, opens straight into this release for a bandmate). The
+// public link opens music.html, not this page — get_shared's payload for a
+// release is the exact same {kind,band,band_title,name,songs} shape a
+// project's already is, and music.html's ?t= handling renders it through
+// the same list/player code with no branch of its own to add. Building a
+// second player here would only duplicate what already works.
+async function copyText(text, el){
+  try { await navigator.clipboard.writeText(text); }
+  catch { prompt('Copy this link:', text); return; }
+  if (el){ const old = el.textContent; el.textContent = '✓'; setTimeout(() => { el.textContent = old; }, 900); }
+}
+
+let shareCloser = null;
+function askShareKind(title, hint, pub, gated){
+  return new Promise((resolve) => {
+    $('shareTitle').textContent = title;
+    $('shareHint').textContent = hint || '';
+    $('shareList').innerHTML = `
+      <div class="trash-item pick share pub" data-kind="public">
+        <span class="tico">🌐</span>
+        <span class="tname">${esc(pub.label)}</span>
+        <span class="tsub">${esc(pub.sub)}</span>
+      </div>
+      <div class="trash-item pick share gated" data-kind="band">
+        <span class="tico">🔒</span>
+        <span class="tname">${esc(gated.label)}</span>
+        <span class="tsub">${esc(gated.sub)}</span>
+      </div>`;
+    const close = (val) => { $('shareModal').classList.remove('open'); shareCloser = null; resolve(val); };
+    shareCloser = close;
+    $('shareList').querySelectorAll('.pick').forEach(el => el.onclick = () => close(el.dataset.kind));
+    $('shareCancel').onclick = () => close(null);
+    $('shareModal').onclick = (e) => { if (e.target === $('shareModal')) close(null); };
+    $('shareModal').classList.add('open');
+  });
+}
+
+// Public links always open on the player, whatever page minted them.
+async function mintShareUrl(kind, ref){
+  const tok = await libRpc('set_share', { kind, ref });
+  return 'music.html?t=' + encodeURIComponent(tok);
+}
+
+async function offerReleaseShare(r){
+  const bandLink = pageBase() + '?b=' + encodeURIComponent(curBand) + '&rel=' + encodeURIComponent(r.id);
+  const choice = await askShareKind(
+    `Share “${r.title}”`,
+    'Two kinds of link. A public link can be switched off again later, and switching it off kills every link ever sent for this release.',
+    { label: 'Public link',
+      sub: `Anyone who opens it can listen to “${r.title}” on the player. No password. Comments stay hidden, and each song travels as one mix — the most starred, or the latest.` },
+    { label: 'Band link',
+      sub: 'Asks for the band password, then opens straight into this release here in the builder.' });
+  if (!choice) return;
+  if (choice === 'band') return copyText(bandLink, $('relShareBtn'));
+  try { copyText(await mintShareUrl('release', r.id), $('relShareBtn')); }
+  catch (e) { alert(e.message || 'Could not make a public link.'); }
+}
+
+on('relNewBtn', 'click', async () => {
+  const t = (prompt('New release — album, EP, any compilation:') || '').trim();
+  if (!t) return;
+  try {
+    const rid = await libRpc('create_release', { title_in: t });
+    await loadAll();
+    curReleaseId = rid;
+    render();
+  } catch (err){ alert(String(err.message || err)); }
+});
+on('relBackBtn', 'click', () => { curReleaseId = null; render(); });
+on('pickerClose', 'click', () => $('pickerModal').classList.remove('open'));
 
 init();
 </script>

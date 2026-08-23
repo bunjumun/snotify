@@ -636,13 +636,17 @@ export const CFG = {
     highRadius: 75,       // how close a school has to be to be worth asking
     // Shorter than the sober cooldown because the window is short and paid for,
     // but long enough that asking again doesn't cut the diver off mid-answer.
-    highCooldown: 6,
+    // Was 6; his word on 22 Aug ("yes more fish exchanges more often") halved it.
+    highCooldown: 3,
 
     // Swimming into a shoal makes it talk — but only while a bowl is working.
     // Sober, the schools say nothing; one appointed fish answers the hint button
     // and that is the whole of it. Per school, so circling one doesn't turn it
     // into a chatterbox.
-    throughCooldown: 45,
+    // Was 45; his word on 22 Aug ("yes more fish exchanges more often") more
+    // than halved it — the trip window is short and paid for, so the ambient
+    // trigger should keep pace with the button rather than lag behind it.
+    throughCooldown: 20,
   },
 
   // ---------- Fish ----------

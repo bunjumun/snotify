@@ -18,11 +18,6 @@
 // away. The closest this gets is the sturgeon's ping, and even that only tells
 // you whether you're getting warmer.
 //
-// The hint button is also a lifeline. If you're low on breath and short of
-// baggies, whoever turns up talks about baggies instead — because a player about
-// to hit DREAM OVER through bad luck rather than bad play should have somewhere
-// to turn, and that costs nothing to offer.
-//
 // And then there's being high. Sober, one fish talks to you, on a long cooldown,
 // working through the three clues in the order they were written. Under the
 // effects of a bowl, every school in the lake will answer: the clue is the good
@@ -43,7 +38,6 @@ import { CFG } from '../../config.js';
 import { GuideFish } from '../entities/Fish.js';
 import { Chest } from '../entities/Chest.js';
 import { LoreFeed } from './LoreFeed.js';
-import { Stash } from './Stash.js';
 
 // Public by design — see supabase/schema-v19.sql. lore_active() serves only the
 // draft the band deliberately promoted, which is why it needs no password.
@@ -251,13 +245,6 @@ export class Clues {
       return;
     }
 
-    // Lifeline first. Being told where the treasure is while you suffocate would
-    // be a joke at the player's expense.
-    if (this._needsBaggies()) {
-      this.cooldown = CFG.clues.askCooldown;
-      return this._stashHint();
-    }
-
     // High: ask whatever is swimming past, on a short leash.
     if (g.trip.value > CFG.clues.highAt) {
       this.cooldown = CFG.clues.highCooldown;
@@ -267,31 +254,6 @@ export class Clues {
     this.cooldown = CFG.clues.askCooldown;
     if (this.found) return this._afterHint();
     return this._chestHint();
-  }
-
-  _needsBaggies() {
-    const g = this.game;
-    return !g.stash.canPack && g.breath.fraction < 0.45;
-  }
-
-  _stashHint() {
-    const g = this.game;
-    const near = g.stash.nearestAvailable(g.kelpie.position);
-    // Both halves of this speak in fractions now. "You're 6 short" was true in
-    // eighths and meaningless in weed, and the fish is the one voice in the game
-    // that is supposed to talk like a person who knows the lake.
-    const short = Stash.fraction(CFG.stash.needed - g.stash.carried);
-    if (!near) {
-      this._speak(0, `Nothing close. Keep moving. This wreck is full of it.`);
-      return;
-    }
-    // Naming the size is the fish doing something the player cannot: judging a
-    // jar from across the fog. It also answers "is that one even worth the
-    // swim", which only became a real question once jars stopped being equal.
-    this._speak(0,
-      `You're ${short} short and you're running out of air.<br>` +
-      `There's ${Stash.fraction(near.baggie.eighths)} of a jar ` +
-      `${bearing(g.kelpie.position, near.position)}. Go.`);
   }
 
   _chestHint() {

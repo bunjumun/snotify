@@ -70,6 +70,27 @@
   .song .sub { color: var(--text-dim); font-size: 13px; display: flex; gap: 8px; align-items: center; }
   .song .right { color: var(--text-mute); font-size: 13px; font-variant-numeric: tabular-nums; }
 
+  /* Folders (QUEUE, 22 Aug). A collapsed row that opens onto the songs inside
+     — deliberately a peer of .song in the DOM, not a wrapper around it, so
+     nothing that already targets a row by '#list .song' has to change. */
+  .musicfolder { display: flex; flex-direction: column; gap: 6px; }
+  .mfhead {
+    display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    border-radius: 10px; background: var(--bg-row); border: 1px solid transparent;
+    cursor: pointer; user-select: none; transition: background .12s;
+  }
+  .mfhead:hover { background: var(--bg-hover); }
+  .mfcaret { color: var(--text-mute); font-size: 11px; width: 10px; text-align: center; }
+  .mfname { font-weight: 600; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mfcount { color: var(--text-mute); font-size: 13px; }
+  .mfsongs { display: flex; flex-direction: column; gap: 6px; padding-left: 22px; }
+
+  /* Status line beside the folder-upload button — same colours as .modal
+     .status but not nested in a modal, so it needs its own rule. */
+  .barstatus { font-size: 12.5px; color: var(--text-dim); }
+  .barstatus.err { color: var(--err); }
+  .barstatus.ok { color: var(--accent-2); }
+
 
 
   /* Changelog drawer (git-style version history) */
@@ -1141,6 +1162,10 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11 5h2v14h-2z"/><path d="M5 11h14v2H5z"/></svg>
         Add
       </button>
+      <button class="addbtn" id="newFolderBtn" title="New folder — a personal way to group songs on this page">📁+</button>
+      <button class="addbtn" id="addFolderBtn" title="Pick a folder on your computer — every audio file in it becomes a new song, filed into a matching folder here">📁⬆</button>
+      <input type="file" id="folderFile" webkitdirectory multiple style="display:none" />
+      <span class="barstatus" id="folderUpStatus"></span>
       <button class="addbtn" id="shareBtn" title="Copy a share link to everything in this view — the project, or the whole library">🔗</button>
       <button class="addbtn" id="projBtn" title="Make a share link for a hand-picked set of songs">🎞</button>
       <a class="addbtn" id="artBtn" href="art.html" title="Sn'art — this band's artwork, with comments pinned to the picture">🎨 Art</a>
@@ -1860,6 +1885,12 @@ App.onLogout = () => {          // tear the player down before the band is forgo
 };
 
 let songs = [];
+// Music folders (QUEUE, 22 Aug): a personal grouping, separate from album and
+// from project — see the note on the migration in supabase/schema-v33.sql.
+// { id, name } pairs; which songs sit in one is songs[i].folderId. Collapsed
+// by default — "opening" a folder is the whole point of it being a folder.
+let folders = [];
+let openFolders = new Set();
 let curProject = null;             // project scoping the current view (via #/p/<slug>)
 // Progress ticks, keyed 'song/<folder>' and 'album/<project slug>' → Set of
 // task keys. Only ticked tasks are ever stored or sent, so membership IS the
@@ -2379,6 +2410,7 @@ async function init() {
     $('artBtn').href  = 'art.html?b='   + encodeURIComponent(curBand);
     $('homeBtn').href = 'index.html?b=' + encodeURIComponent(curBand);
     songs = normalize(payload);
+    folders = payload.folders || [];
     // In the background — the boxes fill in. Only asked for at all by a band
     // that has the game; for anyone else there are no boxes to fill.
     if (bandHas('game')) loadGameFlags();
@@ -2471,6 +2503,7 @@ function normalize(data){
     if (!versions.length) return null;
     return {
       folder: s.folder || null,   // stable key for project membership + deep links
+      folderId: s.music_folder_id || null,   // which music_folders row, if any (v33)
       // Stable id, band-scoped so songs in different bands never share a
       // comment pool: <band>/<slug-of-title>.
       id: curBand + '/' + (s.id || slug(s.title || filename(versions[0].src)) || 'song-' + i),
@@ -3094,46 +3127,119 @@ function renderAlbumProgress(){
   refreshProgressNumbers();
 }
 
+function songRowHtml(s, i){
+  const n = s.versions.length;
+  const cc = countComments(s.id);
+  const tail = editing ? `
+    <div class="editctl">
+      <span class="ec ${i===0?'disabled':''}" data-act="up" title="Move up">▲</span>
+      <span class="ec ${i===songs.length-1?'disabled':''}" data-act="down" title="Move down">▼</span>
+      <span class="ec" data-act="stack" title="Stack “${esc(s.title)}” into another song as versions">⧉</span>
+      <span class="ec" data-act="folder" title="Move “${esc(s.title)}” to a folder, or take it out of one">📁</span>
+      <span class="ec danger" data-act="trash" title="Move “${esc(s.title)}” to the trash">🗑</span>
+    </div>`
+  : `<div class="sacts">
+      <div class="right" data-dur="${i}"></div>
+      ${n > 1 ? `<div class="vpick" title="${n} mixes — pick which one to start with">
+         <span class="vn">${n}</span><svg class="vcar" viewBox="0 0 10 6"><path d="M0 0l5 6 5-6z"/></svg>
+       </div>` : ''}
+      <div class="sopen" title="Open “${esc(s.title)}” — its own page, without playing: the stack, the comments and the links (d)">▤</div>
+      <div class="scpy" title="Copy share link to “${esc(s.title)}” — the whole stack">🔗</div>
+      ${s.folder ? `<div class="sdel" title="Delete — one mix, or “${esc(s.title)}” and all of them">🗑</div>` : ''}
+    </div>`;
+  return `
+  <div class="song ${n>1?'stacked':''}" data-i="${i}">
+    <canvas class="swave" data-wave="${i}" aria-hidden="true"></canvas>
+    <div class="idx"><span class="num">${i+1}</span><span class="bars"><span></span><span></span><span></span></span></div>
+    ${(() => { const a = artOf(s); return a ? `<img class="sart" src="${esc(a.src)}" alt="" loading="lazy" title="${esc(a.title)}" />` : ''; })()}
+    <div class="meta">
+      <div class="title${editing ? '' : ' titlelink'}">${esc(s.title)}</div>
+      <div class="sub">
+        ${s.artist ? `<span>${esc(s.artist)}</span>` : ''}
+        ${cc ? `<span class="badge dim">💬 ${cc}</span>` : ''}
+        ${(() => { const f = favouriteIndex(s); return f === -1 ? ''
+            : `<span class="badge fav" title="Most-starred mix — ${esc(starsOf(s.versions[f]).join(', '))}">★ ${esc(s.versions[f].name)}</span>`; })()}
+      </div>
+    </div>
+    ${tail}
+  </div>`;
+}
+
+// Folders (QUEUE, 22 Aug) sit as peers of .song in the DOM rather than
+// wrapping the list in a second layer everywhere — every existing selector
+// that reaches a row via '#list .song' or '.song[data-i=...]' (waveforms,
+// progress bars, highlight(), fillRowWaves) keeps working unchanged, because
+// nesting a row one div deeper inside .mfsongs doesn't change what a
+// descendant selector finds. Reordering (▲▼) still walks the whole flat
+// `songs` array regardless of which folder a row is filed under — folders are
+// a view over that array, not a second ordering of it.
 function renderList() {
   $('list').className = 'songlist';
   $('trackCount').textContent = `${songs.length} song${songs.length===1?'':'s'}`;
-  $('list').innerHTML = songs.map((s, i) => {
-    const n = s.versions.length;
-    const cc = countComments(s.id);
-    const tail = editing ? `
-      <div class="editctl">
-        <span class="ec ${i===0?'disabled':''}" data-act="up" title="Move up">▲</span>
-        <span class="ec ${i===songs.length-1?'disabled':''}" data-act="down" title="Move down">▼</span>
-        <span class="ec" data-act="stack" title="Stack “${esc(s.title)}” into another song as versions">⧉</span>
-        <span class="ec danger" data-act="trash" title="Move “${esc(s.title)}” to the trash">🗑</span>
-      </div>`
-    : `<div class="sacts">
-        <div class="right" data-dur="${i}"></div>
-        ${n > 1 ? `<div class="vpick" title="${n} mixes — pick which one to start with">
-           <span class="vn">${n}</span><svg class="vcar" viewBox="0 0 10 6"><path d="M0 0l5 6 5-6z"/></svg>
-         </div>` : ''}
-        <div class="sopen" title="Open “${esc(s.title)}” — its own page, without playing: the stack, the comments and the links (d)">▤</div>
-        <div class="scpy" title="Copy share link to “${esc(s.title)}” — the whole stack">🔗</div>
-        ${s.folder ? `<div class="sdel" title="Delete — one mix, or “${esc(s.title)}” and all of them">🗑</div>` : ''}
-      </div>`;
+  const byFolder = new Map();
+  const loose = [];
+  songs.forEach((s, i) => {
+    if (s.folderId){
+      if (!byFolder.has(s.folderId)) byFolder.set(s.folderId, []);
+      byFolder.get(s.folderId).push(i);
+    } else loose.push(i);
+  });
+  const folderHtml = folders.map(f => {
+    const idxs = byFolder.get(f.id) || [];
+    const open = openFolders.has(f.id);
     return `
-    <div class="song ${n>1?'stacked':''}" data-i="${i}">
-      <canvas class="swave" data-wave="${i}" aria-hidden="true"></canvas>
-      <div class="idx"><span class="num">${i+1}</span><span class="bars"><span></span><span></span><span></span></span></div>
-      ${(() => { const a = artOf(s); return a ? `<img class="sart" src="${esc(a.src)}" alt="" loading="lazy" title="${esc(a.title)}" />` : ''; })()}
-      <div class="meta">
-        <div class="title${editing ? '' : ' titlelink'}">${esc(s.title)}</div>
-        <div class="sub">
-          ${s.artist ? `<span>${esc(s.artist)}</span>` : ''}
-          ${cc ? `<span class="badge dim">💬 ${cc}</span>` : ''}
-          ${(() => { const f = favouriteIndex(s); return f === -1 ? ''
-              : `<span class="badge fav" title="Most-starred mix — ${esc(starsOf(s.versions[f]).join(', '))}">★ ${esc(s.versions[f].name)}</span>`; })()}
-        </div>
+    <div class="musicfolder">
+      <div class="mfhead" data-fid="${esc(f.id)}">
+        <span class="mfcaret">${open ? '▾' : '▸'}</span>
+        <span class="mficon">📁</span>
+        <span class="mfname">${esc(f.name)}</span>
+        <span class="mfcount">${idxs.length} song${idxs.length===1?'':'s'}</span>
+        ${editing ? `
+        <div class="editctl">
+          <span class="ec" data-fact="rename" title="Rename “${esc(f.name)}”">✎</span>
+          <span class="ec danger" data-fact="delete" title="Delete “${esc(f.name)}” — asks what to do with the songs inside, if any">🗑</span>
+        </div>` : ''}
       </div>
-      ${tail}
+      ${open ? `<div class="mfsongs">${idxs.map(i => songRowHtml(songs[i], i)).join('')}</div>` : ''}
     </div>`;
   }).join('');
+  $('list').innerHTML = folderHtml + loose.map(i => songRowHtml(songs[i], i)).join('');
   requestAnimationFrame(fillRowWaves);   // the ghost waveform behind each row
+  $('list').querySelectorAll('.mfhead').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      const fid = el.dataset.fid;
+      const fact = e.target.closest('.ec');
+      if (fact){
+        e.stopPropagation();
+        const f = folders.find(x => x.id === fid);
+        try {
+          if (fact.dataset.fact === 'rename'){
+            const name = (prompt('Rename folder:', f ? f.name : '') || '').trim();
+            if (!name) return;
+            await libRpc('rename_music_folder', { fid, new_name: name });
+            await refreshLibrary();
+          } else if (fact.dataset.fact === 'delete'){
+            const inFolder = songs.filter(s => s.folderId === fid);
+            let choice = 'folder-only';
+            if (inFolder.length){
+              choice = await pickFolderDeleteChoice(f ? f.name : 'this folder', inFolder.length);
+              if (choice === false) return;
+            } else if (!confirm(`Delete “${f ? f.name : 'this folder'}”?`)){
+              return;
+            }
+            if (choice === 'contents')
+              for (const s of inFolder) await libRpc('trash_song', { f: s.folder });
+            openFolders.delete(fid);
+            await libRpc('delete_music_folder', { fid });
+            await refreshLibrary();
+          }
+        } catch (err){ alert(String(err.message || err)); }
+        return;
+      }
+      openFolders.has(fid) ? openFolders.delete(fid) : openFolders.add(fid);
+      renderList();
+    });
+  });
   $('list').querySelectorAll('.song').forEach(el => {
     el.addEventListener('click', (e) => {
       const i = Number(el.dataset.i);
@@ -3387,6 +3493,19 @@ async function songAct(act, i){
       await refreshLibrary();
     } else if (act === 'trash'){
       await deleteFlow(s);              // asks which, then confirms
+    } else if (act === 'folder'){
+      const choice = await pickFolder(`Move “${s.title}”…`,
+        'Folders are yours to organise the list with — nothing else on the site reads this.', s.folderId);
+      if (choice === false) return;                    // cancelled
+      let fid = choice === '' ? null : choice;
+      if (fid === '__new__'){
+        const name = (prompt('Name this folder:') || '').trim();
+        if (!name) return;
+        fid = await libRpc('create_music_folder', { fname: name });
+      }
+      await libRpc('set_song_folder', { f: key, fid });
+      if (fid) openFolders.add(fid);
+      await refreshLibrary();
     }
   } catch (err){ alert(String(err.message || err)); }
 }
@@ -3455,6 +3574,64 @@ function pickSong(title, hint, excludeKey){
     $('pickList').querySelectorAll('.pick').forEach(el => el.onclick = () => close(el.dataset.key));
     $('pickCancel').onclick = () => close(null);
     $('pickModal').onclick = (e) => { if (e.target === $('pickModal')) close(null); };
+    $('pickModal').classList.add('open');
+  });
+}
+
+// Same picker dialog pickSong uses, offered a different list. Resolves false
+// on cancel (distinct from '', which means "no folder" — an explicit choice,
+// not an absence of one).
+function pickFolder(title, hint, currentFolderId){
+  return new Promise((resolve) => {
+    $('pickTitle').textContent = title;
+    $('pickHint').textContent = hint || '';
+    const rows = [
+      `<div class="trash-item pick" data-fid="" style="cursor:pointer">
+        <span class="tname">No folder</span>
+        <span class="tmeta">${!currentFolderId ? 'current' : ''}</span>
+      </div>`,
+      ...folders.map(f => `
+      <div class="trash-item pick" data-fid="${esc(f.id)}" style="cursor:pointer">
+        <span class="tname">${esc(f.name)}</span>
+        <span class="tmeta">${f.id === currentFolderId ? 'current' : ''}</span>
+      </div>`),
+      `<div class="trash-item pick" data-fid="__new__" style="cursor:pointer">
+        <span class="tname">➕ New folder…</span>
+      </div>`,
+    ];
+    $('pickList').innerHTML = rows.join('');
+    const close = (val) => { $('pickModal').classList.remove('open'); pickCloser = null; resolve(val); };
+    pickCloser = () => close(false);
+    $('pickList').querySelectorAll('.pick').forEach(el => el.onclick = () => close(el.dataset.fid));
+    $('pickCancel').onclick = () => close(false);
+    $('pickModal').onclick = (e) => { if (e.target === $('pickModal')) close(false); };
+    $('pickModal').classList.add('open');
+  });
+}
+
+// Deleting a folder that still holds songs needs a real choice, not a plain
+// yes/no (his word, 22 Aug): keep them — they fall back to the main list with
+// everything else unfoldered, the same door pickFolder's "No folder" uses —
+// or delete them too. Same picker dialog again, two rows instead of a list
+// of folders. An empty folder skips this and just confirms, same as before.
+function pickFolderDeleteChoice(name, n){
+  return new Promise((resolve) => {
+    $('pickTitle').textContent = `Delete “${name}”…`;
+    $('pickHint').textContent = `${n} song${n===1?'':'s'} filed in here. Keep them, or delete them too?`;
+    $('pickList').innerHTML = `
+      <div class="trash-item pick" data-choice="folder-only" style="cursor:pointer">
+        <span class="tname">Keep the songs</span>
+        <span class="tmeta">back to the main list, unfoldered</span>
+      </div>
+      <div class="trash-item pick" data-choice="contents" style="cursor:pointer">
+        <span class="tname">Delete the songs too</span>
+        <span class="tmeta">to the trash</span>
+      </div>`;
+    const close = (val) => { $('pickModal').classList.remove('open'); pickCloser = null; resolve(val); };
+    pickCloser = () => close(false);
+    $('pickList').querySelectorAll('.pick').forEach(el => el.onclick = () => close(el.dataset.choice));
+    $('pickCancel').onclick = () => close(false);
+    $('pickModal').onclick = (e) => { if (e.target === $('pickModal')) close(false); };
     $('pickModal').classList.add('open');
   });
 }
@@ -6927,6 +7104,80 @@ async function doUpload(){
   }
 }
 $('addGo').onclick = doUpload;
+
+// ---------- Add a whole folder at once (QUEUE, top line, 22 Aug) ----------
+// A different shape from the Add dialog above: there, several files become
+// several VERSIONS of one song; here, several files become several SONGS, one
+// each, filed together into one folder. No modal — the OS's own directory
+// picker is already a dialog, so this runs straight off the selection with a
+// status line beside the button rather than opening a second one on top of it.
+function setFolderUpStatus(msg, cls){
+  const el = $('folderUpStatus');
+  el.textContent = msg || ''; el.className = 'barstatus' + (cls ? ' ' + cls : '');
+}
+$('newFolderBtn').onclick = async () => {
+  if (!curBand || !isAuthed(curBand)) return showGate(curBand, false);
+  const name = (prompt('Name this folder:') || '').trim();
+  if (!name) return;
+  try {
+    const fid = await libRpc('create_music_folder', { fname: name });
+    openFolders.add(fid);
+    await refreshLibrary();
+  } catch (err){ alert(String(err.message || err)); }
+};
+$('addFolderBtn').onclick = () => {
+  if (!curBand || !isAuthed(curBand)) return showGate(curBand, false);
+  $('folderFile').value = '';    // so picking the same folder twice still fires 'change'
+  $('folderFile').click();
+};
+$('folderFile').addEventListener('change', async () => {
+  const all = [...($('folderFile').files || [])];
+  const files = all.filter(f => LOSSLESS_RE.test(f.name) || /\.(mp3|m4a|aac|ogg|opus)$/i.test(f.name));
+  if (!files.length){ setFolderUpStatus('No audio files in that folder.', 'err'); return; }
+  // webkitRelativePath is "<folder>/<file>", or "<folder>/<sub>/<file>" for a
+  // nested one — either way the first segment is the folder he picked.
+  const dirName = (files[0].webkitRelativePath || '').split('/')[0] || 'New folder';
+  const pass = bandPass(curBand);
+  if (!pass){ showGate(curBand, false); return; }
+  try {
+    const prepared = await prepareForUpload(files, setFolderUpStatus, false);
+    const big = prepared.find(f => f.size > INBOX_MAX);
+    if (big) throw new Error(`${big.name} is ${(big.size/1048576).toFixed(0)} MB — over the ${(INBOX_MAX/1048576)|0} MB limit even after compression.`);
+    // Same inbox-then-import transport doUpload uses, just once per SONG
+    // instead of once per version of a single song.
+    const put = async (path, body, type) => {
+      const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${path}`, {
+        method: 'POST',
+        headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+                   'Content-Type': type, 'x-upsert': 'true' },
+        body });
+      if (r.ok) return;
+      let detail = '';
+      try { const j = await r.json(); detail = j.message || j.error || ''; } catch {}
+      throw new Error(`Upload of ${decodeURIComponent(path.split('/').pop())} failed `
+                    + `(${r.status}${detail ? ': ' + detail : ''})`);
+    };
+    const enc2 = (...seg) => seg.map(encodeURIComponent).join('/');
+    const titles = [];
+    for (const [i, f] of prepared.entries()){
+      const title = f.name.replace(/\.[^.]+$/, '');
+      const ext = (f.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+      setFolderUpStatus(`Uploading ${i+1}/${prepared.length}: ${f.name}…`);
+      await put(enc2(curBand, pass, title, title + ext), f, f.type || 'application/octet-stream');
+      setFolderUpStatus(`Importing ${i+1}/${prepared.length}: ${f.name}…`);
+      await edgeFn('import-inbox', { band: curBand, pass, song: title });
+      titles.push(title);
+    }
+    setFolderUpStatus(`Filing into “${dirName}”…`);
+    const fid = await libRpc('create_music_folder', { fname: dirName });
+    for (const title of titles) await libRpc('set_song_folder', { f: title, fid });
+    openFolders.add(fid);
+    setFolderUpStatus(`Done ✓ — ${titles.length} song${titles.length===1?'':'s'} added to “${dirName}”.`, 'ok');
+    await refreshLibrary();
+  } catch (err){
+    setFolderUpStatus(String(err.message || err), 'err');
+  }
+});
 
 // ---------- Trash (soft-deleted songs and versions; confirm to remove forever) ----------
 // Trashing only sets a timestamp, so nothing leaves storage until someone

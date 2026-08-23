@@ -1264,7 +1264,12 @@
         <b>Restore</b> puts a song back in the library; <b>Delete forever</b> asks twice,
         then the files are gone for good.
       </div>
+      <div class="todo-tabs">
+        <button class="todo-tab active" id="trashTabSongs" data-tab="songs">Songs &amp; mixes</button>
+        <button class="todo-tab" id="trashTabComments" data-tab="comments">Comments</button>
+      </div>
       <div id="trashList"></div>
+      <div id="trashCommentList" style="display:none"></div>
       <div class="status" id="trashStatus"></div>
       <div class="actions"><button class="btn ghost" id="trashClose">Close</button></div>
     </div>
@@ -7407,9 +7412,71 @@ function renderTrash(t){
   });
 }
 
+// Comment trash (CR-85) — same restore/purge shape as songs and versions
+// above, its own tab rather than folded into trashList since a comment has
+// no folder/name pair to key off, just an id.
+async function refreshCommentTrash(){
+  if (!curBand || !isAuthed(curBand)) return [];
+  try { return await libRpc('get_comment_trash', {}); } catch { return []; }
+}
+
+function renderCommentTrash(rows){
+  if (!rows.length){
+    $('trashCommentList').innerHTML = '<div class="cempty">No deleted comments.</div>';
+    return;
+  }
+  $('trashCommentList').innerHTML = rows.map(c => `
+    <div class="trash-item" data-id="${esc(c.id)}" data-label="this comment">
+      <span class="tname">${esc(c.text || '').slice(0, 80)}${(c.text || '').length > 80 ? '…' : ''}</span>
+      <span class="tmeta">${esc(c.name || '')}${c.name ? ' · ' : ''}${new Date(c.deleted_at).toLocaleDateString()}</span>
+      <button class="btn ghost restore">Restore</button>
+      <button class="btn danger">Delete forever</button>
+    </div>`).join('');
+
+  $('trashCommentList').querySelectorAll('.trash-item').forEach(el => {
+    const { id, label } = el.dataset;
+    el.querySelector('.restore').addEventListener('click', async () => {
+      try {
+        setTrashStatus(`Restoring ${label}…`);
+        await libRpc('restore_comment', { cid: id });
+        renderCommentTrash(await refreshCommentTrash());
+        setTrashStatus(`Restored ${label} ✓`, 'ok');
+      } catch (err) { setTrashStatus(String(err.message || err), 'err'); }
+    });
+    const del = el.querySelector('.danger');
+    del.addEventListener('click', async () => {
+      if (!del.classList.contains('armed')){
+        del.classList.add('armed'); del.textContent = 'Click again to confirm';
+        setTimeout(() => { del.classList.remove('armed'); del.textContent = 'Delete forever'; }, 4000);
+        return;
+      }
+      try {
+        setTrashStatus(`Deleting ${label} forever…`);
+        await libRpc('purge_comment', { cid: id });
+        renderCommentTrash(await refreshCommentTrash());
+        setTrashStatus(`${label[0].toUpperCase()}${label.slice(1)} permanently deleted.`, 'ok');
+      } catch (err) { setTrashStatus(String(err.message || err), 'err'); }
+    });
+  });
+}
+
+function setTrashTab(tab){
+  $('trashTabSongs').classList.toggle('active', tab === 'songs');
+  $('trashTabComments').classList.toggle('active', tab === 'comments');
+  $('trashList').style.display = tab === 'songs' ? '' : 'none';
+  $('trashCommentList').style.display = tab === 'comments' ? '' : 'none';
+}
+$('trashTabSongs').onclick = () => setTrashTab('songs');
+$('trashTabComments').onclick = async () => {
+  setTrashTab('comments');
+  $('trashCommentList').innerHTML = '<div class="cempty">Loading…</div>';
+  renderCommentTrash(await refreshCommentTrash());
+};
+
 async function openTrash(){
   $('trashModal').classList.add('open');
   setTrashStatus('');
+  setTrashTab('songs');
   $('trashList').innerHTML = '<div class="cempty">Loading…</div>';
   renderTrash(await refreshTrash());
 }

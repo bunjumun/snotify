@@ -375,8 +375,13 @@ function renderDrafts(){
   const box = $('drafts');
   $('stackCount').textContent = drafts.length ? `(${drafts.length})` : '';
   if (!drafts.length){
-    box.innerHTML = '<div class="hint" style="padding:8px 10px">No drafts yet. '
-      + 'Start one and the game will read it.</div>';
+    // Only lore and log are ever fetched by the game (LoreFeed/LogFeed both
+    // call lore_active() with those slugs specifically) — goals are a band
+    // planning doc the game never reads, so this can't say "the game will
+    // read it" for all three or it reads as gameplay content that isn't.
+    const tail = docSlug === 'goals' ? 'Start one to track them here.'
+                                      : 'Start one and the game will read it.';
+    box.innerHTML = '<div class="hint" style="padding:8px 10px">No drafts yet. ' + tail + '</div>';
     return;
   }
   box.innerHTML = '';
@@ -538,7 +543,7 @@ async function makeLive(){
     drafts = (await libRpc('lore_list', { d: docSlug })) || [];
     current = drafts.find(d => d.id === current.id) || current;
     renderDrafts();
-    say('Live. The game reads this one now.');
+    say(docSlug === 'goals' ? 'Live.' : 'Live. The game reads this one now.');
   } catch (e) { say(e.message, true); }
 }
 

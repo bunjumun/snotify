@@ -484,10 +484,16 @@ function askShareKind(title, hint, pub, gated){
   });
 }
 
-// Public links always open on the player, whatever page minted them.
+// Public links always open on the player, not this page. Built as an
+// absolute URL off this page's own address (pageBase(), from core.js) with
+// the filename swapped — a bare relative "music.html?t=…" is only valid
+// while still sitting in this page's own address bar; copied into a
+// message or a fresh tab it resolves against whatever page it lands on
+// instead, or nowhere, which is what "bad link" was.
 async function mintShareUrl(kind, ref){
   const tok = await libRpc('set_share', { kind, ref });
-  return 'music.html?t=' + encodeURIComponent(tok);
+  const musicBase = pageBase().replace(/release-builder\.html$/, 'music.html');
+  return musicBase + '?t=' + encodeURIComponent(tok);
 }
 
 async function offerReleaseShare(r){

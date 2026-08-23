@@ -4,8 +4,19 @@
 // stop and read rather than swim. Shows only the slates actually recovered, and
 // the gaps are left visible — a log with pages missing is a better story than a
 // log with a progress bar, and the blanks are what make you go back out.
-
-import { ENTRIES } from '../game/LogPages.js';
+//
+// **It reads the slates, not a module-level array, and that distinction is the
+// whole of CR-93.** This file used to `import { ENTRIES }` straight from
+// LogPages.js and render from it. ENTRIES is the copy compiled into the game as
+// an offline fallback; the band's live draft arrives later, over the wire, and
+// LogFeed hands it to `LogPages.setEntries()`. So the slates lying in the silt
+// carried the live words while the screen you actually READ them on rendered
+// the fallback, permanently, for everyone — and it looked exactly like a broken
+// fetch from the outside, which is where a day went. The fetch was never
+// broken. Take the text from `game.logs.pages`, which is the one list that is
+// both live and real: those are the slates that exist in the world, in story
+// order (LogPages builds them in order and setEntries preserves it), so a draft
+// with more entries than there are pages cannot show a page you can never find.
 
 export class Logbook {
   /** @param {import('../core/Game.js').Game} game */
@@ -17,6 +28,15 @@ export class Logbook {
     document.getElementById('btnLog').onclick = () => this.show();
   }
 
+  /**
+   * The entries there are slates for, live text and all. Read at call time
+   * rather than cached in the constructor, because the draft lands a moment
+   * after the game is built and a snapshot taken then would be the fallback.
+   */
+  _entries() {
+    return this.game.logs.pages.map((p) => p.entry);
+  }
+
   show() {
     const have = new Set(this.game.progress.data.logPages);
     this.list.innerHTML = '';
@@ -25,7 +45,7 @@ export class Logbook {
       this.list.innerHTML = '<p class="logempty">Nothing recovered yet. The slates are out '
         + 'there. They are small and dark, and they catch the lamp when you sweep past one.</p>';
     } else {
-      ENTRIES.forEach((e, i) => {
+      this._entries().forEach((e, i) => {
         const d = document.createElement('div');
         d.className = 'logentry';
         if (have.has(e.id)) {
@@ -48,7 +68,7 @@ export class Logbook {
   /** Keeps the pause-screen button honest about how much there is to read. */
   refreshCount() {
     const n = this.game.progress.data.logPages.length;
-    document.getElementById('logCount').textContent = `${n}/${ENTRIES.length}`;
+    document.getElementById('logCount').textContent = `${n}/${this._entries().length}`;
   }
 }
 

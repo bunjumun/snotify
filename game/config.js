@@ -398,10 +398,13 @@ export const CFG = {
     default: 'medium',
     order: ['chill', 'easy', 'medium', 'hard'],
     modes: {
-      chill:  { label: 'Chill',  tank: 260, baggieReturn: 70, baggieCount: 38, thermoMult: 1.00, hints: 'volunteered' },
-      easy:   { label: 'Easy',   tank: 180, baggieReturn: 20, baggieCount: 30, thermoMult: 1.15, hints: 'volunteered' },
-      medium: { label: 'Medium', tank: 120, baggieReturn: 10, baggieCount: 21, thermoMult: 1.35, hints: 'onRequest' },
-      hard:   { label: 'Hard',   tank:  90, baggieReturn:  5, baggieCount: 14, thermoMult: 1.60, hints: 'onRequest' },
+      // baggieCount raised 10% at his word, 23 Aug (CR-82, "twice as big and
+      // 10% more in frequency") — 38/30/21/14 -> 42/33/23/15, each rounded to
+      // the nearest jar. The ratio between modes is otherwise untouched.
+      chill:  { label: 'Chill',  tank: 260, baggieReturn: 70, baggieCount: 42, thermoMult: 1.00, hints: 'volunteered' },
+      easy:   { label: 'Easy',   tank: 180, baggieReturn: 20, baggieCount: 33, thermoMult: 1.15, hints: 'volunteered' },
+      medium: { label: 'Medium', tank: 120, baggieReturn: 10, baggieCount: 23, thermoMult: 1.35, hints: 'onRequest' },
+      hard:   { label: 'Hard',   tank:  90, baggieReturn:  5, baggieCount: 15, thermoMult: 1.60, hints: 'onRequest' },
     },
   },
 
@@ -488,6 +491,13 @@ export const CFG = {
     // a pickup radius of 4; this keeps the small jar findable while making the
     // half genuinely read as twice the eighth rather than a fifth larger.
     sizeExponent: 0.55,
+    // Flat multiplier on top of the exponent above, so the shape of the
+    // eighth/quarter/half relationship is untouched and every jar just reads
+    // as twice the jar. At his word, 23 Aug (CR-82, "twice as big"). Applied
+    // in Baggie.setFraction, not folded into sizeExponent, because the
+    // exponent is what the halves-vs-eighths ratio scars in this file are
+    // about and this ask is orthogonal to that tuning.
+    sizeMultiplier: 2.0,
     // Grown with the prop rather than left behind it. A baggie was half a unit
     // tall inside a radius of 2.6, so the collision was five times the size of
     // the thing drawn and picking one up felt like it happened *near* the jar
@@ -495,7 +505,13 @@ export const CFG = {
     // just outside it, which is the relationship the player can actually see.
     // This does loosen how tightly the stash can be spaced; it does not touch
     // any movement number, so the Phase 1 gate is unaffected.
-    pickupRadius: 4.0,
+    //
+    // Doubled again, 23 Aug, alongside sizeMultiplier above — the same "what
+    // you see is what you hit" invariant this comment already describes,
+    // reapplied rather than left to drift out of sync with the new visual
+    // size. Anchors stay 18 apart (unchanged), so two full-radius pickup
+    // spheres at the closest legal spacing still clear each other by 2 units.
+    pickupRadius: 8.0,
     respawnDelay: 6,      // seconds before a taken anchor can reseed
     minPlayerDistance: 45,// don't reseed one in the player's lap
     // How far apart two anchors have to be, so one sweep of one area cannot

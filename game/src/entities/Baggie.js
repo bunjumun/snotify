@@ -70,8 +70,12 @@ function shared() {
       color: 0xbcdfd2, roughness: 0.10, metalness: 0.0,
       transparent: true, opacity: 0.30,
       // The glint lives here. Cloned per instance in the constructor so each jar
-      // can answer the lamp on its own.
-      emissive: 0x2f5f52, emissiveIntensity: 0.25,
+      // can answer the lamp on its own. Base intensity raised 0.25 -> 0.6 at his
+      // word, 23 Aug (CR-82, "glowing") — the lamp still adds up to 2.4 more on
+      // top at close range (see update()), so a lit jar still reads brighter
+      // than an unlit one; unlit jars now glow on their own rather than needing
+      // the lamp to read as anything but glass.
+      emissive: 0x2f5f52, emissiveIntensity: 0.6,
       side: THREE.DoubleSide,   // you can see the far wall through the near one
     }),
     // Deliberately matte and dark against the glass. Weed lit like a gemstone
@@ -137,8 +141,11 @@ export class Baggie {
    */
   setFraction(eighths) {
     this.eighths = eighths;
-    // Volume, not height. See the header for why this is a cube root.
-    this.group.scale.setScalar(Math.pow(eighths / 2, CFG.stash.sizeExponent));
+    // Volume, not height. See the header for why this is a cube root. The flat
+    // sizeMultiplier factor is the 23 Aug "twice as big" ask (CR-82) — kept
+    // separate from the exponent so the eighth/quarter/half ratio this exponent
+    // encodes stays exactly what it was.
+    this.group.scale.setScalar(Math.pow(eighths / 2, CFG.stash.sizeExponent) * CFG.stash.sizeMultiplier);
     // Fill runs 0.55 to 1.0 rather than 0.25 to 1.0. The two signals multiply,
     // so a literal fill on top of a cube-root size would leave an eighth-jar
     // holding a smear of green nobody would read as weed at all. Overstating
@@ -159,7 +166,9 @@ export class Baggie {
     // Glint. Eased rather than binary so sweeping past leaves a shimmer.
     const lit = lamp ? lamp.illumination(this.group.position) : 0;
     this._glint += (lit - this._glint) * Math.min(1, dt * 7);
-    this.mesh.material.emissiveIntensity = 0.25 + this._glint * 2.4;
+    // Base matches the material default set in shared() — this line runs every
+    // frame and would otherwise overwrite that base back down each tick.
+    this.mesh.material.emissiveIntensity = 0.6 + this._glint * 2.4;
     // Glass also goes from nearly invisible to obviously there. Opacity is what
     // sells a highlight on something transparent; brightening alone just makes a
     // pale shape paler.

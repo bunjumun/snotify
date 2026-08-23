@@ -1267,6 +1267,26 @@ on('toolsBtn', 'click', (e) => { e.stopPropagation(); toolMenuOpen(!$('toolMenu'
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#toolMenu') && !e.target.closest('#toolsBtn')) toolMenuOpen(false);
 });
+
+// The other-pages menu. Same popup mechanics as the tools menu above; kept
+// generic here rather than per-page since every page wires it identically —
+// only the list of .navitem links inside #navMenu differs, and that lives in
+// the page's own markup.
+function navMenuOpen(open){
+  const m = $('navMenu'), b = $('navBtn');
+  if (!m || !b) return;
+  if (open){
+    const r = b.getBoundingClientRect();
+    m.style.top = (r.bottom + 6) + 'px';
+    m.style.left = Math.max(8, Math.min(r.right - 200, innerWidth - 208)) + 'px';
+  }
+  m.classList.toggle('open', open);
+  b.classList.toggle('on', open);
+}
+on('navBtn', 'click', (e) => { e.stopPropagation(); navMenuOpen(!$('navMenu').classList.contains('open')); });
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#navMenu') && !e.target.closest('#navBtn')) navMenuOpen(false);
+});
 on('toolMenu', 'click', (e) => {
   if (e.target.closest('a.toolitem')){ toolMenuOpen(false); return; }   // opens its own tab
   const b = e.target.closest('[data-tool]');

@@ -14,6 +14,22 @@
   /* Art-only surface: the piece grid, the image stage, and the region boxes.
      Everything shared with S'notify lives in core.css. */
 
+  /* ---------- Doors: band artwork vs image tools (CR-83) ----------
+     Shown every time the art page opens with no deep link, per his answer —
+     a config-mode band's Tools button lives one click behind the same choice
+     rather than floating in the header on every visit. */
+  .artdoors { display: flex; gap: 20px; justify-content: center; align-items: stretch; flex-wrap: wrap; margin: 48px 0; }
+  .door {
+    flex: 1 1 220px; max-width: 280px; background: var(--bg-row); border: 1px solid var(--line);
+    border-radius: 14px; padding: 32px 20px; cursor: pointer; text-align: center;
+    transition: border-color .12s, background .12s; color: var(--text); font: inherit;
+  }
+  .door:hover { background: var(--bg-hover); border-color: var(--accent); }
+  .door .dooricon { font-size: 40px; margin-bottom: 10px; }
+  .door .doortitle { font-weight: 700; font-size: 16px; }
+  .door .doorsub { color: var(--text-dim); font-size: 12.5px; margin-top: 6px; }
+  @media (max-width: 480px) { .door { max-width: 100%; width: 100%; } }
+
   /* ---------- Library grid ---------- */
   .artgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
   .piece {
@@ -228,6 +244,19 @@
          say, so it takes no space on a band with no progress recorded. -->
     <div id="albumProgMini"></div>
 
+    <div id="artDoors" class="artdoors" style="display:none">
+      <button class="door" id="doorArt">
+        <div class="dooricon">🎨</div>
+        <div class="doortitle">Band artwork</div>
+        <div class="doorsub">Versioned pieces, revisions, comments</div>
+      </button>
+      <button class="door" id="doorTools">
+        <div class="dooricon">▨</div>
+        <div class="doortitle">Image tools</div>
+        <div class="doorsub">The tools enabled in config mode</div>
+      </button>
+    </div>
+
     <div id="list" class="loading">Loading…</div>
 
     <div id="stage" style="display:none">
@@ -406,6 +435,7 @@ App.init     = () => init();
 App.onLock   = () => {
   $('artCount').textContent = '';
   $('list').className = ''; $('list').innerHTML = '';
+  hideDoors();
   closeStage();
 };
 App.onLogout = () => { commentCache = {}; pieces = []; activePiece = null; };
@@ -519,9 +549,31 @@ async function init(){
       return { folder: s.folder, title: s.title, mix: v.name || '', src: publicUrl(v.src) };
     }).filter(s => s.folder);
   } catch { bandSongs = []; }
-  renderList();
-  applyDeepLink();
+  // A deep link (?b&s) means someone is navigating straight to a piece — skip
+  // the doors and land on it. A plain page open always shows the choice.
+  if (route.song){
+    renderList();
+    applyDeepLink();
+  } else {
+    showDoors();
+  }
 }
+
+// ---------- Doors: band artwork vs image tools (CR-83) ----------
+function showDoors(){
+  $('list').className = '';
+  $('list').innerHTML = '';
+  $('artDoors').style.display = 'flex';
+}
+function hideDoors(){
+  $('artDoors').style.display = 'none';
+}
+on('doorArt', 'click', () => { hideDoors(); renderList(); });
+on('doorTools', 'click', (e) => {
+  e.stopPropagation();
+  hideDoors(); renderList();
+  toolMenuOpen(true);
+});
 
 function showBadLink(){
   document.body.classList.remove('locked');

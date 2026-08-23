@@ -671,8 +671,8 @@
   /* Cross-page buttons + admin: band members only, and never on a shared mix */
   #artBtn, #homeBtn { display: none; }
   body.authed #artBtn, body.authed #homeBtn { display: inline-flex; }
-  body.singlemix #artBtn, body.singlemix #homeBtn, body.singlemix #adminBtn,
-  body.singlemix #toolsBtn, body.shared #adminBtn { display: none !important; }
+  body.singlemix #artBtn, body.singlemix #homeBtn,
+  body.singlemix #adminBtn, body.shared #adminBtn { display: none !important; }
   /* The game is the exception to "band members only": it's public, and a fan
      reading this page is exactly who it's for. It still stays out of the
      stripped-down single-mix view, which is deliberately just the player.
@@ -1191,7 +1191,6 @@
       <button class="addbtn" id="trashBtn" title="Trash — deleted songs are archived here until you confirm permanent deletion">
         🗑<span id="trashCount"></span>
       </button>
-      <button class="addbtn" id="toolsBtn" title="Graphic tools">▨ Tools ▾</button>
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
       <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
     </header>

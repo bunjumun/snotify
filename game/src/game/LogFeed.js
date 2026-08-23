@@ -59,17 +59,35 @@ export class LogFeed {
         },
         body: JSON.stringify({ b: this.band, d: 'log' }),
       });
-      if (!r.ok) return null;            // 404 = v21 not applied yet
+      // Every early return here falls back to the built-in log, same as the
+      // catch below — that fallback is correct and by design (see header).
+      // What was NOT fine: falling back silently. A band member seeing the
+      // built-in placeholder instead of their own draft had no way to tell
+      // "nothing's promoted yet" from "the fetch is broken in your browser"
+      // apart from diffing prose against a screenshot of the SQL, which is
+      // how CR-93 actually got diagnosed. One line each turns that into a
+      // console check.
+      if (!r.ok) {
+        console.warn(`[LogFeed] lore_active HTTP ${r.status}; showing the built-in log.`);
+        return null;
+      }
       const doc = await r.json();
-      if (!doc || !doc.body) return null;
+      if (!doc || !doc.body) {
+        console.warn('[LogFeed] no active "log" draft for this band; showing the built-in log.');
+        return null;
+      }
       const found = parseEntries(doc.body);
-      if (!found.length) return null;
+      if (!found.length) {
+        console.warn('[LogFeed] active draft has no headings the parser recognises; showing the built-in log.');
+        return null;
+      }
       this.entries = found;
       this.draftName = doc.name || null;
       this.source = 'live';
       return found;
-    } catch {
-      return null;                       // the built-in log stands
+    } catch (err) {
+      console.warn('[LogFeed] fetch failed; showing the built-in log.', err);
+      return null;
     }
   }
 

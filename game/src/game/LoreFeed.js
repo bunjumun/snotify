@@ -51,7 +51,9 @@ export class LoreFeed {
 
   /** Fetch once. Called at session start; never again during play. */
   async refresh() {
-    try { await this._fetch(); } catch { /* the built-in lore stands */ }
+    try { await this._fetch(); } catch (err) {
+      console.warn('[LoreFeed] fetch failed; the built-in lore stands.', err);
+    }
   }
 
   async _fetch() {
@@ -64,9 +66,19 @@ export class LoreFeed {
       },
       body: JSON.stringify({ b: this.band }),
     });
-    if (!r.ok) return;                      // 404 = v19 not applied yet
+    // See CR-93 (LogFeed.js): every early return here falls back to the
+    // built-in lore correctly, but used to do it silently, which is exactly
+    // what made "the fish aren't saying what I wrote" undiagnosable from
+    // outside the browser it was happening in. One line each fixes that.
+    if (!r.ok) {
+      console.warn(`[LoreFeed] lore_active HTTP ${r.status}; the built-in lore stands.`);
+      return;
+    }
     const doc = await r.json();
-    if (!doc || !doc.body) return;          // no draft promoted
+    if (!doc || !doc.body) {
+      console.warn('[LoreFeed] no active draft for this band; the built-in lore stands.');
+      return;
+    }
 
     this.draftName = doc.name || null;
     this.updated = doc.updated || null;
@@ -83,6 +95,8 @@ export class LoreFeed {
     if (prose.length) {
       this.exchanges = prose;
       this.source = 'live-prose';
+    } else {
+      console.warn('[LoreFeed] active draft has no Q/A markers and no readable prose; the built-in lore stands.');
     }
   }
 

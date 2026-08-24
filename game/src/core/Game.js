@@ -390,16 +390,16 @@ export class Game {
   }
 
   /**
-   * Spawn off the wreck's bow, facing it, about ten units off the bottom.
+   * Spawn off the wreck's nose cone, facing it, about ten units off the bottom.
    *
    * Both halves matter. Height, because the water column is 100 units and the fog
    * only reaches 80 — spawn mid-water and the player opens the game staring into
    * an empty green void with no cue that anything exists. And heading, because the
-   * first thing anyone should ever see is the Enias coming out of the haze.
+   * first thing anyone should ever see is the Enias-9 coming out of the haze.
    */
   _spawnPose() {
-    const bow = this.wreck.landmarks.find((l) => l.name === 'the bow');
-    const target = bow ? bow.position : new THREE.Vector3(8, CFG.world.floorY, -34);
+    const nose = this.wreck.landmarks.find((l) => l.name === 'the nose cone');
+    const target = nose ? nose.position : new THREE.Vector3(8, CFG.world.floorY, -34);
     const pos = new THREE.Vector3(target.x + 26, 0, target.z + 46);
     pos.y = this.seabed.heightAt(pos.x, pos.z) + 10;
     const dx = target.x - pos.x, dz = target.z - pos.z;

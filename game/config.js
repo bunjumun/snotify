@@ -640,7 +640,7 @@ export const CFG = {
   // waypoint — the fog is the game, and an arrow through it throws that away.
   //
   //   0  a bearing and a distance band            "a long way to the north-west"
-  //   1  a landmark it's near                     "in the shadow of the broken boiler"
+  //   1  a landmark it's near                     "in the shadow of the broken drive core"
   //   2  a proximity ping from the sturgeon       warmer / colder, live
   //
   // askCooldown stops the hint button being a substitute for looking, without
@@ -1285,6 +1285,15 @@ export const CFG = {
     suitMid: 0x74877e,
     suitAdrift: 0x9a8f78,   // multiplied over the pattern once he's lost his grip
     wreckWood: 0x2a2620,
+
+    // Dazzle for the wreck's hull, same three-tone technique as the diver's suit
+    // (Diver.js's _dazzleTexture, copied rather than shared since the panel scale
+    // differs). Gunmetal ground with a gold accent panel — `brass` above, reused
+    // rather than duplicated — in honour of the "Jupiter Gold" reference this skin
+    // was built for. No cover art exists to sample, so this is a reasoned guess at
+    // that palette rather than a pull from the file.
+    wreckDazzleLight: 0x8a8f92,
+    wreckDazzleDark: 0x24262a,
     silt: 0x3d4a44,
     kelp: 0x2b4a33,
   },

@@ -8,7 +8,7 @@ Orientation for a session starting cold. It does not repeat `CLAUDE.md` or `PROG
 
 ## What this is
 
-A browser game on the Lakehorse band site. You ride a kelpie through the wreck of the SS Enias while the band's album plays straight through. Vanilla ES modules plus a vendored Three.js. No bundler, no TypeScript, no tests, no `package.json`. **`git push` is the whole deploy**, and most of the architecture exists to protect that.
+A browser game on the Lakehorse band site. You ride a kelpie through the wreck of the Starship Enias while the band's album plays straight through. Vanilla ES modules plus a vendored Three.js. No bundler, no TypeScript, no tests, no `package.json`. **`git push` is the whole deploy**, and most of the architecture exists to protect that.
 
 Site: `https://bunjumun.github.io/snotify/`. Repo: `github.com/bunjumun/snotify`, GitHub Pages served from `main`.
 

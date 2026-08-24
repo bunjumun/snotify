@@ -1,20 +1,25 @@
-// The SS Enias.
+// The wreck of the Starship Enias.
 //
-// Deliberately fictional. Lake Superior's famous wrecks are war graves — the
-// Fitzgerald still holds 29 people and is legally protected — and building a
-// treasure hunt on top of one would be a bad look for a band that plays there.
-// The Enias is invented, so the lake's atmosphere is borrowed without borrowing
-// anyone's grave.
+// Reskinned from a period shipwreck to a spacecraft, at his word (CR-77, 23
+// Aug): "literally just replace the type of ship, not environmental change."
+// The start-screen blurb ("the Starship Enias came down here with everyone
+// still aboard") had already called it a starship before this landed — this
+// is the geometry catching up to fiction that was ahead of it, not a new
+// idea. Same lakebed, same broken-in-two silhouette, same landmark mechanic
+// the clue system speaks through — only the ship-ness itself and three named
+// parts changed. The hull-generation code below still builds a hull the way
+// it always did; a spacecraft has a hull too, and there was no reason to
+// touch working geometry code to change what the geometry means.
 //
-// Broken in two, the way Superior actually does it: bow section largely intact
-// and heeled over, stern section further off and collapsed, a debris trail spilled
-// down the trench between them. The hull is generated parametrically from ship
-// stations rather than modelled, which gets a real sheer and a fine entry at the
-// bow for about forty lines.
+// Broken in two the way the original brief called for: nose section largely
+// intact and heeled over, stern section further off and collapsed, a debris
+// trail spilled down the trench between them. The hull is generated
+// parametrically from stations rather than modelled, which gets a real taper
+// at the nose for about forty lines.
 //
 // Every named piece registers a landmark, because the clue system speaks in
-// landmarks ("in the shadow of the broken boiler") and those strings have to
-// point at something that genuinely exists.
+// landmarks ("in the shadow of the broken drive core") and those strings have
+// to point at something that genuinely exists.
 
 import * as THREE from 'three';
 import { CFG } from '../../config.js';
@@ -33,18 +38,22 @@ export class Wreck {
     this.woodMat = new THREE.MeshStandardMaterial({
       color: P.wreckWood, roughness: 0.98, metalness: 0.0, flatShading: true,
     });
-    this.encrustMat = new THREE.MeshStandardMaterial({
-      color: 0x35443c, roughness: 1.0, metalness: 0.0, flatShading: true,
+    // The hull's skin. Used to be a flat encrusted-green; now a dazzle-camo
+    // texture, same technique Diver.js paints the suit with (see
+    // _dazzleTexture below), so the largest object in the scene reads as
+    // deliberately built rather than just another grey wreck.
+    this.dazzleMat = new THREE.MeshStandardMaterial({
+      map: this._dazzleTexture(), roughness: 0.75, metalness: 0.3, flatShading: true,
     });
     this.ironMat = new THREE.MeshStandardMaterial({
       color: 0x2b2a26, roughness: 0.72, metalness: 0.55,
     });
 
-    this._buildBow(rng);
+    this._buildNoseCone(rng);
     this._buildStern(rng);
-    this._buildBoiler(rng);
+    this._buildDriveCore(rng);
     this._buildDebris(rng);
-    this._buildMasts(rng);
+    this._buildSensorBooms(rng);
   }
 
   _mark(name, pos, radius = 14) {
@@ -59,8 +68,67 @@ export class Wreck {
   }
 
   /**
-   * Parametric hull. Stations run stern→bow; each is a section from port deck
-   * edge, down around the keel, up to starboard. `entry` sharpens the bow.
+   * Dazzle skin for the hull. Same trick as Diver.js's _dazzleTexture — panels
+   * of parallel stripes at deliberately conflicting angles, so neighbouring
+   * panels disagree rather than reading as one consistent plating scheme —
+   * copied rather than shared since the tones and panel scale are the hull's
+   * own: gunmetal light/dark with a brass accent panel every so often, in
+   * honour of the "Jupiter Gold" reference this skin was answered against (no
+   * cover art exists to sample, so this is a reasoned guess at that palette,
+   * not a pull from the file). Painted once at construction into a canvas and
+   * used as the hull material's map.
+   */
+  _dazzleTexture() {
+    const S = 512;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const g = cv.getContext('2d');
+    const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
+    const P = CFG.palette;
+
+    g.fillStyle = hex(P.wreckDazzleLight);
+    g.fillRect(0, 0, S, S);
+
+    let x = -S * 0.1;
+    let panel = 0;
+    while (x < S) {
+      const w = S * (0.09 + Math.random() * 0.15);
+      const skew = (Math.random() - 0.5) * S * 0.4;
+      g.save();
+      g.beginPath();
+      g.moveTo(x, 0);
+      g.lineTo(x + w, 0);
+      g.lineTo(x + w + skew, S);
+      g.lineTo(x + skew, S);
+      g.closePath();
+      g.clip();
+
+      // Slope flips hard between neighbours, same as the suit — the
+      // disagreement is the pattern, not any one panel's angle.
+      g.translate(x + w / 2, S / 2);
+      g.rotate((panel % 2 ? 1 : -1) * (0.5 + Math.random() * 0.7));
+      // Every fifth panel is brass, an accent rather than a third tone.
+      g.fillStyle = hex(panel % 5 === 4 ? P.brass : P.wreckDazzleDark);
+      const band = 10 + Math.random() * 20;
+      for (let y = -S; y < S; y += band * 2) g.fillRect(-S, y, S * 2, band);
+      g.restore();
+
+      x += w;
+      panel++;
+    }
+
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(3, 5);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    return tex;
+  }
+
+  /**
+   * Parametric hull. Stations run stern→nose; each is a section from port
+   * edge, down around the keel line, up to starboard. `entry` sharpens the
+   * nose.
    */
   _hullGeometry(len, beam, depth, { stations = 26, ring = 12, entry = 0.85, cut = 1.0 } = {}) {
     const verts = [], idx = [], uvs = [];
@@ -98,14 +166,14 @@ export class Wreck {
     return g;
   }
 
-  _buildBow(rng) {
+  _buildNoseCone(rng) {
     const g = new THREE.Group();
     const LEN = 62, BEAM = 15, DEPTH = 9;
 
     // Only the forward ~62% survives; the break is where the stern tore away.
     const hull = new THREE.Mesh(
       this._hullGeometry(LEN, BEAM, DEPTH, { cut: 1.0, entry: 0.8 }),
-      this.encrustMat,
+      this.dazzleMat,
     );
     hull.material.side = THREE.DoubleSide;
     g.add(hull);
@@ -139,7 +207,7 @@ export class Wreck {
       g.add(rail);
     }
 
-    // Bowsprit.
+    // Nose spar, where a bowsprit used to be — same rigging-off-the-front read.
     const sprit = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 12, 7), this.woodMat);
     sprit.rotation.set(-1.35, 0, 0);
     sprit.position.set(0, 2.2, LEN * 0.52);
@@ -147,8 +215,8 @@ export class Wreck {
 
     this._settle(g, 8, -34, -0.34, 0.22, 6.5);
     this.group.add(g);
-    this.bow = g;
-    this._mark('the bow', new THREE.Vector3(8, this.seabed.heightAt(8, -34) + 6, -34), 22);
+    this.noseCone = g;
+    this._mark('the nose cone', new THREE.Vector3(8, this.seabed.heightAt(8, -34) + 6, -34), 22);
     this._mark('the open hold', new THREE.Vector3(4, this.seabed.heightAt(4, -14) + 4, -14), 14);
   }
 
@@ -158,7 +226,7 @@ export class Wreck {
 
     const hull = new THREE.Mesh(
       this._hullGeometry(LEN, BEAM, DEPTH, { cut: 0.62, entry: 1.4 }),
-      this.encrustMat,
+      this.dazzleMat,
     );
     hull.material.side = THREE.DoubleSide;
     g.add(hull);
@@ -189,9 +257,11 @@ export class Wreck {
     this._mark('the stern', new THREE.Vector3(-52, this.seabed.heightAt(-52, 46) + 4, 46), 20);
   }
 
-  _buildBoiler() {
-    // The boiler is the single most recognisable object down here and the clue
-    // system leans on it by name, so it gets to be big, iron, and unmistakable.
+  _buildDriveCore() {
+    // The drive core is the single most recognisable object down here and the
+    // clue system leans on it by name, so it gets to be big, iron, and
+    // unmistakable — same cylinder-cluster silhouette that read as a ship's
+    // boiler before, which reads just as well as an engine.
     const g = new THREE.Group();
     const shell = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 9, 16), this.ironMat);
     shell.rotation.z = Math.PI / 2;
@@ -203,7 +273,7 @@ export class Wreck {
       band.position.x = -3.2 + i * 2.1;
       g.add(band);
     }
-    // Firebox door, hanging open.
+    // Access hatch, hanging open.
     const door = new THREE.Mesh(new THREE.CircleGeometry(1.5, 14), this.ironMat);
     door.position.set(4.6, 0, 0.9);
     door.rotation.set(0, 1.1, 0);
@@ -214,8 +284,8 @@ export class Wreck {
     g.position.set(x, this.seabed.heightAt(x, z) + 3.2, z);
     g.rotation.set(0.18, 0.7, 0.12);
     this.group.add(g);
-    this.boiler = g;
-    this._mark('the broken boiler', new THREE.Vector3(x, this.seabed.heightAt(x, z) + 3, z), 16);
+    this.driveCore = g;
+    this._mark('the broken drive core', new THREE.Vector3(x, this.seabed.heightAt(x, z) + 3, z), 16);
   }
 
   _buildDebris(rng) {
@@ -228,7 +298,7 @@ export class Wreck {
     const e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3();
 
     for (let i = 0; i < 300; i++) {
-      // Biased along the line from bow to stern — a trail, not a scatter.
+      // Biased along the line from nose to stern — a trail, not a scatter.
       const t = rng.float(-0.15, 1.15);
       const x = THREE.MathUtils.lerp(8, -52, t) + rng.float(-16, 16);
       const z = THREE.MathUtils.lerp(-34, 46, t) + rng.float(-16, 16);
@@ -245,25 +315,26 @@ export class Wreck {
     this._mark('the debris trail', new THREE.Vector3(-22, this.seabed.heightAt(-22, 6) + 2, 6), 30);
   }
 
-  _buildMasts(rng) {
-    // Down, of course. A standing mast would read as a ship at anchor.
+  _buildSensorBooms(rng) {
+    // Down, of course. A standing boom would read as a ship at anchor rather
+    // than a wreck — same "fallen, not standing" logic the mast used.
     const specs = [
       { x: -6, z: 4, len: 30, yaw: 0.9, tilt: 1.42 },
       { x: -34, z: 28, len: 22, yaw: -0.4, tilt: 1.5 },
     ];
     for (const sp of specs) {
-      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.75, sp.len, 8), this.woodMat);
-      mast.position.set(sp.x, this.seabed.heightAt(sp.x, sp.z) + 0.9, sp.z);
-      mast.rotation.set(sp.tilt, sp.yaw, 0);
-      this.group.add(mast);
+      const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.75, sp.len, 8), this.woodMat);
+      boom.position.set(sp.x, this.seabed.heightAt(sp.x, sp.z) + 0.9, sp.z);
+      boom.rotation.set(sp.tilt, sp.yaw, 0);
+      this.group.add(boom);
 
-      // A yard still crossed on it.
+      // A cross-yard array still fixed to it.
       const yard = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, sp.len * 0.5, 6), this.woodMat);
-      yard.position.copy(mast.position).add(new THREE.Vector3(rng.float(-3, 3), 0.6, rng.float(-3, 3)));
+      yard.position.copy(boom.position).add(new THREE.Vector3(rng.float(-3, 3), 0.6, rng.float(-3, 3)));
       yard.rotation.set(1.5, sp.yaw + 1.4, 0);
       this.group.add(yard);
     }
-    this._mark('the fallen mast', new THREE.Vector3(-6, this.seabed.heightAt(-6, 4) + 1, 4), 18);
+    this._mark('the fallen sensor boom', new THREE.Vector3(-6, this.seabed.heightAt(-6, 4) + 1, 4), 18);
   }
 
   /** Nearest named landmark to a point — the clue generator's vocabulary. */

@@ -78,7 +78,7 @@ const MISSING = [
   'The slate is down here. The lamp has not been over it yet.',
   'Buried, or under something heavy.',
   'Not found.',
-  'Somewhere between the bow and the boiler.',
+  'Somewhere between the nose cone and the drive core.',
   'Missing.',
 ];
 

@@ -7,7 +7,7 @@
 // thermocline because that's where the fat deep-water trout is.
 //
 // Everything is seeded, so ?seed= reproduces the same lake down to which school
-// is over the boiler.
+// is over the drive core.
 
 import * as THREE from 'three';
 import { CFG } from '../../config.js';

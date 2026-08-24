@@ -127,7 +127,7 @@ function applyTheme(band){
 // else, so the site can carry one band's world without offering it to the rest.
 //
 // What is listed here is Lakehorse's fiction, not site machinery. The game is
-// theirs — the kelpie, the wreck of the SS Enias — and so is the writing that
+// theirs — the kelpie, the wreck of the Starship Enias — and so is the writing that
 // feeds it: the lore the fish recite and the log on the slates in the hold.
 // Every band was being shown all of it, which is how this got written down as a
 // bug. Nothing here was ever a DATA leak: lore_list and game_flags go through

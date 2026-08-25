@@ -122,6 +122,22 @@
   .linkview-row button { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 14px; padding: 0 2px; }
   .linkview-row button:hover { color: var(--text); }
 
+  /* The links trash — same shape and the same "click twice to purge" as the
+     song/comment trash on music.html, so removing something behaves the same
+     way everywhere on the site: confirm once to move it here, then it sits
+     until a second, explicit confirm deletes it for good. */
+  .trash-item {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 9px 10px; border-radius: 8px;
+  }
+  .trash-item:hover { background: var(--bg-hover); }
+  .trash-item .tname { flex: 1 1 auto; min-width: 130px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .trash-item .tmeta { flex: none; color: var(--text-mute); font-size: 12px; }
+  .trash-item .btn { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
+  .trash-item .btn.danger { background: transparent; color: #ff6b6b; border: 1px solid rgba(255,107,107,.4); }
+  .trash-item .btn.danger:hover { background: rgba(255,107,107,.12); }
+  .trash-item .btn.danger.armed { background: #ff6b6b; color: #fff; border-color: #ff6b6b; }
+
   #musicBtn, #homeBtn { display: none; }
   body.authed #musicBtn, body.authed #homeBtn { display: inline-flex; }
 </style>
@@ -226,6 +242,7 @@
         <button class="addbtn" id="backBtn">← Band assets</button>
         <div class="dtitle">Lore document</div>
         <div class="grow" style="flex:1"></div>
+        <button class="addbtn" id="linksTrashBtn" title="Links trash — removed links sit here until you delete them forever">🗑<span id="linksTrashCount"></span></button>
         <button class="btn ghost" id="newBtn">New draft</button>
       </div>
 
@@ -265,6 +282,23 @@
         <div id="linkListView"></div>
         <span class="status" id="linksStatus"></span>
       </div>
+    </div>
+  </div>
+
+  <!-- Links trash. A removed link isn't gone, same as a trashed song or a
+       deleted comment elsewhere on the site — confirm once to land it here,
+       confirm again (twice) to purge it for good. -->
+  <div class="modal-back" id="linksTrashModal">
+    <div class="modal">
+      <h2>🗑 Links trash</h2>
+      <div class="hint" style="margin-bottom:10px">
+        A removed link is kept here, not deleted outright. <b>Restore</b> puts
+        it back in the list; <b>Delete forever</b> asks twice, then it's gone
+        for good.
+      </div>
+      <div id="linksTrashList"></div>
+      <div class="status" id="linksTrashStatus"></div>
+      <div class="actions"><button class="btn ghost" id="linksTrashClose">Close</button></div>
     </div>
   </div>
 
@@ -324,8 +358,11 @@ const DOCS = {
   // drafts/editor UI this object otherwise implies for lore/log/goals.
   links: {
     title: 'Links', tally: 'linksTally',
+    // Not called on the links path itself (openLinks() bypasses reparse()
+    // entirely), kept only so DOCS stays a uniform shape across all four
+    // slugs.
     count: (body) => {
-      const items = parseLinks(body);
+      const items = parseLinksDoc(body).items;
       return items.length
         ? `<b>${items.length}</b> link${items.length === 1 ? '' : 's'}`
         : 'No links yet.';
@@ -344,9 +381,12 @@ let dirty = false;
 
 // The links ledger's one row: its version id once it has been saved at least
 // once (null before the first link is ever added, since there's nothing to
-// hold a version open for), and the {name,url} items currently shown.
+// hold a version open for), and its live items plus a trash — same shape
+// as the site's other trash cans (a removed link waits here, not gone,
+// until Delete forever), just held in this one JSON body rather than a
+// database table.
 let linksVid = null;
-let linksItems = [];
+let linksDoc = { items: [], trash: [] };
 
 // ---------- Load ----------
 async function init(){
@@ -389,7 +429,8 @@ async function init(){
       const on = list.find(x => x.active);
       if (slug === 'links'){
         // No "drafts" framing for a ledger — just how many links exist.
-        const items = parseLinks(on ? on.body : '[]');
+        // Trashed links don't count as live links.
+        const items = parseLinksDoc(on ? on.body : '{}').items;
         $(DOCS.links.tally).textContent = items.length
           ? `${items.length} link${items.length === 1 ? '' : 's'}` : 'No links yet.';
       } else {
@@ -438,13 +479,14 @@ async function openLinks(){
     const list = (await libRpc('lore_list', { d: 'links' })) || [];
     const on = list.find(x => x.active) || list[0] || null;
     linksVid = on ? on.id : null;
-    linksItems = parseLinks(on ? on.body : '[]');
+    linksDoc = parseLinksDoc(on ? on.body : '{}');
   } catch (e) {
     linksVid = null;
-    linksItems = [];
+    linksDoc = { items: [], trash: [] };
     say(e.message || 'Could not load links.', true);
   }
   renderLinkList();
+  updateLinksTrashCount();
 }
 
 const live = () => drafts.find(d => d.active) || null;
@@ -530,6 +572,7 @@ function setEditorMode(slug){
   document.querySelector('.doclayout').style.display = isLinks ? 'none' : '';
   $('linksSimple').style.display = isLinks ? 'flex' : 'none';
   $('newBtn').style.display = isLinks ? 'none' : '';
+  $('linksTrashBtn').style.display = isLinks ? '' : 'none';
 
   const kind = DOCS[slug] && DOCS[slug].struct; // undefined | 'goals'
   $('body').style.display = kind ? 'none' : '';
@@ -618,18 +661,38 @@ function addGoal(){
 }
 
 // ---------- Links ledger (no draft stack — see openLinks() above) ----------
-// The body column still holds JSON, [{name, url}, ...], same as goals' rows,
-// but there is exactly one version and it saves itself: add, edit or remove
-// a link and it is live immediately, the way a bookmarks list works rather
-// than a document with an unpublished state.
-function parseLinks(body){
-  let items;
-  try { items = JSON.parse(body || '[]'); } catch { items = []; }
-  if (!Array.isArray(items)) return [];
-  return items.map(l => ({
+// The body column holds one JSON object, {items:[...], trash:[...]}, and
+// there is exactly one version that saves itself: add, edit or trash a link
+// and it's live immediately, the way a bookmarks list works rather than a
+// document with an unpublished state. Trash works the same as everywhere
+// else on the site (songs, comments): a removed link waits here until
+// Delete forever, which asks twice.
+function newLinkId(){
+  return (crypto.randomUUID ? crypto.randomUUID() : `l${Date.now()}${Math.random()}`);
+}
+
+function normalizeLink(l){
+  return {
+    id: (typeof l?.id === 'string' && l.id) || newLinkId(),
     name: typeof l?.name === 'string' ? l.name : '',
     url: typeof l?.url === 'string' ? l.url : '',
-  }));
+  };
+}
+
+/** Reads either shape: the bare array every link saved before this trash can
+ *  existed, or the {items,trash} object going forward. A bare array gets a
+ *  stable id per link on first read and an empty trash — no migration
+ *  script, the next save just writes the new shape. */
+function parseLinksDoc(body){
+  let raw;
+  try { raw = JSON.parse(body || '{}'); } catch { raw = {}; }
+  if (Array.isArray(raw)) return { items: raw.map(normalizeLink), trash: [] };
+  const items = Array.isArray(raw.items) ? raw.items.map(normalizeLink) : [];
+  const trash = Array.isArray(raw.trash) ? raw.trash.map(l => ({
+    ...normalizeLink(l),
+    deletedAt: typeof l?.deletedAt === 'string' ? l.deletedAt : new Date().toISOString(),
+  })) : [];
+  return { items, trash };
 }
 
 function linksSay(msg, isErr){
@@ -639,12 +702,22 @@ function linksSay(msg, isErr){
   if (msg) setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 3000);
 }
 
-/** Persists linksItems as-is. First save also marks the new row live, since
- *  a links ledger with no live version would just show as empty. */
+function linksTrashSay(msg, isErr){
+  const el = $('linksTrashStatus');
+  el.textContent = msg || '';
+  el.className = 'status' + (isErr ? ' err' : ' ok');
+}
+
+function updateLinksTrashCount(){
+  $('linksTrashCount').textContent = linksDoc.trash.length ? ` (${linksDoc.trash.length})` : '';
+}
+
+/** Persists linksDoc as-is. First save also marks the new row live, since a
+ *  links ledger with no live version would just show as empty. */
 async function saveLinksNow(){
   try {
     const id = await libRpc('lore_save', {
-      nm: 'Links', body_in: JSON.stringify(linksItems), vid: linksVid, d: 'links',
+      nm: 'Links', body_in: JSON.stringify(linksDoc), vid: linksVid, d: 'links',
     });
     if (!linksVid) await libRpc('lore_set_active', { vid: id });
     linksVid = id;
@@ -657,12 +730,12 @@ async function saveLinksNow(){
 function renderLinkList(){
   const box = $('linkListView');
   box.innerHTML = '';
-  if (!linksItems.length){
+  if (!linksDoc.items.length){
     box.innerHTML = '<div class="hint" style="padding:8px 10px">No links yet. '
       + 'Add the first one above.</div>';
     return;
   }
-  linksItems.forEach((l, i) => {
+  linksDoc.items.forEach((l, i) => {
     const row = document.createElement('div');
     row.className = 'linkview-row';
 
@@ -681,17 +754,20 @@ function renderLinkList(){
     edit.addEventListener('click', () => {
       $('linkAddName').value = l.name;
       $('linkAddUrl').value = l.url;
-      linksItems.splice(i, 1);
+      linksDoc.items.splice(i, 1);
       renderLinkList();
       saveLinksNow();
       $('linkAddName').focus();
     });
 
     const rm = document.createElement('button');
-    rm.title = 'Remove this link'; rm.textContent = '✕';
+    rm.title = 'Move this link to the trash'; rm.textContent = '🗑';
     rm.addEventListener('click', () => {
-      linksItems.splice(i, 1);
+      if (!confirm(`Move "${l.name || l.url}" to the trash?\n\nYou can restore it from 🗑 trash.`)) return;
+      const [moved] = linksDoc.items.splice(i, 1);
+      linksDoc.trash.unshift({ ...moved, deletedAt: new Date().toISOString() });
       renderLinkList();
+      updateLinksTrashCount();
       saveLinksNow();
     });
 
@@ -704,13 +780,67 @@ function addLinkNow(){
   const name = $('linkAddName').value.trim();
   const url = $('linkAddUrl').value.trim();
   if (!url) return linksSay('A link needs a URL.', true);
-  linksItems.push({ name, url });
+  linksDoc.items.push(normalizeLink({ id: newLinkId(), name, url }));
   $('linkAddName').value = '';
   $('linkAddUrl').value = '';
   renderLinkList();
   saveLinksNow();
   $('linkAddName').focus();
 }
+
+// ---------- Links trash modal ----------
+function renderLinksTrash(){
+  const box = $('linksTrashList');
+  if (!linksDoc.trash.length){
+    box.innerHTML = '<div class="hint" style="padding:8px 10px">Nothing in the trash.</div>';
+    return;
+  }
+  box.innerHTML = linksDoc.trash.map(l => `
+    <div class="trash-item" data-id="${esc(l.id)}">
+      <span class="tname">${esc(l.name || l.url)}</span>
+      <span class="tmeta">${timeago(l.deletedAt)}</span>
+      <button class="btn ghost restore">Restore</button>
+      <button class="btn danger">Delete forever</button>
+    </div>`).join('');
+
+  box.querySelectorAll('.trash-item').forEach(el => {
+    const id = el.dataset.id;
+    el.querySelector('.restore').addEventListener('click', () => {
+      const i = linksDoc.trash.findIndex(l => l.id === id);
+      if (i < 0) return;
+      const [moved] = linksDoc.trash.splice(i, 1);
+      delete moved.deletedAt;
+      linksDoc.items.push(moved);
+      renderLinksTrash();
+      updateLinksTrashCount();
+      renderLinkList();
+      saveLinksNow();
+      linksTrashSay('Restored.');
+    });
+    const del = el.querySelector('.danger');
+    del.addEventListener('click', () => {
+      if (!del.classList.contains('armed')){
+        del.classList.add('armed'); del.textContent = 'Click again to confirm';
+        setTimeout(() => { del.classList.remove('armed'); del.textContent = 'Delete forever'; }, 4000);
+        return;
+      }
+      const i = linksDoc.trash.findIndex(l => l.id === id);
+      if (i < 0) return;
+      linksDoc.trash.splice(i, 1);
+      renderLinksTrash();
+      updateLinksTrashCount();
+      saveLinksNow();
+      linksTrashSay('Permanently deleted.');
+    });
+  });
+}
+
+function openLinksTrash(){
+  $('linksTrashModal').classList.add('open');
+  linksTrashSay('');
+  renderLinksTrash();
+}
+function closeLinksTrash(){ $('linksTrashModal').classList.remove('open'); }
 
 async function save(asNew){
   const name = $('draftName').value.trim() || 'Draft';
@@ -762,6 +892,8 @@ on('body', 'input', () => { dirty = true; reparse(); });
 on('linkAddBtn', 'click', addLinkNow);
 on('linkAddName', 'keydown', (e) => { if (e.key === 'Enter') addLinkNow(); });
 on('linkAddUrl', 'keydown', (e) => { if (e.key === 'Enter') addLinkNow(); });
+on('linksTrashBtn', 'click', openLinksTrash);
+on('linksTrashClose', 'click', closeLinksTrash);
 addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // A starting point, so the first draft is at parity with what the game already

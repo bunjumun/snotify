@@ -96,23 +96,31 @@
   .goal-row .rm:hover { color: var(--text); }
   .goals-add { align-self: flex-start; }
 
-  /* Links reuses the goals editor's shape (row list, ▲▼ reorder, own struct
-     JSON in the same body column) with two text fields instead of a date and
-     a checkbox — a name and a URL, not a milestone. */
-  .links { display: none; flex-direction: column; gap: 8px; min-height: 58vh; }
-  .link-row {
-    display: flex; align-items: center; gap: 8px; background: var(--bg-row);
+  /* Links is a ledger, not a manuscript: there's no draft to work on before
+     it's "ready", so it skips the stack-of-drafts UI the other three docs
+     share entirely (see setEditorMode). Adding a link saves it and it is
+     simply there — live the moment it's added, exactly like a bookmarks
+     list, rendered as an actual clickable <a> rather than a form field. */
+  .linksSimple { display: none; flex-direction: column; gap: 14px; max-width: 640px; }
+  .linkAddRow { display: flex; gap: 8px; flex-wrap: wrap; }
+  .linkAddRow input {
+    background: #0a0b0f; color: var(--text); border: 1px solid var(--line);
     border-radius: 8px; padding: 8px 10px;
   }
-  .link-row input.lname, .link-row input.lurl {
-    background: #0a0b0f; color: var(--text); border: 1px solid var(--line);
-    border-radius: 8px; padding: 7px 9px;
+  .linkAddRow input.lname { flex: 0 0 200px; }
+  .linkAddRow input.lurl { flex: 1; min-width: 160px; }
+  .linkview-row {
+    display: flex; align-items: center; gap: 10px; background: var(--bg-row);
+    border-radius: 8px; padding: 9px 12px;
   }
-  .link-row input.lname { flex: 0 0 180px; }
-  .link-row input.lurl { flex: 1; min-width: 0; }
-  .link-row .rm { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 15px; padding: 0 2px; }
-  .link-row .rm:hover { color: var(--text); }
-  .links-add { align-self: flex-start; }
+  .linkview-row a { color: var(--accent); font-weight: 600; text-decoration: none; }
+  .linkview-row a:hover { text-decoration: underline; }
+  .linkview-row .url {
+    color: var(--text-mute); font-size: 12.5px; flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .linkview-row button { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 14px; padding: 0 2px; }
+  .linkview-row button:hover { color: var(--text); }
 
   #musicBtn, #homeBtn { display: none; }
   body.authed #musicBtn, body.authed #homeBtn { display: inline-flex; }
@@ -205,8 +213,8 @@
         <div class="card" id="cardLinks">
           <div class="glyph">🔗</div>
           <h2>Links</h2>
-          <p>A named list of links — anywhere the band wants to point people,
-             in drafts like the others.</p>
+          <p>A running ledger of named links for the band — add one and it's
+             there, live, right away.</p>
           <div class="sub" id="linksTally">&nbsp;</div>
         </div>
       </div>
@@ -241,12 +249,21 @@
             <div id="goalsRows"></div>
             <button class="btn ghost goals-add" id="addGoalBtn">+ Add goal</button>
           </div>
-          <div class="links" id="linksBox">
-            <div id="linksRows"></div>
-            <button class="btn ghost links-add" id="addLinkBtn">+ Add link</button>
-          </div>
           <div class="parsed" id="parsed"></div>
         </div>
+      </div>
+
+      <!-- Links skips the drafts/editor layout above entirely — see
+           setEditorMode and openLinks(). A ledger doesn't have an
+           unpublished-draft state; a link is either added or it isn't. -->
+      <div class="linksSimple" id="linksSimple">
+        <div class="linkAddRow">
+          <input class="nm lname" id="linkAddName" placeholder="Name" />
+          <input class="nm lurl" id="linkAddUrl" placeholder="https://…" type="url" />
+          <button class="btn primary" id="linkAddBtn">Add link</button>
+        </div>
+        <div id="linkListView"></div>
+        <span class="status" id="linksStatus"></span>
       </div>
     </div>
   </div>
@@ -301,10 +318,12 @@ const DOCS = {
                 : ' — all done.');
     },
   },
-  // A list of {name, url}, the same struct-over-JSON trick as goals with a
-  // different pair of fields and its own row editor (#linksBox) below.
+  // A list of {name, url} — still one lore_docs/lore_versions row under the
+  // 'links' slug, but treated as a single always-live ledger rather than a
+  // stack of drafts: see openLinks() below, which bypasses the normal
+  // drafts/editor UI this object otherwise implies for lore/log/goals.
   links: {
-    title: 'Links', tally: 'linksTally', struct: 'links',
+    title: 'Links', tally: 'linksTally',
     count: (body) => {
       const items = parseLinks(body);
       return items.length
@@ -322,6 +341,12 @@ let docSlug = 'lore';     // which asset is open
 let drafts = [];          // the stack, in position order
 let current = null;       // the draft open in the editor, or null for a new one
 let dirty = false;
+
+// The links ledger's one row: its version id once it has been saved at least
+// once (null before the first link is ever added, since there's nothing to
+// hold a version open for), and the {name,url} items currently shown.
+let linksVid = null;
+let linksItems = [];
 
 // ---------- Load ----------
 async function init(){
@@ -362,9 +387,16 @@ async function init(){
     try {
       const list = (await libRpc('lore_list', { d: slug })) || [];
       const on = list.find(x => x.active);
-      $(DOCS[slug].tally).textContent = list.length
-        ? `${list.length} draft${list.length === 1 ? '' : 's'} · ${on ? on.name + ' is live' : 'none live'}`
-        : 'Not written yet';
+      if (slug === 'links'){
+        // No "drafts" framing for a ledger — just how many links exist.
+        const items = parseLinks(on ? on.body : '[]');
+        $(DOCS.links.tally).textContent = items.length
+          ? `${items.length} link${items.length === 1 ? '' : 's'}` : 'No links yet.';
+      } else {
+        $(DOCS[slug].tally).textContent = list.length
+          ? `${list.length} draft${list.length === 1 ? '' : 's'} · ${on ? on.name + ' is live' : 'none live'}`
+          : 'Not written yet';
+      }
     } catch (e) {
       if (isAuthErr(e)){ clearAuth(band); return showGate(band, true); }
       // Most likely v19/v21 not applied. A to-do, not a broken page.
@@ -381,6 +413,7 @@ async function openDoc(slug){
   document.querySelector('#doc .dtitle').textContent = DOCS[slug].title;
   setEditorMode(slug);
   showDoc();
+  if (slug === 'links') return openLinks();
   try {
     drafts = (await libRpc('lore_list', { d: slug })) || [];
   } catch (e) {
@@ -392,13 +425,26 @@ async function openDoc(slug){
   if (start) open(start);
   else {
     $('draftName').value = 'First draft';
-    $('body').value = slug === 'log' ? LOG_TEMPLATE
-                     : (slug === 'goals' || slug === 'links') ? '[]' : TEMPLATE;
+    $('body').value = slug === 'log' ? LOG_TEMPLATE : slug === 'goals' ? '[]' : TEMPLATE;
     dirty = true;
     if (slug === 'goals') renderGoals();
-    if (slug === 'links') renderLinks();
     reparse();
   }
+}
+
+/** Links has no draft stack: load the one row (if any), and render it live. */
+async function openLinks(){
+  try {
+    const list = (await libRpc('lore_list', { d: 'links' })) || [];
+    const on = list.find(x => x.active) || list[0] || null;
+    linksVid = on ? on.id : null;
+    linksItems = parseLinks(on ? on.body : '[]');
+  } catch (e) {
+    linksVid = null;
+    linksItems = [];
+    say(e.message || 'Could not load links.', true);
+  }
+  renderLinkList();
 }
 
 const live = () => drafts.find(d => d.active) || null;
@@ -419,11 +465,11 @@ function renderDrafts(){
   $('stackCount').textContent = drafts.length ? `(${drafts.length})` : '';
   if (!drafts.length){
     // Only lore and log are ever fetched by the game (LoreFeed/LogFeed both
-    // call lore_active() with those slugs specifically) — goals and links are
-    // band admin docs the game never reads, so this can't say "the game will
-    // read it" for all four or it reads as gameplay content that isn't.
+    // call lore_active() with those slugs specifically) — goals is a band
+    // admin doc the game never reads, so this can't say "the game will
+    // read it" for both or it reads as gameplay content that isn't. Links
+    // never reaches this function at all (see openLinks()).
     const tail = docSlug === 'goals' ? 'Start one to track them here.'
-               : docSlug === 'links' ? 'Add the first one below.'
                                       : 'Start one and the game will read it.';
     box.innerHTML = '<div class="hint" style="padding:8px 10px">No drafts yet. ' + tail + '</div>';
     return;
@@ -469,7 +515,6 @@ function open(d){
   $('body').value = d.body || '';
   dirty = false;
   if (docSlug === 'goals') renderGoals();
-  if (docSlug === 'links') renderLinks();
   reparse();
   renderDrafts();
 }
@@ -480,10 +525,15 @@ function reparse(){
 }
 
 function setEditorMode(slug){
-  const kind = DOCS[slug] && DOCS[slug].struct; // undefined | 'goals' | 'links'
+  // Links has no drafts and no "New draft" — see openLinks().
+  const isLinks = slug === 'links';
+  document.querySelector('.doclayout').style.display = isLinks ? 'none' : '';
+  $('linksSimple').style.display = isLinks ? 'flex' : 'none';
+  $('newBtn').style.display = isLinks ? 'none' : '';
+
+  const kind = DOCS[slug] && DOCS[slug].struct; // undefined | 'goals'
   $('body').style.display = kind ? 'none' : '';
   $('goalsBox').style.display = kind === 'goals' ? 'flex' : 'none';
-  $('linksBox').style.display = kind === 'links' ? 'flex' : 'none';
 }
 
 // ---------- Goals editor (struct:true docs only) ----------
@@ -567,9 +617,11 @@ function addGoal(){
   renderGoals();
 }
 
-// ---------- Links editor (struct:'links' docs only) ----------
-// Same shape as the goals editor above: the body column holds JSON,
-// [{name, url}, ...], read and written through these functions only.
+// ---------- Links ledger (no draft stack — see openLinks() above) ----------
+// The body column still holds JSON, [{name, url}, ...], same as goals' rows,
+// but there is exactly one version and it saves itself: add, edit or remove
+// a link and it is live immediately, the way a bookmarks list works rather
+// than a document with an unpublished state.
 function parseLinks(body){
   let items;
   try { items = JSON.parse(body || '[]'); } catch { items = []; }
@@ -580,49 +632,84 @@ function parseLinks(body){
   }));
 }
 
-function writeLinks(items){
-  $('body').value = JSON.stringify(items);
-  dirty = true;
-  reparse();
+function linksSay(msg, isErr){
+  const el = $('linksStatus');
+  el.textContent = msg || '';
+  el.className = 'status' + (isErr ? ' err' : ' ok');
+  if (msg) setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 3000);
 }
 
-function renderLinks(){
-  const items = parseLinks($('body').value);
-  const box = $('linksRows');
+/** Persists linksItems as-is. First save also marks the new row live, since
+ *  a links ledger with no live version would just show as empty. */
+async function saveLinksNow(){
+  try {
+    const id = await libRpc('lore_save', {
+      nm: 'Links', body_in: JSON.stringify(linksItems), vid: linksVid, d: 'links',
+    });
+    if (!linksVid) await libRpc('lore_set_active', { vid: id });
+    linksVid = id;
+    linksSay('Saved.');
+  } catch (e) {
+    linksSay(e.message || 'Could not save.', true);
+  }
+}
+
+function renderLinkList(){
+  const box = $('linkListView');
   box.innerHTML = '';
-  if (!items.length){
+  if (!linksItems.length){
     box.innerHTML = '<div class="hint" style="padding:8px 10px">No links yet. '
-      + 'Add the first one below.</div>';
+      + 'Add the first one above.</div>';
     return;
   }
-  items.forEach((l, i) => {
+  linksItems.forEach((l, i) => {
     const row = document.createElement('div');
-    row.className = 'link-row';
+    row.className = 'linkview-row';
 
-    const name = document.createElement('input');
-    name.type = 'text'; name.className = 'lname'; name.placeholder = 'Name';
-    name.value = l.name;
-    name.addEventListener('input', () => { items[i].name = name.value; writeLinks(items); });
+    const a = document.createElement('a');
+    a.href = l.url || '#';
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = l.name || l.url || 'Untitled link';
 
-    const url = document.createElement('input');
-    url.type = 'url'; url.className = 'lurl'; url.placeholder = 'https://…';
-    url.value = l.url;
-    url.addEventListener('input', () => { items[i].url = url.value; writeLinks(items); });
+    const url = document.createElement('span');
+    url.className = 'url';
+    url.textContent = l.url;
+
+    const edit = document.createElement('button');
+    edit.title = 'Edit this link'; edit.textContent = '✏️';
+    edit.addEventListener('click', () => {
+      $('linkAddName').value = l.name;
+      $('linkAddUrl').value = l.url;
+      linksItems.splice(i, 1);
+      renderLinkList();
+      saveLinksNow();
+      $('linkAddName').focus();
+    });
 
     const rm = document.createElement('button');
-    rm.className = 'rm'; rm.title = 'Remove this link'; rm.textContent = '✕';
-    rm.addEventListener('click', () => { items.splice(i, 1); writeLinks(items); renderLinks(); });
+    rm.title = 'Remove this link'; rm.textContent = '✕';
+    rm.addEventListener('click', () => {
+      linksItems.splice(i, 1);
+      renderLinkList();
+      saveLinksNow();
+    });
 
-    row.append(name, url, rm);
+    row.append(a, url, edit, rm);
     box.appendChild(row);
   });
 }
 
-function addLink(){
-  const items = parseLinks($('body').value);
-  items.push({ name: '', url: '' });
-  writeLinks(items);
-  renderLinks();
+function addLinkNow(){
+  const name = $('linkAddName').value.trim();
+  const url = $('linkAddUrl').value.trim();
+  if (!url) return linksSay('A link needs a URL.', true);
+  linksItems.push({ name, url });
+  $('linkAddName').value = '';
+  $('linkAddUrl').value = '';
+  renderLinkList();
+  saveLinksNow();
+  $('linkAddName').focus();
 }
 
 async function save(asNew){
@@ -647,7 +734,7 @@ async function makeLive(){
     drafts = (await libRpc('lore_list', { d: docSlug })) || [];
     current = drafts.find(d => d.id === current.id) || current;
     renderDrafts();
-    say((docSlug === 'goals' || docSlug === 'links') ? 'Live.' : 'Live. The game reads this one now.');
+    say(docSlug === 'goals' ? 'Live.' : 'Live. The game reads this one now.');
   } catch (e) { say(e.message, true); }
 }
 
@@ -662,19 +749,19 @@ on('newBtn', 'click', () => {
   current = null;
   $('draftName').value = 'New draft';
   $('body').value = (live() && live().body)
-    || (docSlug === 'log' ? LOG_TEMPLATE
-        : (docSlug === 'goals' || docSlug === 'links') ? '[]' : TEMPLATE);
+    || (docSlug === 'log' ? LOG_TEMPLATE : docSlug === 'goals' ? '[]' : TEMPLATE);
   dirty = true;
   if (docSlug === 'goals') renderGoals();
-  if (docSlug === 'links') renderLinks();
   reparse(); renderDrafts();
 });
 on('saveBtn', 'click', () => save(false));
 on('saveNewBtn', 'click', () => save(true));
 on('liveBtn', 'click', makeLive);
 on('addGoalBtn', 'click', addGoal);
-on('addLinkBtn', 'click', addLink);
 on('body', 'input', () => { dirty = true; reparse(); });
+on('linkAddBtn', 'click', addLinkNow);
+on('linkAddName', 'keydown', (e) => { if (e.key === 'Enter') addLinkNow(); });
+on('linkAddUrl', 'keydown', (e) => { if (e.key === 'Enter') addLinkNow(); });
 addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // A starting point, so the first draft is at parity with what the game already

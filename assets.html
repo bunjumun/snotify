@@ -243,6 +243,7 @@
         <div class="dtitle">Lore document</div>
         <div class="grow" style="flex:1"></div>
         <button class="addbtn" id="linksTrashBtn" title="Links trash — removed links sit here until you delete them forever">🗑<span id="linksTrashCount"></span></button>
+        <button class="addbtn" id="goalsTrashBtn" title="Goals trash — removed goals sit here until you delete them forever, once saved">🗑<span id="goalsTrashCount"></span></button>
         <button class="btn ghost" id="newBtn">New draft</button>
       </div>
 
@@ -302,6 +303,24 @@
     </div>
   </div>
 
+  <!-- Goals trash. Same shape as Links' above, but goals still live inside a
+       draft, so restoring or purging only edits the current draft's JSON —
+       it reaches the database on the next Save, same as any other goals
+       edit does today. -->
+  <div class="modal-back" id="goalsTrashModal">
+    <div class="modal">
+      <h2>🗑 Goals trash</h2>
+      <div class="hint" style="margin-bottom:10px">
+        A removed goal is kept here, not deleted outright. <b>Restore</b>
+        puts it back in this draft; <b>Delete forever</b> asks twice, then
+        it's gone for good. Both still need Save to reach the database.
+      </div>
+      <div id="goalsTrashList"></div>
+      <div class="status" id="goalsTrashStatus"></div>
+      <div class="actions"><button class="btn ghost" id="goalsTrashClose">Close</button></div>
+    </div>
+  </div>
+
 <script src="core.js?v=33"></script>
 <script type="module">
 // The parser the GAME uses, imported rather than reimplemented — so what this
@@ -335,14 +354,17 @@ const DOCS = {
                  + 'then write underneath it.';
     },
   },
-  // A list of {date, title, done}, not prose — struct:true swaps the plain
-  // textarea for the row editor below, but still rides the same lore_save /
-  // body:text column as JSON. Order is manual (▲▼), not date-sorted, so a
-  // half-typed date never reshuffles the row out from under you.
+  // {items:[{date,title,done}], trash:[...]}, not prose — struct:true swaps
+  // the plain textarea for the row editor below, but still rides the same
+  // lore_save / body:text column as JSON. Order is manual (▲▼), not
+  // date-sorted, so a half-typed date never reshuffles the row out from
+  // under you. Removing a goal moves it to `trash` rather than deleting it,
+  // same as Links — both still only reach the database on Save, matching
+  // how every other edit on this draft already works.
   goals: {
     title: 'Band Goals', tally: 'goalsTally', struct: 'goals',
     count: (body) => {
-      const items = parseGoals(body);
+      const items = parseGoalsDoc(body).items;
       if (!items.length) return 'No goals yet.';
       const done = items.filter(g => g.done).length;
       const next = items.find(g => !g.done);
@@ -577,33 +599,57 @@ function setEditorMode(slug){
   const kind = DOCS[slug] && DOCS[slug].struct; // undefined | 'goals'
   $('body').style.display = kind ? 'none' : '';
   $('goalsBox').style.display = kind === 'goals' ? 'flex' : 'none';
+  $('goalsTrashBtn').style.display = kind === 'goals' ? '' : 'none';
 }
 
 // ---------- Goals editor (struct:true docs only) ----------
 // The body column stays plain text everywhere else in this file; here it
-// holds JSON, [{date, title, done}, ...], read and written through these two
-// functions so save()/lore_save/lore_set_active need no changes at all.
-function parseGoals(body){
-  let items;
-  try { items = JSON.parse(body || '[]'); } catch { items = []; }
-  if (!Array.isArray(items)) return [];
-  return items.map(g => ({
+// holds JSON, {items:[{id,date,title,done}], trash:[...]}. Removing a goal
+// confirms first and moves it to `trash`, same convention as Links and the
+// rest of the site — but goals still lives inside a draft, so trash/restore
+// only edit this draft's in-memory JSON and reach the database on the next
+// Save, exactly like every other goals edit already does.
+function normalizeGoal(g){
+  return {
+    id: (typeof g?.id === 'string' && g.id) || newRowId(),
     date: typeof g?.date === 'string' ? g.date : '',
     title: typeof g?.title === 'string' ? g.title : '',
     done: !!g?.done,
-  }));
+  };
 }
 
-function writeGoals(items){
-  $('body').value = JSON.stringify(items);
+/** Reads either shape: the bare array every goal was saved as before this
+ *  trash can existed, or {items,trash} going forward — same backward-compat
+ *  trick as parseLinksDoc, no migration needed. */
+function parseGoalsDoc(body){
+  let raw;
+  try { raw = JSON.parse(body || '{}'); } catch { raw = {}; }
+  if (Array.isArray(raw)) return { items: raw.map(normalizeGoal), trash: [] };
+  const items = Array.isArray(raw.items) ? raw.items.map(normalizeGoal) : [];
+  const trash = Array.isArray(raw.trash) ? raw.trash.map(g => ({
+    ...normalizeGoal(g),
+    deletedAt: typeof g?.deletedAt === 'string' ? g.deletedAt : new Date().toISOString(),
+  })) : [];
+  return { items, trash };
+}
+
+function writeGoalsDoc(doc){
+  $('body').value = JSON.stringify(doc);
   dirty = true;
   reparse();
 }
 
+function updateGoalsTrashCount(){
+  const n = parseGoalsDoc($('body').value).trash.length;
+  $('goalsTrashCount').textContent = n ? ` (${n})` : '';
+}
+
 function renderGoals(){
-  const items = parseGoals($('body').value);
+  const doc = parseGoalsDoc($('body').value);
+  const items = doc.items;
   const box = $('goalsRows');
   box.innerHTML = '';
+  updateGoalsTrashCount();
   if (!items.length){
     box.innerHTML = '<div class="hint" style="padding:8px 10px">No goals yet. '
       + 'Add the first milestone below.</div>';
@@ -625,28 +671,34 @@ function renderGoals(){
       if (j < 0 || j >= items.length) return;
       const [moved] = items.splice(i, 1);
       items.splice(j, 0, moved);
-      writeGoals(items); renderGoals();
+      writeGoalsDoc(doc); renderGoals();
     });
 
     const date = document.createElement('input');
     date.type = 'date'; date.value = g.date;
-    date.addEventListener('change', () => { items[i].date = date.value; writeGoals(items); });
+    date.addEventListener('change', () => { items[i].date = date.value; writeGoalsDoc(doc); });
 
     const title = document.createElement('input');
     title.type = 'text'; title.className = 'gtitle'; title.placeholder = 'Milestone';
     title.value = g.title;
-    title.addEventListener('input', () => { items[i].title = title.value; writeGoals(items); });
+    title.addEventListener('input', () => { items[i].title = title.value; writeGoalsDoc(doc); });
 
     const doneLabel = document.createElement('label');
     doneLabel.className = 'done';
     const doneBox = document.createElement('input');
     doneBox.type = 'checkbox'; doneBox.checked = g.done;
-    doneBox.addEventListener('change', () => { items[i].done = doneBox.checked; writeGoals(items); });
+    doneBox.addEventListener('change', () => { items[i].done = doneBox.checked; writeGoalsDoc(doc); });
     doneLabel.append(doneBox, document.createTextNode(' Done'));
 
     const rm = document.createElement('button');
-    rm.className = 'rm'; rm.title = 'Remove this goal'; rm.textContent = '✕';
-    rm.addEventListener('click', () => { items.splice(i, 1); writeGoals(items); renderGoals(); });
+    rm.className = 'rm'; rm.title = 'Move this goal to the trash'; rm.textContent = '🗑';
+    rm.addEventListener('click', () => {
+      if (!confirm(`Move "${g.title || 'this goal'}" to the trash?\n\nYou can restore it from 🗑 trash.`)) return;
+      const [moved] = items.splice(i, 1);
+      doc.trash.unshift({ ...moved, deletedAt: new Date().toISOString() });
+      writeGoalsDoc(doc);
+      renderGoals();
+    });
 
     row.append(ord, date, title, doneLabel, rm);
     box.appendChild(row);
@@ -654,11 +706,72 @@ function renderGoals(){
 }
 
 function addGoal(){
-  const items = parseGoals($('body').value);
-  items.push({ date: '', title: '', done: false });
-  writeGoals(items);
+  const doc = parseGoalsDoc($('body').value);
+  doc.items.push(normalizeGoal({ id: newRowId() }));
+  writeGoalsDoc(doc);
   renderGoals();
 }
+
+// ---------- Goals trash modal ----------
+function renderGoalsTrash(){
+  const doc = parseGoalsDoc($('body').value);
+  const box = $('goalsTrashList');
+  if (!doc.trash.length){
+    box.innerHTML = '<div class="hint" style="padding:8px 10px">Nothing in the trash.</div>';
+    return;
+  }
+  box.innerHTML = doc.trash.map(g => `
+    <div class="trash-item" data-id="${esc(g.id)}">
+      <span class="tname">${esc(g.title || 'Untitled goal')}</span>
+      <span class="tmeta">${timeago(g.deletedAt)}</span>
+      <button class="btn ghost restore">Restore</button>
+      <button class="btn danger">Delete forever</button>
+    </div>`).join('');
+
+  box.querySelectorAll('.trash-item').forEach(el => {
+    const id = el.dataset.id;
+    el.querySelector('.restore').addEventListener('click', () => {
+      const d = parseGoalsDoc($('body').value);
+      const i = d.trash.findIndex(g => g.id === id);
+      if (i < 0) return;
+      const [moved] = d.trash.splice(i, 1);
+      delete moved.deletedAt;
+      d.items.push(moved);
+      writeGoalsDoc(d);
+      renderGoalsTrash();
+      renderGoals();
+      goalsTrashSay('Restored — click Save to keep it.');
+    });
+    const del = el.querySelector('.danger');
+    del.addEventListener('click', () => {
+      if (!del.classList.contains('armed')){
+        del.classList.add('armed'); del.textContent = 'Click again to confirm';
+        setTimeout(() => { del.classList.remove('armed'); del.textContent = 'Delete forever'; }, 4000);
+        return;
+      }
+      const d = parseGoalsDoc($('body').value);
+      const i = d.trash.findIndex(g => g.id === id);
+      if (i < 0) return;
+      d.trash.splice(i, 1);
+      writeGoalsDoc(d);
+      renderGoalsTrash();
+      updateGoalsTrashCount();
+      goalsTrashSay('Permanently deleted — click Save to keep it.');
+    });
+  });
+}
+
+function goalsTrashSay(msg){
+  const el = $('goalsTrashStatus');
+  el.textContent = msg || '';
+}
+
+function openGoalsTrash(){
+  $('goalsTrashModal').classList.add('open');
+  goalsTrashSay('');
+  renderGoalsTrash();
+}
+function closeGoalsTrash(){ $('goalsTrashModal').classList.remove('open'); }
 
 // ---------- Links ledger (no draft stack — see openLinks() above) ----------
 // The body column holds one JSON object, {items:[...], trash:[...]}, and
@@ -667,13 +780,16 @@ function addGoal(){
 // document with an unpublished state. Trash works the same as everywhere
 // else on the site (songs, comments): a removed link waits here until
 // Delete forever, which asks twice.
-function newLinkId(){
-  return (crypto.randomUUID ? crypto.randomUUID() : `l${Date.now()}${Math.random()}`);
+// Shared by Links and Goals — both need a stable per-row id so a trashed
+// row can be found again by Restore/Delete forever rather than by index,
+// which would drift the moment anything else in the list changes.
+function newRowId(){
+  return (crypto.randomUUID ? crypto.randomUUID() : `r${Date.now()}${Math.random()}`);
 }
 
 function normalizeLink(l){
   return {
-    id: (typeof l?.id === 'string' && l.id) || newLinkId(),
+    id: (typeof l?.id === 'string' && l.id) || newRowId(),
     name: typeof l?.name === 'string' ? l.name : '',
     url: typeof l?.url === 'string' ? l.url : '',
   };
@@ -780,7 +896,7 @@ function addLinkNow(){
   const name = $('linkAddName').value.trim();
   const url = $('linkAddUrl').value.trim();
   if (!url) return linksSay('A link needs a URL.', true);
-  linksDoc.items.push(normalizeLink({ id: newLinkId(), name, url }));
+  linksDoc.items.push(normalizeLink({ id: newRowId(), name, url }));
   $('linkAddName').value = '';
   $('linkAddUrl').value = '';
   renderLinkList();
@@ -894,6 +1010,8 @@ on('linkAddName', 'keydown', (e) => { if (e.key === 'Enter') addLinkNow(); });
 on('linkAddUrl', 'keydown', (e) => { if (e.key === 'Enter') addLinkNow(); });
 on('linksTrashBtn', 'click', openLinksTrash);
 on('linksTrashClose', 'click', closeLinksTrash);
+on('goalsTrashBtn', 'click', openGoalsTrash);
+on('goalsTrashClose', 'click', closeGoalsTrash);
 addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // A starting point, so the first draft is at parity with what the game already

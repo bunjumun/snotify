@@ -141,8 +141,10 @@ function applyTheme(band){
 // 'goals' is band admin data, not fiction like the two above — dated
 // milestones toward finishing the record — but it hangs off the same
 // lore_docs/lore_versions store via a third slug, so it lives in this map too.
+// 'links' is the same again, a fourth slug: named URLs rather than prose or a
+// dated list, still the same stack-of-drafts-one-live store underneath.
 const BAND_FEATURES = {
-  lakehorse: ['game', 'lore', 'log', 'goals'],
+  lakehorse: ['game', 'lore', 'log', 'goals', 'links'],
 };
 // Defaults to the band on screen, which is what every call site wants; the
 // argument is there for the gate, which knows the band before it is logged in.
@@ -163,7 +165,8 @@ function applyFeatures(band){
   b.toggle('has-lore',   has.includes('lore'));
   b.toggle('has-log',    has.includes('log'));
   b.toggle('has-goals',  has.includes('goals'));
-  b.toggle('has-assets', has.includes('lore') || has.includes('log') || has.includes('goals'));
+  b.toggle('has-links',  has.includes('links'));
+  b.toggle('has-assets', has.includes('lore') || has.includes('log') || has.includes('goals') || has.includes('links'));
 }
 
 // ---------- Dazzle generator ----------

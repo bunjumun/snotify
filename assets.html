@@ -27,9 +27,9 @@
      in core.js, which applyTheme() turns into these classes. A band holding
      neither can still reach this page by typing the address, and gets the
      sentence rather than an empty grid that looks like a loading failure. */
-  #cardLore, #cardLog, #cardGoals, #shelfEmpty { display: none; }
-  body.has-lore #cardLore, body.has-log #cardLog, body.has-goals #cardGoals { display: block; }
-  body.authed:not(.has-lore):not(.has-log):not(.has-goals) #shelfEmpty { display: block; }
+  #cardLore, #cardLog, #cardGoals, #cardLinks, #shelfEmpty { display: none; }
+  body.has-lore #cardLore, body.has-log #cardLog, body.has-goals #cardGoals, body.has-links #cardLinks { display: block; }
+  body.authed:not(.has-lore):not(.has-log):not(.has-goals):not(.has-links) #shelfEmpty { display: block; }
   #shelfEmpty { color: var(--text-dim); font-size: 14px; line-height: 1.55; max-width: 46em; }
 
   /* ---------- The document ---------- */
@@ -96,6 +96,24 @@
   .goal-row .rm:hover { color: var(--text); }
   .goals-add { align-self: flex-start; }
 
+  /* Links reuses the goals editor's shape (row list, ▲▼ reorder, own struct
+     JSON in the same body column) with two text fields instead of a date and
+     a checkbox — a name and a URL, not a milestone. */
+  .links { display: none; flex-direction: column; gap: 8px; min-height: 58vh; }
+  .link-row {
+    display: flex; align-items: center; gap: 8px; background: var(--bg-row);
+    border-radius: 8px; padding: 8px 10px;
+  }
+  .link-row input.lname, .link-row input.lurl {
+    background: #0a0b0f; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 9px;
+  }
+  .link-row input.lname { flex: 0 0 180px; }
+  .link-row input.lurl { flex: 1; min-width: 0; }
+  .link-row .rm { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 15px; padding: 0 2px; }
+  .link-row .rm:hover { color: var(--text); }
+  .links-add { align-self: flex-start; }
+
   #musicBtn, #homeBtn { display: none; }
   body.authed #musicBtn, body.authed #homeBtn { display: inline-flex; }
 </style>
@@ -154,10 +172,10 @@
     <!-- The shelf. One asset for now; the grid is here because there will be
          more, and a one-item grid costs nothing. -->
     <div id="shelf">
-      <p id="shelfEmpty">The lore document, the ship's log and band goals belong
-         to the band whose game reads them, and this band holds none of them.
-         Nothing is missing and nothing is broken: there is simply no writing
-         filed under this library yet.</p>
+      <p id="shelfEmpty">The lore document, the ship's log, band goals and
+         links belong to the band this library is filed under, and this band
+         holds none of them. Nothing is missing and nothing is broken: there
+         is simply no writing filed under this library yet.</p>
       <div class="cards">
         <div class="card" id="cardLore">
           <div class="glyph">📖</div>
@@ -182,6 +200,14 @@
           <p>Dated milestones toward finishing the album, in drafts like the
              others. The live one is the timeline you're working from.</p>
           <div class="sub" id="goalsTally">&nbsp;</div>
+        </div>
+
+        <div class="card" id="cardLinks">
+          <div class="glyph">🔗</div>
+          <h2>Links</h2>
+          <p>A named list of links — anywhere the band wants to point people,
+             in drafts like the others.</p>
+          <div class="sub" id="linksTally">&nbsp;</div>
         </div>
       </div>
     </div>
@@ -214,6 +240,10 @@
           <div class="goals" id="goalsBox">
             <div id="goalsRows"></div>
             <button class="btn ghost goals-add" id="addGoalBtn">+ Add goal</button>
+          </div>
+          <div class="links" id="linksBox">
+            <div id="linksRows"></div>
+            <button class="btn ghost links-add" id="addLinkBtn">+ Add link</button>
           </div>
           <div class="parsed" id="parsed"></div>
         </div>
@@ -259,7 +289,7 @@ const DOCS = {
   // body:text column as JSON. Order is manual (▲▼), not date-sorted, so a
   // half-typed date never reshuffles the row out from under you.
   goals: {
-    title: 'Band Goals', tally: 'goalsTally', struct: true,
+    title: 'Band Goals', tally: 'goalsTally', struct: 'goals',
     count: (body) => {
       const items = parseGoals(body);
       if (!items.length) return 'No goals yet.';
@@ -269,6 +299,17 @@ const DOCS = {
         + (next ? ` — next: <b>${esc(next.title || 'Untitled')}</b>`
                   + (next.date ? ` (${esc(next.date)})` : '')
                 : ' — all done.');
+    },
+  },
+  // A list of {name, url}, the same struct-over-JSON trick as goals with a
+  // different pair of fields and its own row editor (#linksBox) below.
+  links: {
+    title: 'Links', tally: 'linksTally', struct: 'links',
+    count: (body) => {
+      const items = parseLinks(body);
+      return items.length
+        ? `<b>${items.length}</b> link${items.length === 1 ? '' : 's'}`
+        : 'No links yet.';
     },
   },
 };
@@ -351,9 +392,11 @@ async function openDoc(slug){
   if (start) open(start);
   else {
     $('draftName').value = 'First draft';
-    $('body').value = slug === 'log' ? LOG_TEMPLATE : slug === 'goals' ? '[]' : TEMPLATE;
+    $('body').value = slug === 'log' ? LOG_TEMPLATE
+                     : (slug === 'goals' || slug === 'links') ? '[]' : TEMPLATE;
     dirty = true;
     if (slug === 'goals') renderGoals();
+    if (slug === 'links') renderLinks();
     reparse();
   }
 }
@@ -376,10 +419,11 @@ function renderDrafts(){
   $('stackCount').textContent = drafts.length ? `(${drafts.length})` : '';
   if (!drafts.length){
     // Only lore and log are ever fetched by the game (LoreFeed/LogFeed both
-    // call lore_active() with those slugs specifically) — goals are a band
-    // planning doc the game never reads, so this can't say "the game will
-    // read it" for all three or it reads as gameplay content that isn't.
+    // call lore_active() with those slugs specifically) — goals and links are
+    // band admin docs the game never reads, so this can't say "the game will
+    // read it" for all four or it reads as gameplay content that isn't.
     const tail = docSlug === 'goals' ? 'Start one to track them here.'
+               : docSlug === 'links' ? 'Add the first one below.'
                                       : 'Start one and the game will read it.';
     box.innerHTML = '<div class="hint" style="padding:8px 10px">No drafts yet. ' + tail + '</div>';
     return;
@@ -425,6 +469,7 @@ function open(d){
   $('body').value = d.body || '';
   dirty = false;
   if (docSlug === 'goals') renderGoals();
+  if (docSlug === 'links') renderLinks();
   reparse();
   renderDrafts();
 }
@@ -435,9 +480,10 @@ function reparse(){
 }
 
 function setEditorMode(slug){
-  const structured = !!(DOCS[slug] && DOCS[slug].struct);
-  $('body').style.display = structured ? 'none' : '';
-  $('goalsBox').style.display = structured ? 'flex' : 'none';
+  const kind = DOCS[slug] && DOCS[slug].struct; // undefined | 'goals' | 'links'
+  $('body').style.display = kind ? 'none' : '';
+  $('goalsBox').style.display = kind === 'goals' ? 'flex' : 'none';
+  $('linksBox').style.display = kind === 'links' ? 'flex' : 'none';
 }
 
 // ---------- Goals editor (struct:true docs only) ----------
@@ -521,6 +567,64 @@ function addGoal(){
   renderGoals();
 }
 
+// ---------- Links editor (struct:'links' docs only) ----------
+// Same shape as the goals editor above: the body column holds JSON,
+// [{name, url}, ...], read and written through these functions only.
+function parseLinks(body){
+  let items;
+  try { items = JSON.parse(body || '[]'); } catch { items = []; }
+  if (!Array.isArray(items)) return [];
+  return items.map(l => ({
+    name: typeof l?.name === 'string' ? l.name : '',
+    url: typeof l?.url === 'string' ? l.url : '',
+  }));
+}
+
+function writeLinks(items){
+  $('body').value = JSON.stringify(items);
+  dirty = true;
+  reparse();
+}
+
+function renderLinks(){
+  const items = parseLinks($('body').value);
+  const box = $('linksRows');
+  box.innerHTML = '';
+  if (!items.length){
+    box.innerHTML = '<div class="hint" style="padding:8px 10px">No links yet. '
+      + 'Add the first one below.</div>';
+    return;
+  }
+  items.forEach((l, i) => {
+    const row = document.createElement('div');
+    row.className = 'link-row';
+
+    const name = document.createElement('input');
+    name.type = 'text'; name.className = 'lname'; name.placeholder = 'Name';
+    name.value = l.name;
+    name.addEventListener('input', () => { items[i].name = name.value; writeLinks(items); });
+
+    const url = document.createElement('input');
+    url.type = 'url'; url.className = 'lurl'; url.placeholder = 'https://…';
+    url.value = l.url;
+    url.addEventListener('input', () => { items[i].url = url.value; writeLinks(items); });
+
+    const rm = document.createElement('button');
+    rm.className = 'rm'; rm.title = 'Remove this link'; rm.textContent = '✕';
+    rm.addEventListener('click', () => { items.splice(i, 1); writeLinks(items); renderLinks(); });
+
+    row.append(name, url, rm);
+    box.appendChild(row);
+  });
+}
+
+function addLink(){
+  const items = parseLinks($('body').value);
+  items.push({ name: '', url: '' });
+  writeLinks(items);
+  renderLinks();
+}
+
 async function save(asNew){
   const name = $('draftName').value.trim() || 'Draft';
   const body = $('body').value;
@@ -543,7 +647,7 @@ async function makeLive(){
     drafts = (await libRpc('lore_list', { d: docSlug })) || [];
     current = drafts.find(d => d.id === current.id) || current;
     renderDrafts();
-    say(docSlug === 'goals' ? 'Live.' : 'Live. The game reads this one now.');
+    say((docSlug === 'goals' || docSlug === 'links') ? 'Live.' : 'Live. The game reads this one now.');
   } catch (e) { say(e.message, true); }
 }
 
@@ -551,21 +655,25 @@ async function makeLive(){
 on('cardLore', 'click', () => openDoc('lore'));
 on('cardLog',  'click', () => openDoc('log'));
 on('cardGoals', 'click', () => openDoc('goals'));
+on('cardLinks', 'click', () => openDoc('links'));
 on('backBtn', 'click', () => { showShelf(); });
 on('newBtn', 'click', () => {
   if (dirty && !confirm('Discard unsaved changes?')) return;
   current = null;
   $('draftName').value = 'New draft';
   $('body').value = (live() && live().body)
-    || (docSlug === 'log' ? LOG_TEMPLATE : docSlug === 'goals' ? '[]' : TEMPLATE);
+    || (docSlug === 'log' ? LOG_TEMPLATE
+        : (docSlug === 'goals' || docSlug === 'links') ? '[]' : TEMPLATE);
   dirty = true;
   if (docSlug === 'goals') renderGoals();
+  if (docSlug === 'links') renderLinks();
   reparse(); renderDrafts();
 });
 on('saveBtn', 'click', () => save(false));
 on('saveNewBtn', 'click', () => save(true));
 on('liveBtn', 'click', makeLive);
 on('addGoalBtn', 'click', addGoal);
+on('addLinkBtn', 'click', addLink);
 on('body', 'input', () => { dirty = true; reparse(); });
 addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 

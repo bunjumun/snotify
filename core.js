@@ -97,6 +97,26 @@ function publicUrl(p){
   return SUPA_URL + '/storage/v1/object/public/tracks/'
        + p.replace(/^tracks\//, '').split('/').map(encodeURIComponent).join('/');
 }
+// An uploaded tool is a page that has to RUN, and the storage URL above
+// deliberately refuses to let it: Supabase serves any object stored as HTML
+// back as text/plain under `Content-Security-Policy: default-src 'none';
+// sandbox`, so an arbitrary upload can never execute on the storage origin.
+// That is the right instinct for band media and the wrong one for a tool —
+// it is why the first uploaded tool opened as its own source code instead of
+// launching. The serve-tool Edge Function re-serves the same object with its
+// real Content-Type and no sandbox, so the link that opens a tool points
+// there instead of at the raw object.
+//
+// Rewritten here, at the point of use, rather than where tools are saved:
+// toolKey() IS the stored href, so changing what gets written would orphan
+// every hidden/order/edits key already pointing at the old URL. Doing it this
+// way also heals tools added before the fix without anyone re-adding them.
+const TOOL_OBJECT_RE =
+  /^https?:\/\/[^/]+\/storage\/v1\/object\/public\/tracks\/(.+\/_tools\/.+)$/;
+function toolHref(h){
+  const m = TOOL_OBJECT_RE.exec(h || '');
+  return m ? SUPA_URL + '/functions/v1/serve-tool/' + m[1] : h;
+}
 
 // Which band's library this page is currently showing.
 let curBand = null, curBandTitle = '';
@@ -1079,7 +1099,7 @@ function renderToolMenu(){
     const btn = $('toolsBtn');
     if (btn) btn.style.display = toolList.length ? '' : 'none';
     m.innerHTML = toolList.map(t => t.href
-      ? `<a class="toolitem" href="${esc(safeHref(t.href))}" target="_blank" rel="noopener">
+      ? `<a class="toolitem" href="${esc(safeHref(toolHref(t.href)))}" target="_blank" rel="noopener">
            <b>${esc(t.label)}</b><span>${esc(t.hint)}</span></a>`
       : `<button class="toolitem" data-tool="${esc(t.id)}">
            <b>${esc(t.label)}</b><span>${esc(t.hint)}</span></button>`).join('')
@@ -1100,7 +1120,7 @@ function renderToolDoors(){
     const icon = m ? m[1] : '▨';
     const title = m ? m[2] : (t.label || '');
     return t.href
-      ? `<a class="door" href="${esc(safeHref(t.href))}" target="_blank" rel="noopener">
+      ? `<a class="door" href="${esc(safeHref(toolHref(t.href)))}" target="_blank" rel="noopener">
            <div class="dooricon">${esc(icon)}</div>
            <div class="doortitle">${esc(title)}</div>
            <div class="doorsub">${esc(t.hint)}</div>
@@ -1481,7 +1501,11 @@ on('toolNewFile', 'change', async () => {
     if (!r.ok) throw new Error(`Upload failed (${r.status})`);
     const res = await edgeFn('import-inbox', { band, pass, song: '_tools', kind: 'tool' });
     if (!res || !res.ref) throw new Error('The file uploaded but could not be filed. The site needs its import function redeployed for tools.');
-    $('toolNewHref').value = publicUrl(res.ref);
+    // Straight to the serve-tool URL, so a tool added from now on is stored
+    // pointing at something that will actually run. Tools added before this
+    // still carry the raw storage URL and are rewritten by toolHref() at
+    // render time instead.
+    $('toolNewHref').value = toolHref(publicUrl(res.ref));
     if (!$('toolNewLabel').value.trim()) $('toolNewLabel').value = res.name || filename(res.ref);
     $('toolAdminStatus').className = 'status';
     $('toolAdminStatus').textContent = 'Uploaded — press Add to put it on the menu.';

@@ -98,14 +98,17 @@ function publicUrl(p){
        + p.replace(/^tracks\//, '').split('/').map(encodeURIComponent).join('/');
 }
 // An uploaded tool is a page that has to RUN, and the storage URL above
-// deliberately refuses to let it: Supabase serves any object stored as HTML
-// back as text/plain under `Content-Security-Policy: default-src 'none';
-// sandbox`, so an arbitrary upload can never execute on the storage origin.
-// That is the right instinct for band media and the wrong one for a tool —
-// it is why the first uploaded tool opened as its own source code instead of
-// launching. The serve-tool Edge Function re-serves the same object with its
-// real Content-Type and no sandbox, so the link that opens a tool points
-// there instead of at the raw object.
+// deliberately refuses to let it: Supabase rewrites any response carrying an
+// HTML content type to `text/plain` under `Content-Security-Policy:
+// default-src 'none'; sandbox`, so an arbitrary upload can never execute on
+// a *.supabase.co origin. Right instinct for band media, wrong one for a
+// tool — it is why the first uploaded tool opened as its own source code
+// instead of launching. The guard covers Edge Function responses too, so it
+// cannot be answered on that side; the tool has to be rendered from this
+// site's own origin instead. tools/run.html does that, taking the object
+// path in its hash. (Worth knowing if this is ever revisited: HEAD has no
+// body, so the rewrite does not fire and the headers look fine. Only GET
+// shows it.)
 //
 // Rewritten here, at the point of use, rather than where tools are saved:
 // toolKey() IS the stored href, so changing what gets written would orphan
@@ -115,7 +118,10 @@ const TOOL_OBJECT_RE =
   /^https?:\/\/[^/]+\/storage\/v1\/object\/public\/tracks\/(.+\/_tools\/.+)$/;
 function toolHref(h){
   const m = TOOL_OBJECT_RE.exec(h || '');
-  return m ? SUPA_URL + '/functions/v1/serve-tool/' + m[1] : h;
+  if (!m) return h;
+  // Decode the path out of the URL: run.html re-encodes it per segment.
+  const ref = m[1].split('/').map(decodeURIComponent).join('/');
+  return 'tools/run.html#' + encodeURIComponent(ref);
 }
 
 // Which band's library this page is currently showing.
@@ -1501,11 +1507,12 @@ on('toolNewFile', 'change', async () => {
     if (!r.ok) throw new Error(`Upload failed (${r.status})`);
     const res = await edgeFn('import-inbox', { band, pass, song: '_tools', kind: 'tool' });
     if (!res || !res.ref) throw new Error('The file uploaded but could not be filed. The site needs its import function redeployed for tools.');
-    // Straight to the serve-tool URL, so a tool added from now on is stored
-    // pointing at something that will actually run. Tools added before this
-    // still carry the raw storage URL and are rewritten by toolHref() at
-    // render time instead.
-    $('toolNewHref').value = toolHref(publicUrl(res.ref));
+    // Deliberately the RAW storage URL, not the launcher one: that is the
+    // canonical thing being pointed at, and toolHref() turns it into a
+    // launcher link at render time. Storing it this way means every uploaded
+    // tool, old and new, goes through one translation — so if the launcher
+    // ever moves or changes shape, they all follow it instead of freezing.
+    $('toolNewHref').value = publicUrl(res.ref);
     if (!$('toolNewLabel').value.trim()) $('toolNewLabel').value = res.name || filename(res.ref);
     $('toolAdminStatus').className = 'status';
     $('toolAdminStatus').textContent = 'Uploaded — press Add to put it on the menu.';

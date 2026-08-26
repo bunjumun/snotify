@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tool</title>
+<!--
+  run.html — the launcher for tools UPLOADED from the Tools manager (CR-99),
+  as opposed to the ones that ship as files beside this one.
+
+  Why a launcher exists at all. An uploaded tool lives as an object in the
+  Supabase 'tracks' bucket, and Supabase will not let anything on a
+  *.supabase.co origin execute as a page: any response carrying an HTML
+  content type comes back rewritten to `text/plain` with
+  `Content-Security-Policy: default-src 'none'; sandbox` and
+  `X-Content-Type-Options: nosniff` bolted on. That is a deliberate
+  stored-XSS guard — an arbitrary upload must never run on the origin that
+  also answers for the database and the storage API — and it applies to
+  Edge Function responses just as firmly as to raw objects, so no amount of
+  setting headers on that side gets around it. (Learned the slow way: a HEAD
+  request has no body, so the rewrite does not fire and the headers look
+  correct. Only GET tells the truth. Check with GET.)
+
+  So the bytes are fetched from storage — where text/plain is exactly what we
+  want, since we only want the source — and rendered here, on the site's own
+  origin, where GitHub Pages serves real HTML.
+
+  The tool goes into a sandboxed iframe with NO allow-same-origin, so it gets
+  an opaque origin of its own: scripts, canvas, file pickers, downloads and
+  popups all work, but it cannot read this page, the site's localStorage, or
+  the band and admin sessions kept there. Only a site admin can upload a
+  tool, so this is not defending against a stranger — it is making sure a
+  tool that is merely careless, or grabbed off the internet, cannot reach
+  anything it has no business touching.
+
+  Relative URLs cannot resolve inside a srcdoc document, so an uploaded tool
+  must be a single self-contained file. That matches both what the Tools
+  manager accepts and what these tools actually are: one HTML file with its
+  CSS and JS inline.
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #111; }
+  iframe { border: 0; display: block; width: 100%; height: 100%; }
+  #msg {
+    color: #ddd; font: 15px/1.5 system-ui, -apple-system, sans-serif;
+    padding: 2rem; max-width: 40rem;
+  }
+  #msg code { color: #9cf; word-break: break-all; }
+</style>
+</head>
+<body>
+<div id="msg">Loading tool…</div>
+<script>
+(async () => {
+  const SUPA_URL = 'https://twgukeyoayfqldnojrkg.supabase.co';
+  const msg = document.getElementById('msg');
+  const fail = (t, detail) => {
+    msg.textContent = t;
+    if (detail){
+      const c = document.createElement('div');
+      c.style.marginTop = '.75rem';
+      c.innerHTML = '<code></code>';
+      c.firstChild.textContent = detail;
+      msg.appendChild(c);
+    }
+  };
+
+  // The ref rides in the hash so it never reaches a server log, and is
+  // validated against the exact shape import-inbox hands back rather than
+  // trusted. Without this check the page would be a general-purpose "fetch
+  // any URL and execute it" gadget sitting on the site's own origin, which
+  // is a far worse thing to own than the problem it solves.
+  const ref = decodeURIComponent(location.hash.slice(1));
+  if (!/^[a-z0-9][a-z0-9_-]*\/_tools\/[^/]+$/i.test(ref)){
+    return fail('That is not a tool link.', ref || '(nothing after the #)');
+  }
+
+  const url = SUPA_URL + '/storage/v1/object/public/tracks/'
+            + ref.split('/').map(encodeURIComponent).join('/');
+
+  let html;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return fail('Could not load that tool (' + r.status + ').', ref);
+    html = await r.text();
+  } catch (e){
+    return fail('Could not load that tool.', (e && e.message) || String(e));
+  }
+
+  // The tab is named after the tool rather than left as "Tool", so several
+  // open at once stay tellable apart.
+  const t = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
+  document.title = (t && t[1].trim()) || ref.split('/').pop();
+
+  const f = document.createElement('iframe');
+  // No allow-same-origin on purpose — see the header comment.
+  f.setAttribute('sandbox',
+    'allow-scripts allow-downloads allow-modals allow-popups allow-forms allow-pointer-lock');
+  f.srcdoc = html;
+  msg.remove();
+  document.body.appendChild(f);
+})();
+</script>
+</body>
+</html>

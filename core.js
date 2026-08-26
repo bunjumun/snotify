@@ -1166,6 +1166,13 @@ document.body.insertAdjacentHTML('beforeend', `
         <input type="text" id="toolNewHint" placeholder="One line about what it does" maxlength="140" />
         <button class="btn ghost" id="toolAdd">Add</button>
       </div>
+      <div class="hint" style="margin:6px 0">Or upload a tool page from your
+        computer — this fills the link in above, then Add still puts it on
+        the menu.</div>
+      <div class="tool-add">
+        <input type="file" id="toolNewFile" style="display:none" />
+        <button class="btn ghost" id="toolNewUpload" type="button">Upload a file…</button>
+      </div>
       <div class="status" id="toolAdminStatus"></div>
       <div class="actions">
         <button class="btn ghost" id="toolRestore">Show all</button>
@@ -1444,6 +1451,45 @@ on('toolAdd', 'click', () => {
   $('toolNewLabel').value = $('toolNewHref').value = $('toolNewHint').value = '';
   $('toolAdminStatus').className = 'status'; $('toolAdminStatus').textContent = '';
   renderToolRows();
+});
+
+// Upload a tool file straight from disk (CR-99), rather than requiring a
+// link to somewhere it already lives — most of Lakehorse's own tools start
+// as one HTML file on his machine and nowhere on the web yet. Goes through
+// the same inbox → import-inbox route every other upload on the site uses,
+// but gated on the SITE ADMIN password (this whole modal is admin-only, and
+// a tool can be added under "All bands" with no band logged in at all), so
+// the 'tool' kind checks admin_login instead of a band password.
+on('toolNewUpload', 'click', () => $('toolNewFile').click());
+on('toolNewFile', 'change', async () => {
+  const f = $('toolNewFile').files[0];
+  if (!f) return;
+  const pass = adminPass();
+  if (!pass){ $('toolAdminStatus').className = 'status err'; $('toolAdminStatus').textContent = 'Log in as site admin first.'; return; }
+  $('toolAdminStatus').className = 'status';
+  $('toolAdminStatus').textContent = `Uploading ${f.name}…`;
+  try {
+    if (f.size > 5 * 1024 * 1024) throw new Error('That file is over the 5 MB limit.');
+    const key = toolScopeKey();
+    const band = key === 'tools.custom' ? '_site' : key.slice('tools.'.length);
+    const enc = (...seg) => seg.map(encodeURIComponent).join('/');
+    const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${enc(band, pass, '_tools', f.name)}`, {
+      method: 'POST',
+      headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+                 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'true' },
+      body: f });
+    if (!r.ok) throw new Error(`Upload failed (${r.status})`);
+    const res = await edgeFn('import-inbox', { band, pass, song: '_tools', kind: 'tool' });
+    if (!res || !res.ref) throw new Error('The file uploaded but could not be filed. The site needs its import function redeployed for tools.');
+    $('toolNewHref').value = publicUrl(res.ref);
+    if (!$('toolNewLabel').value.trim()) $('toolNewLabel').value = res.name || filename(res.ref);
+    $('toolAdminStatus').className = 'status';
+    $('toolAdminStatus').textContent = 'Uploaded — press Add to put it on the menu.';
+  } catch (err){
+    $('toolAdminStatus').className = 'status err';
+    $('toolAdminStatus').textContent = err.message || 'Could not upload that.';
+  }
+  $('toolNewFile').value = '';
 });
 
 // "Show everything" rather than "restore": ordering and names are kept, only

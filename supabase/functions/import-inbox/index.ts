@@ -5,7 +5,7 @@
 //   supabase functions deploy import-inbox --no-verify-jwt
 //
 // Request:  POST { band, pass, song, kind? }
-//   kind: 'audio' (default) | 'art' | 'ref' | 'img'
+//   kind: 'audio' (default) | 'art' | 'ref' | 'img' | 'tool'
 // Response: { ok: true, imported: n }  |  { ok: true, ref: '<path>' }  |  { error }
 //
 // 'art' is S'nart: the same import, pointed at images. A revision of a piece
@@ -13,12 +13,13 @@
 // distinguished only by songs.kind — so the only thing that varies here is
 // which file extensions count and what MIME type they go up as.
 //
-// 'ref' and 'img' are the two PASSTHROUGH kinds: move one file into permanent
-// storage, hand the path back, write no rows at all. They are the same code and
-// differ only in what they will accept and where it lands:
+// 'ref', 'img' and 'tool' are PASSTHROUGH kinds: move one file into permanent
+// storage, hand the path back, write no rows at all. Same code, differing
+// only in what they will accept and where it lands:
 //
-//   ref   audio   <band>/<song>/_ref/<file>     what a mix was chasing
-//   img   images  <band>/<song>/_img/<file>     a picture with no song of its own
+//   ref    audio   <band>/<song>/_ref/<file>   what a mix was chasing
+//   img    images  <band>/<song>/_img/<file>   a picture with no song of its own
+//   tool   any     <band>/_tools/<file>        an admin's own tool page (CR-99)
 //
 // 'img' exists for share-link thumbnails (CR-21), which are the first image on
 // this site that belongs to no piece and no song. It is called with the
@@ -26,6 +27,13 @@
 // reuse 'ref' because 'ref' filters on AUDIO_RE and would reject every picture,
 // and it must not reuse 'art' because 'art' creates a songs row and the
 // thumbnail would appear in Sn'art as a piece nobody made.
+//
+// 'tool' exists so the Tools menu's "Add" form can take a file instead of only
+// a link (CR-99): most of Lakehorse's own tools are one HTML file with no home
+// on the web yet. Called with the reserved folder '_tools', so every uploaded
+// tool for a band lands flat at <band>/_tools/<file> with no per-song nesting.
+// Unlike 'ref'/'img' it applies no extension filter — a tool page can arrive
+// with a companion .js or .css, and rejecting those would silently break it.
 
 const SUPA_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -38,6 +46,8 @@ const MIME: Record<string, string> = {
   '.webp': 'image/webp', '.gif': 'image/gif', '.avif': 'image/avif',
   '.tif': 'image/tiff', '.tiff': 'image/tiff', '.bmp': 'image/bmp',
   '.heic': 'image/heic',
+  '.html': 'text/html', '.htm': 'text/html',
+  '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
 };
 
 const CORS = {
@@ -68,33 +78,52 @@ Deno.serve(async (req) => {
     const { band, pass, song, kind } = await req.json();
     if (!band || !pass || !song) return json({ error: 'band, pass, song required' }, 400);
     const k = kind === 'art' ? 'art' : kind === 'ref' ? 'ref'
-            : kind === 'img' ? 'img' : 'audio';
-    const MEDIA_RE = (k === 'art' || k === 'img') ? IMAGE_RE : AUDIO_RE;
+            : kind === 'img' ? 'img' : kind === 'tool' ? 'tool' : 'audio';
+    // 'tool' takes anything — a tool page can ship with a companion .js/.css
+    // and rejecting those on extension would silently break the upload.
+    const MEDIA_RE = k === 'tool' ? /./ : (k === 'art' || k === 'img') ? IMAGE_RE : AUDIO_RE;
 
     // A reference is not a version of anything: it is the track this song is
     // chasing. Move the one file into the permanent bucket under the song's
     // own _ref/ folder and hand the path back — no songs or versions rows.
-    // 'img' is the same move for a picture that belongs to no song at all.
-    if (k === 'ref' || k === 'img') {
-      const okRef = await api('/rest/v1/rpc/band_pass_ok', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ b: band, p: pass }),
-      });
-      if ((await okRef.json()) !== true) return json({ error: 'wrong band password' }, 403);
+    // 'img' is the same move for a picture that belongs to no song at all,
+    // 'tool' the same again for an admin's own tool page.
+    if (k === 'ref' || k === 'img' || k === 'tool') {
+      // The Tools menu is a SITE-ADMIN feature, gated by the site admin
+      // password (admin_login), not any one band's password — a tool can be
+      // uploaded under 'tools.custom' (every band) with no band logged in at
+      // all. 'ref'/'img' stay on band_pass_ok as before.
+      if (k === 'tool') {
+        const okAdmin = await api('/rest/v1/rpc/admin_login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pass }),
+        });
+        if ((await okAdmin.json()) !== true) return json({ error: 'wrong admin password' }, 403);
+      } else {
+        const okRef = await api('/rest/v1/rpc/band_pass_ok', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ b: band, p: pass }),
+        });
+        if ((await okRef.json()) !== true) return json({ error: 'wrong band password' }, 403);
+      }
       const bb = String(band).toLowerCase();
       const listed = await api('/storage/v1/object/list/inbox', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prefix: `${bb}/${pass}/${song}`, limit: 20 }),
       });
       const names = ((await listed.json()) as { name: string }[])
-        .map((e) => e.name).filter((n) => n && MEDIA_RE.test(n));
+        .map((e) => e.name).filter((n) => n && !n.endsWith('/') && MEDIA_RE.test(n));
       if (!names.length) {
         return json({ error: k === 'img' ? 'no image found to use as a picture'
-                                         : 'no audio found to use as a reference' }, 400);
+                            : k === 'tool' ? 'no file found to use as a tool'
+                                           : 'no audio found to use as a reference' }, 400);
       }
       const file = names[0];
       const from = `${bb}/${pass}/${song}/${file}`;
-      const to = `${bb}/${song}/${k === 'img' ? '_img' : '_ref'}/${file}`;
+      // 'tool' has no per-song nesting: song is already the reserved '_tools'
+      // folder, so the destination is just <band>/_tools/<file>.
+      const to = k === 'tool' ? `${bb}/${song}/${file}`
+               : `${bb}/${song}/${k === 'img' ? '_img' : '_ref'}/${file}`;
       const ext = (file.match(/\.[^.]+$/)?.[0] ?? '').toLowerCase();
       try {
         await api('/storage/v1/object/move', {

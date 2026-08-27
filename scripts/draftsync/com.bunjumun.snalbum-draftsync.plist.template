@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
+  OPTIONAL always-on layer. The portable script (draftsync.py / upload.command)
+  is the main way to use this; install.sh wires this plist up only if you want
+  ONE folder pushed automatically whenever it changes.
+
   Filled in and installed by install.sh. __PLACEHOLDERS__ are substituted there.
   WatchPaths fires the job whenever the contents of a listed directory change
   (a file or sub-folder added, removed, renamed) — no polling. install.sh lists
@@ -16,6 +20,7 @@
   <array>
     <string>/usr/bin/python3</string>
     <string>__SCRIPT__</string>
+    <string>__WATCH_DIR__</string>
   </array>
 
   <key>WatchPaths</key>

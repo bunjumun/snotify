@@ -1,10 +1,12 @@
 #!/bin/bash
-# Install (or refresh) the launchd agent that runs draftsync.py whenever the
-# watched folder changes. Re-run this any time you add a new top-level
-# sub-folder to the watch directory, or after editing the config.
+# OPTIONAL: wire up a launchd agent that runs draftsync.py automatically
+# whenever ONE chosen folder changes. The portable way to use draftsync is just
+# to run draftsync.py / double-click upload.command inside any folder — you only
+# need this if you want a set-and-forget synced folder.
 #
-#   ./install.sh            install / refresh
-#   ./install.sh uninstall  remove the agent (uploads already made are untouched)
+#   ./install.sh /path/to/folder   install / refresh, watching that folder
+#   ./install.sh                    use WATCH_DIR from ~/.snalbum-draftsync/config
+#   ./install.sh uninstall          remove the agent (uploads already made are untouched)
 
 set -euo pipefail
 
@@ -20,18 +22,21 @@ DOMAIN="gui/$(id -u)"
 uninstall() {
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   rm -f "$PLIST"
-  echo "Removed $LABEL. Your ~/.snalbum-draftsync/ config, state and log are left in place."
+  echo "Removed $LABEL. Your ~/.snalbum-draftsync/ config and log are left in place."
   exit 0
 }
 [ "${1:-}" = "uninstall" ] && uninstall
 
-[ -f "$CFG" ] || { echo "No config at $CFG"; echo "cp '$HERE/config.example' '$CFG' && chmod 600 '$CFG'  then edit it."; exit 1; }
+[ -f "$CFG" ] || { echo "No band config at $CFG"; echo "cp '$HERE/config.example' '$CFG' && chmod 600 '$CFG'  then edit BAND / BAND_PASS."; exit 1; }
 chmod 600 "$CFG"
 
-# shellcheck disable=SC1090
-WATCH_DIR="$(grep -E '^WATCH_DIR=' "$CFG" | head -1 | cut -d= -f2- | sed 's/^ *//;s/ *$//')"
+WATCH_DIR="${1:-}"
+if [ -z "$WATCH_DIR" ]; then
+  WATCH_DIR="$(grep -E '^WATCH_DIR=' "$CFG" | head -1 | cut -d= -f2- | sed 's/^ *//;s/ *$//')"
+fi
+[ -n "$WATCH_DIR" ] || { echo "Pass a folder:  ./install.sh /path/to/folder   (or set WATCH_DIR= in $CFG)"; exit 1; }
 WATCH_DIR="${WATCH_DIR/#\~/$HOME}"
-[ -d "$WATCH_DIR" ] || { echo "WATCH_DIR from config is not a directory: $WATCH_DIR"; exit 1; }
+WATCH_DIR="$(cd "$WATCH_DIR" 2>/dev/null && pwd)" || { echo "Not a directory: $WATCH_DIR"; exit 1; }
 
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.snalbum-draftsync"
 
@@ -41,13 +46,13 @@ while IFS= read -r d; do
   WATCHPATHS+=$'\n'"    <string>$d</string>"
 done < <(find "$WATCH_DIR" -type d -not -path "$WATCH_DIR")
 
-python3 - "$TEMPLATE" "$SCRIPT" "$LOG" "$PLIST" "$WATCHPATHS" <<'PY'
+python3 - "$TEMPLATE" "$SCRIPT" "$LOG" "$PLIST" "$WATCHPATHS" "$WATCH_DIR" <<'PY'
 import sys
-tpl, script, log, out, watchpaths = sys.argv[1:6]
+tpl, script, log, out, watchpaths, watchdir = sys.argv[1:7]
 text = open(tpl).read()
-text = (text.replace("__SCRIPT__", script)
-            .replace("__LOG__", log)
-            .replace("__WATCHPATHS__", watchpaths))
+for k, v in (("__SCRIPT__", script), ("__LOG__", log),
+             ("__WATCHPATHS__", watchpaths), ("__WATCH_DIR__", watchdir)):
+    text = text.replace(k, v)
 open(out, "w").write(text)
 PY
 
@@ -55,7 +60,8 @@ launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
 launchctl bootstrap "$DOMAIN" "$PLIST"
 launchctl enable "$DOMAIN/$LABEL"
 
+subs="$(find "$WATCH_DIR" -type d -not -path "$WATCH_DIR" | wc -l | tr -d ' ')"
 echo "Installed $LABEL"
-echo "  watching : $WATCH_DIR  (+ $(find "$WATCH_DIR" -type d -not -path "$WATCH_DIR" | wc -l | tr -d ' ') sub-folders)"
+echo "  watching : $WATCH_DIR  (+ $subs sub-folders)"
 echo "  log      : $LOG"
-echo "  kick now : launchctl kickstart -k $DOMAIN/$LABEL"
+echo "  run now  : launchctl kickstart -k $DOMAIN/$LABEL"

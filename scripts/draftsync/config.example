@@ -1,12 +1,22 @@
-# Copy this to  ~/.snalbum-draftsync/config  and  chmod 600  it.
-# That file holds your band password, so it lives outside the repo and is
-# readable only by you. draftsync.py reads it on every run.
+# ONE-TIME SETUP, per computer. Copy this to  ~/.snalbum-draftsync/config
+# and  chmod 600  it. It holds your band password, so it lives outside the
+# repo and is readable only by you. Once this exists, draftsync.py works in
+# any folder on this Mac with no further setup.
+#
+#   mkdir -p ~/.snalbum-draftsync
+#   cp scripts/draftsync/config.example ~/.snalbum-draftsync/config
+#   chmod 600 ~/.snalbum-draftsync/config
+#   $EDITOR ~/.snalbum-draftsync/config
 
 BAND=dando
 BAND_PASS=replace-with-your-band-password
-WATCH_DIR=/Users/bunj/Music/SnAlbum drafts
 
-# --- optional, sensible defaults shown ---
+# --- optional, defaults shown ---
 # FOLDER_NAME=Recently uploaded
 # MAX_MB=50
 # STABLE_SECONDS=10
+
+# Only needed if you use install.sh with no argument (the optional always-on
+# watcher). The portable script ignores this and uploads whatever folder it
+# is run from.
+# WATCH_DIR=/Users/bunj/Music/SnAlbum drafts

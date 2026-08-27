@@ -1369,7 +1369,18 @@ on('toolDoors', 'click', (e) => {
 // --- the tools manager ---
 // The draft is the resolved list WITH the hidden ones still in it, so the
 // panel shows everything that exists and lets you turn each on or off.
-let toolDraft = [], toolEditing = -1, toolAdded = [];
+let toolDraft = [], toolEditing = -1, toolAdded = [], toolRemoving = -1;
+
+// A tool that SHIPS lives in code (BAND_TOOLS / BUILTIN_TOOLS) and cannot be
+// removed from a panel — the next deploy would put it straight back — so for
+// those, hiding is the honest answer and the only control offered. A tool that
+// was ADDED here is ours to take away again, and until now there was no way to:
+// hiding left it sitting in this list for good. Removing takes it out of the
+// saved menu and nothing else — an uploaded file stays in storage, so the same
+// link still works and re-adding it is a paste away. That is why this asks once
+// rather than offering a trash like Links and Goals do: there is nothing here
+// to restore that the file itself does not already hold.
+const isAddedTool = (t) => !t.id && toolAdded.some(x => toolKey(x) === toolKey(t));
 
 function renderToolRows(){
   $('toolRows').innerHTML = toolDraft.map((t, i) => i === toolEditing ? `
@@ -1396,6 +1407,10 @@ function renderToolRows(){
       </div>
       <span class="ec" data-eye="${i}" title="${t.hidden ? 'Show in the menu' : 'Hide from the menu'}">${t.hidden ? '◌' : '◉'}</span>
       <span class="ec" data-edit="${i}" title="Rename or re-describe">✎</span>
+      ${isAddedTool(t) ? `<span class="ec ${toolRemoving === i ? 'armed' : ''}" data-remove="${i}"
+           title="${toolRemoving === i
+             ? 'Click again to take it off the menu (the file itself is kept)'
+             : 'Remove from the menu'}">${toolRemoving === i ? '✓' : '🗑'}</span>` : ''}
     </div>`).join('') || `<div class="hint">No tools yet.</div>`;
 }
 
@@ -1403,7 +1418,7 @@ function toolScopeKey(){ return $('toolScope').value; }
 function syncToolScope(){
   const key = toolScopeKey();
   const band = key === 'tools.custom' ? '' : key.slice('tools.'.length);
-  toolEditing = -1;
+  toolEditing = -1; toolRemoving = -1;
   const ov = parseOverrides(siteText[key]);
   toolAdded = ov ? ov.added.map(t => ({ ...t })) : [];
   toolDraft = resolveTools(band, ov, true);
@@ -1430,7 +1445,28 @@ on('toolRows', 'click', (e) => {
   const eye = e.target.closest('[data-eye]');
   if (eye){ const i = +eye.dataset.eye; toolDraft[i].hidden = !toolDraft[i].hidden; renderToolRows(); return; }
   const ed = e.target.closest('[data-edit]');
-  if (ed){ toolEditing = +ed.dataset.edit; renderToolRows(); return; }
+  if (ed){ toolEditing = +ed.dataset.edit; toolRemoving = -1; renderToolRows(); return; }
+  // Asks twice, same as Delete forever on Links and Goals, and disarms itself
+  // after four seconds so a stray first click cannot sit armed under a later one.
+  const rm = e.target.closest('[data-remove]');
+  if (rm){
+    const i = +rm.dataset.remove;
+    if (toolRemoving !== i){
+      toolRemoving = i; renderToolRows();
+      setTimeout(() => { if (toolRemoving === i){ toolRemoving = -1; renderToolRows(); } }, 4000);
+      return;
+    }
+    const k = toolKey(toolDraft[i]);
+    toolAdded = toolAdded.filter(x => toolKey(x) !== k);
+    toolDraft.splice(i, 1);
+    toolRemoving = -1;
+    if (toolEditing === i) toolEditing = -1;
+    else if (toolEditing > i) toolEditing -= 1;
+    $('toolAdminStatus').className = 'status';
+    $('toolAdminStatus').textContent = 'Removed from the list — press Save to make that live.';
+    renderToolRows();
+    return;
+  }
   const cancel = e.target.closest('[data-cancel]');
   if (cancel){ toolEditing = -1; renderToolRows(); return; }
   const done = e.target.closest('[data-done]');

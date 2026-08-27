@@ -471,6 +471,11 @@ body.texting .dock { display: none; }
 .tool-edit input:focus { border-color: var(--accent); background: var(--field-on); }
 .tool-edit .btn { padding: 6px 14px; font-size: 12px; }
 .tool-editbtns { display: flex; gap: 8px; justify-content: flex-end; }
+/* Remove asks twice: the second click is the one that acts, so the armed
+   state has to be unmistakable rather than merely a repeated icon. */
+.tool-row .ec.armed {
+  background: #ff6b6b; color: #fff; border-color: #ff6b6b;
+}
 /* A hidden tool stays in the panel, greyed, so it can be brought back. */
 .tool-row.off .tool-what { opacity: .42; }
 .tool-row.off .tool-what b { text-decoration: line-through; text-decoration-color: var(--text-mute); }

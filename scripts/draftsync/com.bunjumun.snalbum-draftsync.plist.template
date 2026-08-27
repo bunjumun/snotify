@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Filled in and installed by install.sh. __PLACEHOLDERS__ are substituted there.
+  WatchPaths fires the job whenever the contents of a listed directory change
+  (a file or sub-folder added, removed, renamed) — no polling. install.sh lists
+  the watch root plus every sub-folder it finds at install time; re-run install.sh
+  after adding a brand-new top-level sub-folder.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.bunjumun.snalbum-draftsync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>__SCRIPT__</string>
+  </array>
+
+  <key>WatchPaths</key>
+  <array>
+__WATCHPATHS__
+  </array>
+
+  <!-- launchd will not relaunch more than once per this many seconds -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <!-- catch anything dropped while the agent was not loaded -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Optional belt-and-braces backstop for the deep-sub-folder edge case
+       WatchPaths cannot see. Uncomment for a scan every 10 minutes on top of
+       the instant triggers.
+  <key>StartInterval</key>
+  <integer>600</integer>
+  -->
+
+  <key>StandardOutPath</key>
+  <string>__LOG__</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG__</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

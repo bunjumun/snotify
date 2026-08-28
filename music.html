@@ -246,13 +246,22 @@
   .vol input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--text); cursor: pointer; }
   .vol input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border: none; border-radius: 50%; background: var(--text); cursor: pointer; }
   .vol .meter { position: relative; width: 34px; height: 4px; border-radius: 4px; background: var(--wave); overflow: hidden; flex: none; }
-  .vol .meter span { position: absolute; inset: 0; width: 0%; background: var(--wave-prog); border-radius: inherit; }
+  .vol .meter span { position: absolute; inset: 0; width: 0%; background: var(--wave-prog); border-radius: inherit; transition: background-color .12s linear; }
+  /* Colour is driven by frame peak, not by the RMS bar fill: "near clipping"
+     is about the loudest sample, and RMS on music never reaches 0dBFS. Yellow
+     from -6dBFS peak, red from -1dBFS or an outright clip (held ~0.8s so a
+     transient still registers). */
+  .vol .meter.warn span { background: #e8c21f; }
+  .vol .meter.clip span { background: #e6402c; }
+  .vol .meter-db { font: 500 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-dim); min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; letter-spacing: -.02em; flex: none; transition: color .12s linear; }
+  .vol .meter.warn ~ .meter-db { color: #e8c21f; }
+  .vol .meter.clip ~ .meter-db { color: #e6402c; }
   /* The meter is fed by a Web Audio tap that we deliberately never install on
      a touch device (see meterWanted), because routing playback through it
      costs iOS dropouts and pitch shifts. A phone in landscape is wide enough
      to clear the 660px rule below and would otherwise show a bar that can
      never move, so hide it by the same test the tap uses. */
-  @media (pointer: coarse) { .vol .meter { display: none; } }
+  @media (pointer: coarse) { .vol .meter, .vol .meter-db { display: none; } }
 
 
   /* Single-mix view (?b&s&v, no login): playback only — no comments, no
@@ -1864,6 +1873,7 @@
             <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 00-2.5-4.03v8.06A4.5 4.5 0 0016.5 12z"/></svg>
             <input type="range" id="vol" min="0" max="1" step="0.01" value="0.9" aria-label="Volume" />
             <div class="meter" id="meter" aria-hidden="true"><span id="meterFill"></span></div>
+            <span class="meter-db" id="meterDb" aria-hidden="true">--</span>
           </div>
         </div>
       </div>
@@ -1981,7 +1991,9 @@ function meterTap(w){
     meterCtx = new AC();
     meterAnalyser = meterCtx.createAnalyser();
     meterAnalyser.fftSize = 512;
-    meterData = new Uint8Array(meterAnalyser.fftSize);
+    // Float, not byte: byte time-domain data caps a positive sample at 127/128,
+    // so a real 0dBFS clip could never read as one. Floats give the true peak.
+    meterData = new Float32Array(meterAnalyser.fftSize);
   }
   try {
     const src = meterCtx.createMediaElementSource(w.getMediaElement());
@@ -1991,20 +2003,30 @@ function meterTap(w){
   } catch {}   // element not attached yet, or already tapped: skip this version
 }
 
+// Returns { level, peakDb, state } for the current frame. `level` is the 0..1
+// bar fill (RMS, scaled so a real mix sits high with headroom). `peakDb` is the
+// loudest sample of the frame in dBFS — the number that can actually reach 0
+// and show clipping, which RMS on music never does. `state` is the colour band:
+// -1 clean, 0 approaching peak (yellow), 1 at or over (red).
 function meterLevel(){
-  meterAnalyser.getByteTimeDomainData(meterData);
-  let sum = 0;
+  meterAnalyser.getFloatTimeDomainData(meterData);
+  let sum = 0, peak = 0;
   for (let i = 0; i < meterData.length; i++){
-    const v = (meterData[i] - 128) / 128;
+    const v = meterData[i];
     sum += v * v;
+    const a = Math.abs(v);
+    if (a > peak) peak = a;
   }
   const rms = Math.sqrt(sum / meterData.length);
-  const db = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
+  const rmsDb  = rms  > 0 ? 20 * Math.log10(rms)  : -Infinity;
+  const peakDb = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
   // Full scale is the top of the bar, so a mastered mix around -10dB RMS
   // reads hot with headroom left rather than pinned. Measured against a
   // half-amplitude sine (-9dB): on an earlier -50..-6 range that sat at
   // 0.93 and any real mix would have buried the needle.
-  return Math.max(0, Math.min(1, (db + 50) / 50));
+  const level = Math.max(0, Math.min(1, (rmsDb + 50) / 50));
+  const state = (peakDb >= -1 || peak >= 1) ? 1 : (peakDb >= -6 ? 0 : -1);
+  return { level, peakDb, state };
 }
 
 function meterStart(){
@@ -2015,9 +2037,28 @@ function meterStart(){
   // rather than merely a dead meter.
   if (meterCtx.state === 'suspended') meterCtx.resume();
   if (meterRAF) return;
-  const fill = $('meterFill');
-  const tick = () => {
-    if (fill) fill.style.width = (meterLevel() * 100).toFixed(1) + '%';
+  const fill  = $('meterFill');
+  const meter = $('meter');
+  const dbEl  = $('meterDb');
+  // The number is throttled to ~8/s but holds the highest peak seen since the
+  // last update, so a brief transient shows rather than being sampled past.
+  // The red state is likewise held ~0.8s after the last hot frame.
+  let lastText = 0, winPeak = -Infinity, redUntil = 0;
+  const tick = (now) => {
+    const { level, peakDb, state } = meterLevel();
+    if (fill) fill.style.width = (level * 100).toFixed(1) + '%';
+    if (peakDb > winPeak) winPeak = peakDb;
+    if (state === 1) redUntil = now + 800;
+    if (meter){
+      const red = state === 1 || now < redUntil;
+      meter.classList.toggle('clip', red);
+      meter.classList.toggle('warn', !red && state === 0);
+    }
+    if (dbEl && now - lastText > 120){
+      dbEl.textContent = winPeak > -60 ? winPeak.toFixed(1) : '--';
+      lastText = now;
+      winPeak = -Infinity;
+    }
     meterRAF = requestAnimationFrame(tick);
   };
   meterRAF = requestAnimationFrame(tick);
@@ -2028,6 +2069,10 @@ function meterStop(){
   meterRAF = 0;
   const fill = $('meterFill');
   if (fill) fill.style.width = '0%';
+  const meter = $('meter');
+  if (meter) meter.classList.remove('warn', 'clip');
+  const dbEl = $('meterDb');
+  if (dbEl) dbEl.textContent = '--';
 }
 
 // Read fresh for every player rather than once at load: the band's theme isn't

@@ -27,6 +27,13 @@
   .door .dooricon { font-size: 30px; margin-bottom: 8px; }
   .door .doortitle { font-weight: 700; font-size: 14.5px; }
   .door .doorsub { color: var(--text-dim); font-size: 12px; margin-top: 6px; line-height: 1.4; }
+
+  /* Game and Assets doors are per-band (CR-14/15): a band with no game and
+     no library filed sees neither entry in the Pages menu. Same gate as
+     index.html. */
+  #gameBtn, #assetsBtn { display: none; }
+  body.has-game #gameBtn { display: inline-flex; }
+  body.authed.has-assets #assetsBtn { display: inline-flex; }
 </style>
 </head>
 <body class="locked">

@@ -31,6 +31,11 @@
   body.has-lore #cardLore, body.has-log #cardLog, body.has-goals #cardGoals, body.has-links #cardLinks { display: block; }
   body.authed:not(.has-lore):not(.has-log):not(.has-goals):not(.has-links) #shelfEmpty { display: block; }
   #shelfEmpty { color: var(--text-dim); font-size: 14px; line-height: 1.55; max-width: 46em; }
+  /* The Game entry in this page's own Pages menu follows the same per-band
+     gate as everywhere else (CR-14/15, CR-104). No #assetsBtn here — this
+     page is Assets. */
+  #gameBtn { display: none; }
+  body.has-game #gameBtn { display: inline-flex; }
 
   /* ---------- The document ---------- */
   .dochead { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }

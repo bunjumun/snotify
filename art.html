@@ -173,6 +173,13 @@
   body.authed #musicBtn, body.authed #homeBtn { display: inline-flex; }
   body.singlemix #musicBtn, body.singlemix #homeBtn,
   body.singlemix #adminBtn { display: none !important; }
+  /* Game and Assets doors are per-band (CR-14/15): a band with no game and
+     no library filed sees neither entry. Same gate as index.html — without
+     it the Pages menu leaked both to every band. */
+  #gameBtn, #assetsBtn { display: none; }
+  body.has-game #gameBtn { display: inline-flex; }
+  body.authed.has-assets #assetsBtn { display: inline-flex; }
+  body.singlemix #gameBtn, body.singlemix #assetsBtn { display: none !important; }
   body.singlemix #addBtn, body.singlemix #shareBtn, body.singlemix #cToggle,
   body.singlemix #todoToggle, body.singlemix .drawhint, body.singlemix .piece .pcpy { display: none !important; }
 

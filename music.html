@@ -683,6 +683,12 @@
   #gameBtn { display: none; }
   body.has-game #gameBtn { display: inline-flex; }
   body.singlemix #gameBtn { display: none !important; }
+  /* Assets is band-only writing (CR-14/15): a band with nothing filed under
+     its library never gets the door, the same as on index.html. Without this
+     the Pages menu handed every band an Assets entry that opened straight
+     onto the empty-shelf message. */
+  #assetsBtn { display: none; }
+  body.authed.has-assets #assetsBtn { display: inline-flex; }
 
   /* Authoring affordances light up for any logged-in band member */
   #addBtn, #projBtn { display: none; }

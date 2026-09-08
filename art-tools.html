@@ -31,9 +31,8 @@
   /* Game and Assets doors are per-band (CR-14/15): a band with no game and
      no library filed sees neither entry in the Pages menu. Same gate as
      index.html. */
-  #gameBtn, #assetsBtn, #conceptBtn { display: none; }
+  #gameBtn, #assetsBtn { display: none; }
   body.has-game #gameBtn { display: inline-flex; }
-  body.has-concept #conceptBtn { display: inline-flex; }
   body.authed.has-assets #assetsBtn { display: inline-flex; }
 </style>
 </head>
@@ -86,7 +85,6 @@
         <a class="navitem" id="musicBtn" href="music.html">🎵 Music</a>
         <a class="navitem" id="gameBtn" href="game/">🐴 Game</a>
         <a class="navitem" id="assetsBtn" href="assets.html">📖 Assets</a>
-        <a class="navitem" id="conceptBtn" href="concept.html">💡 Concepts</a>
         <a class="navitem" id="releaseBtn" href="release-builder.html">🚀 Release</a>
         <a class="navitem" id="homeBtn" href="index.html">💿 Sn'Album</a>
       </div>

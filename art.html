@@ -181,11 +181,10 @@
   /* Game and Assets doors are per-band (CR-14/15): a band with no game and
      no library filed sees neither entry. Same gate as index.html — without
      it the Pages menu leaked both to every band. */
-  #gameBtn, #assetsBtn, #conceptBtn { display: none; }
+  #gameBtn, #assetsBtn { display: none; }
   body.has-game #gameBtn { display: inline-flex; }
-  body.has-concept #conceptBtn { display: inline-flex; }
   body.authed.has-assets #assetsBtn { display: inline-flex; }
-  body.singlemix #gameBtn, body.singlemix #assetsBtn, body.singlemix #conceptBtn { display: none !important; }
+  body.singlemix #gameBtn, body.singlemix #assetsBtn { display: none !important; }
   body.singlemix #addBtn, body.singlemix #shareBtn, body.singlemix #cToggle,
   body.singlemix #todoToggle, body.singlemix .drawhint, body.singlemix .piece .pcpy { display: none !important; }
 
@@ -249,7 +248,6 @@
         <a class="navitem" id="musicBtn" href="music.html">🎵 Music</a>
         <a class="navitem" id="gameBtn" href="game/">🐴 Game</a>
         <a class="navitem" id="assetsBtn" href="assets.html">📖 Assets</a>
-        <a class="navitem" id="conceptBtn" href="concept.html">💡 Concepts</a>
         <a class="navitem" id="releaseBtn" href="release-builder.html">🚀 Release</a>
         <a class="navitem" id="homeBtn" href="index.html">💿 Sn'Album</a>
       </div>
@@ -593,7 +591,7 @@ on('doorArt', 'click', () => { hideDoors(); renderList(); });
 // Follow-up to CR-83, 23 Aug: he asked for a door per tool on its own page
 // rather than the dropdown this used to open — see art-tools.html.
 on('doorTools', 'click', () => { location.href = 'art-tools.html?b=' + encodeURIComponent(curBand); });
-on('doorConcept', 'click', () => { location.href = 'concept.html?b=' + encodeURIComponent(curBand); });
+on('doorConcept', 'click', () => { location.href = 'art-concept.html?b=' + encodeURIComponent(curBand); });
 
 function showBadLink(){
   document.body.classList.remove('locked');

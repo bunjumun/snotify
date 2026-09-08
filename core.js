@@ -192,9 +192,9 @@ function applyFeatures(band){
   b.toggle('has-log',    has.includes('log'));
   b.toggle('has-goals',  has.includes('goals'));
   b.toggle('has-links',  has.includes('links'));
-  // concept is the Art Concepts doc (concept.html), reached from the art page,
-  // not from the assets shelf — so it gates on its own and stays out of
-  // has-assets below.
+  // concept is the Art Concepts doc (art-concept.html), reached only through a
+  // door on the art page (like Image tools), not from the assets shelf or the
+  // Pages menu — so it gates on its own and stays out of has-assets below.
   b.toggle('has-concept', has.includes('concept'));
   b.toggle('has-assets', has.includes('lore') || has.includes('log') || has.includes('goals') || has.includes('links'));
 }

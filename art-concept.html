@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Art Concepts</title>
-<meta name="description" content="Art Concepts — concept notes in drafts, one live, with pasted images and draw-over-image sketches." />
+<meta name="description" content="Art Concepts — concept boards for the band’s art direction: notes, images, links and draw-over-image sketches." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💡</text></svg>" />
 <link rel="stylesheet" href="core.css?v=35" />
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
@@ -71,25 +71,47 @@
     background: var(--bg-row); border: 1px solid var(--line); border-radius: 10px; padding: 12px;
     display: flex; flex-direction: column; gap: 8px;
   }
-  .cblock .bhead { display: flex; align-items: center; gap: 8px; }
-  .cblock .bkind { color: var(--text-mute); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  .cblock.editing { border-color: var(--accent); }
+  /* Block chrome is editor furniture, so it stays out of the way until you
+     reach for it. The card reads as content first. */
+  .cblock .bhead { display: flex; align-items: center; gap: 8px; min-height: 16px; }
+  .cblock .bkind {
+    color: var(--text-mute); font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em;
+    opacity: 0; transition: opacity .12s;
+  }
+  .cblock:hover .bkind, .cblock.editing .bkind { opacity: 1; }
   .cblock .bhead .grow { flex: 1; }
+  .cblock .bhead button { opacity: 0; transition: opacity .12s; }
+  .cblock:hover .bhead button, .cblock.editing .bhead button { opacity: 1; }
   .cblock .bx { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 15px; padding: 0 3px; }
   .cblock .bx:hover { color: #ff6b6b; }
   .cblock .bmove { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 12px; padding: 0 3px; }
   .cblock .bmove:hover { color: var(--text); }
+  .cblock .bedit {
+    background: none; border: 0; color: var(--text-mute); cursor: pointer;
+    font-size: 12px; font-weight: 600; padding: 0 4px;
+  }
+  .cblock .bedit:hover { color: var(--accent); }
+  .cblock.editing .bedit { color: var(--accent); opacity: 1; }
+  /* The box only exists while you are editing, and grows with the text rather
+     than being a fixed-height scroller sitting over the content. */
   .cblock textarea {
-    width: 100%; min-height: 120px; resize: vertical;
-    font: 13.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
+    width: 100%; resize: none; overflow: hidden;
+    font: 14px/1.65 inherit; font-family: inherit;
     background: #0a0b0f; color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 12px;
   }
-  .cblock .preview {
-    color: var(--text-dim); font-size: 13.5px; line-height: 1.6;
-    border-top: 1px dashed var(--line); padding-top: 8px;
-  }
-  .cblock .preview p { margin: 0 0 6px; }
-  .cblock .preview ul { margin: 0 0 6px; padding-left: 20px; }
+  /* Reading view: this is the content, not a preview strip. */
+  .cblock .preview { color: var(--text); font-size: 14px; line-height: 1.65; }
+  .cblock .readtext { cursor: text; border-radius: 8px; padding: 2px 4px; margin: -2px -4px; }
+  .cblock .readtext:hover { background: rgba(255,255,255,.03); }
+  .cblock .preview p { margin: 0 0 8px; }
+  .cblock .preview p:last-child { margin-bottom: 0; }
+  .cblock .preview ul { margin: 0 0 8px; padding-left: 20px; }
   .cblock .preview a { color: var(--accent); }
+  .cblock .emptyhint { color: var(--text-mute); font-style: italic; }
+  .cblock .bcap { color: var(--text-dim); font-size: 12.5px; }
+  .cblock .bpen { align-self: flex-start; }
   .cimg-host { position: relative; display: inline-block; line-height: 0; max-width: 100%; }
   .cimg-host img {
     display: block; max-width: 100%; max-height: 56vh; border-radius: 8px;
@@ -150,7 +172,7 @@
       <div class="logo">💡</div>
       <div>
         <h1>Art Concepts</h1>
-        <p>Concept notes in drafts, one live, with pasted images and sketches</p>
+        <p>Art direction, in drafts · notes, images, links and sketches</p>
       </div>
       <div class="count" id="conceptCount"></div>
       <button class="addbtn" id="navBtn" title="Other pages">☰ Pages ▾</button>
@@ -388,6 +410,7 @@ function openDraft(d){
   $('draftName').value = d.name || '';
   doc = parseDoc(d.body);
   dirty = false;
+  editing.clear();
   syncTargetControls();
   renderBlocks();
   renderDrafts();
@@ -399,6 +422,7 @@ function newDraft(silent){
   $('draftName').value = 'New concept';
   doc = { target: null, blocks: [{ t: 'text', md: '' }] };
   dirty = !silent;
+  editing.clear();
   syncTargetControls();
   renderBlocks();
   renderDrafts();
@@ -452,34 +476,56 @@ const autoFormat = (txt) => {
   return out.join('');
 };
 
+// Which blocks are open for editing. The board reads as a board by default —
+// a raw textarea sitting permanently over the text, with the same text rendered
+// again underneath, was the thing that made this unusable to read.
+const editing = new Set();
+let focusBlock = null;   // block index to focus after the next render
+
 function renderBlocks(){
   pads.forEach(p => p.destroy());
   pads.clear();
   const wrap = $('blocks');
   wrap.innerHTML = '';
   if (!doc.blocks.length){
-    wrap.innerHTML = '<div class="hint" style="padding:4px 2px">Empty. Add a text or image block below.</div>';
+    wrap.innerHTML = '<div class="hint" style="padding:4px 2px">Empty. Add text, an image, or a link below.</div>';
     return;
   }
   doc.blocks.forEach((blk, i) => wrap.appendChild(blockEl(blk, i)));
+  if (focusBlock !== null){
+    const ta = wrap.children[focusBlock] && wrap.children[focusBlock].querySelector('textarea, input');
+    if (ta){ ta.focus(); if (ta.setSelectionRange) ta.setSelectionRange(ta.value.length, ta.value.length); }
+    focusBlock = null;
+  }
 }
 
+function openEditor(i){ editing.add(i); focusBlock = i; renderBlocks(); }
+
+function autosize(ta){ ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; }
+
 function blockEl(blk, i){
+  const on = editing.has(i);
   const card = document.createElement('div');
-  card.className = 'cblock';
+  card.className = 'cblock' + (on ? ' editing' : '');
   const head = document.createElement('div');
   head.className = 'bhead';
   head.innerHTML =
     `<span class="bkind">${blk.t === 'image' ? 'Image' : blk.t === 'link' ? 'Link' : 'Text'}</span>
      <span class="grow"></span>
+     <button class="bedit" data-ed title="${on ? 'Finish editing' : 'Edit this block'}">${on ? 'Done' : '✎'}</button>
      <button class="bmove" data-up title="Move up">▲</button>
      <button class="bmove" data-dn title="Move down">▼</button>
      <button class="bx" data-rm title="Remove this block">✕</button>`;
+  head.querySelector('[data-ed]').onclick = () => {
+    on ? editing.delete(i) : editing.add(i);
+    focusBlock = on ? null : i;
+    renderBlocks();
+  };
   head.querySelector('[data-up]').onclick = () => moveBlock(i, -1);
   head.querySelector('[data-dn]').onclick = () => moveBlock(i, 1);
   head.querySelector('[data-rm]').onclick = () => {
     if (!confirm('Remove this block?')) return;
-    doc.blocks.splice(i, 1); dirty = true; renderBlocks();
+    doc.blocks.splice(i, 1); editing.clear(); dirty = true; renderBlocks();
   };
   card.appendChild(head);
 
@@ -492,17 +538,25 @@ function blockEl(blk, i){
     host.appendChild(img);
     card.appendChild(host);
 
-    const alt = document.createElement('input');
-    alt.className = 'balt';
-    alt.placeholder = 'Caption / alt text (optional)';
-    alt.value = blk.alt || '';
-    alt.oninput = () => { blk.alt = alt.value; img.alt = alt.value; dirty = true; };
-    card.appendChild(alt);
+    if (on){
+      const alt = document.createElement('input');
+      alt.className = 'balt';
+      alt.placeholder = 'Caption (optional)';
+      alt.value = blk.alt || '';
+      alt.oninput = () => { blk.alt = alt.value; img.alt = alt.value; dirty = true; };
+      card.appendChild(alt);
+    } else if (blk.alt && blk.alt.trim()){
+      const cap = document.createElement('div');
+      cap.className = 'bcap';
+      cap.textContent = blk.alt;
+      card.appendChild(cap);
+    }
 
+    // The pen stays available without opening the editor — drawing on a
+    // reference is the point of the tool, not a settings change.
     const drawBtn = document.createElement('button');
-    drawBtn.className = 'btn ghost';
-    drawBtn.style.alignSelf = 'flex-start';
-    drawBtn.textContent = (blk.sketch && blk.sketch.length) ? '✎ Redraw over this' : '✎ Draft over this';
+    drawBtn.className = 'btn ghost bpen';
+    drawBtn.textContent = (blk.sketch && blk.sketch.length) ? '✎ Redraw over this' : '✎ Draw over this';
     card.appendChild(drawBtn);
 
     const pad = createSketchPad(host, img);
@@ -510,7 +564,7 @@ function blockEl(blk, i){
     pad.onDone((strokes) => {
       blk.sketch = strokes || null;
       dirty = true;
-      drawBtn.textContent = (blk.sketch && blk.sketch.length) ? '✎ Redraw over this' : '✎ Draft over this';
+      drawBtn.textContent = (blk.sketch && blk.sketch.length) ? '✎ Redraw over this' : '✎ Draw over this';
     });
     drawBtn.onclick = () => { if (!pad.isActive()) pad.start(blk.sketch || []); };
     const draw = () => pad.renderStatic(blk.sketch || []);
@@ -527,29 +581,42 @@ function blockEl(blk, i){
     };
     paint();
     card.appendChild(a);
-    const lbl = document.createElement('input');
-    lbl.className = 'balt';
-    lbl.placeholder = 'Label (optional)';
-    lbl.value = blk.label || '';
-    lbl.oninput = () => { blk.label = lbl.value; dirty = true; paint(); };
-    card.appendChild(lbl);
-    const url = document.createElement('input');
-    url.className = 'balt';
-    url.type = 'url';
-    url.placeholder = 'https://…';
-    url.value = blk.url || '';
-    url.oninput = () => { blk.url = url.value; dirty = true; paint(); };
-    card.appendChild(url);
-  } else {
+    if (on){
+      const lbl = document.createElement('input');
+      lbl.className = 'balt';
+      lbl.placeholder = 'Label (optional)';
+      lbl.value = blk.label || '';
+      lbl.oninput = () => { blk.label = lbl.value; dirty = true; paint(); };
+      card.appendChild(lbl);
+      const url = document.createElement('input');
+      url.className = 'balt';
+      url.type = 'url';
+      url.placeholder = 'https://…';
+      url.value = blk.url || '';
+      url.oninput = () => { blk.url = url.value; dirty = true; paint(); };
+      card.appendChild(url);
+    }
+  } else if (on){
+    // Editing: the box replaces the read view in place and grows with the
+    // text, rather than sitting on top of it as a fixed-height scroller.
     const ta = document.createElement('textarea');
     ta.value = blk.md || '';
-    ta.placeholder = 'Concept notes…  URLs auto-link, and lines starting with "- " become bullets.';
-    const prev = document.createElement('div');
-    prev.className = 'preview';
-    const sync = () => { prev.innerHTML = autoFormat(ta.value); };
-    ta.oninput = () => { blk.md = ta.value; dirty = true; sync(); };
-    sync();
+    ta.placeholder = 'Concept notes…  URLs become links, and lines starting with "- " become bullets.';
+    ta.oninput = () => { blk.md = ta.value; dirty = true; autosize(ta); };
     card.appendChild(ta);
+    requestAnimationFrame(() => autosize(ta));
+  } else {
+    // Reading: just the formatted text. Click it to edit.
+    const prev = document.createElement('div');
+    prev.className = 'preview readtext';
+    prev.innerHTML = (blk.md && blk.md.trim())
+      ? autoFormat(blk.md)
+      : '<span class="emptyhint">Empty. Click to write.</span>';
+    prev.title = 'Click to edit';
+    prev.addEventListener('click', (e) => {
+      if (e.target.closest('a')) return;   // following a link is not editing
+      openEditor(i);
+    });
     card.appendChild(prev);
   }
   return card;
@@ -560,6 +627,7 @@ function moveBlock(i, dir){
   if (j < 0 || j >= doc.blocks.length) return;
   const [b] = doc.blocks.splice(i, 1);
   doc.blocks.splice(j, 0, b);
+  editing.clear();
   dirty = true;
   renderBlocks();
 }
@@ -639,7 +707,7 @@ function say(msg, isErr){
 on('newBtn', 'click', () => newDraft(false));
 on('saveBtn', 'click', () => save(false));
 on('saveNewBtn', 'click', () => save(true));
-on('addTextBtn', 'click', () => { doc.blocks.push({ t: 'text', md: '' }); dirty = true; renderBlocks(); });
+on('addTextBtn', 'click', () => { doc.blocks.push({ t: 'text', md: '' }); dirty = true; openEditor(doc.blocks.length - 1); });
 on('addImageBtn', 'click', () => $('addImageFile').click());
 on('addImageFile', 'change', (e) => {
   const f = e.target.files && e.target.files[0];

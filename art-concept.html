@@ -274,7 +274,8 @@
             <input class="nm cname" id="cName" placeholder="Your name" maxlength="40"
                    title="Shown on the notes you leave (remembered on this device)" />
             <span class="status" id="docStatus"></span>
-            <button class="btn primary" id="saveEditBtn" title="Save this as a suggested edit branched off what you are looking at">Save as new edit</button>
+            <button class="btn primary" id="saveBtn" style="display:none" title="Save your changes into this version. Nothing new is created.">Save</button>
+            <button class="btn ghost" id="saveEditBtn" title="Branch off: save this as a suggested edit alongside what you are looking at">Save as new edit</button>
             <button class="btn ghost" id="saveIdeaBtn" title="Save this as a brand new concept">Save as new idea</button>
             <button class="btn ghost" id="adoptBtn" style="display:none" title="Make this suggestion what the idea says">Adopt</button>
           </div>
@@ -1008,14 +1009,21 @@ async function overwriteIsSafe(){
 }
 
 /**
- * Every save makes a new version; nothing is ever overwritten.
+ * Saving, four ways.
+ *   kind 'here'  — write the changes back into the version that is open.
+ *                  Nothing new appears in the stack. This is the plain edit:
+ *                  you opened a draft, you changed it, it is still that draft.
  *   kind 'idea'  — a fresh concept (a root)
  *   kind 'edit'  — a suggestion branched off whatever is open
  *   kind 'main'  — used by adopt(), lands a suggestion on the idea's main line
  * `from` is the version being branched from, when that is not `current`.
+ *
+ * Only 'here' overwrites, and only ever the one version you have open, so the
+ * stale-write check runs on it: if somebody else saved that same version while
+ * you had it open, you are asked before their work is replaced.
  */
 async function save(kind, from){
-  const asNew = true;   // there is no in-place save any more
+  if (kind === 'here' && !current) kind = 'idea';
   const name = $('draftName').value.trim() || 'Concept';
   // Prune empty text and empty link blocks on the way out.
   const who = ($('cName').value || '').trim();
@@ -1026,7 +1034,17 @@ async function save(kind, from){
     b.t === 'image'
     || (b.t === 'link' && b.url && b.url.trim())
     || (b.md && b.md.trim()));
-  const clean = {
+  // Editing in place keeps the version's own identity — where it sits in the
+  // tree, whose suggestion it is, whether it was adopted. Only the contents move.
+  const m = kind === 'here' ? meta(current.id) : null;
+  const clean = kind === 'here' ? {
+    parent: m.parent || null,
+    branch: m.branch || 'main',
+    author: m.author || '',
+    merged: m.merged || null,
+    target: doc.target && doc.target.kind ? doc.target : null,
+    blocks,
+  } : {
     parent: kind === 'idea' ? null : (base ? base.id : null),
     branch: kind === 'edit' ? (who || 'suggestion') : 'main',
     author: who,
@@ -1034,16 +1052,31 @@ async function save(kind, from){
     target: doc.target && doc.target.kind ? doc.target : null,
     blocks: kind === 'edit' ? blocks.map(b => ({ ...b, id: newBlockId() })) : blocks,
   };
+  if (kind === 'here' && !(await overwriteIsSafe())){
+    // They chose to keep the other person's version. Reload it over the top,
+    // which is exactly what the prompt said would happen.
+    try {
+      drafts = (await libRpc('lore_list', { d: 'concept' })) || [];
+      indexLineage();
+      const fresh = drafts.find(d => current && d.id === current.id);
+      dirty = false;
+      if (fresh) openDraft(fresh); else renderDrafts();
+      say('Kept their version.');
+    } catch (e) { say(e.message, true); }
+    return;
+  }
   try {
     const id = await libRpc('lore_save', {
       nm: name, body_in: JSON.stringify(clean),
-      vid: null, d: 'concept',
+      vid: kind === 'here' ? current.id : null, d: 'concept',
     });
     dirty = false;
-    say(kind === 'idea' ? 'Saved as a new idea.' : kind === 'edit' ? 'Saved as a new edit.' : 'Adopted.');
+    say(kind === 'here' ? 'Saved.'
+      : kind === 'idea' ? 'Saved as a new idea.'
+      : kind === 'edit' ? 'Saved as a new edit.' : 'Adopted.');
     drafts = (await libRpc('lore_list', { d: 'concept' })) || [];
     indexLineage();
-    current = drafts.find(d => d.id === id) || null;
+    current = drafts.find(d => d.id === (kind === 'here' ? current.id : id)) || null;
     if (current){
       loadedAt = current.updated || current.created;
       doc = parseDoc(current.body); syncTargetControls(); renderBlocks();
@@ -1091,6 +1124,9 @@ async function adopt(){
 function syncSaveControls(){
   const open = !!current;
   const canAdopt = open && !isMain(current.id) && !isMerged(current.id);
+  // With a version open, plain Save is the ordinary thing and leads. Branching
+  // off is the deliberate one, so it sits next to it and is no longer primary.
+  $('saveBtn').style.display = open ? '' : 'none';
   $('saveEditBtn').style.display = open ? '' : 'none';
   $('adoptBtn').style.display = canAdopt ? '' : 'none';
   $('saveIdeaBtn').classList.toggle('primary', !open);
@@ -1106,6 +1142,7 @@ function say(msg, isErr){
 
 // ---------- Wiring ----------
 on('newBtn', 'click', () => newDraft(false));
+on('saveBtn', 'click', () => save('here'));
 on('saveEditBtn', 'click', () => save('edit'));
 on('saveIdeaBtn', 'click', () => save('idea'));
 on('adoptBtn', 'click', adopt);

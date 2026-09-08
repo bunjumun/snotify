@@ -97,6 +97,11 @@
     background: #0a0b0f; color: var(--text); border: 1px solid var(--line);
     border-radius: 8px; padding: 7px 9px; width: 100%;
   }
+  .cblock a.clink {
+    color: var(--accent); font-weight: 600; text-decoration: none;
+    word-break: break-all; align-self: flex-start;
+  }
+  .cblock a.clink:hover { text-decoration: underline; }
 
   .addblock { display: flex; gap: 8px; flex-wrap: wrap; }
   .pastehint { color: var(--text-mute); font-size: 12px; }
@@ -198,8 +203,9 @@
           <div class="addblock">
             <button class="btn ghost" id="addTextBtn">+ Text</button>
             <button class="btn ghost" id="addImageBtn">+ Image</button>
+            <button class="btn ghost" id="addLinkBtn">+ Link</button>
             <input type="file" id="addImageFile" accept="image/*" style="display:none" />
-            <span class="pastehint">or paste an image anywhere in this editor</span>
+            <span class="pastehint">+ Link takes an image, a GIF, or any URL · or paste an image anywhere in this editor</span>
           </div>
         </div>
       </div>
@@ -431,7 +437,7 @@ function blockEl(blk, i){
   const head = document.createElement('div');
   head.className = 'bhead';
   head.innerHTML =
-    `<span class="bkind">${blk.t === 'image' ? 'Image' : 'Text'}</span>
+    `<span class="bkind">${blk.t === 'image' ? 'Image' : blk.t === 'link' ? 'Link' : 'Text'}</span>
      <span class="grow"></span>
      <button class="bmove" data-up title="Move up">▲</button>
      <button class="bmove" data-dn title="Move down">▼</button>
@@ -477,6 +483,30 @@ function blockEl(blk, i){
     const draw = () => pad.renderStatic(blk.sketch || []);
     if (img.complete && img.naturalWidth) draw();
     img.addEventListener('load', draw);
+  } else if (blk.t === 'link'){
+    // Any URL, shown as a real clickable link with an optional label.
+    const a = document.createElement('a');
+    a.className = 'clink';
+    a.target = '_blank'; a.rel = 'noopener';
+    const paint = () => {
+      a.href = blk.url || '#';
+      a.textContent = (blk.label && blk.label.trim()) || blk.url || '(no link)';
+    };
+    paint();
+    card.appendChild(a);
+    const lbl = document.createElement('input');
+    lbl.className = 'balt';
+    lbl.placeholder = 'Label (optional)';
+    lbl.value = blk.label || '';
+    lbl.oninput = () => { blk.label = lbl.value; dirty = true; paint(); };
+    card.appendChild(lbl);
+    const url = document.createElement('input');
+    url.className = 'balt';
+    url.type = 'url';
+    url.placeholder = 'https://…';
+    url.value = blk.url || '';
+    url.oninput = () => { blk.url = url.value; dirty = true; paint(); };
+    card.appendChild(url);
   } else {
     const ta = document.createElement('textarea');
     ta.value = blk.md || '';
@@ -543,10 +573,13 @@ async function uploadImage(file){
 // ---------- Save ----------
 async function save(asNew){
   const name = $('draftName').value.trim() || 'Concept';
-  // Prune empty text blocks on the way out, but keep at least something.
+  // Prune empty text and empty link blocks on the way out.
   const clean = {
     target: doc.target && doc.target.kind ? doc.target : null,
-    blocks: doc.blocks.filter(b => b.t === 'image' || (b.md && b.md.trim())),
+    blocks: doc.blocks.filter(b =>
+      b.t === 'image'
+      || (b.t === 'link' && b.url && b.url.trim())
+      || (b.md && b.md.trim())),
   };
   try {
     const id = await libRpc('lore_save', {
@@ -591,6 +624,20 @@ on('addImageFile', 'change', (e) => {
   const f = e.target.files && e.target.files[0];
   e.target.value = '';
   if (f) uploadImage(f);
+});
+// + Link — any URL, no upload. If it points at an image or GIF it becomes an
+// inline image block (rendered by publicUrl()'s http(s) passthrough, and the
+// pen works over it); anything else becomes a clickable link block.
+on('addLinkBtn', 'click', () => {
+  const url = (prompt('Paste a link — an image, a GIF, or any URL') || '').trim();
+  if (!url) return;
+  if (!/^https?:\/\/\S+$/i.test(url)) return say('That does not look like a URL.', true);
+  const isImg = /\.(png|jpe?g|gif|webp|avif|bmp|svg)(\?|#|$)/i.test(url);
+  doc.blocks.push(isImg
+    ? { t: 'image', ref: url, alt: '', sketch: null }
+    : { t: 'link', url, label: '' });
+  dirty = true;
+  renderBlocks();
 });
 $('blocks').closest('.editor').addEventListener('paste', (e) => {
   const items = (e.clipboardData && e.clipboardData.items) || [];

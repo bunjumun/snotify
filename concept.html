@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Art Concepts</title>
+<meta name="description" content="Art Concepts — concept notes in drafts, one live, with pasted images and draw-over-image sketches." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💡</text></svg>" />
+<link rel="stylesheet" href="core.css?v=35" />
+<link rel="stylesheet" href="theme-dazzle.css?v=31" />
+<style>
+  /* Concept-only surface. Everything shared lives in core.css. This page is the
+     lore/assets draft editor (schema-v21's slug-agnostic lore_* RPCs, here on
+     the 'concept' slug) with a block list in place of the single textarea:
+     text blocks and image blocks, an image block carrying an optional
+     draw-over-image sketch from sketchpad.js. Not read by the game — it is
+     working notes for the band. */
+
+  .dochead { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .dochead .dtitle { font-weight: 600; font-size: 17px; }
+  .doclayout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .doclayout { grid-template-columns: 1fr; } }
+
+  .stack { background: var(--bg-row); border-radius: 10px; padding: 8px; }
+  .stack .shead {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px 10px;
+    color: var(--text-mute); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  }
+  .draft {
+    display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px;
+    cursor: pointer; border: 1px solid transparent;
+  }
+  .draft:hover { background: var(--bg-hover); }
+  .draft.on { border-color: var(--accent); background: var(--bg-hover); }
+  .draft .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .draft .when { color: var(--text-mute); font-size: 12px; }
+  .draft .tgt { color: var(--text-mute); font-size: 11px; white-space: nowrap; }
+  .draft .live {
+    font-size: 10.5px; font-weight: 800; letter-spacing: .07em; padding: 2px 6px; border-radius: 5px;
+    background: var(--accent-2, #00d0a4); color: #04120e;
+  }
+  .draft .ord { display: flex; flex-direction: column; gap: 1px; }
+  .draft .ord button {
+    background: none; border: 0; color: var(--text-mute); cursor: pointer; line-height: .8;
+    font-size: 11px; padding: 0 2px;
+  }
+  .draft .ord button:hover { color: var(--text); }
+
+  .editor { display: flex; flex-direction: column; gap: 12px; }
+  .editor .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .editor .row .grow { flex: 1; }
+  .editor input.nm {
+    background: #0a0b0f; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; min-width: 180px;
+  }
+
+  .targetrow {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    background: var(--bg-row); border-radius: 10px; padding: 10px 12px;
+  }
+  .targetrow label { color: var(--text-mute); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .targetrow select {
+    background: #0a0b0f; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 9px;
+  }
+
+  .blocks { display: flex; flex-direction: column; gap: 12px; }
+  .cblock {
+    background: var(--bg-row); border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .cblock .bhead { display: flex; align-items: center; gap: 8px; }
+  .cblock .bkind { color: var(--text-mute); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  .cblock .bhead .grow { flex: 1; }
+  .cblock .bx { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 15px; padding: 0 3px; }
+  .cblock .bx:hover { color: #ff6b6b; }
+  .cblock .bmove { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 12px; padding: 0 3px; }
+  .cblock .bmove:hover { color: var(--text); }
+  .cblock textarea {
+    width: 100%; min-height: 120px; resize: vertical;
+    font: 13.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #0a0b0f; color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+  }
+  .cblock .preview {
+    color: var(--text-dim); font-size: 13.5px; line-height: 1.6;
+    border-top: 1px dashed var(--line); padding-top: 8px;
+  }
+  .cblock .preview p { margin: 0 0 6px; }
+  .cblock .preview ul { margin: 0 0 6px; padding-left: 20px; }
+  .cblock .preview a { color: var(--accent); }
+  .cimg-host { position: relative; display: inline-block; line-height: 0; max-width: 100%; }
+  .cimg-host img {
+    display: block; max-width: 100%; max-height: 56vh; border-radius: 8px;
+    border: 1px solid var(--line); background: #0a0b0f;
+  }
+  .cblock .balt {
+    background: #0a0b0f; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 9px; width: 100%;
+  }
+
+  .addblock { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pastehint { color: var(--text-mute); font-size: 12px; }
+
+  #musicBtn, #homeBtn, #artBtn, #releaseBtn { display: none; }
+  body.authed #musicBtn, body.authed #homeBtn, body.authed #artBtn, body.authed #releaseBtn { display: inline-flex; }
+  #gameBtn { display: none; }
+  body.has-game #gameBtn { display: inline-flex; }
+</style>
+</head>
+<body class="locked">
+
+  <!-- Band gate — the same two-step front door as every other page, wired in
+       core.js by these exact IDs. -->
+  <div class="modal-back" id="gateModal">
+    <div class="modal" style="max-width:360px">
+      <h2>💡 Art Concepts</h2>
+      <div id="gateStep1">
+        <div class="hint" style="margin-bottom:6px">Enter your band to continue.</div>
+        <label>Band name</label>
+        <input type="text" id="gateName" autocomplete="off" autocapitalize="none" />
+        <div class="status err" id="gateErr1"></div>
+        <div id="gateSuggest" style="display:none"></div>
+        <div class="actions"><button class="btn primary" id="gateNext">Continue</button></div>
+      </div>
+      <div id="gateStep2" style="display:none">
+        <div class="hint" style="margin-bottom:6px">Password for <b id="gateBandLabel"></b>.</div>
+        <label>Band password</label>
+        <input type="password" id="gatePass" autocomplete="off" />
+        <div class="status err" id="gateErr2"></div>
+        <div class="actions">
+          <button class="btn ghost" id="gateBack">Back</button>
+          <button class="btn primary" id="gateGo">Enter</button>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:14px;text-align:center">
+        <span class="linky" id="adminOpenLink">Site admin</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <header class="app">
+      <div class="logo">💡</div>
+      <div>
+        <h1>Art Concepts</h1>
+        <p>Concept notes in drafts, one live, with pasted images and sketches</p>
+      </div>
+      <div class="count" id="conceptCount"></div>
+      <button class="addbtn" id="navBtn" title="Other pages">☰ Pages ▾</button>
+      <div id="navMenu">
+        <a class="navitem" id="musicBtn" href="music.html">🎵 Music</a>
+        <a class="navitem" id="artBtn" href="art.html">🎨 Art</a>
+        <a class="navitem" id="gameBtn" href="game/">🐴 Game</a>
+        <a class="navitem" id="assetsBtn" href="assets.html">📖 Assets</a>
+        <a class="navitem" id="releaseBtn" href="release-builder.html">🚀 Release</a>
+        <a class="navitem" id="homeBtn" href="index.html">💿 Sn'Album</a>
+      </div>
+      <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
+      <button class="addbtn" id="logoutBtn" title="Log out of this band">Log out</button>
+    </header>
+
+    <div id="doc" style="display:none">
+      <div class="dochead">
+        <a class="addbtn" id="backArt" href="art.html">← Art</a>
+        <div class="dtitle">Art Concepts</div>
+        <div class="grow" style="flex:1"></div>
+        <button class="btn ghost" id="newBtn">New draft</button>
+      </div>
+
+      <div class="doclayout">
+        <div class="stack" id="stack">
+          <div class="shead">Drafts <span id="stackCount"></span></div>
+          <div id="drafts"></div>
+        </div>
+
+        <div class="editor">
+          <div class="row">
+            <input class="nm" id="draftName" placeholder="Draft name" />
+            <button class="btn primary" id="saveBtn">Save</button>
+            <button class="btn ghost" id="saveNewBtn">Save as new draft</button>
+            <button class="btn ghost" id="liveBtn">Make live</button>
+            <span class="grow"></span>
+            <span class="status" id="docStatus"></span>
+          </div>
+
+          <div class="targetrow">
+            <label>Applies to</label>
+            <select id="tgtKind">
+              <option value="">Whole band</option>
+              <option value="release">A release</option>
+              <option value="song">A song</option>
+            </select>
+            <select id="tgtRef" style="display:none"></select>
+          </div>
+
+          <div class="blocks" id="blocks"></div>
+
+          <div class="addblock">
+            <button class="btn ghost" id="addTextBtn">+ Text</button>
+            <button class="btn ghost" id="addImageBtn">+ Image</button>
+            <input type="file" id="addImageFile" accept="image/*" style="display:none" />
+            <span class="pastehint">or paste an image anywhere in this editor</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="core.js?v=35"></script>
+<script type="module">
+import { createSketchPad } from './sketchpad.js?v=1';
+
+const INBOX_MAX = 25 * 1024 * 1024;
+
+let drafts = [];            // the stack, in position order
+let current = null;         // the draft open in the editor, or null for a new one
+let doc = { target: null, blocks: [] };
+let dirty = false;
+let lib = { songs: [] }, releases = [];
+const pads = new Map();     // block index -> sketchpad handle (rebuilt each render)
+
+App.init     = () => init();
+App.onLock   = () => { showLockedChrome(); drafts = []; $('conceptCount').textContent = ''; };
+App.onLogout = () => { drafts = []; current = null; doc = { target: null, blocks: [] }; };
+
+function showLockedChrome(){ $('doc').style.display = 'none'; }
+
+async function init(){
+  curBand = null;
+  let band = route.band && bandSlugOf(route.band);
+  if (!band) band = wantsHome() ? '' : lastBand();
+  if (!band){ showGate(null, true, lastBand() || null); return; }
+  if (!isAuthed(band)){ showGate(band, true); return; }
+
+  curBand = band;
+  applyTheme(curBand);
+  document.body.classList.add('authed');
+  unlockView();
+
+  const b = encodeURIComponent(curBand);
+  $('musicBtn').href  = 'music.html?b=' + b;
+  $('artBtn').href    = 'art.html?b=' + b;
+  $('assetsBtn').href = 'assets.html?b=' + b;
+  $('releaseBtn').href = 'release-builder.html?b=' + b;
+  $('homeBtn').href   = 'index.html?b=' + b;
+  $('backArt').href   = 'art.html?b=' + b;
+
+  try {
+    const [l, r] = await Promise.all([
+      libRpc('get_library', {}),
+      libRpc('get_releases', {}).catch(() => []),
+    ]);
+    lib = l || { songs: [] };
+    releases = r || [];
+  } catch (e) {
+    if (isAuthErr(e)){ clearAuth(band); return showGate(band, true); }
+  }
+
+  $('doc').style.display = '';
+  await openConcept();
+}
+
+// ---------- The stack ----------
+async function openConcept(){
+  try {
+    drafts = (await libRpc('lore_list', { d: 'concept' })) || [];
+  } catch (e) {
+    drafts = [];
+    say(e.message || 'Could not load the drafts.', true);
+  }
+  renderDrafts();
+  const start = live() || drafts[0];
+  if (start) openDraft(start);
+  else newDraft(true);
+}
+
+const live = () => drafts.find(d => d.active) || null;
+
+function targetLabel(t){
+  if (!t || !t.kind) return '';
+  if (t.kind === 'release'){
+    const r = releases.find(x => x.id === t.ref);
+    return 'release: ' + (r ? r.title : t.ref);
+  }
+  const s = (lib.songs || []).find(x => x.folder === t.ref);
+  return 'song: ' + (s ? (s.title || s.folder) : t.ref);
+}
+
+function renderDrafts(){
+  const box = $('drafts');
+  $('stackCount').textContent = drafts.length ? `(${drafts.length})` : '';
+  $('conceptCount').textContent = drafts.length
+    ? `${drafts.length} draft${drafts.length === 1 ? '' : 's'}` : '';
+  if (!drafts.length){
+    box.innerHTML = '<div class="hint" style="padding:8px 10px">No drafts yet. Start one.</div>';
+    return;
+  }
+  box.innerHTML = '';
+  drafts.forEach((d, i) => {
+    const t = parseDoc(d.body).target;
+    const row = document.createElement('div');
+    row.className = 'draft' + (current && current.id === d.id ? ' on' : '');
+    row.innerHTML =
+      `<span class="ord">
+         <button title="Move up" data-up="${i}">▲</button>
+         <button title="Move down" data-dn="${i}">▼</button>
+       </span>
+       <span class="nm">${esc(d.name)}</span>
+       ${d.active ? '<span class="live">LIVE</span>' : ''}
+       ${t && t.kind ? `<span class="tgt">${esc(targetLabel(t))}</span>` : ''}
+       <span class="when">${timeago(d.updated || d.created)}</span>`;
+    row.addEventListener('click', (e) => {
+      if (e.target.dataset.up !== undefined) return move(i, -1);
+      if (e.target.dataset.dn !== undefined) return move(i, 1);
+      openDraft(d);
+    });
+    box.appendChild(row);
+  });
+}
+
+function esc(s){ return String(s == null ? '' : s).replace(/[<>&]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;' }[c])); }
+
+async function move(i, dir){
+  const j = i + dir;
+  if (j < 0 || j >= drafts.length) return;
+  const [row] = drafts.splice(i, 1);
+  drafts.splice(j, 0, row);
+  renderDrafts();
+  try { await libRpc('lore_reorder', { ids: drafts.map(d => d.id), d: 'concept' }); }
+  catch (e) { say(e.message, true); }
+}
+
+// ---------- The document body ----------
+function parseDoc(body){
+  try {
+    const d = JSON.parse(body || '{}');
+    if (d && Array.isArray(d.blocks))
+      return { target: d.target && d.target.kind ? d.target : null, blocks: d.blocks };
+  } catch {}
+  // Anything that isn't our JSON is treated as one text block, so a hand-set
+  // or legacy body still opens rather than throwing.
+  return { target: null, blocks: body && body.trim() ? [{ t: 'text', md: body }] : [] };
+}
+
+function openDraft(d){
+  if (dirty && !confirm('Discard unsaved changes to this draft?')) return;
+  current = d;
+  $('draftName').value = d.name || '';
+  doc = parseDoc(d.body);
+  dirty = false;
+  syncTargetControls();
+  renderBlocks();
+  renderDrafts();
+}
+
+function newDraft(silent){
+  if (!silent && dirty && !confirm('Discard unsaved changes?')) return;
+  current = null;
+  $('draftName').value = 'New concept';
+  const base = live() ? parseDoc(live().body) : null;
+  doc = base ? JSON.parse(JSON.stringify(base)) : { target: null, blocks: [{ t: 'text', md: '' }] };
+  dirty = !silent;
+  syncTargetControls();
+  renderBlocks();
+  renderDrafts();
+}
+
+// ---------- Target picker ----------
+function syncTargetControls(){
+  const k = doc.target && doc.target.kind ? doc.target.kind : '';
+  $('tgtKind').value = k;
+  const ref = $('tgtRef');
+  if (!k){ ref.style.display = 'none'; ref.innerHTML = ''; return; }
+  ref.style.display = '';
+  const opts = k === 'release'
+    ? (releases || []).map(r => [r.id, r.title || r.id])
+    : ((lib.songs || []).filter(s => s && s.folder).map(s => [s.folder, s.title || s.folder]));
+  ref.innerHTML = '<option value="">Choose…</option>' +
+    opts.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
+  ref.value = (doc.target && doc.target.ref) || '';
+}
+
+on('tgtKind', 'change', () => {
+  const k = $('tgtKind').value;
+  doc.target = k ? { kind: k, ref: '' } : null;
+  dirty = true;
+  syncTargetControls();
+});
+on('tgtRef', 'change', () => {
+  if (!doc.target) return;
+  doc.target.ref = $('tgtRef').value || '';
+  dirty = true;
+});
+
+// ---------- Blocks ----------
+const autoFormat = (txt) => {
+  const e = (s) => s.replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+  const linkify = (s) => s.replace(/\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)]/g,
+    u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+  const lines = String(txt || '').replace(/\r\n?/g, '\n').split('\n');
+  const out = []; let inList = false;
+  for (const raw of lines){
+    const m = raw.match(/^\s*-\s+(.*)$/);
+    if (m){
+      if (!inList){ out.push('<ul>'); inList = true; }
+      out.push('<li>' + linkify(e(m[1])) + '</li>');
+    } else {
+      if (inList){ out.push('</ul>'); inList = false; }
+      out.push(raw.trim() ? '<p>' + linkify(e(raw)) + '</p>' : '<br>');
+    }
+  }
+  if (inList) out.push('</ul>');
+  return out.join('');
+};
+
+function renderBlocks(){
+  pads.forEach(p => p.destroy());
+  pads.clear();
+  const wrap = $('blocks');
+  wrap.innerHTML = '';
+  if (!doc.blocks.length){
+    wrap.innerHTML = '<div class="hint" style="padding:4px 2px">Empty. Add a text or image block below.</div>';
+    return;
+  }
+  doc.blocks.forEach((blk, i) => wrap.appendChild(blockEl(blk, i)));
+}
+
+function blockEl(blk, i){
+  const card = document.createElement('div');
+  card.className = 'cblock';
+  const head = document.createElement('div');
+  head.className = 'bhead';
+  head.innerHTML =
+    `<span class="bkind">${blk.t === 'image' ? 'Image' : 'Text'}</span>
+     <span class="grow"></span>
+     <button class="bmove" data-up title="Move up">▲</button>
+     <button class="bmove" data-dn title="Move down">▼</button>
+     <button class="bx" data-rm title="Remove this block">✕</button>`;
+  head.querySelector('[data-up]').onclick = () => moveBlock(i, -1);
+  head.querySelector('[data-dn]').onclick = () => moveBlock(i, 1);
+  head.querySelector('[data-rm]').onclick = () => {
+    if (!confirm('Remove this block?')) return;
+    doc.blocks.splice(i, 1); dirty = true; renderBlocks();
+  };
+  card.appendChild(head);
+
+  if (blk.t === 'image'){
+    const host = document.createElement('div');
+    host.className = 'cimg-host';
+    const img = document.createElement('img');
+    img.alt = blk.alt || '';
+    img.src = publicUrl(blk.ref) || '';
+    host.appendChild(img);
+    card.appendChild(host);
+
+    const alt = document.createElement('input');
+    alt.className = 'balt';
+    alt.placeholder = 'Caption / alt text (optional)';
+    alt.value = blk.alt || '';
+    alt.oninput = () => { blk.alt = alt.value; img.alt = alt.value; dirty = true; };
+    card.appendChild(alt);
+
+    const drawBtn = document.createElement('button');
+    drawBtn.className = 'btn ghost';
+    drawBtn.style.alignSelf = 'flex-start';
+    drawBtn.textContent = (blk.sketch && blk.sketch.length) ? '✎ Redraw over this' : '✎ Draft over this';
+    card.appendChild(drawBtn);
+
+    const pad = createSketchPad(host, img);
+    pads.set(i, pad);
+    pad.onDone((strokes) => {
+      blk.sketch = strokes || null;
+      dirty = true;
+      drawBtn.textContent = (blk.sketch && blk.sketch.length) ? '✎ Redraw over this' : '✎ Draft over this';
+    });
+    drawBtn.onclick = () => { if (!pad.isActive()) pad.start(blk.sketch || []); };
+    const draw = () => pad.renderStatic(blk.sketch || []);
+    if (img.complete && img.naturalWidth) draw();
+    img.addEventListener('load', draw);
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = blk.md || '';
+    ta.placeholder = 'Concept notes…  URLs auto-link, and lines starting with "- " become bullets.';
+    const prev = document.createElement('div');
+    prev.className = 'preview';
+    const sync = () => { prev.innerHTML = autoFormat(ta.value); };
+    ta.oninput = () => { blk.md = ta.value; dirty = true; sync(); };
+    sync();
+    card.appendChild(ta);
+    card.appendChild(prev);
+  }
+  return card;
+}
+
+function moveBlock(i, dir){
+  const j = i + dir;
+  if (j < 0 || j >= doc.blocks.length) return;
+  const [b] = doc.blocks.splice(i, 1);
+  doc.blocks.splice(j, 0, b);
+  dirty = true;
+  renderBlocks();
+}
+
+// ---------- Image upload ----------
+// Straight onto the same inbox -> import-inbox route every other upload on the
+// site uses. kind:'img' is a passthrough: it moves one file into permanent
+// storage under <band>/<song>/_img/<file> and hands the path back, writing no
+// rows. A unique per-upload `song` keeps concurrent adds from grabbing each
+// other's file (import-inbox takes names[0] of the prefix).
+async function uploadImage(file){
+  if (!file) return;
+  const pass = bandPass(curBand);
+  if (!pass){ showGate(curBand, false); return; }
+  if (file.size > INBOX_MAX)
+    return say(`${file.name || 'image'} is ${(file.size / 1048576).toFixed(0)} MB — over the ${(INBOX_MAX / 1048576) | 0} MB limit.`, true);
+  const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const song = '_concept/' + stamp;
+  const ext = ((file.name || '').match(/\.[^.]+$/) || ['.png'])[0].toLowerCase();
+  const name = 'img' + ext;
+  const enc = (...seg) => seg.map(encodeURIComponent).join('/');
+  say('Uploading image…');
+  try {
+    const r = await fetch(`${SUPA_URL}/storage/v1/object/inbox/${enc(curBand, pass, song, name)}`, {
+      method: 'POST',
+      headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+                 'Content-Type': file.type || 'application/octet-stream', 'x-upsert': 'true' },
+      body: file });
+    if (!r.ok){
+      let detail = ''; try { const j = await r.json(); detail = j.message || j.error || ''; } catch {}
+      throw new Error(`Upload failed (${r.status}${detail ? ': ' + detail : ''})`);
+    }
+    const res = await edgeFn('import-inbox', { band: curBand, pass, song, kind: 'img' });
+    if (!res || !res.ref) throw new Error('Import returned no path.');
+    doc.blocks.push({ t: 'image', ref: res.ref, alt: '', sketch: null });
+    dirty = true;
+    renderBlocks();
+    say('Image added.');
+  } catch (e) {
+    say(e.message || 'Image upload failed.', true);
+  }
+}
+
+// ---------- Save ----------
+async function save(asNew){
+  const name = $('draftName').value.trim() || 'Concept';
+  // Prune empty text blocks on the way out, but keep at least something.
+  const clean = {
+    target: doc.target && doc.target.kind ? doc.target : null,
+    blocks: doc.blocks.filter(b => b.t === 'image' || (b.md && b.md.trim())),
+  };
+  try {
+    const id = await libRpc('lore_save', {
+      nm: name, body_in: JSON.stringify(clean),
+      vid: asNew ? null : (current ? current.id : null), d: 'concept',
+    });
+    dirty = false;
+    say('Saved.');
+    drafts = (await libRpc('lore_list', { d: 'concept' })) || [];
+    current = drafts.find(d => d.id === id) || null;
+    if (current){ doc = parseDoc(current.body); syncTargetControls(); renderBlocks(); }
+    renderDrafts();
+  } catch (e) { say(e.message, true); }
+}
+
+async function makeLive(){
+  if (!current) return say('Save this draft first.', true);
+  try {
+    await libRpc('lore_set_active', { vid: current.id });
+    drafts = (await libRpc('lore_list', { d: 'concept' })) || [];
+    current = drafts.find(d => d.id === current.id) || current;
+    renderDrafts();
+    say('Live.');
+  } catch (e) { say(e.message, true); }
+}
+
+function say(msg, isErr){
+  const el = $('docStatus');
+  el.textContent = msg || '';
+  el.className = 'status' + (isErr ? ' err' : ' ok');
+  if (msg) setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
+}
+
+// ---------- Wiring ----------
+on('newBtn', 'click', () => newDraft(false));
+on('saveBtn', 'click', () => save(false));
+on('saveNewBtn', 'click', () => save(true));
+on('liveBtn', 'click', makeLive);
+on('addTextBtn', 'click', () => { doc.blocks.push({ t: 'text', md: '' }); dirty = true; renderBlocks(); });
+on('addImageBtn', 'click', () => $('addImageFile').click());
+on('addImageFile', 'change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (f) uploadImage(f);
+});
+$('blocks').closest('.editor').addEventListener('paste', (e) => {
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  for (const it of items){
+    if (it.kind === 'file' && it.type.startsWith('image/')){
+      e.preventDefault();
+      uploadImage(it.getAsFile());
+      return;
+    }
+  }
+});
+on('draftName', 'input', () => { dirty = true; });
+addEventListener('beforeunload', (e) => { if (dirty){ e.preventDefault(); e.returnValue = ''; } });
+</script>
+</body>
+</html>

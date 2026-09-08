@@ -72,8 +72,9 @@
   /* Game and Assets doors are per-band (CR-14/15): a band with no game and
      no library filed sees neither entry in the Pages menu. Same gate as
      index.html. */
-  #gameBtn, #assetsBtn { display: none; }
+  #gameBtn, #assetsBtn, #conceptBtn { display: none; }
   body.has-game #gameBtn { display: inline-flex; }
+  body.has-concept #conceptBtn { display: inline-flex; }
   body.authed.has-assets #assetsBtn { display: inline-flex; }
 </style>
 </head>
@@ -126,6 +127,7 @@
         <a class="navitem" id="artBtn" href="art.html">🎨 Art</a>
         <a class="navitem" id="gameBtn" href="game/">🐴 Game</a>
         <a class="navitem" id="assetsBtn" href="assets.html">📖 Assets</a>
+        <a class="navitem" id="conceptBtn" href="concept.html">💡 Concepts</a>
         <a class="navitem" id="homeBtn" href="index.html">💿 Sn'Album</a>
       </div>
       <button class="addbtn" id="adminBtn" title="Site admin — add a band library">⚙</button>
@@ -168,7 +170,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=34"></script>
+<script src="core.js?v=35"></script>
 <!-- The song-completion maths (songPct), so a release's rollup is the exact
      same number the player shows per song — never a second copy of it. -->
 <script src="progress.js?v=16"></script>

@@ -170,7 +170,7 @@ function applyTheme(band){
 // 'links' is the same again, a fourth slug: named URLs rather than prose or a
 // dated list, still the same stack-of-drafts-one-live store underneath.
 const BAND_FEATURES = {
-  lakehorse: ['game', 'lore', 'log', 'goals', 'links'],
+  lakehorse: ['game', 'lore', 'log', 'goals', 'links', 'concept'],
 };
 // Defaults to the band on screen, which is what every call site wants; the
 // argument is there for the gate, which knows the band before it is logged in.
@@ -192,6 +192,10 @@ function applyFeatures(band){
   b.toggle('has-log',    has.includes('log'));
   b.toggle('has-goals',  has.includes('goals'));
   b.toggle('has-links',  has.includes('links'));
+  // concept is the Art Concepts doc (concept.html), reached from the art page,
+  // not from the assets shelf — so it gates on its own and stays out of
+  // has-assets below.
+  b.toggle('has-concept', has.includes('concept'));
   b.toggle('has-assets', has.includes('lore') || has.includes('log') || has.includes('goals') || has.includes('links'));
 }
 

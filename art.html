@@ -25,6 +25,11 @@
     transition: border-color .12s, background .12s; color: var(--text); font: inherit;
   }
   .door:hover { background: var(--bg-hover); border-color: var(--accent); }
+  /* Art Concepts (CR-106) — a per-band door, gated the same way the Game and
+     Assets entries are (CR-14/15, CR-104), so a band without the feature never
+     sees it. */
+  #doorConcept { display: none; }
+  body.has-concept #doorConcept { display: block; }
   .door .dooricon { font-size: 40px; margin-bottom: 10px; }
   .door .doortitle { font-weight: 700; font-size: 16px; }
   .door .doorsub { color: var(--text-dim); font-size: 12.5px; margin-top: 6px; }
@@ -176,10 +181,11 @@
   /* Game and Assets doors are per-band (CR-14/15): a band with no game and
      no library filed sees neither entry. Same gate as index.html — without
      it the Pages menu leaked both to every band. */
-  #gameBtn, #assetsBtn { display: none; }
+  #gameBtn, #assetsBtn, #conceptBtn { display: none; }
   body.has-game #gameBtn { display: inline-flex; }
+  body.has-concept #conceptBtn { display: inline-flex; }
   body.authed.has-assets #assetsBtn { display: inline-flex; }
-  body.singlemix #gameBtn, body.singlemix #assetsBtn { display: none !important; }
+  body.singlemix #gameBtn, body.singlemix #assetsBtn, body.singlemix #conceptBtn { display: none !important; }
   body.singlemix #addBtn, body.singlemix #shareBtn, body.singlemix #cToggle,
   body.singlemix #todoToggle, body.singlemix .drawhint, body.singlemix .piece .pcpy { display: none !important; }
 
@@ -243,6 +249,7 @@
         <a class="navitem" id="musicBtn" href="music.html">🎵 Music</a>
         <a class="navitem" id="gameBtn" href="game/">🐴 Game</a>
         <a class="navitem" id="assetsBtn" href="assets.html">📖 Assets</a>
+        <a class="navitem" id="conceptBtn" href="concept.html">💡 Concepts</a>
         <a class="navitem" id="releaseBtn" href="release-builder.html">🚀 Release</a>
         <a class="navitem" id="homeBtn" href="index.html">💿 Sn'Album</a>
       </div>
@@ -263,6 +270,11 @@
         <div class="dooricon">▨</div>
         <div class="doortitle">Image tools</div>
         <div class="doorsub">The tools enabled in config mode</div>
+      </button>
+      <button class="door" id="doorConcept">
+        <div class="dooricon">💡</div>
+        <div class="doortitle">Art Concepts</div>
+        <div class="doorsub">Concept notes in drafts, with images and sketches</div>
       </button>
     </div>
 
@@ -433,7 +445,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=34"></script>
+<script src="core.js?v=35"></script>
 <!-- The record's progress bar, read-only here; the player owns the editable one. -->
 <script src="progress.js?v=16"></script>
 <script src="progress-ui.js?v=4"></script>
@@ -581,6 +593,7 @@ on('doorArt', 'click', () => { hideDoors(); renderList(); });
 // Follow-up to CR-83, 23 Aug: he asked for a door per tool on its own page
 // rather than the dropdown this used to open — see art-tools.html.
 on('doorTools', 'click', () => { location.href = 'art-tools.html?b=' + encodeURIComponent(curBand); });
+on('doorConcept', 'click', () => { location.href = 'concept.html?b=' + encodeURIComponent(curBand); });
 
 function showBadLink(){
   document.body.classList.remove('locked');

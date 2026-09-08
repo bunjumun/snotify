@@ -46,6 +46,16 @@
   }
   .draft:hover .ddel { opacity: 1; }
   .draft .ddel:hover { color: #ff6b6b; }
+  .draft.idea { font-weight: 600; }
+  .draft .vb {
+    font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    padding: 1px 5px; border-radius: 4px; white-space: nowrap;
+  }
+  .draft .vb.idea   { background: var(--accent, #6c5ce7); color: #fff; }
+  .draft .vb.main   { background: rgba(255,255,255,.10); color: var(--text-dim); }
+  .draft .vb.sug    { background: rgba(255,180,84,.18); color: var(--warn, #ffb454); }
+  .draft .vb.merged { background: rgba(0,208,164,.16); color: var(--accent-2, #00d0a4); }
+  .draft .vwho { color: var(--text-mute); font-size: 11px; white-space: nowrap; }
   .draft .ord { display: flex; flex-direction: column; gap: 1px; }
   .draft .ord button {
     background: none; border: 0; color: var(--text-mute); cursor: pointer; line-height: .8;
@@ -264,8 +274,9 @@
             <input class="nm cname" id="cName" placeholder="Your name" maxlength="40"
                    title="Shown on the notes you leave (remembered on this device)" />
             <span class="status" id="docStatus"></span>
-            <button class="btn primary" id="saveBtn">Save</button>
-            <button class="btn ghost" id="saveNewBtn">Save as new</button>
+            <button class="btn primary" id="saveEditBtn" title="Save this as a suggested edit branched off what you are looking at">Save as new edit</button>
+            <button class="btn ghost" id="saveIdeaBtn" title="Save this as a brand new concept">Save as new idea</button>
+            <button class="btn ghost" id="adoptBtn" style="display:none" title="Make this suggestion what the idea says">Adopt</button>
           </div>
 
           <div class="blocks" id="blocks"></div>
@@ -344,6 +355,7 @@ async function openConcept(){
     drafts = [];
     say(e.message || 'Could not load the drafts.', true);
   }
+  indexLineage();
   await loadComments();
   renderDrafts();
   // No "live" draft on this tool — nothing downstream reads it, unlike lore.
@@ -364,30 +376,34 @@ function targetLabel(t){
 
 function renderDrafts(){
   const box = $('drafts');
-  $('stackCount').textContent = drafts.length ? `(${drafts.length})` : '';
-  $('conceptCount').textContent = drafts.length
-    ? `${drafts.length} draft${drafts.length === 1 ? '' : 's'}` : '';
+  const ideas = drafts.filter(d => !parentOf(d.id)).length;
+  $('stackCount').textContent = ideas ? `(${ideas})` : '';
+  $('conceptCount').textContent = ideas
+    ? `${ideas} idea${ideas === 1 ? '' : 's'}` : '';
   if (!drafts.length){
-    box.innerHTML = '<div class="hint" style="padding:8px 10px">No drafts yet. Start one.</div>';
+    box.innerHTML = '<div class="hint" style="padding:8px 10px">No ideas yet. Start one.</div>';
     return;
   }
   box.innerHTML = '';
-  drafts.forEach((d, i) => {
-    const t = parseDoc(d.body).target;
+  orderedVersions().forEach((d) => {
+    const m = meta(d.id);
+    const root = !parentOf(d.id);
+    const depth = Math.min(depthOf(d.id), 3);
     const row = document.createElement('div');
-    row.className = 'draft' + (current && current.id === d.id ? ' on' : '');
+    row.className = 'draft' + (current && current.id === d.id ? ' on' : '') + (root ? ' idea' : '');
+    row.style.paddingLeft = (10 + depth * 12) + 'px';
+    const badge = root ? '<span class="vb idea">idea</span>'
+      : isMerged(d.id) ? '<span class="vb merged">adopted</span>'
+      : isMain(d.id) ? '<span class="vb main">main</span>'
+      : '<span class="vb sug">suggestion</span>';
+    const who = !root && m.author ? `<span class="vwho">${esc(m.author)}</span>` : '';
     row.innerHTML =
-      `<span class="ord">
-         <button title="Move up" data-up="${i}">▲</button>
-         <button title="Move down" data-dn="${i}">▼</button>
-       </span>
-       <span class="nm">${esc(d.name)}</span>
-       ${t && t.kind ? `<span class="tgt">${esc(targetLabel(t))}</span>` : ''}
+      `<span class="nm">${esc(d.name)}</span>
+       ${badge}${who}
+       ${m.target && m.target.kind ? `<span class="tgt">${esc(targetLabel(m.target))}</span>` : ''}
        <span class="when">${timeago(d.updated || d.created)}</span>
-       <button class="ddel" title="Delete this draft" data-del="${i}">🗑</button>`;
+       <button class="ddel" title="Delete this version" data-del>🗑</button>`;
     row.addEventListener('click', (e) => {
-      if (e.target.dataset.up !== undefined) return move(i, -1);
-      if (e.target.dataset.dn !== undefined) return move(i, 1);
       if (e.target.dataset.del !== undefined) return deleteDraft(d);
       openDraft(d);
     });
@@ -397,17 +413,10 @@ function renderDrafts(){
 
 function esc(s){ return String(s == null ? '' : s).replace(/[<>&]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;' }[c])); }
 
-async function move(i, dir){
-  const j = i + dir;
-  if (j < 0 || j >= drafts.length) return;
-  const [row] = drafts.splice(i, 1);
-  drafts.splice(j, 0, row);
-  renderDrafts();
-  try { await libRpc('lore_reorder', { ids: drafts.map(d => d.id), d: 'concept' }); }
-  catch (e) { say(e.message, true); }
-}
-
 async function deleteDraft(d){
+  if (childrenOf(d.id).length){
+    return say('Other versions branch off this one — delete those first.', true);
+  }
   const only = drafts.length === 1;
   const msg = only
     ? `"${d.name}" is the only draft. Clear it back to empty?`
@@ -456,22 +465,79 @@ function withIds(blocks){
   });
 }
 
+// An IDEA is a concept; an EDIT is a suggested branch off one particular
+// version of it, the way a branch sits off a commit. `parent` is the version
+// id this was branched from (empty on an idea), `author` is who suggested it.
+// Both ride in the body JSON, so there is no migration and every board written
+// before branching existed simply reads as an idea.
 function parseDoc(body){
   idsMinted = false;
   try {
     const d = JSON.parse(body || '{}');
     if (d && Array.isArray(d.blocks))
-      return { target: d.target && d.target.kind ? d.target : null, blocks: withIds(d.blocks) };
+      return {
+        parent: d.parent || null,
+        branch: d.branch || 'main',
+        author: d.author || '',
+        merged: d.merged || null,
+        target: d.target && d.target.kind ? d.target : null,
+        blocks: withIds(d.blocks),
+      };
   } catch {}
   // Anything that isn't our JSON is treated as one text block, so a hand-set
   // or legacy body still opens rather than throwing.
-  return { target: null, blocks: withIds(body && body.trim() ? [{ t: 'text', md: body }] : []) };
+  return { parent: null, branch: 'main', author: '', merged: null,
+           target: null,
+           blocks: withIds(body && body.trim() ? [{ t: 'text', md: body }] : []) };
+}
+
+// ---- lineage helpers, over the flat version list lore_list returns ----
+const lineage = new Map();   // version id -> { parent, branch, author, merged, target }
+function indexLineage(){
+  lineage.clear();
+  for (const d of drafts){
+    const p = parseDoc(d.body);
+    lineage.set(d.id, { parent: p.parent, branch: p.branch, author: p.author,
+                        merged: p.merged, target: p.target });
+  }
+}
+const meta = (id) => lineage.get(id) || {};
+const parentOf = (id) => meta(id).parent || null;
+const isMain = (id) => (meta(id).branch || 'main') === 'main';
+const isMerged = (id) => !!meta(id).merged;
+/** The root version of the idea this version belongs to — its identity. */
+function ideaRootOf(id){
+  let cur = id, n = 0;
+  while (parentOf(cur) && n++ < 24) cur = parentOf(cur);
+  return cur;
+}
+/** Newest main-line version of an idea: what the concept currently says. */
+function headOf(rootId){
+  const mains = drafts.filter(d => isMain(d.id) && ideaRootOf(d.id) === rootId);
+  return mains.sort((a, b) =>
+    Date.parse(b.updated || b.created) - Date.parse(a.updated || a.created))[0] || null;
+}
+function depthOf(id){
+  let n = 0, cur = parentOf(id);
+  while (cur && n < 12){ n++; cur = parentOf(cur); }
+  return n;
+}
+const childrenOf = (id) => drafts.filter(d => parentOf(d.id) === id);
+/** Ideas first, each followed by its edits depth-first, so the panel reads as a tree. */
+function orderedVersions(){
+  const out = [];
+  const walk = (d) => { out.push(d); childrenOf(d.id).forEach(walk); };
+  drafts.filter(d => !parentOf(d.id)).forEach(walk);
+  // Anything whose parent was deleted still has to appear somewhere.
+  drafts.filter(d => !out.includes(d)).forEach(d => out.push(d));
+  return out;
 }
 
 function openDraft(d){
   if (dirty && !confirm('Discard unsaved changes to this draft?')) return;
   current = d;
   loadedAt = d.updated || d.created;
+  syncSaveControls();
   $('draftName').value = d.name || '';
   doc = parseDoc(d.body);
   dirty = false;
@@ -485,6 +551,7 @@ function newDraft(silent){
   if (!silent && dirty && !confirm('Discard unsaved changes?')) return;
   current = null;
   loadedAt = null;
+  syncSaveControls();
   $('draftName').value = 'New concept';
   doc = { target: null, blocks: [{ id: newBlockId(), t: 'text', md: '' }] };
   dirty = !silent;
@@ -940,40 +1007,94 @@ async function overwriteIsSafe(){
     `your unsaved changes here would be lost, so copy anything you need first.`);
 }
 
-async function save(asNew){
+/**
+ * Every save makes a new version; nothing is ever overwritten.
+ *   kind 'idea'  — a fresh concept (a root)
+ *   kind 'edit'  — a suggestion branched off whatever is open
+ *   kind 'main'  — used by adopt(), lands a suggestion on the idea's main line
+ * `from` is the version being branched from, when that is not `current`.
+ */
+async function save(kind, from){
+  const asNew = true;   // there is no in-place save any more
   const name = $('draftName').value.trim() || 'Concept';
   // Prune empty text and empty link blocks on the way out.
+  const who = ($('cName').value || '').trim();
+  const base = from || current;
+  // A suggestion gets its own note threads rather than inheriting the parent's,
+  // so a note on one branch never shows up on its sibling.
+  const blocks = doc.blocks.filter(b =>
+    b.t === 'image'
+    || (b.t === 'link' && b.url && b.url.trim())
+    || (b.md && b.md.trim()));
   const clean = {
+    parent: kind === 'idea' ? null : (base ? base.id : null),
+    branch: kind === 'edit' ? (who || 'suggestion') : 'main',
+    author: who,
+    merged: null,
     target: doc.target && doc.target.kind ? doc.target : null,
-    blocks: doc.blocks.filter(b =>
-      b.t === 'image'
-      || (b.t === 'link' && b.url && b.url.trim())
-      || (b.md && b.md.trim())),
+    blocks: kind === 'edit' ? blocks.map(b => ({ ...b, id: newBlockId() })) : blocks,
   };
-  // "Save as new" always makes its own version, so it can never clobber anyone.
-  if (!asNew && !(await overwriteIsSafe())){
-    drafts = (await libRpc('lore_list', { d: 'concept' })) || [];
-    const fresh = drafts.find(d => d.id === (current && current.id));
-    dirty = false;
-    if (fresh) openDraft(fresh); else await openConcept();
-    say('Reloaded their version.', true);
-    return;
-  }
   try {
     const id = await libRpc('lore_save', {
       nm: name, body_in: JSON.stringify(clean),
-      vid: asNew ? null : (current ? current.id : null), d: 'concept',
+      vid: null, d: 'concept',
     });
     dirty = false;
-    say('Saved.');
+    say(kind === 'idea' ? 'Saved as a new idea.' : kind === 'edit' ? 'Saved as a new edit.' : 'Adopted.');
     drafts = (await libRpc('lore_list', { d: 'concept' })) || [];
+    indexLineage();
     current = drafts.find(d => d.id === id) || null;
     if (current){
       loadedAt = current.updated || current.created;
       doc = parseDoc(current.body); syncTargetControls(); renderBlocks();
+      syncSaveControls();
     }
     renderDrafts();
   } catch (e) { say(e.message, true); }
+}
+
+/** Land a suggestion on the idea's main line, and mark the branch adopted. */
+async function adopt(){
+  if (!current || isMain(current.id) || isMerged(current.id)) return;
+  const root = ideaRootOf(current.id);
+  const head = headOf(root);
+  const branchId = current.id;
+  const ideaName = (drafts.find(d => d.id === root) || {}).name || current.name;
+  if (!confirm(`Adopt “${current.name}” as what “${ideaName}” says?\n\n`
+             + `It becomes the current version. The suggestion stays in the list, marked adopted.`)) return;
+  // The landed version is the idea speaking, so it carries the idea's name,
+  // not the branch's.
+  const typed = $('draftName').value;
+  $('draftName').value = ideaName;
+  await save('main', head);            // new main version, carrying this content
+  $('draftName').value = typed;
+  const landedOn = current ? current.id : null;
+  // Mark the branch itself adopted. The one write that touches an existing
+  // version, so it keeps the stale-write check.
+  try {
+    const row = drafts.find(d => d.id === branchId);
+    if (row && await overwriteIsSafe()){
+      const b = parseDoc(row.body);
+      await libRpc('lore_save', {
+        nm: row.name,
+        body_in: JSON.stringify({ ...b, merged: landedOn || true }),
+        vid: branchId, d: 'concept',
+      });
+      drafts = (await libRpc('lore_list', { d: 'concept' })) || [];
+      indexLineage();
+      renderDrafts();
+    }
+  } catch (e) { say(e.message, true); }
+}
+
+/** Only offer the actions that make sense for what is open. */
+function syncSaveControls(){
+  const open = !!current;
+  const canAdopt = open && !isMain(current.id) && !isMerged(current.id);
+  $('saveEditBtn').style.display = open ? '' : 'none';
+  $('adoptBtn').style.display = canAdopt ? '' : 'none';
+  $('saveIdeaBtn').classList.toggle('primary', !open);
+  $('saveIdeaBtn').classList.toggle('ghost', open);
 }
 
 function say(msg, isErr){
@@ -985,8 +1106,9 @@ function say(msg, isErr){
 
 // ---------- Wiring ----------
 on('newBtn', 'click', () => newDraft(false));
-on('saveBtn', 'click', () => save(false));
-on('saveNewBtn', 'click', () => save(true));
+on('saveEditBtn', 'click', () => save('edit'));
+on('saveIdeaBtn', 'click', () => save('idea'));
+on('adoptBtn', 'click', adopt);
 on('addTextBtn', 'click', () => { doc.blocks.push({ id: newBlockId(), t: 'text', md: '' }); dirty = true; openEditor(doc.blocks.length - 1); });
 on('addImageBtn', 'click', () => $('addImageFile').click());
 on('addImageFile', 'change', (e) => {

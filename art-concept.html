@@ -35,10 +35,12 @@
   .draft .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .draft .when { color: var(--text-mute); font-size: 12px; }
   .draft .tgt { color: var(--text-mute); font-size: 11px; white-space: nowrap; }
-  .draft .live {
-    font-size: 10.5px; font-weight: 800; letter-spacing: .07em; padding: 2px 6px; border-radius: 5px;
-    background: var(--accent-2, #00d0a4); color: #04120e;
+  .draft .ddel {
+    background: none; border: 0; color: var(--text-mute); cursor: pointer;
+    font-size: 13px; padding: 0 2px; opacity: 0; transition: opacity .12s;
   }
+  .draft:hover .ddel { opacity: 1; }
+  .draft .ddel:hover { color: #ff6b6b; }
   .draft .ord { display: flex; flex-direction: column; gap: 1px; }
   .draft .ord button {
     background: none; border: 0; color: var(--text-mute); cursor: pointer; line-height: .8;
@@ -183,7 +185,6 @@
             <input class="nm" id="draftName" placeholder="Draft name" />
             <button class="btn primary" id="saveBtn">Save</button>
             <button class="btn ghost" id="saveNewBtn">Save as new draft</button>
-            <button class="btn ghost" id="liveBtn">Make live</button>
             <span class="grow"></span>
             <span class="status" id="docStatus"></span>
           </div>
@@ -275,12 +276,11 @@ async function openConcept(){
     say(e.message || 'Could not load the drafts.', true);
   }
   renderDrafts();
-  const start = live() || drafts[0];
-  if (start) openDraft(start);
+  // No "live" draft on this tool — nothing downstream reads it, unlike lore.
+  // The most recent draft opens; lore_list returns them newest-first.
+  if (drafts[0]) openDraft(drafts[0]);
   else newDraft(true);
 }
-
-const live = () => drafts.find(d => d.active) || null;
 
 function targetLabel(t){
   if (!t || !t.kind) return '';
@@ -312,12 +312,13 @@ function renderDrafts(){
          <button title="Move down" data-dn="${i}">▼</button>
        </span>
        <span class="nm">${esc(d.name)}</span>
-       ${d.active ? '<span class="live">LIVE</span>' : ''}
        ${t && t.kind ? `<span class="tgt">${esc(targetLabel(t))}</span>` : ''}
-       <span class="when">${timeago(d.updated || d.created)}</span>`;
+       <span class="when">${timeago(d.updated || d.created)}</span>
+       <button class="ddel" title="Delete this draft" data-del="${i}">🗑</button>`;
     row.addEventListener('click', (e) => {
       if (e.target.dataset.up !== undefined) return move(i, -1);
       if (e.target.dataset.dn !== undefined) return move(i, 1);
+      if (e.target.dataset.del !== undefined) return deleteDraft(d);
       openDraft(d);
     });
     box.appendChild(row);
@@ -334,6 +335,39 @@ async function move(i, dir){
   renderDrafts();
   try { await libRpc('lore_reorder', { ids: drafts.map(d => d.id), d: 'concept' }); }
   catch (e) { say(e.message, true); }
+}
+
+async function deleteDraft(d){
+  const only = drafts.length === 1;
+  const msg = only
+    ? `"${d.name}" is the only draft. Clear it back to empty?`
+    : `Delete draft "${d.name}"? This cannot be undone.`;
+  if (!confirm(msg)) return;
+  try {
+    if (only){
+      // A doc with no drafts just makes a fresh empty one on next open, so
+      // "delete the last draft" and "blank the last draft" reach the same
+      // place. lore_trash refuses the only/active version anyway.
+      await libRpc('lore_save', {
+        nm: 'New concept',
+        body_in: JSON.stringify({ target: null, blocks: [{ t: 'text', md: '' }] }),
+        vid: d.id, d: 'concept',
+      });
+      say('Cleared.');
+    } else {
+      // lore_trash won't take the active version; promote another first.
+      if (d.active){
+        const other = drafts.find(x => x.id !== d.id);
+        if (other) await libRpc('lore_set_active', { vid: other.id });
+      }
+      await libRpc('lore_trash', { vid: d.id });
+      say('Deleted.');
+    }
+    drafts = (await libRpc('lore_list', { d: 'concept' })) || [];
+    current = null;
+    if (drafts[0]) openDraft(drafts[0]); else newDraft(true);
+    renderDrafts();
+  } catch (e) { say(e.message, true); }
 }
 
 // ---------- The document body ----------
@@ -363,8 +397,7 @@ function newDraft(silent){
   if (!silent && dirty && !confirm('Discard unsaved changes?')) return;
   current = null;
   $('draftName').value = 'New concept';
-  const base = live() ? parseDoc(live().body) : null;
-  doc = base ? JSON.parse(JSON.stringify(base)) : { target: null, blocks: [{ t: 'text', md: '' }] };
+  doc = { target: null, blocks: [{ t: 'text', md: '' }] };
   dirty = !silent;
   syncTargetControls();
   renderBlocks();
@@ -595,17 +628,6 @@ async function save(asNew){
   } catch (e) { say(e.message, true); }
 }
 
-async function makeLive(){
-  if (!current) return say('Save this draft first.', true);
-  try {
-    await libRpc('lore_set_active', { vid: current.id });
-    drafts = (await libRpc('lore_list', { d: 'concept' })) || [];
-    current = drafts.find(d => d.id === current.id) || current;
-    renderDrafts();
-    say('Live.');
-  } catch (e) { say(e.message, true); }
-}
-
 function say(msg, isErr){
   const el = $('docStatus');
   el.textContent = msg || '';
@@ -617,7 +639,6 @@ function say(msg, isErr){
 on('newBtn', 'click', () => newDraft(false));
 on('saveBtn', 'click', () => save(false));
 on('saveNewBtn', 'click', () => save(true));
-on('liveBtn', 'click', makeLive);
 on('addTextBtn', 'click', () => { doc.blocks.push({ t: 'text', md: '' }); dirty = true; renderBlocks(); });
 on('addImageBtn', 'click', () => $('addImageFile').click());
 on('addImageFile', 'change', (e) => {

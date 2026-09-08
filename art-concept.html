@@ -651,6 +651,12 @@ $('blocks').closest('.editor').addEventListener('paste', (e) => {
 });
 on('draftName', 'input', () => { dirty = true; });
 addEventListener('beforeunload', (e) => { if (dirty){ e.preventDefault(); e.returnValue = ''; } });
+
+// core.js only calls App.init() on a hashchange, after the gate opens, and on
+// logout — never at load. Every page kicks itself off, and this one has to as
+// well or it sits behind `body.locked` with the gate closed, which looks
+// exactly like an empty page.
+init();
 </script>
 </body>
 </html>

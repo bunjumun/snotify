@@ -154,6 +154,31 @@
   }
   .cblock a.clink:hover { text-decoration: underline; }
 
+  /* Notes on a block — the back-and-forth. Same shape as the comment lists
+     elsewhere on the site, scoped to one block. */
+  .cblock .bcmt { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 12px; padding: 0 3px; }
+  .cblock .bcmt:hover, .cblock .bcmt.on { color: var(--accent); }
+  .cblock .bcmt { opacity: 1 !important; }
+  .thread { border-top: 1px solid var(--line); padding-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .thread .hint { color: var(--text-mute); font-size: 12.5px; }
+  .cmt { font-size: 13px; line-height: 1.5; }
+  .cmt.reply { margin: 6px 0 0 14px; padding-left: 8px; border-left: 2px solid var(--line); }
+  .cmt.done .ctxt { text-decoration: line-through; color: var(--text-mute); }
+  .cmt .cwho { color: var(--text-mute); font-size: 11.5px; }
+  .cmt .cdone { color: var(--accent-2, #00d0a4); font-weight: 700; }
+  .cmt .ctxt { color: var(--text); margin: 2px 0; white-space: pre-wrap; }
+  .cmt .cacts { display: flex; gap: 10px; opacity: 0; transition: opacity .12s; }
+  .cmt:hover .cacts { opacity: 1; }
+  .cmt .cact { color: var(--text-mute); font-size: 11.5px; cursor: pointer; }
+  .cmt .cact:hover { color: var(--text); }
+  .cmt .cact.danger:hover { color: #ff6b6b; }
+  .cadd { display: flex; gap: 6px; }
+  .cadd input {
+    flex: 1; min-width: 0; background: #0a0b0f; color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 13px;
+  }
+  .row.toolbar input.cname { flex: 0 0 110px; min-width: 0; }
+
   .addblock { display: flex; gap: 8px; flex-wrap: wrap; }
   .pastehint { color: var(--text-mute); font-size: 12px; }
 
@@ -236,6 +261,8 @@
             </select>
             <select id="tgtRef" style="display:none"></select>
             <span class="grow"></span>
+            <input class="nm cname" id="cName" placeholder="Your name" maxlength="40"
+                   title="Shown on the notes you leave (remembered on this device)" />
             <span class="status" id="docStatus"></span>
             <button class="btn primary" id="saveBtn">Save</button>
             <button class="btn ghost" id="saveNewBtn">Save as new</button>
@@ -317,6 +344,7 @@ async function openConcept(){
     drafts = [];
     say(e.message || 'Could not load the drafts.', true);
   }
+  await loadComments();
   renderDrafts();
   // No "live" draft on this tool — nothing downstream reads it, unlike lore.
   // The most recent draft opens; lore_list returns them newest-first.
@@ -392,7 +420,7 @@ async function deleteDraft(d){
       // place. lore_trash refuses the only/active version anyway.
       await libRpc('lore_save', {
         nm: 'New concept',
-        body_in: JSON.stringify({ target: null, blocks: [{ t: 'text', md: '' }] }),
+        body_in: JSON.stringify({ target: null, blocks: [{ id: newBlockId(), t: 'text', md: '' }] }),
         vid: d.id, d: 'concept',
       });
       say('Cleared.');
@@ -413,15 +441,31 @@ async function deleteDraft(d){
 }
 
 // ---------- The document body ----------
+// Every block carries a stable id, because a comment thread hangs off it and
+// an array index would re-point every thread the moment a block moves.
+// Blocks written before comments existed get one on read; `idsMinted` says the
+// board must be saved before those threads are safe, and addComment does it.
+let idsMinted = false;
+const newBlockId = () => 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+function withIds(blocks){
+  return blocks.map(b => {
+    if (b && typeof b.id === 'string' && b.id) return b;
+    idsMinted = true;
+    return { ...b, id: newBlockId() };
+  });
+}
+
 function parseDoc(body){
+  idsMinted = false;
   try {
     const d = JSON.parse(body || '{}');
     if (d && Array.isArray(d.blocks))
-      return { target: d.target && d.target.kind ? d.target : null, blocks: d.blocks };
+      return { target: d.target && d.target.kind ? d.target : null, blocks: withIds(d.blocks) };
   } catch {}
   // Anything that isn't our JSON is treated as one text block, so a hand-set
   // or legacy body still opens rather than throwing.
-  return { target: null, blocks: body && body.trim() ? [{ t: 'text', md: body }] : [] };
+  return { target: null, blocks: withIds(body && body.trim() ? [{ t: 'text', md: body }] : []) };
 }
 
 function openDraft(d){
@@ -440,7 +484,7 @@ function newDraft(silent){
   if (!silent && dirty && !confirm('Discard unsaved changes?')) return;
   current = null;
   $('draftName').value = 'New concept';
-  doc = { target: null, blocks: [{ t: 'text', md: '' }] };
+  doc = { target: null, blocks: [{ id: newBlockId(), t: 'text', md: '' }] };
   dirty = !silent;
   editing.clear();
   syncTargetControls();
@@ -571,11 +615,16 @@ function blockEl(blk, i){
   head.innerHTML =
     `<span class="bkind">${blk.t === 'image' ? 'Image' : blk.t === 'link' ? 'Link' : 'Text'}</span>
      <span class="grow"></span>
+     <button class="bcmt${openThreads.has(blk.id) ? ' on' : ''}" data-cmt title="Notes on this block">💬${openCount(blk.id) ? ' ' + openCount(blk.id) : ''}</button>
      ${WIDTHS.map(([w, lbl]) => `<button class="bw${blockW(blk) === w ? ' on' : ''}" data-w="${w}" title="${lbl} width">${lbl}</button>`).join('')}
      <button class="bedit" data-ed title="${on ? 'Finish editing' : 'Edit this block'}">${on ? 'Done' : '✎'}</button>
      <button class="bmove" data-up title="Move up">▲</button>
      <button class="bmove" data-dn title="Move down">▼</button>
      <button class="bx" data-rm title="Remove this block">✕</button>`;
+  head.querySelector('[data-cmt]').onclick = () => {
+    openThreads.has(blk.id) ? openThreads.delete(blk.id) : openThreads.add(blk.id);
+    renderBlocks();
+  };
   head.querySelectorAll('[data-w]').forEach(b => {
     b.onclick = () => { blk.w = +b.dataset.w; dirty = true; renderBlocks(); };
   });
@@ -684,6 +733,7 @@ function blockEl(blk, i){
     });
     card.appendChild(prev);
   }
+  if (openThreads.has(blk.id)) card.appendChild(threadEl(blk));
   return card;
 }
 
@@ -695,6 +745,136 @@ function moveBlock(i, dir){
   editing.clear();
   dirty = true;
   renderBlocks();
+}
+
+// ---------- Comments ----------
+// The data layer is the site's own: same comments table, same RPCs, same
+// one-level threading and resolve. comments.song_id is free text validated
+// only by a `<band>/` prefix (schema-v3's comment_key convention), so a
+// concept thread keys as `<band>/concept:<blockId>` and needs no migration.
+let cCache = {};              // blockId -> mapped rows
+const openThreads = new Set(); // blockIds whose thread is expanded
+
+const cKey = (blockId) => `${curBand}/concept:${blockId}`;
+const mapC = (r) => ({ id: r.id, key: r.song_id, text: r.text, name: r.name || '',
+                       parentId: r.parent_id || null, resolved: !!r.resolved,
+                       resolvedBy: r.resolved_by || '',
+                       editedAt: r.edited_at ? Date.parse(r.edited_at) : null,
+                       at: Date.parse(r.created_at) });
+
+async function loadComments(){
+  cCache = {};
+  let rows = [];
+  try { rows = (await libRpc('get_comments', {})) || []; }
+  catch { return; }   // comments are an extra; a failure must not blank the board
+  const pre = `${curBand}/concept:`;
+  for (const r of rows){
+    if (!r.song_id || !String(r.song_id).startsWith(pre)) continue;
+    const bid = String(r.song_id).slice(pre.length);
+    (cCache[bid] || (cCache[bid] = [])).push(mapC(r));
+  }
+}
+
+const threadFor = (bid) => (cCache[bid] || []).slice().sort((a, b) => a.at - b.at);
+const rootsFor  = (bid) => threadFor(bid).filter(c => !c.parentId);
+const repliesFor = (bid, rootId) => threadFor(bid).filter(c => c.parentId === rootId);
+const openCount = (bid) => rootsFor(bid).filter(c => !c.resolved).length;
+
+async function addComment(bid, text, parentId){
+  const txt = (text || '').trim();
+  if (!txt) return;
+  // A thread hangs off the block id, so the id has to be in the saved body
+  // before the comment can find its way back. Save first, once, deliberately.
+  if (idsMinted || dirty){
+    await save(false);
+    if (dirty) return;   // save failed; don't strand the comment
+  }
+  const who = ($('cName').value || '').trim();
+  localStorage.setItem('mp_name', who);
+  try {
+    const row = await libRpc('add_comment', {
+      sid: cKey(bid), time_s: 0, txt, who, ver: '', vid: null,
+      parent_id: parentId || null,
+    });
+    if (row) (cCache[bid] || (cCache[bid] = [])).push(mapC(row));
+    renderBlocks();
+  } catch (e) { say(e.message, true); }
+}
+
+async function resolveComment(bid, cid, on){
+  try {
+    const row = await libRpc('resolve_comment', {
+      cid, is_resolved: on, who: ($('cName').value || '').trim() });
+    const list = cCache[bid] || [];
+    const i = list.findIndex(c => c.id === cid);
+    if (i !== -1 && row) list[i] = mapC(row);
+    renderBlocks();
+  } catch (e) { say(e.message, true); }
+}
+
+async function deleteComment(bid, cid){
+  if (!confirm('Delete this note?')) return;
+  try {
+    await libRpc('delete_comment', { cid });
+    cCache[bid] = (cCache[bid] || []).filter(c => c.id !== cid && c.parentId !== cid);
+    renderBlocks();
+  } catch (e) { say(e.message, true); }
+}
+
+function threadEl(blk){
+  const bid = blk.id;
+  const box = document.createElement('div');
+  box.className = 'thread';
+  const roots = rootsFor(bid);
+  if (!roots.length){
+    const hint = document.createElement('div');
+    hint.className = 'hint';
+    hint.textContent = 'No notes on this yet.';
+    box.appendChild(hint);
+  }
+  roots.forEach(c => {
+    const el = document.createElement('div');
+    el.className = 'cmt' + (c.resolved ? ' done' : '');
+    el.innerHTML =
+      `<div class="cwho">${c.name ? `<b>${esc(c.name)}</b> · ` : ''}${timeago(c.at)}`
+      + `${c.editedAt ? ' · edited' : ''}${c.resolved ? ' · <span class="cdone">settled</span>' : ''}</div>`
+      + `<div class="ctxt">${esc(c.text)}</div>`
+      + `<div class="cacts">`
+      + `<span class="cact" data-reply>Reply</span>`
+      + `<span class="cact" data-res>${c.resolved ? 'Reopen' : 'Settle'}</span>`
+      + `<span class="cact danger" data-del>Delete</span></div>`;
+    el.querySelector('[data-res]').onclick = () => resolveComment(bid, c.id, !c.resolved);
+    el.querySelector('[data-del]').onclick = () => deleteComment(bid, c.id);
+    el.querySelector('[data-reply]').onclick = () => {
+      const t = prompt('Reply');
+      if (t) addComment(bid, t, c.id);
+    };
+    repliesFor(bid, c.id).forEach(r => {
+      const rr = document.createElement('div');
+      rr.className = 'cmt reply';
+      rr.innerHTML =
+        `<div class="cwho">${r.name ? `<b>${esc(r.name)}</b> · ` : ''}${timeago(r.at)}</div>`
+        + `<div class="ctxt">${esc(r.text)}</div>`
+        + `<div class="cacts"><span class="cact danger" data-del>Delete</span></div>`;
+      rr.querySelector('[data-del]').onclick = () => deleteComment(bid, r.id);
+      el.appendChild(rr);
+    });
+    box.appendChild(el);
+  });
+  const row = document.createElement('div');
+  row.className = 'cadd';
+  const inp = document.createElement('input');
+  inp.placeholder = 'Add a note…';
+  inp.maxLength = 280;
+  const go = document.createElement('button');
+  go.className = 'btn ghost sm';
+  go.textContent = 'Add';
+  const send = () => { const v = inp.value; inp.value = ''; addComment(bid, v, null); };
+  go.onclick = send;
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+  row.append(inp, go);
+  box.appendChild(row);
+  return box;
 }
 
 // ---------- Image upload ----------
@@ -727,7 +907,7 @@ async function uploadImage(file){
     }
     const res = await edgeFn('import-inbox', { band: curBand, pass, song, kind: 'img' });
     if (!res || !res.ref) throw new Error('Import returned no path.');
-    doc.blocks.push({ t: 'image', ref: res.ref, alt: '', sketch: null });
+    doc.blocks.push({ id: newBlockId(), t: 'image', ref: res.ref, alt: '', sketch: null });
     dirty = true;
     renderBlocks();
     say('Image added.');
@@ -772,7 +952,7 @@ function say(msg, isErr){
 on('newBtn', 'click', () => newDraft(false));
 on('saveBtn', 'click', () => save(false));
 on('saveNewBtn', 'click', () => save(true));
-on('addTextBtn', 'click', () => { doc.blocks.push({ t: 'text', md: '' }); dirty = true; openEditor(doc.blocks.length - 1); });
+on('addTextBtn', 'click', () => { doc.blocks.push({ id: newBlockId(), t: 'text', md: '' }); dirty = true; openEditor(doc.blocks.length - 1); });
 on('addImageBtn', 'click', () => $('addImageFile').click());
 on('addImageFile', 'change', (e) => {
   const f = e.target.files && e.target.files[0];
@@ -788,8 +968,8 @@ on('addLinkBtn', 'click', () => {
   if (!/^https?:\/\/\S+$/i.test(url)) return say('That does not look like a URL.', true);
   const isImg = /\.(png|jpe?g|gif|webp|avif|bmp|svg)(\?|#|$)/i.test(url);
   doc.blocks.push(isImg
-    ? { t: 'image', ref: url, alt: '', sketch: null }
-    : { t: 'link', url, label: '' });
+    ? { id: newBlockId(), t: 'image', ref: url, alt: '', sketch: null }
+    : { id: newBlockId(), t: 'link', url, label: '' });
   dirty = true;
   renderBlocks();
 });
@@ -804,6 +984,8 @@ $('blocks').closest('.editor').addEventListener('paste', (e) => {
   }
 });
 on('draftName', 'input', () => { dirty = true; });
+$('cName').value = localStorage.getItem('mp_name') || '';
+on('cName', 'change', () => localStorage.setItem('mp_name', $('cName').value.trim()));
 addEventListener('beforeunload', (e) => { if (dirty){ e.preventDefault(); e.returnValue = ''; } });
 
 // core.js only calls App.init() on a hashchange, after the gate opens, and on

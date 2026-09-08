@@ -16,16 +16,21 @@
      draw-over-image sketch from sketchpad.js. Not read by the game — it is
      working notes for the band. */
 
-  .dochead { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
-  .dochead .dtitle { font-weight: 600; font-size: 17px; }
-  .doclayout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+  .doclayout { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
   @media (max-width: 860px) { .doclayout { grid-template-columns: 1fr; } }
 
   .stack { background: var(--bg-row); border-radius: 10px; padding: 8px; }
+  .stack .backlink {
+    display: inline-block; color: var(--text-mute); text-decoration: none;
+    font-size: 12.5px; padding: 2px 8px 6px;
+  }
+  .stack .backlink:hover { color: var(--text); }
   .stack .shead {
-    display: flex; align-items: center; gap: 8px; padding: 6px 8px 10px;
+    display: flex; align-items: center; gap: 8px; padding: 2px 8px 10px;
     color: var(--text-mute); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
   }
+  .stack .shead .grow { flex: 1; }
+  .btn.sm { padding: 3px 8px; font-size: 12px; }
   .draft {
     display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px;
     cursor: pointer; border: 1px solid transparent;
@@ -66,11 +71,24 @@
     border-radius: 8px; padding: 7px 9px;
   }
 
-  .blocks { display: flex; flex-direction: column; gap: 12px; }
-  .cblock {
-    background: var(--bg-row); border: 1px solid var(--line); border-radius: 10px; padding: 12px;
-    display: flex; flex-direction: column; gap: 8px;
+  .row.toolbar { gap: 6px; }
+  .row.toolbar select {
+    background: #0a0b0f; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 9px; font-size: 13px;
   }
+
+  /* The board. Twelve columns so a block can be full, half or third width and
+     references sit side by side instead of one under the other. */
+  .blocks { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; align-items: start; }
+  .cblock {
+    grid-column: span var(--w, 12);
+    background: var(--bg-row); border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px; min-width: 0;
+  }
+  @media (max-width: 900px) { .cblock { grid-column: span 12; } }
+  .cblock .bw { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 11px; padding: 0 2px; }
+  .cblock .bw:hover { color: var(--text); }
+  .cblock .bw.on { color: var(--accent); }
   .cblock.editing { border-color: var(--accent); }
   /* Block chrome is editor furniture, so it stays out of the way until you
      reach for it. The card reads as content first. */
@@ -112,11 +130,20 @@
   .cblock .emptyhint { color: var(--text-mute); font-style: italic; }
   .cblock .bcap { color: var(--text-dim); font-size: 12.5px; }
   .cblock .bpen { align-self: flex-start; }
-  .cimg-host { position: relative; display: inline-block; line-height: 0; max-width: 100%; }
+  .cimg-host { position: relative; display: block; line-height: 0; max-width: 100%; }
   .cimg-host img {
-    display: block; max-width: 100%; max-height: 56vh; border-radius: 8px;
-    border: 1px solid var(--line); background: #0a0b0f;
+    display: block; width: 100%; max-height: 56vh; object-fit: contain; border-radius: 8px;
+    border: 1px solid var(--line); background: #0a0b0f; cursor: zoom-in;
   }
+  /* Click to enlarge */
+  .lightbox {
+    position: fixed; inset: 0; background: rgba(4,5,8,.92); z-index: 60;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px; cursor: zoom-out;
+  }
+  .lightbox .lbwrap { position: relative; line-height: 0; max-width: 100%; max-height: 100%; }
+  .lightbox img { max-width: 100%; max-height: 88vh; border-radius: 8px; display: block; }
+  .lightbox .lbcap { color: var(--text-dim); font-size: 13px; text-align: center; padding-top: 10px; line-height: 1.5; }
   .cblock .balt {
     background: #0a0b0f; color: var(--text); border: 1px solid var(--line);
     border-radius: 8px; padding: 7px 9px; width: 100%;
@@ -189,36 +216,29 @@
     </header>
 
     <div id="doc" style="display:none">
-      <div class="dochead">
-        <a class="addbtn" id="backArt" href="art.html">← Art</a>
-        <div class="dtitle">Art Concepts</div>
-        <div class="grow" style="flex:1"></div>
-        <button class="btn ghost" id="newBtn">New draft</button>
-      </div>
-
       <div class="doclayout">
         <div class="stack" id="stack">
-          <div class="shead">Drafts <span id="stackCount"></span></div>
+          <a class="backlink" id="backArt" href="art.html">← Art</a>
+          <div class="shead">Boards <span id="stackCount"></span>
+            <span class="grow"></span>
+            <button class="btn ghost sm" id="newBtn" title="Start a new board">+ New</button>
+          </div>
           <div id="drafts"></div>
         </div>
 
         <div class="editor">
-          <div class="row">
-            <input class="nm" id="draftName" placeholder="Draft name" />
-            <button class="btn primary" id="saveBtn">Save</button>
-            <button class="btn ghost" id="saveNewBtn">Save as new draft</button>
-            <span class="grow"></span>
-            <span class="status" id="docStatus"></span>
-          </div>
-
-          <div class="targetrow">
-            <label>Applies to</label>
-            <select id="tgtKind">
+          <div class="row toolbar">
+            <input class="nm" id="draftName" placeholder="Board name" />
+            <select id="tgtKind" title="What this board is about">
               <option value="">Whole band</option>
               <option value="release">A release</option>
               <option value="song">A song</option>
             </select>
             <select id="tgtRef" style="display:none"></select>
+            <span class="grow"></span>
+            <span class="status" id="docStatus"></span>
+            <button class="btn primary" id="saveBtn">Save</button>
+            <button class="btn ghost" id="saveNewBtn">Save as new</button>
           </div>
 
           <div class="blocks" id="blocks"></div>
@@ -237,7 +257,7 @@
 
 <script src="core.js?v=35"></script>
 <script type="module">
-import { createSketchPad } from './sketchpad.js?v=1';
+import { createSketchPad, paintStrokes } from './sketchpad.js?v=1';
 
 const INBOX_MAX = 25 * 1024 * 1024;
 
@@ -503,19 +523,62 @@ function openEditor(i){ editing.add(i); focusBlock = i; renderBlocks(); }
 
 function autosize(ta){ ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; }
 
+// Images default to half width so two references sit side by side; text and
+// links run full width. Overridable per block, stored in the body JSON.
+const WIDTHS = [[12, '1/1'], [6, '1/2'], [4, '1/3']];
+const blockW = (blk) => blk.w || (blk.t === 'image' ? 6 : 12);
+
+function openLightbox(blk){
+  const box = document.createElement('div');
+  box.className = 'lightbox';
+  const wrap = document.createElement('div');
+  wrap.className = 'lbwrap';
+  const img = document.createElement('img');
+  img.src = publicUrl(blk.ref) || '';
+  img.alt = blk.alt || '';
+  const cv = document.createElement('canvas');
+  cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
+  wrap.append(img, cv);
+  box.appendChild(wrap);
+  if (blk.alt && blk.alt.trim()){
+    const cap = document.createElement('div');
+    cap.className = 'lbcap';
+    cap.textContent = blk.alt;
+    box.appendChild(cap);
+  }
+  const paint = () => paintStrokes(cv, img, blk.sketch || []);
+  img.addEventListener('load', paint);
+  if (img.complete && img.naturalWidth) requestAnimationFrame(paint);
+  const esc = (e) => { if (e.key === 'Escape') close(); };
+  function close(){
+    box.remove();
+    window.removeEventListener('resize', paint);
+    document.removeEventListener('keydown', esc);
+  }
+  box.addEventListener('click', close);
+  window.addEventListener('resize', paint);
+  document.addEventListener('keydown', esc);
+  document.body.appendChild(box);
+}
+
 function blockEl(blk, i){
   const on = editing.has(i);
   const card = document.createElement('div');
   card.className = 'cblock' + (on ? ' editing' : '');
+  card.style.setProperty('--w', blockW(blk));
   const head = document.createElement('div');
   head.className = 'bhead';
   head.innerHTML =
     `<span class="bkind">${blk.t === 'image' ? 'Image' : blk.t === 'link' ? 'Link' : 'Text'}</span>
      <span class="grow"></span>
+     ${WIDTHS.map(([w, lbl]) => `<button class="bw${blockW(blk) === w ? ' on' : ''}" data-w="${w}" title="${lbl} width">${lbl}</button>`).join('')}
      <button class="bedit" data-ed title="${on ? 'Finish editing' : 'Edit this block'}">${on ? 'Done' : '✎'}</button>
      <button class="bmove" data-up title="Move up">▲</button>
      <button class="bmove" data-dn title="Move down">▼</button>
      <button class="bx" data-rm title="Remove this block">✕</button>`;
+  head.querySelectorAll('[data-w]').forEach(b => {
+    b.onclick = () => { blk.w = +b.dataset.w; dirty = true; renderBlocks(); };
+  });
   head.querySelector('[data-ed]').onclick = () => {
     on ? editing.delete(i) : editing.add(i);
     focusBlock = on ? null : i;
@@ -535,8 +598,10 @@ function blockEl(blk, i){
     const img = document.createElement('img');
     img.alt = blk.alt || '';
     img.src = publicUrl(blk.ref) || '';
+    img.title = 'Click to enlarge';
     host.appendChild(img);
     card.appendChild(host);
+    img.addEventListener('click', () => { if (!pads.get(i) || !pads.get(i).isActive()) openLightbox(blk); });
 
     if (on){
       const alt = document.createElement('input');

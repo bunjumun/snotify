@@ -471,6 +471,7 @@ function parseDoc(body){
 function openDraft(d){
   if (dirty && !confirm('Discard unsaved changes to this draft?')) return;
   current = d;
+  loadedAt = d.updated || d.created;
   $('draftName').value = d.name || '';
   doc = parseDoc(d.body);
   dirty = false;
@@ -483,6 +484,7 @@ function openDraft(d){
 function newDraft(silent){
   if (!silent && dirty && !confirm('Discard unsaved changes?')) return;
   current = null;
+  loadedAt = null;
   $('draftName').value = 'New concept';
   doc = { target: null, blocks: [{ id: newBlockId(), t: 'text', md: '' }] };
   dirty = !silent;
@@ -917,6 +919,27 @@ async function uploadImage(file){
 }
 
 // ---------- Save ----------
+// The stamp on the version this editor was opened from. lore_save overwrites a
+// version outright, so without this a second person saving the same board while
+// you had it open would be silently replaced by whatever your copy held.
+let loadedAt = null;
+
+/** True if it is safe to overwrite `current` — nobody else has saved it since. */
+async function overwriteIsSafe(){
+  if (!current) return true;
+  let fresh;
+  try { fresh = ((await libRpc('lore_list', { d: 'concept' })) || []).find(d => d.id === current.id); }
+  catch { return true; }   // can't check: don't block the save, the RPC will speak for itself
+  if (!fresh) return true;
+  const now = fresh.updated || fresh.created;
+  if (!loadedAt || !now || now === loadedAt) return true;
+  const who = fresh.name && fresh.name !== $('draftName').value.trim() ? ` It is now called “${fresh.name}”.` : '';
+  return confirm(
+    `Someone else saved this board after you opened it.${who}\n\n` +
+    `OK overwrites their version with yours. Cancel keeps theirs and reloads it — ` +
+    `your unsaved changes here would be lost, so copy anything you need first.`);
+}
+
 async function save(asNew){
   const name = $('draftName').value.trim() || 'Concept';
   // Prune empty text and empty link blocks on the way out.
@@ -927,6 +950,15 @@ async function save(asNew){
       || (b.t === 'link' && b.url && b.url.trim())
       || (b.md && b.md.trim())),
   };
+  // "Save as new" always makes its own version, so it can never clobber anyone.
+  if (!asNew && !(await overwriteIsSafe())){
+    drafts = (await libRpc('lore_list', { d: 'concept' })) || [];
+    const fresh = drafts.find(d => d.id === (current && current.id));
+    dirty = false;
+    if (fresh) openDraft(fresh); else await openConcept();
+    say('Reloaded their version.', true);
+    return;
+  }
   try {
     const id = await libRpc('lore_save', {
       nm: name, body_in: JSON.stringify(clean),
@@ -936,7 +968,10 @@ async function save(asNew){
     say('Saved.');
     drafts = (await libRpc('lore_list', { d: 'concept' })) || [];
     current = drafts.find(d => d.id === id) || null;
-    if (current){ doc = parseDoc(current.body); syncTargetControls(); renderBlocks(); }
+    if (current){
+      loadedAt = current.updated || current.created;
+      doc = parseDoc(current.body); syncTargetControls(); renderBlocks();
+    }
     renderDrafts();
   } catch (e) { say(e.message, true); }
 }

@@ -141,6 +141,13 @@
   .cblock .bcap { color: var(--text-dim); font-size: 12.5px; }
   .cblock .bpen { align-self: flex-start; }
   .cimg-host { position: relative; display: block; line-height: 0; max-width: 100%; }
+  /* The blank panel a Paint block draws on. It carries the size so the pen has
+     a box to measure; nothing is ever drawn into it directly, the pen's own
+     canvases sit on top. */
+  .cpaint-ground {
+    display: block; width: 100%; aspect-ratio: 3 / 2; max-height: 56vh;
+    border-radius: 8px; border: 1px solid var(--line); background: #0a0b0f;
+  }
   .cimg-host img {
     display: block; width: 100%; max-height: 56vh; object-fit: contain; border-radius: 8px;
     border: 1px solid var(--line); background: #0a0b0f; cursor: zoom-in;
@@ -285,9 +292,10 @@
           <div class="addblock">
             <button class="btn ghost" id="addTextBtn">+ Text</button>
             <button class="btn ghost" id="addImageBtn">+ Image</button>
+            <button class="btn ghost" id="addPaintBtn">+ Paint</button>
             <button class="btn ghost" id="addLinkBtn">+ Link</button>
             <input type="file" id="addImageFile" accept="image/*" style="display:none" />
-            <span class="pastehint">+ Link takes an image, a GIF, or any URL · or paste an image anywhere in this editor</span>
+            <span class="pastehint">+ Paint gives you a blank panel to draw on · + Link takes an image, a GIF, or any URL · or paste an image anywhere in this editor</span>
           </div>
         </div>
       </div>
@@ -640,7 +648,7 @@ function autosize(ta){ ta.style.height = 'auto'; ta.style.height = (ta.scrollHei
 // Images default to half width so two references sit side by side; text and
 // links run full width. Overridable per block, stored in the body JSON.
 const WIDTHS = [[12, '1/1'], [6, '1/2'], [4, '1/3']];
-const blockW = (blk) => blk.w || (blk.t === 'image' ? 6 : 12);
+const blockW = (blk) => blk.w || (blk.t === 'image' || blk.t === 'paint' ? 6 : 12);
 
 function openLightbox(blk){
   const box = document.createElement('div');
@@ -683,7 +691,7 @@ function blockEl(blk, i){
   const head = document.createElement('div');
   head.className = 'bhead';
   head.innerHTML =
-    `<span class="bkind">${blk.t === 'image' ? 'Image' : blk.t === 'link' ? 'Link' : 'Text'}</span>
+    `<span class="bkind">${blk.t === 'image' ? 'Image' : blk.t === 'paint' ? 'Paint' : blk.t === 'link' ? 'Link' : 'Text'}</span>
      <span class="grow"></span>
      <button class="bcmt${openThreads.has(blk.id) ? ' on' : ''}" data-cmt title="Notes on this block">💬${openCount(blk.id) ? ' ' + openCount(blk.id) : ''}</button>
      ${WIDTHS.map(([w, lbl]) => `<button class="bw${blockW(blk) === w ? ' on' : ''}" data-w="${w}" title="${lbl} width">${lbl}</button>`).join('')}
@@ -711,7 +719,57 @@ function blockEl(blk, i){
   };
   card.appendChild(head);
 
-  if (blk.t === 'image'){
+  if (blk.t === 'paint'){
+    // Paint from nothing, rather than over a reference. This is the same pen
+    // the image blocks use, pointed at an empty panel: createSketchPad only
+    // ever asks its second argument for a bounding box (paintStrokes never
+    // draws it), and strokes are stored normalised to 0..1 of that box. So no
+    // change to sketchpad.js was needed, and a sketch keeps its proportions at
+    // every block width and on a phone.
+    //
+    // The panel is a fixed 3:2 rather than resizable on purpose: strokes are
+    // normalised, so a draggable canvas would rescale every existing stroke
+    // with it, and that is a stroke-space migration for something nobody asked
+    // for.
+    const host = document.createElement('div');
+    host.className = 'cimg-host';
+    const ground = document.createElement('div');
+    ground.className = 'cpaint-ground';
+    host.appendChild(ground);
+    card.appendChild(host);
+
+    const drawBtn = document.createElement('button');
+    drawBtn.className = 'btn ghost bpen';
+    const penLabel = () => (blk.sketch && blk.sketch.length) ? '✎ Keep drawing' : '✎ Start drawing';
+    drawBtn.textContent = penLabel();
+    card.appendChild(drawBtn);
+
+    const pad = createSketchPad(host, ground);
+    pads.set(i, pad);
+    pad.onDone((strokes) => {
+      blk.sketch = strokes || null;
+      dirty = true;
+      drawBtn.textContent = penLabel();
+    });
+    drawBtn.onclick = () => { if (!pad.isActive()) pad.start(blk.sketch || []); };
+    // The ground has no load event to wait on, but it does need a layout pass
+    // before its box is measurable, hence the frame.
+    requestAnimationFrame(() => pad.renderStatic(blk.sketch || []));
+
+    if (on){
+      const cap = document.createElement('input');
+      cap.className = 'balt';
+      cap.placeholder = 'Caption (optional)';
+      cap.value = blk.alt || '';
+      cap.oninput = () => { blk.alt = cap.value; dirty = true; };
+      card.appendChild(cap);
+    } else if (blk.alt && blk.alt.trim()){
+      const cap = document.createElement('div');
+      cap.className = 'bcap';
+      cap.textContent = blk.alt;
+      card.appendChild(cap);
+    }
+  } else if (blk.t === 'image'){
     const host = document.createElement('div');
     host.className = 'cimg-host';
     const img = document.createElement('img');
@@ -1032,6 +1090,10 @@ async function save(kind, from){
   // so a note on one branch never shows up on its sibling.
   const blocks = doc.blocks.filter(b =>
     b.t === 'image'
+    // A paint block IS its strokes, so an untouched panel prunes like empty
+    // text and a drawn one must survive. Leaving paint out of this filter
+    // entirely would have dropped every drawing on save without a word.
+    || (b.t === 'paint' && b.sketch && b.sketch.length)
     || (b.t === 'link' && b.url && b.url.trim())
     || (b.md && b.md.trim()));
   // Editing in place keeps the version's own identity — where it sits in the
@@ -1148,6 +1210,15 @@ on('saveIdeaBtn', 'click', () => save('idea'));
 on('adoptBtn', 'click', adopt);
 on('addTextBtn', 'click', () => { doc.blocks.push({ id: newBlockId(), t: 'text', md: '' }); dirty = true; openEditor(doc.blocks.length - 1); });
 on('addImageBtn', 'click', () => $('addImageFile').click());
+// A blank panel, opened straight into the pen: the point of pressing this is to
+// draw, so making him press Start drawing as well would be a step for nothing.
+on('addPaintBtn', 'click', () => {
+  doc.blocks.push({ id: newBlockId(), t: 'paint', alt: '', sketch: null });
+  dirty = true;
+  renderBlocks();
+  const pad = pads.get(doc.blocks.length - 1);
+  if (pad) pad.start([]);
+});
 on('addImageFile', 'change', (e) => {
   const f = e.target.files && e.target.files[0];
   e.target.value = '';

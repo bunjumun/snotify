@@ -101,6 +101,67 @@
   .goal-row .rm:hover { color: var(--text); }
   .goals-add { align-self: flex-start; }
 
+  /* Timeline view of the same goals doc. A vertical spine rather than a
+     horizontal Gantt, because this gets read on a phone and a horizontal time
+     axis is the one shape that cannot survive a narrow screen without sideways
+     scrolling. Read-only on purpose: the ▲▼ order above is his and is
+     deliberately not date-sorted, so a chart that also edited would either have
+     to fight that order or silently replace it. Clicking an entry drops back
+     into the list with that goal focused, which is the way in. */
+  .gview { display: flex; gap: 4px; align-self: flex-start; }
+  .gview button {
+    background: var(--bg-row); color: var(--text-dim); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; font-size: 12.5px; cursor: pointer;
+  }
+  .gview button:hover { color: var(--text); }
+  .gview button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* The spine is a left border on the whole list, so the dots sit on one line
+     without any per-row positioning maths. */
+  .gtl { display: flex; flex-direction: column; }
+  .gtl-list { border-left: 2px solid var(--line); margin-left: 5px; }
+  /* Month headings sit inside the spine, not above it, so the line stays
+     continuous down the whole chart instead of breaking at every month. */
+  .gtl-month {
+    color: var(--text-mute); font-size: 11.5px; letter-spacing: .08em;
+    text-transform: uppercase; margin: 14px 0 4px 0; padding-left: 17px;
+  }
+  .gtl-month:first-child { margin-top: 2px; }
+  .gtl-item {
+    position: relative; display: flex; align-items: baseline; gap: 9px;
+    padding: 7px 10px 7px 17px; border-radius: 0 8px 8px 0; cursor: pointer;
+  }
+  .gtl-item:hover { background: var(--bg-hover); }
+  /* The dot straddles the spine: half its width sits either side of the 2px
+     border, which is why the offset is -6px and not -5px. */
+  .gtl-item .dot {
+    position: absolute; left: -6px; top: 12px; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--bg); border: 2px solid var(--text-mute);
+  }
+  .gtl-item .gd { flex: 0 0 auto; font-size: 12px; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+  .gtl-item .gt { flex: 1; min-width: 0; color: var(--text-dim); overflow-wrap: anywhere; }
+  .gtl-item .rel { flex: 0 0 auto; font-size: 11.5px; color: var(--text-mute); white-space: nowrap; }
+
+  .gtl-item.done .gt { color: var(--text-mute); text-decoration: line-through; }
+  .gtl-item.done .dot { background: var(--text-mute); border-color: var(--text-mute); }
+  .gtl-item.late .gt, .gtl-item.late .rel { color: var(--err); }
+  .gtl-item.late .dot { border-color: var(--err); }
+  .gtl-item.next .gt { color: var(--accent-2); font-weight: 600; }
+  .gtl-item.next .dot { background: var(--accent-2); border-color: var(--accent-2); }
+
+  /* Today reads as a rule across the spine rather than as another entry, so it
+     is never mistaken for a goal. */
+  .gtl-today {
+    position: relative; display: flex; align-items: center; gap: 8px;
+    padding: 6px 0 6px 17px; color: var(--accent-2); font-size: 11.5px;
+    letter-spacing: .06em; text-transform: uppercase;
+  }
+  .gtl-today::before {
+    content: ''; position: absolute; left: -2px; top: 50%; width: 12px;
+    height: 2px; background: var(--accent-2);
+  }
+  .gtl-empty { color: var(--text-mute); font-size: 12.5px; padding: 8px 10px; }
+
   /* Links is a ledger, not a manuscript: there's no draft to work on before
      it's "ready", so it skips the stack-of-drafts UI the other three docs
      share entirely (see setEditorMode). Adding a link saves it and it is
@@ -272,6 +333,11 @@
           </div>
           <textarea id="body" spellcheck="true"></textarea>
           <div class="goals" id="goalsBox">
+            <div class="gview">
+              <button id="gviewTl" title="The same goals charted along time">Timeline</button>
+              <button id="gviewList" title="Edit the goals, in your own order">List</button>
+            </div>
+            <div class="gtl" id="goalsTimeline"></div>
             <div id="goalsRows"></div>
             <button class="btn ghost goals-add" id="addGoalBtn">+ Add goal</button>
           </div>
@@ -498,7 +564,7 @@ async function openDoc(slug){
     $('draftName').value = 'First draft';
     $('body').value = slug === 'log' ? LOG_TEMPLATE : slug === 'goals' ? '[]' : TEMPLATE;
     dirty = true;
-    if (slug === 'goals') renderGoals();
+    if (slug === 'goals') renderGoalsView();
     reparse();
   }
 }
@@ -586,7 +652,7 @@ function open(d){
   $('draftName').value = d.name;
   $('body').value = d.body || '';
   dirty = false;
-  if (docSlug === 'goals') renderGoals();
+  if (docSlug === 'goals') renderGoalsView();
   reparse();
   renderDrafts();
 }
@@ -679,7 +745,7 @@ function renderGoals(){
       if (j < 0 || j >= items.length) return;
       const [moved] = items.splice(i, 1);
       items.splice(j, 0, moved);
-      writeGoalsDoc(doc); renderGoals();
+      writeGoalsDoc(doc); renderGoalsView();
     });
 
     const date = document.createElement('input');
@@ -705,19 +771,201 @@ function renderGoals(){
       const [moved] = items.splice(i, 1);
       doc.trash.unshift({ ...moved, deletedAt: new Date().toISOString() });
       writeGoalsDoc(doc);
-      renderGoals();
+      renderGoalsView();
     });
 
     row.append(ord, date, title, doneLabel, rm);
+    // Carried so the timeline can hand focus straight to this goal's row.
+    row.dataset.gid = g.id;
     box.appendChild(row);
   });
+}
+
+// ---------- Goals timeline (read-only view of the same doc) ----------
+// Two views over one JSON body: the list above, which edits, and the chart
+// below, which does not. He asked for the goals "charted", and the list could
+// not become the chart without either date-sorting it or fighting the manual
+// ▲▼ order CR-98 put there on purpose so a half-typed date never reshuffles a
+// row out from under him. So the order stays his in the list, and time orders
+// the chart. Nothing here writes: every handler either re-renders or hands
+// over to the list.
+//
+// Vertical spine rather than a horizontal Gantt because this is read on a
+// phone, and a horizontal time axis is the one shape that cannot survive a
+// narrow screen without sideways scrolling.
+
+const GOALS_VIEW_KEY = 'mp_goals_view';
+
+/** Timeline is the default, since charting them is what was asked for; the
+ *  choice is remembered so it does not reset on every visit. Storage can throw
+ *  in a locked-down browser, hence the guards. */
+function goalsView(){
+  try { return localStorage.getItem(GOALS_VIEW_KEY) === 'list' ? 'list' : 'timeline'; }
+  catch { return 'timeline'; }
+}
+function setGoalsView(v){
+  try { localStorage.setItem(GOALS_VIEW_KEY, v); } catch {}
+  renderGoalsView();
+}
+
+/** The one entry point every call site uses, so a new view never means finding
+ *  and patching four scattered render calls again. */
+function renderGoalsView(){
+  const tl = goalsView() === 'timeline';
+  $('gviewTl').classList.toggle('on', tl);
+  $('gviewList').classList.toggle('on', !tl);
+  $('goalsRows').style.display = tl ? 'none' : '';
+  $('addGoalBtn').style.display = tl ? 'none' : '';
+  $('goalsTimeline').style.display = tl ? '' : 'none';
+  // The list is rendered either way: it holds the trash count, and the
+  // timeline hands focus into its rows.
+  renderGoals();
+  if (tl) renderGoalsTimeline();
+}
+
+/** Local today as yyyy-mm-dd. Deliberately not toISOString(), which is UTC and
+ *  would call a goal overdue several hours early for anyone west of Greenwich. */
+function todayStamp(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-`
+       + `${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const GTL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+function monthLabel(stamp){
+  const [y, m] = stamp.split('-');
+  return `${GTL_MONTHS[Number(m) - 1] || ''} ${y}`;
+}
+
+function dayLabel(stamp){
+  const [, m, d] = stamp.split('-');
+  return `${Number(d)} ${(GTL_MONTHS[Number(m) - 1] || '').slice(0, 3)}`;
+}
+
+/** Whole days between two yyyy-mm-dd stamps, counted at UTC noon so a daylight
+ *  saving change cannot round a day away. */
+function daysBetween(a, b){
+  const at = Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, +a.slice(8, 10), 12);
+  const bt = Date.UTC(+b.slice(0, 4), +b.slice(5, 7) - 1, +b.slice(8, 10), 12);
+  return Math.round((bt - at) / 86400000);
+}
+
+function relLabel(stamp, today){
+  const n = daysBetween(today, stamp);
+  if (n === 0) return 'today';
+  if (n === 1) return 'tomorrow';
+  if (n === -1) return 'yesterday';
+  const away = Math.abs(n);
+  const size = away < 14 ? `${away} days`
+             : away < 60 ? `${Math.round(away / 7)} weeks`
+                         : `${Math.round(away / 30)} months`;
+  return n > 0 ? `in ${size}` : `${size} ago`;
+}
+
+function renderGoalsTimeline(){
+  const items = parseGoalsDoc($('body').value).items;
+  const box = $('goalsTimeline');
+  box.innerHTML = '';
+  if (!items.length){
+    box.innerHTML = '<div class="gtl-empty">No goals yet. Switch to List and add '
+      + 'the first milestone, and it will chart itself here.</div>';
+    return;
+  }
+
+  const today = todayStamp();
+  // yyyy-mm-dd sorts correctly as plain text, so no Date objects are needed to
+  // order the chart.
+  const dated = items.filter(g => g.date).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  const undated = items.filter(g => !g.date);
+  // The one goal worth pointing at: soonest still to come and not yet done.
+  const next = dated.find(g => g.date >= today && !g.done);
+
+  const list = document.createElement('div');
+  list.className = 'gtl-list';
+  let curMonth = '';
+  let todayDone = false;
+
+  const month = (stamp) => {
+    const key = stamp.slice(0, 7);
+    if (key === curMonth) return;
+    curMonth = key;
+    const h = document.createElement('div');
+    h.className = 'gtl-month';
+    h.textContent = monthLabel(stamp);
+    list.appendChild(h);
+  };
+
+  const todayRule = () => {
+    if (todayDone) return;
+    todayDone = true;
+    month(today);
+    const t = document.createElement('div');
+    t.className = 'gtl-today';
+    t.textContent = `Today, ${dayLabel(today)}`;
+    list.appendChild(t);
+  };
+
+  dated.forEach((g) => {
+    // The rule goes in before the first goal that has not yet arrived, which
+    // may mean opening today's month heading first.
+    if (g.date >= today) todayRule();
+    month(g.date);
+    const row = document.createElement('div');
+    const late = !g.done && g.date < today;
+    row.className = 'gtl-item'
+      + (g.done ? ' done' : '')
+      + (late ? ' late' : '')
+      + (g === next ? ' next' : '');
+    row.innerHTML = `<span class="dot"></span>`
+      + `<span class="gd">${esc(dayLabel(g.date))}</span>`
+      + `<span class="gt">${esc(g.title || 'Untitled')}</span>`
+      + `<span class="rel">${esc(g.done ? 'done' : relLabel(g.date, today))}</span>`;
+    row.title = 'Open this goal in the list';
+    row.addEventListener('click', () => focusGoal(g.id));
+    list.appendChild(row);
+  });
+
+  // Everything already behind us: the rule still belongs at the end.
+  todayRule();
+
+  if (undated.length){
+    const h = document.createElement('div');
+    h.className = 'gtl-month';
+    h.textContent = 'No date yet';
+    list.appendChild(h);
+    undated.forEach((g) => {
+      const row = document.createElement('div');
+      row.className = 'gtl-item' + (g.done ? ' done' : '');
+      row.innerHTML = `<span class="dot"></span>`
+        + `<span class="gd">&ndash;</span>`
+        + `<span class="gt">${esc(g.title || 'Untitled')}</span>`
+        + `<span class="rel">${esc(g.done ? 'done' : 'no date')}</span>`;
+      row.title = 'Open this goal in the list';
+      row.addEventListener('click', () => focusGoal(g.id));
+      list.appendChild(row);
+    });
+  }
+
+  box.appendChild(list);
+}
+
+/** The chart's way in: switch to the list and put the cursor in that goal. */
+function focusGoal(id){
+  setGoalsView('list');
+  const row = $('goalsRows').querySelector(`[data-gid="${CSS.escape(id)}"]`);
+  if (!row) return;
+  row.scrollIntoView({ block: 'center' });
+  const t = row.querySelector('input.gtitle');
+  if (t) t.focus();
 }
 
 function addGoal(){
   const doc = parseGoalsDoc($('body').value);
   doc.items.push(normalizeGoal({ id: newRowId() }));
   writeGoalsDoc(doc);
-  renderGoals();
+  renderGoalsView();
 }
 
 // ---------- Goals trash modal ----------
@@ -747,7 +995,7 @@ function renderGoalsTrash(){
       d.items.push(moved);
       writeGoalsDoc(d);
       renderGoalsTrash();
-      renderGoals();
+      renderGoalsView();
       goalsTrashSay('Restored — click Save to keep it.');
     });
     const del = el.querySelector('.danger');
@@ -1005,13 +1253,15 @@ on('newBtn', 'click', () => {
   $('body').value = (live() && live().body)
     || (docSlug === 'log' ? LOG_TEMPLATE : docSlug === 'goals' ? '[]' : TEMPLATE);
   dirty = true;
-  if (docSlug === 'goals') renderGoals();
+  if (docSlug === 'goals') renderGoalsView();
   reparse(); renderDrafts();
 });
 on('saveBtn', 'click', () => save(false));
 on('saveNewBtn', 'click', () => save(true));
 on('liveBtn', 'click', makeLive);
 on('addGoalBtn', 'click', addGoal);
+on('gviewTl',   'click', () => setGoalsView('timeline'));
+on('gviewList', 'click', () => setGoalsView('list'));
 on('body', 'input', () => { dirty = true; reparse(); });
 on('linkAddBtn', 'click', addLinkNow);
 on('linkAddName', 'keydown', (e) => { if (e.key === 'Enter') addLinkNow(); });

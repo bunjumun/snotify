@@ -13,7 +13,7 @@
      lore/assets draft editor (schema-v21's slug-agnostic lore_* RPCs, here on
      the 'concept' slug) with a block list in place of the single textarea:
      text blocks and image blocks, an image block carrying an optional
-     draw-over-image sketch from sketchpad.js. Not read by the game — it is
+     draw-over-image sketch from paint-tool.js. Not read by the game — it is
      working notes for the band. */
 
   .doclayout { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
@@ -304,7 +304,7 @@
 
 <script src="core.js?v=35"></script>
 <script type="module">
-import { createSketchPad, paintStrokes } from './sketchpad.js?v=1';
+import { createSketchPad, paintStrokes } from './paint-tool.js?v=1';
 
 const INBOX_MAX = 25 * 1024 * 1024;
 
@@ -313,7 +313,7 @@ let current = null;         // the draft open in the editor, or null for a new o
 let doc = { target: null, blocks: [] };
 let dirty = false;
 let lib = { songs: [] }, releases = [];
-const pads = new Map();     // block index -> sketchpad handle (rebuilt each render)
+const pads = new Map();     // block index -> paint tool handle (rebuilt each render)
 
 App.init     = () => init();
 App.onLock   = () => { showLockedChrome(); drafts = []; $('conceptCount').textContent = ''; };
@@ -724,7 +724,7 @@ function blockEl(blk, i){
     // the image blocks use, pointed at an empty panel: createSketchPad only
     // ever asks its second argument for a bounding box (paintStrokes never
     // draws it), and strokes are stored normalised to 0..1 of that box. So no
-    // change to sketchpad.js was needed, and a sketch keeps its proportions at
+    // change to paint-tool.js was needed, and a sketch keeps its proportions at
     // every block width and on a phone.
     //
     // The panel is a fixed 3:2 rather than resizable on purpose: strokes are

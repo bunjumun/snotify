@@ -86,28 +86,13 @@
   .rbox.pending { border-style: dashed; border-color: var(--accent); background: rgba(108,92,231,.14); }
   .rubber { position: absolute; border: 2px dashed var(--accent); background: rgba(108,92,231,.14); border-radius: 4px; pointer-events: none; }
 
-  /* ---------- Draft edit suggestions (scribble over the image) ---------- */
-  #skView { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-  #skPad  { position: absolute; inset: 0; width: 100%; height: 100%; display: none; cursor: crosshair; touch-action: none; }
-  body.sketching #skPad { display: block; }
+  /* ---------- Draft edit suggestions ----------
+     The pen itself (canvases, toolbar, swatches) is paint-tool.js's own
+     injected <style>, as of CR-116. body.sketching still exists here because
+     it is what the page dims other overlays with; the module doesn't know the
+     region boxes exist. */
   body.sketching .regions { pointer-events: none; opacity: .45; }
   body.sketching .imgwrap img { cursor: crosshair; }
-  .sktools {
-    display: none; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px;
-    padding: 10px 12px; background: var(--bg-soft); border: 1px solid var(--accent);
-    border-radius: 10px;
-  }
-  body.sketching .sktools { display: flex; }
-  .sktools .lbl { color: var(--text-mute); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
-  .swatch { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
-  .swatch.on { border-color: var(--text); transform: scale(1.12); }
-  .nib { width: 22px; height: 22px; border-radius: 50%; background: var(--bg-row); border: 1px solid var(--line); cursor: pointer; display: grid; place-items: center; }
-  .nib.on { border-color: var(--text); }
-  .nib i { display: block; background: var(--text-dim); border-radius: 50%; }
-  .nib.on i { background: var(--text); }
-  .sktools .sk-sep { width: 1px; align-self: stretch; background: var(--line); }
-  .sktools .btn { padding: 6px 12px; font-size: 13px; }
-  .sktools .grow { margin-left: auto; display: flex; gap: 8px; }
   /* A comment carrying a drawing says so in the list */
   .cmt .skflag { color: var(--accent-2); font-weight: 700; }
 
@@ -286,32 +271,14 @@
       <div class="stagewrap">
         <div class="imgwrap" id="imgwrap">
           <img id="artImg" alt="" />
-          <canvas id="skView"></canvas>
-          <canvas id="skPad"></canvas>
           <div class="regions" id="regions"></div>
         </div>
       </div>
 
-      <!-- Draft-edit toolbar: only visible while sketching -->
-      <div class="sktools" id="skTools">
-        <span class="lbl">Draft</span>
-        <span class="swatch on" data-color="#ff5c5c" style="background:#ff5c5c" title="Red"></span>
-        <span class="swatch" data-color="#ffb454" style="background:#ffb454" title="Amber"></span>
-        <span class="swatch" data-color="#00d0a4" style="background:#00d0a4" title="Green"></span>
-        <span class="swatch" data-color="#6c5ce7" style="background:#6c5ce7" title="Purple"></span>
-        <span class="swatch" data-color="#e7e9ee" style="background:#e7e9ee" title="White"></span>
-        <span class="sk-sep"></span>
-        <span class="nib on" data-w="0.003" title="Fine"><i style="width:4px;height:4px"></i></span>
-        <span class="nib" data-w="0.006" title="Medium"><i style="width:8px;height:8px"></i></span>
-        <span class="nib" data-w="0.012" title="Thick"><i style="width:13px;height:13px"></i></span>
-        <span class="sk-sep"></span>
-        <button class="btn ghost" id="skUndo" title="Undo the last stroke">↶ Undo</button>
-        <button class="btn ghost" id="skClear">Clear</button>
-        <div class="grow">
-          <button class="btn ghost" id="skCancel">Cancel</button>
-          <button class="btn primary" id="skDone">Done</button>
-        </div>
-      </div>
+      <!-- The pen and its toolbar mount here — paint-tool.js, CR-116. The old
+           #skView/#skPad canvases and the .sktools markup above are gone: the
+           module builds its own, since it is now the only pen on the site. -->
+      <div id="skToolsHost"></div>
 
       <div class="stfoot">
         <div class="revs" id="revs"></div>
@@ -448,6 +415,7 @@
 <script src="progress.js?v=16"></script>
 <script src="progress-ui.js?v=4"></script>
 <script type="module">
+import { createSketchPad } from './paint-tool.js?v=2';
 // core.js owns the gate, the route and every Supabase call — these are the
 // three moments it has to hand control back to this page.
 App.init     = () => init();
@@ -661,7 +629,7 @@ function openPiece(i){
   if (!singleShare) history.replaceState(null, '', shareUrl(activePiece));
 }
 function closeStage(){
-  if (skMode) endSketch(false);
+  if (skPad.isActive()) skPad.cancel();
   const a = $('lpAudio'); if (a && !a.paused) a.pause();
   activePiece = null; pendingRegion = null; pendingSketch = null; activeBoxId = null;
   $('stage').style.display = 'none';
@@ -678,7 +646,7 @@ function showRevision(vi){
   const v = activePiece.versions[activeRev];
   // A box and a drawing belong to the revision they were made on — switching
   // revisions abandons anything not yet posted.
-  if (skMode) endSketch(false);
+  if (skPad.isActive()) skPad.cancel();
   pendingRegion = null; pendingSketch = null; activeBoxId = null;
   $('artImg').src = v.src;
   $('artImg').alt = `${activePiece.title} — ${v.name}`;
@@ -767,7 +735,7 @@ function frac(e){
   const wrap = $('imgwrap');
   let start = null, rubber = null;
   wrap.addEventListener('pointerdown', (e) => {
-    if (singleShare || !activePiece || skMode) return;
+    if (singleShare || !activePiece || skPad.isActive()) return;
     if (e.target.closest('.rbox')) return;         // clicking an existing box selects it
     start = frac(e);
     wrap.setPointerCapture(e.pointerId);
@@ -809,68 +777,50 @@ function frac(e){
 // not as a flattened PNG: it scales to any screen, it lands in the same place
 // on a revision exported at other dimensions, it rides along in the comment
 // row instead of needing an upload, and it can be redrawn later.
-const SK_MAX_STROKES = 200, SK_MAX_POINTS = 4000;
-let skMode = false;            // the drawing pad is live and owns the picture
-let skStrokes = [];            // the drawing in progress
-let skColor = '#ff5c5c', skWidth = 0.003;
+// The pen itself is paint-tool.js, as of CR-116 — this page used to carry its
+// own copy of the whole pad, welded to the comment lifecycle below. What
+// stays here is exactly the comment-shaped part: which drawing is pending,
+// which comment is being redrawn, and the RPC that saves one. The module
+// knows nothing of any of that; it only hands strokes back through onDone.
 let pendingSketch = null;      // finished drawing waiting for its comment
 let skEditingId = null;        // set when redrawing an existing comment's suggestion
 
-// Both canvases overlay the image exactly, so they are sized from the image's
-// own rect (× dpr, or the strokes come out soft on a retina display).
-function paint(cv, strokes){
-  const b = $('artImg').getBoundingClientRect();
-  if (!b.width || !b.height) return;
-  const dpr = window.devicePixelRatio || 1;
-  cv.width = Math.round(b.width * dpr); cv.height = Math.round(b.height * dpr);
-  const ctx = cv.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, b.width, b.height);
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  (strokes || []).forEach(s => {
-    if (!s.p || !s.p.length) return;
-    ctx.strokeStyle = s.c || skColor;
-    ctx.lineWidth = Math.max(1, (s.w || skWidth) * b.width);
-    ctx.beginPath();
-    s.p.forEach(([x, y], i) => i ? ctx.lineTo(x * b.width, y * b.height)
-                                 : ctx.moveTo(x * b.width, y * b.height));
-    if (s.p.length === 1) ctx.lineTo(s.p[0][0] * b.width + .01, s.p[0][1] * b.height + .01);  // a tap is a dot
-    ctx.stroke();
-  });
-}
+const skPad = createSketchPad($('imgwrap'), $('artImg'), {
+  // The toolbar has to land after .stagewrap, not inside #imgwrap (host.after
+  // would put it inside the stage wrapper, which is not where it used to sit).
+  toolsInto: $('skToolsHost'),
+  label: 'Draft',                // here "Draft" names the comment feature, not the pen
+  onStart: () => document.body.classList.add('sketching'),
+  onEnd:   () => document.body.classList.remove('sketching'),
+});
+skPad.onDone((strokes) => {
+  const cid = skEditingId;
+  skEditingId = null;
+  if (cid) saveSketch(cid, strokes);
+  else pendingSketch = strokes;
+  syncComposer(); renderComments();
+  if (!cid && pendingSketch) $('cinput').focus();
+});
+
 // What's shown over the picture when not drawing: the suggestion you're about
-// to attach, or the one on the comment you've selected.
+// to attach, or the one on the comment you've selected. (renderStatic is a
+// no-op of its own while the pad is live, so this needs no mode check here.)
 function renderSketchView(){
-  if (skMode) return;                        // the pad is on top and owns the picture
   let strokes = pendingSketch;
   if (!strokes && activePiece && activeBoxId){
     const sel = commentsFor(subjectId(activePiece)).find(c => c.id === activeBoxId);
     strokes = sel && sel.sketch;
   }
-  paint($('skView'), strokes || []);
+  skPad.renderStatic(strokes || []);
 }
 
 function startSketch(existing, cid){
   if (!activePiece || singleShare) return;
   if (!isAuthed(curBand)) return showGate(curBand, false);
-  skMode = true; skEditingId = cid || null;
-  skStrokes = existing ? JSON.parse(JSON.stringify(existing)) : [];
-  document.body.classList.add('sketching');
-  $('skDone').textContent = cid ? 'Save' : 'Done';
-  paint($('skView'), []);
-  paint($('skPad'), skStrokes);
+  skEditingId = cid || null;
+  skPad.setDoneLabel(cid ? 'Save' : 'Done');
+  skPad.start(existing);
   openDrawer(true);
-  $('imgwrap').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-}
-function endSketch(keep){
-  const out = (skStrokes || []).filter(s => s.p && s.p.length);
-  const cid = skEditingId;
-  skMode = false; skEditingId = null; skStrokes = [];
-  document.body.classList.remove('sketching');
-  if (keep && cid) saveSketch(cid, out.length ? out : null);
-  else if (keep) pendingSketch = out.length ? out : null;
-  syncComposer(); renderSketchView(); renderComments();
-  if (keep && !cid && pendingSketch) $('cinput').focus();
 }
 async function saveSketch(cid, strokes){
   try { patchLocal(cid, await libRpc('set_comment_sketch', { cid, sk: strokes })); }
@@ -878,60 +828,10 @@ async function saveSketch(cid, strokes){
   renderComments(); renderSketchView();
 }
 
-// The pad itself.
-(() => {
-  const pad = $('skPad');
-  let cur = null;
-  const points = () => skStrokes.reduce((n, s) => n + s.p.length, 0);
-  pad.addEventListener('pointerdown', (e) => {
-    if (!skMode) return;
-    if (skStrokes.length >= SK_MAX_STROKES || points() >= SK_MAX_POINTS) return;
-    const p = frac(e);
-    cur = { c: skColor, w: skWidth, p: [[+p.x.toFixed(4), +p.y.toFixed(4)]] };
-    skStrokes.push(cur);
-    pad.setPointerCapture(e.pointerId);
-    paint(pad, skStrokes);
-    e.preventDefault();
-  });
-  pad.addEventListener('pointermove', (e) => {
-    if (!cur) return;
-    const p = frac(e), last = cur.p[cur.p.length - 1];
-    // Thin the trail: a point every ~0.4% of the image is plenty for a
-    // scribble and keeps the stored row small.
-    if (Math.hypot(p.x - last[0], p.y - last[1]) < 0.004) return;
-    if (cur.p.length >= SK_MAX_POINTS) return;
-    cur.p.push([+p.x.toFixed(4), +p.y.toFixed(4)]);
-    paint(pad, skStrokes);
-  });
-  const stop = () => { cur = null; };
-  pad.addEventListener('pointerup', stop);
-  pad.addEventListener('pointercancel', stop);
-})();
-
-$('skTools').addEventListener('click', (e) => {
-  const sw = e.target.closest('.swatch');
-  if (sw){
-    skColor = sw.dataset.color;
-    $('skTools').querySelectorAll('.swatch').forEach(s => s.classList.toggle('on', s === sw));
-    return;
-  }
-  const nib = e.target.closest('.nib');
-  if (nib){
-    skWidth = parseFloat(nib.dataset.w);
-    $('skTools').querySelectorAll('.nib').forEach(n => n.classList.toggle('on', n === nib));
-  }
-});
-$('skUndo').onclick  = () => { skStrokes.pop(); paint($('skPad'), skStrokes); };
-$('skClear').onclick = () => { skStrokes = []; paint($('skPad'), skStrokes); };
-$('skDone').onclick   = () => endSketch(true);
-$('skCancel').onclick = () => endSketch(false);
 $('skBtn').onclick = () => {
-  if (skMode) return endSketch(true);
+  if (skPad.isActive()) return skPad.finish();
   startSketch(pendingSketch, null);
 };
-// The canvases are sized from the image's rendered rect, so both have to be
-// repainted whenever that rect changes.
-window.addEventListener('resize', () => { if (skMode) paint($('skPad'), skStrokes); else renderSketchView(); });
 
 // The composer chip says what the next comment will be attached to, and
 // clicking it throws the box away.
@@ -1549,13 +1449,13 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape'){
     if ($('addModal').classList.contains('open')) return closeAdd();
     if ($('todoModal').classList.contains('open')) return closeTodo();
-    if (skMode) return endSketch(false);
+    if (skPad.isActive()) return skPad.cancel();
     if (pendingSketch){ pendingSketch = null; syncComposer(); renderSketchView(); return; }
     if (pendingRegion){ pendingRegion = null; syncComposer(); renderRegions(); return; }
     if ($('drawer').classList.contains('open')) return openDrawer(false);
     if (activePiece) return closeStage();
   }
-  if (!activePiece || skMode) return;
+  if (!activePiece || skPad.isActive()) return;
   if (e.key === 'c'){ e.preventDefault(); openDrawer(!$('drawer').classList.contains('open')); }
   if (e.key === 't'){ e.preventDefault(); openTodo(); }
   if (e.key === 'd'){ e.preventDefault(); startSketch(pendingSketch, null); }

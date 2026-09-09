@@ -7,23 +7,28 @@
 // too, since the second argument is only ever measured, never drawn.
 //
 // Lifted in spirit from art.html's comment-sketch pad, which has drawn
-// suggested edits over artwork since schema-v7. That copy is welded to the art
-// page's comment drawer (openDrawer, syncComposer, set_comment_sketch); this
-// one is page-agnostic. It builds its own two canvases and its own toolbar,
-// overlays any <img>, and hands the strokes back through a callback. art.html
-// keeps its own copy for now — pulling that one out is a separate job with its
-// own regression surface, and this module is small enough that a second copy
-// costs less than the risk of rewiring a 74 KB file that can only be fully
-// tested behind a band login.
+// suggested edits over artwork since schema-v7. It builds its own two canvases
+// and its own toolbar, overlays any <img>, and hands the strokes back through a
+// callback, so it knows nothing about whatever page it is sitting on.
 //
-// ↳ SUPERSEDED 2026-09-09, at his word: "that tool itself should be something
-// you paste in as a whole tool or module of sorts so when we update it it
-// automatically would update in every instance it happens in". He is right, and
-// he found it by asking whether that day's improvements applied everywhere. They
-// did not: they landed here and art.html's copy got none of them, which is
-// exactly the drift a second copy guarantees. The paragraph above still names
-// the real cost, so this is a planned dedicated session rather than a quick
-// tidy, but "for now" has an end date now and the answer is one module.
+// THIS IS THE ONLY PEN ON THE SITE, as of CR-116 on 2026-09-09, at his word:
+// "that tool itself should be something you paste in as a whole tool or module
+// of sorts so when we update it it automatically would update in every instance
+// it happens in". There were two until that day. He found it by asking whether
+// the morning's improvements applied everywhere, and they did not: eraser, redo,
+// the colour picker and opacity all landed here, while art.html's own copy got
+// none of them. That is the drift a second copy guarantees rather than risks.
+// So art.html's pen was deleted, not synchronised, and anything added here now
+// reaches both pages by existing. If a third page ever wants a pen, import this;
+// do not paste it.
+//
+// The options argument exists for exactly that reason. art.html could not use
+// the module as it stood: its toolbar lives outside the image wrapper, its
+// caption says "Draft" because on that page the word names the comment feature
+// rather than the pen, its Done button reads "Save" when it is redrawing an
+// existing suggestion, and it needs a body class toggled so the region boxes dim
+// while you paint. Every one of those is a host concern, so each is an option
+// with a default that leaves the original caller untouched.
 //
 // A stroke is { c:<colour>, w:<width 0..1 of image width>, p:[[x,y],...],
 // o:<opacity 0..1, optional> } with x/y in 0..1 of the image's rendered rect —
@@ -57,10 +62,19 @@ function ensureStyle(){
   .sk-pad  { position:absolute; inset:0; width:100%; height:100%; display:none; cursor:crosshair; touch-action:none; }
   .sk-pad.on { display:block; }
   .sk-tools {
-    display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:12px;
+    display:none; align-items:center; gap:10px; flex-wrap:wrap; margin-top:12px;
     padding:10px 12px; background:var(--bg-soft,#15161c); border:1px solid var(--accent,#6c5ce7);
     border-radius:10px;
   }
+  /* Shown via a class, not the hidden attribute: an unconditional display
+     rule on the same selector always beats the UA's [hidden]{display:none}
+     in the cascade, regardless of specificity, because origin (UA vs author)
+     is decided before specificity is. .sk-pad.on above already gets this
+     right; tools.hidden did not, and the toolbar never actually hid on any
+     page until this fix. Found on CR-116 because art.html's pad lives for
+     the whole page rather than being created and destroyed per block, which
+     put a permanently 'hidden' toolbar in constant view. */
+  .sk-tools.on { display:flex; }
   .sk-tools .sk-lbl { color:var(--text-mute,#8a8f9c); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
   .sk-tools .sk-swatch { width:20px; height:20px; border-radius:50%; cursor:pointer; border:2px solid transparent; }
   .sk-tools .sk-swatch.on { border-color:var(--text,#e7e9ee); transform:scale(1.12); }
@@ -122,9 +136,24 @@ function markOne(root, sel, hit){ root.querySelectorAll(sel).forEach(n => n.clas
  * Attach a draw pad to an image.
  *   host : a positioned element that contains `img` (the pad's canvases go here)
  *   img  : the <img> to draw over
- * Returns { start, isActive, onDone, renderStatic, destroy }.
+ *   opts : { toolsInto, label, doneLabel, onStart, onEnd } — all optional, and
+ *          every default is what the module did before options existed, so a
+ *          caller that passes nothing sees no change at all.
+ *            toolsInto : element to append the toolbar into. Default: straight
+ *                        after `host`, which is where it used to go and is right
+ *                        whenever the image wrapper is not itself inside
+ *                        something the toolbar must escape.
+ *            label     : toolbar caption. Default 'Paint tool'.
+ *            doneLabel : the confirm button's text. Default 'Done'; change it
+ *                        per session with setDoneLabel().
+ *            onStart   : run when the pad goes live, before it scrolls itself
+ *                        into view, so a host class lands before the paint.
+ *            onEnd     : run last of all, after onDone and after the static
+ *                        repaint, so a host that repaints from its own state
+ *                        wins rather than being overwritten.
+ * Returns { start, cancel, isActive, onDone, setDoneLabel, renderStatic, destroy }.
  */
-export function createSketchPad(host, img){
+export function createSketchPad(host, img, opts = {}){
   ensureStyle();
   if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
 
@@ -133,8 +162,8 @@ export function createSketchPad(host, img){
   host.append(view, pad);
 
   const tools = mk('div', 'sk-tools');
-  tools.hidden = true;
-  const lbl = mk('span', 'sk-lbl'); lbl.textContent = 'Paint tool'; tools.append(lbl);
+  // .on is added by start() / removed by end() — see the CSS note above.
+  const lbl = mk('span', 'sk-lbl'); lbl.textContent = opts.label || 'Paint tool'; tools.append(lbl);
   SWATCHES.forEach(([c, title], i) => {
     const s = mk('span', 'sk-swatch' + (i === 0 ? ' on' : ''));
     s.style.background = c; s.title = title; s.dataset.color = c;
@@ -173,9 +202,11 @@ export function createSketchPad(host, img){
   tools.append(undo, redo, clr);
   const grow = mk('div', 'sk-grow');
   const cancel = mk('button', 'btn ghost'); cancel.textContent = 'Cancel'; cancel.dataset.act = 'cancel';
-  const done = mk('button', 'btn primary'); done.textContent = 'Done'; done.dataset.act = 'done';
+  const done = mk('button', 'btn primary'); done.textContent = opts.doneLabel || 'Done'; done.dataset.act = 'done';
   grow.append(cancel, done); tools.append(grow);
-  host.after(tools);
+  // A host whose image wrapper is nested (art.html's sits inside a stage wrapper
+  // that the toolbar has to sit outside of) names its own mount point.
+  if (opts.toolsInto) opts.toolsInto.append(tools); else host.after(tools);
 
   let mode = false, strokes = [], color = '#ff5c5c', width = 0.003;
   let doneCb = null, cur = null, lastStatic = null;
@@ -335,8 +366,11 @@ export function createSketchPad(host, img){
     erasing = false;
     era.classList.remove('on');
     pad.classList.remove('era');
-    tools.hidden = false;
+    tools.classList.add('on');
     pad.classList.add('on');
+    // Before the paint and before the scroll: a host class that dims other
+    // overlays has to be on the element while the first frame is drawn.
+    if (opts.onStart) opts.onStart();
     paintStrokes(view, img, [], color, width);
     repaintPad();
     tools.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -344,12 +378,16 @@ export function createSketchPad(host, img){
   function end(keep){
     const out = (strokes || []).filter(s => s.p && s.p.length);
     mode = false; cur = null; erasing = false;
-    tools.hidden = true;
+    tools.classList.remove('on');
     pad.classList.remove('on', 'era');
     era.classList.remove('on');
     strokes = []; undone = [];
     if (keep && doneCb) doneCb(out.length ? out : null);
     renderStatic(keep ? out : lastStatic);
+    // Last, deliberately. A host that decides for itself what should be showing
+    // over the image (the drawing you are about to attach, or the one on the
+    // comment you have selected) repaints from its own state here and wins.
+    if (opts.onEnd) opts.onEnd(keep);
   }
 
   const onResize = () => { mode ? repaintPad() : renderStatic(lastStatic); };
@@ -357,8 +395,15 @@ export function createSketchPad(host, img){
 
   return {
     start,
+    // Cancel and finish from outside: closing the page's stage or switching
+    // revision abandons a drawing without a click on Cancel, and a host that
+    // offers its own "done" affordance elsewhere (art.html's composer chip
+    // toggles into one) needs the same escape hatch for Done.
+    cancel: () => { if (mode) end(false); },
+    finish: () => { if (mode) end(true); },
     isActive: () => mode,
     onDone: (cb) => { doneCb = cb; },
+    setDoneLabel: (t) => { done.textContent = t; },
     renderStatic,
     destroy: () => {
       window.removeEventListener('resize', onResize);

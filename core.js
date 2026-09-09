@@ -583,9 +583,41 @@ function clearAuth(b){
 // cached, that ask is the band name alone and no password, so anyone at this
 // browser could already get in by typing it. Resuming gives away nothing that was
 // not already one guess away.
+// ↳ CR-118, 2026-09-09. He reported being asked to log in "more often than
+// before now", and specifically when moving between pages. Reproduced on the
+// live site: with his password still sitting in `mp_auth_v1`, but
+// `mp_last_band` missing, every page reached by a link without `?b=` showed the
+// gate. Nothing was wrong with the stored password. The site had simply
+// forgotten *which band* it belonged to.
+//
+// That is this function's fault rather than the browser's, and the shape of the
+// mistake is worth naming: **the session was split across two keys that can
+// drift apart.** `mp_auth_v1` holds the credential, `mp_last_band` holds the
+// identity, and only `grantAuth()` ever writes the second one — so it is
+// written the once, when a password is actually typed, and removed by
+// `logout()` and by cache eviction independently of the first. Every mainstream
+// auth library keeps one session record written and cleared as a unit, for
+// exactly this reason.
+//
+// The fix without a migration of anybody's stored state: when the pointer is
+// missing, derive it. If exactly one band has a cached password, that is the
+// band, because holding its password is the whole of what being logged in means
+// here. With two or more cached we still ask, since guessing between them would
+// be putting him in a band he did not name — the decision the comment above
+// deliberately preserves.
 function lastBand(){
   const b = localStorage.getItem('mp_last_band') || '';
-  return b && isAuthed(b) ? b : '';
+  if (b && isAuthed(b)) return b;
+  // No usable pointer. Fall back to the credential store, which is the real
+  // record of who is logged in.
+  const cached = Object.keys(auths()).filter(isAuthed);
+  if (cached.length === 1){
+    // Repair the pointer while we are here, so the next page load is a plain
+    // hit rather than another derivation.
+    localStorage.setItem('mp_last_band', cached[0]);
+    return cached[0];
+  }
+  return '';
 }
 
 // ...and the way back out. Landing straight inside a band needs a route to the
@@ -1354,6 +1386,38 @@ on('navBtn', 'click', (e) => { e.stopPropagation(); navMenuOpen(!$('navMenu').cl
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#navMenu') && !e.target.closest('#navBtn')) navMenuOpen(false);
 });
+
+// The other half of CR-118: carry the band across every internal link.
+//
+// The Pages menu is written into each page's markup with bare hrefs
+// (`art.html`, `assets.html`), and each page's own script then rewrites some of
+// them with `?b=<band>` and forgets the rest. Auditing the seven pages, not one
+// of them stamped all of its links: Music, Art, Image tools, Assets and Release
+// Builder each patched two of five, so most of the menu pointed at a URL with
+// no band on it. CR-101 is what made this bite, because it gave every page the
+// full five-item menu where four pages had carried a two-item stub before, and
+// that is precisely when he started noticing.
+//
+// Fixing it link by link would mean seven edits and an eighth page later that
+// quietly reintroduces it. So it is done once, here, at the moment of the
+// click: any same-page link to one of our own .html files that has no query of
+// its own gets the current band appended. Links that already carry a query are
+// left exactly as they are, since they were written deliberately (a share
+// link, `?home`, a deep link to one piece).
+//
+// Capture phase, so the href is right before any other handler reads it, and
+// the attribute is mutated rather than the navigation intercepted — that way a
+// cmd-click, a middle-click and "open in new tab" all get the band too, which
+// an e.preventDefault() approach would have broken.
+document.addEventListener('click', (e) => {
+  if (!curBand) return;
+  const a = e.target.closest('a[href]');
+  if (!a) return;
+  const href = a.getAttribute('href');
+  // Ours, relative, a page, and not already carrying its own query or hash.
+  if (!href || !/^[\w-]+\.html$/.test(href)) return;
+  a.setAttribute('href', href + '?b=' + encodeURIComponent(curBand));
+}, true);
 on('toolMenu', 'click', (e) => {
   if (e.target.closest('a.toolitem')){ toolMenuOpen(false); return; }   // opens its own tab
   const b = e.target.closest('[data-tool]');

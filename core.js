@@ -524,7 +524,7 @@ function parseRoute(){
   // not treated as one: it only says which of two existing doors to use, and
   // the ungated door stays open on the same URL without it.
   const r = { band: null, album: null, project: null, song: null, version: null,
-              token: null, gated: false };
+              release: null, token: null, gated: false };
   for (let i = 0; i + 1 < seg.length; i += 2){
     if (seg[i] === 'p') r.project = seg[i+1];
     else if (seg[i] === 's') r.song = seg[i+1];
@@ -534,6 +534,9 @@ function parseRoute(){
     const q = new URLSearchParams(location.search);
     r.band = q.get('b'); r.project = q.get('p'); r.song = q.get('s'); r.version = q.get('v');
     r.album = q.get('al'); r.token = q.get('t'); r.gated = q.get('g') === '1';
+    // rel=<id>: a band-authed view of one release (CR-119). Password-gated like
+    // the library it is a subset of, so it sits here rather than with `token`.
+    r.release = q.get('rel');
   }
   return r;
 }

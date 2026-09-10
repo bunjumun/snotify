@@ -815,7 +815,17 @@
 
   /* Edit mode (pencil) — reorder / rename / stack / unstack / trash */
   #editBtn { display: none; }
-  body.authed:not(.shared):not(.singlemix) #editBtn { display: inline-flex; }
+  body.authed:not(.shared):not(.singlemix):not(.release) #editBtn { display: inline-flex; }
+  /* CR-119: a release view is the library filtered to one release. Upload,
+     edit/reorder, the project picker, the whole-view share and trash all act
+     on the library, not the release, so they are hidden here; membership and
+     order for a release are managed in Release Builder. The album accordion is
+     hidden because albumsInView() would build its song-mean from the filtered
+     set and disagree with the same album's number on the full page — CR-103
+     brings a release-aware checklist back deliberately. */
+  body.release #addBtn, body.release #newFolderBtn, body.release #addFolderBtn,
+  body.release #projBtn, body.release #trashBtn, body.release #shareBtn,
+  body.release #albumProg { display: none !important; }
   #editBtn.active { color: var(--accent); border-color: var(--accent); }
   .editctl { display: flex; gap: 2px; align-items: center; flex: none; }
   .ec {
@@ -1218,6 +1228,9 @@
     <div id="list" class="loading">Loading…</div>
     <div class="edithint">Edit mode — tap a title to rename · ▲▼ reorder · ⧉ stack into another song · 🗑 trash. Open a song's version menu to edit its stack.</div>
     <div class="mixhint" id="mixHint" style="display:none">Shared mix · <span class="linky" id="mixLogin">band members log in</span> for the full library</div>
+    <!-- CR-119: shown only in a release view (?rel=…). The way back to the
+         release this came from, since the library-wide nav does not carry it. -->
+    <div class="mixhint" id="relHint" style="display:none">Release · <a class="linky" id="relBack" href="release-builder.html">← Release Builder</a></div>
   </div>
 
   <!-- Add-music modal -->
@@ -1882,7 +1895,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=36"></script>
+<script src="core.js?v=37"></script>
 <!-- The two checklists and the arithmetic. No DOM, no network; it throws at
      load if the weights stop summing to 100, which is deliberate. -->
 <script src="progress.js?v=16"></script>
@@ -2379,9 +2392,10 @@ async function init() {
   curProject = null; curBand = null; singleMix = false;
   progress = Object.create(null);
   $('albumProg').innerHTML = ''; delete $('albumProg').dataset.sig;
-  document.body.classList.remove('shared', 'singlemix');
+  document.body.classList.remove('shared', 'singlemix', 'release');
   setCollectionCover(null);
   $('mixHint').style.display = 'none';
+  $('relHint').style.display = 'none';
   try {
     // A public link (?t=…) resolves on the token alone: no band name, no
     // password, and nothing in the URL the recipient could have guessed at.
@@ -2488,6 +2502,37 @@ async function init() {
     // that has the game; for anyone else there are no boxes to fill.
     if (bandHas('game')) loadGameFlags();
 
+    // CR-119: ?rel=<id> narrows the band library to one release's songs and
+    // reorders them to match — the same song "modules" (player, progress bar,
+    // comments) the whole page renders, arranged by the release. get_releases
+    // returns each release's folders already ordered by release_songs.position,
+    // so this is a filter and a sort, not a second render path. An id that no
+    // longer resolves (deleted, or another band's) falls back to the full
+    // library rather than a bad-link screen: a stale bookmark should still land
+    // on the music. `body.release` then hides the library-wide controls (upload,
+    // edit/reorder, project picker, trash, the album accordion) — those act on
+    // the library, not the release, and release membership and order are managed
+    // in Release Builder. Comments and per-song progress stay live: this is a
+    // band-authed view, not a public share, so it never gets `body.shared`.
+    let relView = null;
+    if (!route.project && route.release){
+      let rels = [];
+      try { rels = await libRpc('get_releases', {}); }
+      catch (err){ if (isAuthErr(err)){ clearAuth(band); return showGate(band, true); } }
+      relView = (rels || []).find(r => r.id === route.release) || null;
+      if (relView){
+        const pos = new Map((relView.songs || []).map((f, i) => [f, i]));
+        songs = songs.filter(s => s.folder && pos.has(s.folder))
+                     .sort((a, b) => pos.get(a.folder) - pos.get(b.folder));
+        folders = [];   // the release's order IS the order here; music folders
+                        // are a different view over the library and don't apply.
+        document.body.classList.add('release');
+        $('relBack').href = 'release-builder.html?b=' + encodeURIComponent(curBand)
+                          + '&rel=' + encodeURIComponent(relView.id);
+        $('relHint').style.display = 'block';
+      }
+    }
+
     if (route.project){
       curProject = { slug: payload.slug, name: payload.name, band: payload.band,
                      songs: songs.map(s => s.folder || s.title) };
@@ -2496,6 +2541,9 @@ async function init() {
       $('collectionTitle').textContent = payload.name;
       document.title = payload.name;
       if (!songs.length) return showBadLink('Nothing here yet', 'No mixes have been published to this project so far — check back soon.');
+    } else if (relView){
+      $('collectionTitle').textContent = relView.title;
+      document.title = relView.title + ' · S’notify';
     } else {
       $('collectionTitle').textContent = curBandTitle;
       document.title = curBandTitle + ' · S’notify';
@@ -3223,7 +3271,10 @@ function showPickPct(el){
 // record in progress, and it splits on its own the day a song is given an album.
 function renderAlbumProgress(){
   const host = $('albumProg');
-  if (!window.PROGRESS || !document.body.classList.contains('authed')){ host.innerHTML = ''; return; }
+  // CR-119: a release view hides this — see the CSS note. Guard the render too
+  // so a background refresh can't repopulate it behind the hidden container.
+  if (!window.PROGRESS || !document.body.classList.contains('authed')
+      || document.body.classList.contains('release')){ host.innerHTML = ''; return; }
   const albums = albumsInView();
   if (!albums.length){ host.innerHTML = ''; return; }
   // Rebuild only when the set of albums changes, so an open accordion survives

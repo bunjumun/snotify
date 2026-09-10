@@ -30,6 +30,13 @@
   .rcard .rpct { font-size: 12px; font-weight: 700; color: var(--text-dim); }
   .rcard .rdel { color: var(--text-mute); cursor: pointer; font-size: 13px; }
   .rcard .rdel:hover { color: var(--err); }
+  /* CR-119: open this release in the player (music.html?rel=…) — the same
+     song modules the Music page shows, filtered and ordered to the release. */
+  .rcard .rplay { color: var(--text-mute); cursor: pointer; font-size: 13px; margin-right: 10px; }
+  .rcard .rplay:hover { color: var(--accent); }
+  .rcard .rplay.disabled, .rcard .rdel.disabled { opacity: .3; cursor: default; }
+  .rcard .rplay.disabled:hover { color: var(--text-mute); }
+  .rbot .rleft { display: flex; align-items: center; }
   .rempty2 { color: var(--text-dim); font-size: 14px; padding: 34px 10px; text-align: center; }
 
   .rdetail-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
@@ -168,7 +175,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=36"></script>
+<script src="core.js?v=37"></script>
 <!-- The song-completion maths (songPct), so a release's rollup is the exact
      same number the player shows per song — never a second copy of it. -->
 <script src="progress.js?v=16"></script>
@@ -311,16 +318,27 @@ function renderGrid(){
       <div class="rsub">${n} track${n===1?'':'s'}</div>
       <div class="track"><span class="fill" style="width:${pct}%"></span></div>
       <div class="rbot">
-        <span class="rpct">${pct}%</span>
+        <span class="rleft">
+          <span class="rplay ${n ? '' : 'disabled'}" data-rid="${esc(r.id)}"
+                title="${n ? `Play “${esc(r.title)}” in the player` : 'Add tracks first'}">▶</span>
+          <span class="rpct">${pct}%</span>
+        </span>
         <span class="rdel" data-rid="${esc(r.id)}" title="Delete “${esc(r.title)}” — the release only, not its songs">🗑</span>
       </div>
     </div>`;
   }).join('');
   grid.querySelectorAll('.rcard').forEach(el => {
     el.addEventListener('click', (e) => {
-      if (e.target.closest('.rdel')) return;
+      if (e.target.closest('.rdel') || e.target.closest('.rplay')) return;
       curReleaseId = el.dataset.rid;
       render();
+    });
+  });
+  grid.querySelectorAll('.rplay').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (el.classList.contains('disabled')) return;
+      location.href = playUrl(el.dataset.rid);
     });
   });
   grid.querySelectorAll('.rdel').forEach(el => {
@@ -364,6 +382,8 @@ function renderDetail(){
   det.innerHTML = `
     <div class="rdetail-head">
       <h2 id="relTitleEl" title="Click to rename">${esc(r.title)}</h2>
+      <button class="addbtn" id="relPlayBtn" ${list.length ? '' : 'disabled'}
+              title="${list.length ? 'Play this release in the player' : 'Add tracks first'}">▶ Play</button>
       <button class="addbtn" id="relAddBtn">+ Add tracks</button>
       <button class="addbtn" id="relShareBtn" title="Copy a link to this release — public or band-only">🔗</button>
       <span class="rdel" id="relDeleteBtn" style="cursor:pointer;color:var(--text-mute)"
@@ -380,6 +400,7 @@ function renderDetail(){
     try { await libRpc('rename_release', { rid: r.id, new_title: t }); await loadAll(); }
     catch (err){ alert(String(err.message || err)); }
   });
+  $('relPlayBtn').addEventListener('click', () => { if (list.length) location.href = playUrl(r.id); });
   $('relAddBtn').addEventListener('click', () => openPicker(r.id));
   $('relShareBtn').addEventListener('click', () => offerReleaseShare(r));
   $('relDeleteBtn').addEventListener('click', async () => {
@@ -463,6 +484,14 @@ function renderPicker(r){
 // project's already is, and music.html's ?t= handling renders it through
 // the same list/player code with no branch of its own to add. Building a
 // second player here would only duplicate what already works.
+// CR-119: the player, scoped to one release. Same page the ▤ per-song link
+// already opens, with ?rel=<id> instead of ?s=<folder> so the whole release
+// loads in its own order. Built as a bare relative URL because it stays on
+// this origin and is followed immediately, never copied.
+function playUrl(rid){
+  return 'music.html?b=' + encodeURIComponent(curBand) + '&rel=' + encodeURIComponent(rid);
+}
+
 async function copyText(text, el){
   try { await navigator.clipboard.writeText(text); }
   catch { prompt('Copy this link:', text); return; }

@@ -27,9 +27,9 @@
      in core.js, which applyTheme() turns into these classes. A band holding
      neither can still reach this page by typing the address, and gets the
      sentence rather than an empty grid that looks like a loading failure. */
-  #cardLore, #cardLog, #cardGoals, #cardLinks, #shelfEmpty { display: none; }
-  body.has-lore #cardLore, body.has-log #cardLog, body.has-goals #cardGoals, body.has-links #cardLinks { display: block; }
-  body.authed:not(.has-lore):not(.has-log):not(.has-goals):not(.has-links) #shelfEmpty { display: block; }
+  #cardLore, #cardLog, #cardGoals, #cardLinks, #cardCalendar, #shelfEmpty { display: none; }
+  body.has-lore #cardLore, body.has-log #cardLog, body.has-goals #cardGoals, body.has-links #cardLinks, body.has-calendar #cardCalendar { display: block; }
+  body.authed:not(.has-lore):not(.has-log):not(.has-goals):not(.has-links):not(.has-calendar) #shelfEmpty { display: block; }
   #shelfEmpty { color: var(--text-dim); font-size: 14px; line-height: 1.55; max-width: 46em; }
   /* The Game entry in this page's own Pages menu follows the same per-band
      gate as everywhere else (CR-14/15, CR-104). No #assetsBtn here — this
@@ -188,6 +188,28 @@
   .linkview-row button { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 14px; padding: 0 2px; }
   .linkview-row button:hover { color: var(--text); }
 
+  /* Calendar is a ledger of exactly one row, so it skips the drafts UI same
+     as Links (see setEditorMode) but skips Links' add-many-rows list too —
+     there's one URL, pasting a new one replaces it. No trash: an old embed
+     link isn't something worth keeping once it's been swapped for a new one,
+     unlike a link or a goal, which are content in their own right (CR-91). */
+  .calendarSimple { display: none; flex-direction: column; gap: 14px; max-width: 640px; }
+  .calendarAddRow { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
+  .calendarAddRow input {
+    background: #0a0b0f; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; flex: 1; min-width: 240px;
+  }
+  .calendarFrame {
+    border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+    background: var(--bg-row);
+  }
+  .calendarFrame iframe { display: block; width: 100%; height: 600px; border: 0; }
+  .calendarMeta { display: flex; align-items: center; gap: 12px; font-size: 12.5px; color: var(--text-mute); }
+  .calendarMeta a { color: var(--accent); text-decoration: none; }
+  .calendarMeta a:hover { text-decoration: underline; }
+  .calendarMeta button { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 12.5px; padding: 0; text-decoration: underline; }
+  .calendarMeta button:hover { color: var(--text); }
+
   /* The links trash — same shape and the same "click twice to purge" as the
      song/comment trash on music.html, so removing something behaves the same
      way everywhere on the site: confirm once to move it here, then it sits
@@ -302,6 +324,14 @@
              there, live, right away.</p>
           <div class="sub" id="linksTally">&nbsp;</div>
         </div>
+
+        <div class="card" id="cardCalendar">
+          <div class="glyph">📅</div>
+          <h2>Calendar</h2>
+          <p>A public Google Calendar, embedded — shows, sessions, whatever
+             it's pointed at. One-way: nothing here writes back to Google.</p>
+          <div class="sub" id="calendarTally">&nbsp;</div>
+        </div>
       </div>
     </div>
 
@@ -357,6 +387,23 @@
         <div id="linkListView"></div>
         <span class="status" id="linksStatus"></span>
       </div>
+
+      <!-- Calendar skips the drafts/editor layout too, and skips Links' list
+           of rows — there's exactly one embed URL. See openCalendar() and
+           saveCalendarNow() below. -->
+      <div class="calendarSimple" id="calendarSimple">
+        <div class="calendarAddRow">
+          <input class="nm" id="calendarUrlInput"
+                 placeholder="Paste the embed code or the public URL — Google Calendar → Settings and sharing → Integrate calendar" />
+          <button class="btn primary" id="calendarSaveBtn">Save</button>
+        </div>
+        <div class="hint" style="color:var(--text-dim); font-size:12.5px; line-height:1.45">
+          One-way: shows whatever is on the Google Calendar you point it at.
+          Nothing typed here reaches Google. Only a calendar.google.com link
+          is accepted.</div>
+        <div id="calendarView"></div>
+        <span class="status" id="calendarStatus"></span>
+      </div>
     </div>
   </div>
 
@@ -395,7 +442,7 @@
     </div>
   </div>
 
-<script src="core.js?v=37"></script>
+<script src="core.js?v=38"></script>
 <script type="module">
 // The parser the GAME uses, imported rather than reimplemented — so what this
 // page reports as "12 exchanges" is what the fish will actually find.
@@ -464,6 +511,17 @@ const DOCS = {
         : 'No links yet.';
     },
   },
+  // {url}, the one field, in the same lore_docs/lore_versions row under the
+  // 'calendar' slug (CR-91). Bypasses drafts/editor the same way Links does
+  // (see openCalendar()) — not called on that path either, kept for the same
+  // reason.
+  calendar: {
+    title: 'Calendar', tally: 'calendarTally',
+    count: (body) => {
+      const { url } = parseCalendarDoc(body);
+      return url ? 'Calendar linked.' : 'No calendar set yet.';
+    },
+  },
 };
 
 App.init     = () => init();
@@ -483,6 +541,11 @@ let dirty = false;
 // database table.
 let linksVid = null;
 let linksDoc = { items: [], trash: [] };
+
+// Calendar's own single-field version of the same pattern: the version id
+// (so re-saving edits it rather than piling up rows) and the one URL.
+let calendarVid = null;
+let calendarDoc = { url: '' };
 
 // ---------- Load ----------
 async function init(){
@@ -529,6 +592,10 @@ async function init(){
         const items = parseLinksDoc(on ? on.body : '{}').items;
         $(DOCS.links.tally).textContent = items.length
           ? `${items.length} link${items.length === 1 ? '' : 's'}` : 'No links yet.';
+      } else if (slug === 'calendar'){
+        // Same non-drafts framing as links, but the field is a single URL.
+        const { url } = parseCalendarDoc(on ? on.body : '{}');
+        $(DOCS.calendar.tally).textContent = url ? 'Calendar linked.' : 'No calendar set yet.';
       } else {
         $(DOCS[slug].tally).textContent = list.length
           ? `${list.length} draft${list.length === 1 ? '' : 's'} · ${on ? on.name + ' is live' : 'none live'}`
@@ -551,6 +618,7 @@ async function openDoc(slug){
   setEditorMode(slug);
   showDoc();
   if (slug === 'links') return openLinks();
+  if (slug === 'calendar') return openCalendar();
   try {
     drafts = (await libRpc('lore_list', { d: slug })) || [];
   } catch (e) {
@@ -583,6 +651,23 @@ async function openLinks(){
   }
   renderLinkList();
   updateLinksTrashCount();
+}
+
+/** Calendar has no draft stack either: load the one row (if any), and show
+ *  the embed if it holds a validated URL. */
+async function openCalendar(){
+  try {
+    const list = (await libRpc('lore_list', { d: 'calendar' })) || [];
+    const on = list.find(x => x.active) || list[0] || null;
+    calendarVid = on ? on.id : null;
+    calendarDoc = parseCalendarDoc(on ? on.body : '{}');
+  } catch (e) {
+    calendarVid = null;
+    calendarDoc = { url: '' };
+    say(e.message || 'Could not load the calendar.', true);
+  }
+  $('calendarUrlInput').value = calendarDoc.url;
+  renderCalendarView();
 }
 
 const live = () => drafts.find(d => d.active) || null;
@@ -663,11 +748,14 @@ function reparse(){
 }
 
 function setEditorMode(slug){
-  // Links has no drafts and no "New draft" — see openLinks().
+  // Links and Calendar have no drafts and no "New draft" — see openLinks()
+  // and openCalendar().
   const isLinks = slug === 'links';
-  document.querySelector('.doclayout').style.display = isLinks ? 'none' : '';
+  const isCalendar = slug === 'calendar';
+  document.querySelector('.doclayout').style.display = (isLinks || isCalendar) ? 'none' : '';
   $('linksSimple').style.display = isLinks ? 'flex' : 'none';
-  $('newBtn').style.display = isLinks ? 'none' : '';
+  $('calendarSimple').style.display = isCalendar ? 'flex' : 'none';
+  $('newBtn').style.display = (isLinks || isCalendar) ? 'none' : '';
   $('linksTrashBtn').style.display = isLinks ? '' : 'none';
 
   const kind = DOCS[slug] && DOCS[slug].struct; // undefined | 'goals'
@@ -1214,6 +1302,107 @@ function openLinksTrash(){
 }
 function closeLinksTrash(){ $('linksTrashModal').classList.remove('open'); }
 
+// ---------- Calendar (no draft stack, one field — see openCalendar() above) ----------
+// The body column holds one JSON object, {url}. One-way: this only ever
+// reads a public Google Calendar via iframe embed and shows it here, nothing
+// typed on this page ever reaches Google (CR-91).
+
+function parseCalendarDoc(body){
+  let raw;
+  try { raw = JSON.parse(body || '{}'); } catch { raw = {}; }
+  return { url: typeof raw.url === 'string' ? raw.url : '' };
+}
+
+/** Accepts either the full <iframe> embed snippet or the bare embed / public
+ *  URL that Google Calendar's Settings and sharing → Integrate calendar
+ *  gives you, and rejects anything that isn't a real calendar.google.com
+ *  embed link. This field is writable by anyone who knows the band
+ *  password, and it lands straight in an iframe src below — an unvalidated
+ *  paste would be a way to frame an arbitrary page inside this one, so the
+ *  host and path are checked, not just that it parses as a URL. */
+function parseCalendarInput(text){
+  const raw = String(text || '').trim();
+  if (!raw) return { url: '', error: null };
+  const m = raw.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+  const candidate = m ? m[1].replace(/&amp;/g, '&') : raw;
+  let u;
+  try { u = new URL(candidate); }
+  catch {
+    return { url: '', error: 'That doesn’t look like a link — paste the embed code or the '
+      + 'public URL from Google Calendar’s Settings and sharing → Integrate calendar.' };
+  }
+  if (u.protocol !== 'https:' || u.hostname !== 'calendar.google.com' || !u.pathname.startsWith('/calendar/embed')){
+    return { url: '', error: 'Only a calendar.google.com embed link is accepted — paste the embed '
+      + 'code or the public URL from Settings and sharing → Integrate calendar, not a different link.' };
+  }
+  return { url: u.href, error: null };
+}
+
+function calendarSay(msg, isErr){
+  const el = $('calendarStatus');
+  el.textContent = msg || '';
+  el.className = 'status' + (isErr ? ' err' : ' ok');
+  if (msg) setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
+}
+
+/** Persists calendarDoc as-is. First save also marks the row live, same as
+ *  Links — a calendar with no live version would just show as unset. */
+async function saveCalendarNow(){
+  try {
+    const id = await libRpc('lore_save', {
+      nm: 'Calendar', body_in: JSON.stringify(calendarDoc), vid: calendarVid, d: 'calendar',
+    });
+    if (!calendarVid) await libRpc('lore_set_active', { vid: id });
+    calendarVid = id;
+    renderCalendarView();
+    calendarSay(calendarDoc.url ? 'Saved.' : 'Calendar removed.');
+  } catch (e) {
+    calendarSay(e.message || 'Could not save.', true);
+  }
+}
+
+function renderCalendarView(){
+  const box = $('calendarView');
+  if (!calendarDoc.url){
+    box.innerHTML = '<div class="hint" style="padding:8px 10px; color:var(--text-mute); '
+      + 'font-size:12.5px">No calendar set yet. Paste an embed code or public URL above.</div>';
+    return;
+  }
+  box.innerHTML = '';
+  const frame = document.createElement('div');
+  frame.className = 'calendarFrame';
+  const iframe = document.createElement('iframe');
+  iframe.src = calendarDoc.url;
+  iframe.setAttribute('frameborder', '0');
+  iframe.setAttribute('scrolling', 'no');
+  frame.appendChild(iframe);
+
+  const meta = document.createElement('div');
+  meta.className = 'calendarMeta';
+  const a = document.createElement('a');
+  a.href = calendarDoc.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.textContent = 'Open in Google Calendar ↗';
+  const rm = document.createElement('button');
+  rm.textContent = 'Remove calendar';
+  rm.addEventListener('click', () => {
+    if (!confirm('Remove the linked calendar? The shelf will show "No calendar set yet" until a new one is pasted in.')) return;
+    calendarDoc = { url: '' };
+    $('calendarUrlInput').value = '';
+    saveCalendarNow();
+  });
+  meta.append(a, rm);
+
+  box.append(frame, meta);
+}
+
+function saveCalendarFromInput(){
+  const { url, error } = parseCalendarInput($('calendarUrlInput').value);
+  if (error) return calendarSay(error, true);
+  calendarDoc = { url };
+  $('calendarUrlInput').value = url;
+  saveCalendarNow();
+}
+
 async function save(asNew){
   const name = $('draftName').value.trim() || 'Draft';
   const body = $('body').value;
@@ -1245,6 +1434,7 @@ on('cardLore', 'click', () => openDoc('lore'));
 on('cardLog',  'click', () => openDoc('log'));
 on('cardGoals', 'click', () => openDoc('goals'));
 on('cardLinks', 'click', () => openDoc('links'));
+on('cardCalendar', 'click', () => openDoc('calendar'));
 on('backBtn', 'click', () => { showShelf(); });
 on('newBtn', 'click', () => {
   if (dirty && !confirm('Discard unsaved changes?')) return;
@@ -1268,6 +1458,8 @@ on('linkAddName', 'keydown', (e) => { if (e.key === 'Enter') addLinkNow(); });
 on('linkAddUrl', 'keydown', (e) => { if (e.key === 'Enter') addLinkNow(); });
 on('linksTrashBtn', 'click', openLinksTrash);
 on('linksTrashClose', 'click', closeLinksTrash);
+on('calendarSaveBtn', 'click', saveCalendarFromInput);
+on('calendarUrlInput', 'keydown', (e) => { if (e.key === 'Enter') saveCalendarFromInput(); });
 on('goalsTrashBtn', 'click', openGoalsTrash);
 on('goalsTrashClose', 'click', closeGoalsTrash);
 addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });

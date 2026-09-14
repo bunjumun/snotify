@@ -169,8 +169,11 @@ function applyTheme(band){
 // lore_docs/lore_versions store via a third slug, so it lives in this map too.
 // 'links' is the same again, a fourth slug: named URLs rather than prose or a
 // dated list, still the same stack-of-drafts-one-live store underneath.
+// 'calendar' is a fifth: not prose and not a list, a single embed URL, still
+// living in the same lore_docs/lore_versions row (CR-91) — one-way, from a
+// public Google Calendar the band points it at, nothing written back to Google.
 const BAND_FEATURES = {
-  lakehorse: ['game', 'lore', 'log', 'goals', 'links', 'concept'],
+  lakehorse: ['game', 'lore', 'log', 'goals', 'links', 'concept', 'calendar'],
 };
 // Defaults to the band on screen, which is what every call site wants; the
 // argument is there for the gate, which knows the band before it is logged in.
@@ -192,11 +195,12 @@ function applyFeatures(band){
   b.toggle('has-log',    has.includes('log'));
   b.toggle('has-goals',  has.includes('goals'));
   b.toggle('has-links',  has.includes('links'));
+  b.toggle('has-calendar', has.includes('calendar'));
   // concept is the Art Concepts doc (art-concept.html), reached only through a
   // door on the art page (like Image tools), not from the assets shelf or the
   // Pages menu — so it gates on its own and stays out of has-assets below.
   b.toggle('has-concept', has.includes('concept'));
-  b.toggle('has-assets', has.includes('lore') || has.includes('log') || has.includes('goals') || has.includes('links'));
+  b.toggle('has-assets', has.includes('lore') || has.includes('log') || has.includes('goals') || has.includes('links') || has.includes('calendar'));
 }
 
 // ---------- Dazzle generator ----------

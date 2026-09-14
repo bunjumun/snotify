@@ -40,7 +40,7 @@ This project's three pieces, one instance of a convention meant for all of them:
 |---|---|
 | Notebook, both directions | Apple Note **"Snalbum ideas & outbox"** |
 | Ledger | `change requests/LEDGER.md` |
-| Manager | scheduled task `manager-snalbum`, daily at 07:09, silent |
+| Manager | scheduled task `manager-snalbum`, hourly, silent **(currently disabled)** |
 
 **One note, not two.** It began as a pair — "Snalbum feature ideas" for his
 capture and "Snalbum waiting on you" for the outbox — and they were folded
@@ -69,6 +69,8 @@ before writing. The outbox and the completed log below the separator are Claude'
 to rewrite freely — but a rewrite still means reading the whole note first and
 copying his half back verbatim, because whole-note replacement does not care
 which half you meant to touch.
+
+**↳ AMENDED 2026-08-22 — on this note the whole note is Claude's to write, capture zone included.** Scoped in-session to the Snalbum note specifically; the global playbook's version of this rule still holds everywhere else. The whole-note-clobber risk above is real, so read-immediately-before, copy-his-half-verbatim and read-back all still apply — the relaxation is that the note may be kept tidy (struck lines already in `COMPLETED`, dead blank-line runs, stray fragments) rather than left to rot because only the outbox was ever touchable. Rewriting the text of a live capture item is still not this; clearing mechanical clutter is.
 
 When an item ships, append a dated line to `COMPLETED`. If the line it came from
 sits above the separator, say so in chat and leave it: striking it through would

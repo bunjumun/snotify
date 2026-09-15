@@ -13,6 +13,29 @@ String g_ssid;
 uint32_t g_lastAttemptMs = 0;
 bool g_haveSaved = false;
 
+// Why the last attempt failed, in the radio's own words, kept so the setup page
+// can say "the password was not accepted" instead of nothing at all. A box that
+// fails silently is indistinguishable from a box that is still trying.
+uint8_t g_lastReason = 0;
+
+// Reconfiguring the radio is deliberately NOT done inside the HTTP handler.
+// The station refuses a new config while it is mid-association ("sta is
+// connecting, cannot set config"), so a provisioning request that lands during
+// a retry was simply dropped. These two carry the request out to tick(), which
+// disconnects first, waits, and only then begins.
+bool g_reconnectPending = false;
+
+// True from the moment begin() is called until the radio reports either an
+// address or a failure.
+//
+// A timer cannot substitute for this, and trying one was the bug: the station
+// stays in its connecting state for the whole WPA handshake, which on a
+// rejected password runs a full ten seconds before it times out. Any begin()
+// inside that window is refused outright with ESP_ERR_WIFI_STATE and thrown
+// away, so a retry or a freshly typed password did nothing at all. Waiting on
+// the radio's own events is the only thing that is actually true.
+bool g_associating = false;
+
 Preferences g_prefs;
 
 // Reads the saved credentials out of NVS. The password is handed straight to
@@ -42,18 +65,46 @@ void attemptSaved() {
   }
 
   g_haveSaved = true;
+
+  // Refuse to begin() on top of an association already in flight. The caller
+  // leaves the request pending and tick() comes back once the radio has
+  // settled one way or the other.
+  if (g_associating) return;
+
   g_ssid = ssid;
   g_state = StationState::Connecting;
   g_lastAttemptMs = millis();
+  g_associating = true;
 
   Serial.printf("[wifi] trying saved network \"%s\"\n", ssid.c_str());
   WiFi.begin(ssid.c_str(), password.c_str());
+}
+
+// The handful of reasons that actually happen in a barn, in plain words. The
+// rest fall through to a number, which is still better than silence.
+const char* describeReason(uint8_t reason) {
+  switch (reason) {
+    case WIFI_REASON_NO_AP_FOUND:
+      return "that network was not found";
+    case WIFI_REASON_AUTH_FAIL:
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+      return "the password was not accepted";
+    case WIFI_REASON_AUTH_EXPIRE:
+      return "the network dropped the connection";
+    case WIFI_REASON_BEACON_TIMEOUT:
+      return "the network went out of range";
+    default:
+      return "could not join";
+  }
 }
 
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       g_state = StationState::Connected;
+      g_lastReason = 0;
+      g_associating = false;
       Serial.printf("[wifi] joined \"%s\" as %s\n",
                     g_ssid.c_str(), WiFi.localIP().toString().c_str());
       break;
@@ -63,9 +114,10 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
       // second is worth shouting about. Either way the retry timer in tick()
       // picks it up; we do not reconnect from inside the event handler, which
       // runs on the event task and should not block.
-      if (g_state == StationState::Connected) {
-        Serial.println(F("[wifi] dropped the network, will retry"));
-      }
+      g_associating = false;
+      g_lastReason = info.wifi_sta_disconnected.reason;
+      Serial.printf("[wifi] not connected: %s (reason %u)\n",
+                    describeReason(g_lastReason), (unsigned)g_lastReason);
       g_state = StationState::Failed;
       break;
 
@@ -106,6 +158,17 @@ void begin() {
 }
 
 void tick() {
+  // A pending reconnect is handled first and out here, never in the request
+  // handler that asked for it.
+  if (g_reconnectPending) {
+    // Wait out whatever is in flight. Nothing else here can make that faster,
+    // and interrupting it is what produced ESP_ERR_WIFI_STATE.
+    if (g_associating) return;
+    g_reconnectPending = false;
+    attemptSaved();
+    return;
+  }
+
   if (g_state == StationState::Connected) return;
   if (!g_haveSaved) return;
 
@@ -122,7 +185,14 @@ void tick() {
   }
 
   if (now - g_lastAttemptMs < cfg::STA_RETRY_INTERVAL_MS) return;
-  attemptSaved();
+
+  // Route the retry through the same disconnect-then-settle path a provisioning
+  // request uses. Calling attemptSaved() straight from here hit exactly the
+  // same wall ("sta is connecting, cannot set config"): the previous attempt is
+  // often still associating when the retry timer fires, so the retry was being
+  // thrown away and the box just kept failing on the original attempt.
+  g_lastAttemptMs = now;
+  g_reconnectPending = true;
 }
 
 bool provision(const String& ssid, const String& password) {
@@ -143,7 +213,6 @@ bool provision(const String& ssid, const String& password) {
     return false;
   }
 
-  WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/true);
   attemptSaved();
   return true;
 }
@@ -157,11 +226,16 @@ bool forget() {
   g_haveSaved = false;
   g_state = StationState::Idle;
   g_ssid = "";
+  g_reconnectPending = false;
   WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/true);
   return true;
 }
 
 StationState stationState() { return g_state; }
+uint8_t lastFailureReason() { return g_lastReason; }
+const char* lastFailureText() {
+  return g_lastReason ? describeReason(g_lastReason) : "";
+}
 String stationSsid() { return g_ssid; }
 String stationIp() {
   return g_state == StationState::Connected ? WiFi.localIP().toString() : String();

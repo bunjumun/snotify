@@ -47,6 +47,12 @@
         <label for="pass">Password</label>
         <input id="pass" type="password" placeholder="Leave empty if the network is open" autocomplete="off" />
 
+        <!-- Set here rather than on its own screen, because this is the one
+             moment anyone is thinking about how they will reach this box. -->
+        <label for="host">Name on the network</label>
+        <input id="host" placeholder="lakehorseradio" autocomplete="off" />
+        <p class="muted" id="hostHint">Letters, numbers and hyphens. You will reach the box at this name followed by .local</p>
+
         <div class="row">
           <button class="btn primary" id="saveBtn">Save and connect</button>
           <button class="btn" id="rescanBtn">Rescan</button>

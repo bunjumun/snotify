@@ -8,6 +8,7 @@
 #include <ArduinoJson.h>
 #include <unity.h>
 
+#include "hostname_rules.h"
 #include "playlist_validate.h"
 
 namespace {
@@ -73,6 +74,60 @@ void rejects_a_url_that_merely_contains_https() {
   TEST_ASSERT_EQUAL(playlist::Result::UrlNotHttps, check(json));
 }
 
+
+// ---------- Hostname rules ----------
+// An illegal mDNS name does not error, it just never gets advertised, so the
+// box appears to vanish from the network. These are the rules that stop a
+// typed name from doing that.
+
+namespace {
+hostrules::Result host(const char* in, char* out = nullptr) {
+  char scratch[33];
+  return hostrules::normalise(in, out ? out : scratch, 32);
+}
+}  // namespace
+
+void accepts_the_default_name() {
+  TEST_ASSERT_EQUAL(hostrules::Result::Ok, host("lakehorseradio"));
+}
+
+void lower_cases_the_name() {
+  char out[33];
+  TEST_ASSERT_EQUAL(hostrules::Result::Ok, host("LakeHorseRadio", out));
+  TEST_ASSERT_EQUAL_STRING("lakehorseradio", out);
+}
+
+void accepts_internal_hyphens_and_digits() {
+  TEST_ASSERT_EQUAL(hostrules::Result::Ok, host("barn-radio-2"));
+}
+
+void rejects_an_empty_name() {
+  TEST_ASSERT_EQUAL(hostrules::Result::Empty, host(""));
+}
+
+void rejects_a_dot() {
+  // Someone typing the whole address means the whole address. Silently keeping
+  // just the first label would leave them looking for the wrong name.
+  TEST_ASSERT_EQUAL(hostrules::Result::IllegalCharacter, host("radio.local"));
+}
+
+void rejects_a_space() {
+  TEST_ASSERT_EQUAL(hostrules::Result::IllegalCharacter, host("lakehorse radio"));
+}
+
+void rejects_a_leading_hyphen() {
+  TEST_ASSERT_EQUAL(hostrules::Result::EdgeHyphen, host("-radio"));
+}
+
+void rejects_a_trailing_hyphen() {
+  TEST_ASSERT_EQUAL(hostrules::Result::EdgeHyphen, host("radio-"));
+}
+
+void rejects_an_over_long_name() {
+  TEST_ASSERT_EQUAL(hostrules::Result::TooLong,
+                    host("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(accepts_a_well_formed_playlist);
@@ -85,5 +140,14 @@ int main(int, char**) {
   RUN_TEST(rejects_plain_http);
   RUN_TEST(rejects_a_protocol_relative_url);
   RUN_TEST(rejects_a_url_that_merely_contains_https);
+  RUN_TEST(accepts_the_default_name);
+  RUN_TEST(lower_cases_the_name);
+  RUN_TEST(accepts_internal_hyphens_and_digits);
+  RUN_TEST(rejects_an_empty_name);
+  RUN_TEST(rejects_a_dot);
+  RUN_TEST(rejects_a_space);
+  RUN_TEST(rejects_a_leading_hyphen);
+  RUN_TEST(rejects_a_trailing_hyphen);
+  RUN_TEST(rejects_an_over_long_name);
   return UNITY_END();
 }

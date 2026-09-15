@@ -13,6 +13,7 @@
 #include "captive_portal.h"
 #include "config.h"
 #include "device_key.h"
+#include "net_identity.h"
 #include "playlist_store.h"
 #include "playlist_validate.h"
 #include "wifi_manager.h"
@@ -79,13 +80,16 @@ void handleStatus(AsyncWebServerRequest* request) {
   JsonDocument doc;
   doc["ok"] = true;
   doc["firmware"] = cfg::FIRMWARE_VERSION;
-  doc["mdns"] = String(cfg::MDNS_HOST) + ".local";
+  doc["mdns"] = netid::hostname() + ".local";
+  doc["hostname"] = netid::hostname();
   doc["apSsid"] = cfg::AP_SSID;
   doc["apIp"] = wifinet::accessPointIp();
   doc["station"] = stateName(wifinet::stationState());
   doc["ssid"] = wifinet::stationSsid();
   doc["ip"] = wifinet::stationIp();
   doc["hasSavedNetwork"] = wifinet::hasSavedNetwork();
+  doc["lastFailure"] = wifinet::lastFailureText();
+  doc["lastFailureCode"] = wifinet::lastFailureReason();
   // Lets the page tell a listener standing at the box from one on the network,
   // so it can explain the right thing rather than the same thing twice.
   doc["viaAccessPoint"] = onAccessPointSubnet(request);
@@ -129,8 +133,21 @@ void handleScan(AsyncWebServerRequest* request) {
     // Nothing has been started yet, or the last one failed. Kick off an async
     // scan and tell the caller to come back; a blocking scan here would stall
     // the whole async server for several seconds.
-    WiFi.scanNetworks(/*async=*/true);
-    doc["scanning"] = true;
+    //
+    // The return value matters and used to be ignored, which was a real bug:
+    // the radio refuses to start a scan while it is busy associating, so after
+    // the first provisioning attempt every later scan failed to start while
+    // this still answered "scanning". The page then polled a scan that was
+    // never going to finish, and the network list simply never appeared again.
+    // Absence of a scan was being reported as a scan in progress.
+    const int16_t started = WiFi.scanNetworks(/*async=*/true);
+    if (started == WIFI_SCAN_FAILED) {
+      doc["scanning"] = false;
+      doc["error"] = "the radio is busy, type the network name instead";
+      Serial.println(F("[scan] could not start, radio busy"));
+    } else {
+      doc["scanning"] = true;
+    }
   } else {
     doc["scanning"] = false;
     JsonArray nets = doc["networks"].to<JsonArray>();
@@ -199,7 +216,12 @@ void registerWifiWrite() {
         // that has never been set up cannot have handed one out yet, and being
         // on its AP already means standing next to it. From anywhere else a
         // key is required, so nobody on the barn network can move the box.
-        if (!onAccessPointSubnet(request) && !authorised(request)) {
+        const IPAddress from = request->client() ? request->client()->remoteIP() : IPAddress();
+        const bool viaAp = onAccessPointSubnet(request);
+        Serial.printf("[wifi] provisioning request from %s (via AP: %s)\n",
+                      from.toString().c_str(), viaAp ? "yes" : "no");
+
+        if (!viaAp && !authorised(request)) {
           sendError(request, 401, "join the Lakehorse Radio hotspot to change the network");
           return;
         }
@@ -211,6 +233,19 @@ void registerWifiWrite() {
           return;
         }
 
+        // The .local name is optional and set in the same step, because that is
+        // the one moment the owner is thinking about how to reach this box.
+        // Validated before the network is touched, so a bad name fails loudly
+        // instead of leaving the box joined but unreachable by name.
+        if (json["hostname"].is<const char*>()) {
+          const char* problem = netid::setHostname(json["hostname"].as<const char*>());
+          if (problem != nullptr) {
+            sendError(request, 400, problem);
+            return;
+          }
+        }
+
+        Serial.printf("[wifi] asked to join \"%s\"\n", ssid.c_str());
         if (!wifinet::provision(ssid, password)) {
           sendError(request, 500, "could not save the network");
           return;
@@ -223,6 +258,7 @@ void registerWifiWrite() {
         reply["ok"] = true;
         reply["saved"] = ssid;
         reply["note"] = "trying now, check status in a few seconds";
+        reply["mdns"] = netid::hostname() + ".local";
         String out;
         serializeJson(reply, out);
         sendJson(request, 200, out);

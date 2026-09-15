@@ -189,20 +189,47 @@
     if (s.station === 'connected') {
       banner.textContent = 'The box is on ' + s.ssid + ' at ' + s.ip
         + '. Reachable at ' + s.mdns + '.';
+    } else if (s.lastFailure) {
+      banner.className = 'banner err';
+      banner.textContent = 'The box tried ' + (s.ssid || 'a network')
+        + ' and could not join: ' + s.lastFailure + '.';
     } else {
       banner.textContent = 'The box is not on a network yet. Join its "' + s.apSsid
         + '" hotspot to set it up.';
     }
   }
 
-  function loadScan() {
+  // Bounded on purpose. The radio refuses to scan while it is busy associating,
+  // so a scan can legitimately never finish; polling forever would leave the
+  // network list saying "Scanning..." for ever with no way to tell that apart
+  // from a slow scan. After this many tries we say so and point at the field
+  // below, which always works.
+  var SCAN_TRIES_MAX = 8;
+  var scanTries = 0;
+
+  function loadScan(again) {
+    if (!again) scanTries = 0;
     fetch('/api/scan', { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (doc) {
         var sel = $('ssid');
+
+        if (doc.error) {
+          sel.innerHTML = '<option value="">Could not scan, type the name below</option>';
+          say($('setupStatus'), doc.error, 'err');
+          return;
+        }
+
         if (doc.scanning) {
+          if (++scanTries > SCAN_TRIES_MAX) {
+            sel.innerHTML = '<option value="">Scan did not finish, type the name below</option>';
+            say($('setupStatus'),
+                'The box could not finish scanning, which it often cannot while it '
+                + 'is already trying to join a network. Type the name in instead.', 'err');
+            return;
+          }
           sel.innerHTML = '<option value="">Scanning...</option>';
-          setTimeout(loadScan, 1800);
+          setTimeout(function () { loadScan(true); }, 1800);
           return;
         }
         sel.textContent = '';
@@ -230,6 +257,7 @@
       say($('setupStatus'), 'Pick a network or type its name first.', 'err');
       return;
     }
+    var host = $('host').value.trim();
 
     $('saveBtn').disabled = true;
     say($('setupStatus'), 'Saving...', '');
@@ -237,7 +265,11 @@
     fetch('/api/wifi', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ssid: ssid, password: $('pass').value })
+      // Only send a name if one was typed, so leaving the field alone keeps
+      // whatever the box is already called rather than resetting it.
+      body: JSON.stringify(host
+        ? { ssid: ssid, password: $('pass').value, hostname: host }
+        : { ssid: ssid, password: $('pass').value })
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
@@ -247,13 +279,76 @@
         // this very phone, so a confident "connected" here would often be the
         // last thing the listener saw before the page stopped responding.
         say($('setupStatus'),
-            'Saved. The box is trying ' + ssid + ' now. Its hotspot will drop for a '
-            + 'few seconds while it retunes, which is normal.', 'ok');
+            'Saved. Trying ' + ssid + ' now, this takes a few seconds...', 'ok');
+        watchConnection(ssid, res.d.mdns || 'lakehorseradio.local');
       })
       .catch(function (err) {
         say($('setupStatus'), 'Could not save. ' + (err.message || ''), 'err');
       })
       .then(function () { $('saveBtn').disabled = false; });
+  }
+
+
+  /* Watches what actually happened after a save.
+   *
+   * This exists because the box used to fail in complete silence. A wrong
+   * password looks exactly like a slow connection looks exactly like a box that
+   * never got the request, and the only way anyone could tell them apart was a
+   * USB cable and a serial monitor. Now the radio's own reason comes back.
+   *
+   * Note the box may stop answering partway through, and that is the GOOD
+   * outcome: joining a network retunes the hotspot to that network's channel,
+   * which drops this phone. So losing contact is reported as probable success,
+   * not as an error. */
+  var WATCH_TRIES_MAX = 12;
+
+  function watchConnection(ssid, mdns) {
+    var tries = 0;
+    var lost = 0;
+
+    (function poll() {
+      fetch('/api/status', { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (s) {
+          lost = 0;
+
+          if (s.station === 'connected') {
+            say($('setupStatus'),
+                'On ' + s.ssid + ' at ' + s.ip + '. Reach it at ' + mdns
+                + ' from anything on that network.', 'ok');
+            return;
+          }
+
+          if (s.lastFailure) {
+            say($('setupStatus'),
+                'Could not join ' + ssid + ': ' + s.lastFailure
+                + '. If the password is definitely right, this network may be '
+                + 'using WPA3, which this chip cannot join. A Mac sharing its '
+                + 'connection can be set to WPA2 instead.', 'err');
+            return;
+          }
+
+          if (++tries > WATCH_TRIES_MAX) {
+            say($('setupStatus'),
+                'Still trying. Check ' + mdns + ' in a moment.', '');
+            return;
+          }
+          setTimeout(poll, 3000);
+        })
+        .catch(function () {
+          // Two lost polls in a row almost certainly means the hotspot retuned,
+          // which is what happens when it works.
+          if (++lost >= 2) {
+            say($('setupStatus'),
+                'The box stopped answering here, which usually means it joined '
+                + ssid + ' and moved its hotspot. Try ' + mdns + ' from that '
+                + 'network.', 'ok');
+            return;
+          }
+          if (++tries > WATCH_TRIES_MAX) return;
+          setTimeout(poll, 3000);
+        });
+    })();
   }
 
   function init() {
@@ -278,6 +373,9 @@
           $('setupIntro').textContent = s.hasSavedNetwork
             ? 'This box already remembers a network. Saving a new one replaces it.'
             : 'This box has not been put on a network yet.';
+          // Prefill with the box's real current name, so the field shows the
+          // truth rather than a placeholder that might not match.
+          if (s.hostname) $('host').value = s.hostname;
           loadScan();
         }
       })

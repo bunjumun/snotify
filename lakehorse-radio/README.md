@@ -18,7 +18,7 @@ So there are two modes, and the player page tells you which one you are in:
 
 | Mode | How | Works for listening? |
 |---|---|---|
-| Box and phone both on the barn network | Set the box up once, then open `lakehorse.local` | **Yes, reliably.** Use this. |
+| Box and phone both on the barn network | Set the box up once, then open `lakehorseradio.local` | **Yes, reliably.** Use this. |
 | Phone joined directly to the box's hotspot | Join "Lakehorse Radio" | Setup: yes. Listening: only with mobile data on, and not from the captive sheet. |
 
 The hotspot exists for two jobs: putting the box on a network in the first place,
@@ -93,3 +93,11 @@ the wrong tutorial.
 - **mDNS is restarted on every `GOT_IP`**, not once at boot. Calling
   `MDNS.begin()` before the station has an address silently does nothing, and
   the responder does not survive a reconnect on its own.
+- **The box's name is settable** on the setup page and kept in NVS, defaulting
+  to `lakehorseradio`. Two boxes on one network would otherwise both claim the
+  same name. An illegal name is refused with a reason rather than accepted and
+  silently never advertised, which is what mDNS does with one.
+- **The network scan can legitimately fail.** The radio will not scan while it
+  is busy associating, so `WiFi.scanNetworks()` returns a failure that must be
+  reported. Reporting it as "still scanning" leaves the page polling for ever,
+  which is what the first build did.

@@ -15,10 +15,15 @@ namespace cfg {
 // ---------- Identity ----------
 
 // The mDNS name, WITHOUT the .local suffix. ESPmDNS appends it: pass
-// "lakehorse" to be reachable at lakehorse.local. Passing the suffix here
-// produces lakehorse.local.local, which resolves for nobody.
-constexpr const char* MDNS_HOST = "lakehorse";
+// "lakehorseradio" to be reachable at lakehorseradio.local. Passing the suffix
+// here produces lakehorseradio.local.local, which resolves for nobody.
+//
+// This is only the DEFAULT. The name is settable from the setup page and kept
+// in NVS, so more than one box can live on the same network without a clash.
+constexpr const char* MDNS_HOST_DEFAULT = "lakehorseradio";
 constexpr const char* MDNS_INSTANCE = "Lakehorse Radio";
+constexpr size_t MDNS_HOST_MAX_LEN = 32;
+constexpr const char* NVS_KEY_HOST = "host";
 
 // The SoftAP the box always broadcasts. Deliberately open, with no password:
 // it is a jukebox in a barn, the only thing reachable on it is this firmware,
@@ -33,11 +38,34 @@ constexpr const char* FIRMWARE_VERSION = "1.0.0";
 constexpr uint16_t HTTP_PORT = 80;
 constexpr uint16_t DNS_PORT = 53;
 
-// How long to wait for a saved network before giving up and living on the AP
-// alone. Deliberately generous: a barn router that has just been power-cycled
-// can take a while to hand out a lease, and the cost of waiting is only that
-// the box is AP-only for a few extra seconds.
+// How long to wait for a saved network before giving up on this attempt.
+// Deliberately generous: a barn router that has just been power-cycled can take
+// a while to hand out a lease.
 constexpr uint32_t STA_CONNECT_TIMEOUT_MS = 20000;
+
+// How long a first connection attempt runs before the hotspot is raised as a
+// way back in. WLED uses 12 seconds for the same decision and it is a good
+// number: long enough that a healthy join is never interrupted, short enough
+// that a box with a wrong password is reachable before anyone gives up on it.
+constexpr uint32_t AP_FALLBACK_AFTER_MS = 12000;
+
+// The hotspot's channel. Passing one explicitly is not optional, and omitting
+// it is what broke this firmware's first version. The ESP32 has one radio and
+// one tuner, so an access point and a station cannot sit on different channels;
+// a SoftAP started with no channel argument silently takes channel 1 and then
+// fights every attempt to join a network on any other channel. The symptom is
+// an endless WPA handshake timeout that looks exactly like a wrong password.
+//
+// It only matters when both run at once, which after this rewrite is rare, but
+// leaving it implicit is how the bug got in.
+constexpr uint8_t AP_CHANNEL = 1;
+
+// The hotspot exists as a fallback, not as a permanent fixture. It comes up
+// when there is no saved network, or when the first attempt to reach one has
+// failed, and it is torn down the moment the box joins a network. That is
+// WLED's AP_BEHAVIOR_BOOT_NO_CONN, and it is the arrangement that keeps the
+// tuner free for the job that matters.
+constexpr bool AP_TEARDOWN_ON_CONNECT = true;
 
 // After a disconnect, how long before trying the saved network again. Long
 // enough not to hammer a router that is genuinely down, short enough that the

@@ -4,6 +4,7 @@
 #include <WiFi.h>
 
 #include "config.h"
+#include "net_identity.h"
 
 namespace portal {
 namespace {
@@ -25,7 +26,8 @@ bool addressedToUs(AsyncWebServerRequest* request) {
   if (host.length() == 0) return true;
   if (host.startsWith(WiFi.softAPIP().toString())) return true;
   if (WiFi.status() == WL_CONNECTED && host.startsWith(WiFi.localIP().toString())) return true;
-  return host.startsWith(cfg::MDNS_HOST);
+  // The name is settable now, so ask for the live one rather than a constant.
+  return host.startsWith(netid::hostname());
 }
 
 void redirectToPortal(AsyncWebServerRequest* request) {

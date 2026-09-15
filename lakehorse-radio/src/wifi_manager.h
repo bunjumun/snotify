@@ -42,6 +42,11 @@ bool provision(const String& ssid, const String& password);
 bool forget();
 
 StationState stationState();
+
+// Why the last attempt failed, in words the setup page can show. Empty when
+// nothing has failed.
+const char* lastFailureText();
+uint8_t lastFailureReason();
 String stationSsid();
 String stationIp();
 String accessPointIp();

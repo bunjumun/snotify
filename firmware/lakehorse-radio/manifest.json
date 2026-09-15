@@ -32,15 +32,15 @@
       "path": "firmware.bin",
       "offset": 65536,
       "offsetHex": "0x10000",
-      "bytes": 1079056,
-      "sha256": "cdce49c00f74160ff6746297ba3e209e327757ef5c0f4f8816bd704dfd928eb2"
+      "bytes": 1081888,
+      "sha256": "ac049f2211b3d2ef57eba086d9c16511a91c868a16ddb52f9f22095dad9f6145"
     },
     {
       "path": "littlefs.bin",
       "offset": 2031616,
       "offsetHex": "0x1f0000",
       "bytes": 2097152,
-      "sha256": "dca1326b2f9fda2c870b041c71bbc6681980c84534c36d888139d8b24f238db0"
+      "sha256": "945b8b1d68e95ff0b9ec5f2b41e7ef40dc58798792ebf5ce3ed6b94726d8f4a8"
     }
   ]
 }

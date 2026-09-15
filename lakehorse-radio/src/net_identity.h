@@ -20,9 +20,17 @@
 
 namespace netid {
 
-// Registers the WiFi event handler. Safe to call before WiFi is up; the
-// responder itself starts when an address arrives.
+// Loads the saved hostname and registers the WiFi event handler. Safe to call
+// before WiFi is up; the responder itself starts when an address arrives.
 void begin();
+
+// The name this box answers to, without the .local suffix.
+String hostname();
+
+// Validates, stores and immediately re-advertises. Returns an error string on
+// a bad name, or nullptr on success, so the caller can tell the user WHY the
+// name was refused rather than just that it was.
+const char* setHostname(const String& wanted);
 
 bool isAdvertising();
 

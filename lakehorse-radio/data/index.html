@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lakehorse Radio</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📻</text></svg>" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>📻 Lakehorse Radio</h1>
+      <p class="tagline">Music from the band, played by your phone.</p>
+    </header>
+
+    <!-- The banner is filled in from /api/status before anything else renders.
+         It is the first thing on the page because how you got here decides
+         whether the audio can play at all, and a listener who does not know
+         that just sees a player that will not start. -->
+    <div class="banner" id="banner">Checking how you got here...</div>
+
+    <ul class="tracks" id="tracks"></ul>
+    <audio id="player" controls preload="none"></audio>
+    <span class="status" id="playerStatus"></span>
+
+    <div class="row">
+      <button class="btn" id="refreshBtn">Refresh from the band library</button>
+    </div>
+
+    <hr />
+
+    <!-- Setup is on the same page rather than behind a link, because a phone
+         that arrived through the captive sheet often cannot navigate anywhere
+         else. Hidden until we know whether this visitor can actually use it. -->
+    <section id="setup" hidden>
+      <fieldset>
+        <legend>Put this box on a network</legend>
+        <p class="muted" id="setupIntro"></p>
+
+        <label for="ssid">Network</label>
+        <select id="ssid"><option value="">Scanning...</option></select>
+
+        <label for="ssidManual">Or type the name</label>
+        <input id="ssidManual" placeholder="Network name" autocomplete="off" />
+
+        <label for="pass">Password</label>
+        <input id="pass" type="password" placeholder="Leave empty if the network is open" autocomplete="off" />
+
+        <div class="row">
+          <button class="btn primary" id="saveBtn">Save and connect</button>
+          <button class="btn" id="rescanBtn">Rescan</button>
+        </div>
+        <span class="status" id="setupStatus"></span>
+      </fieldset>
+
+      <p class="muted" id="pairLine"></p>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

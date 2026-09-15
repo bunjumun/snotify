@@ -1,0 +1,46 @@
+{
+  "name": "Lakehorse Radio",
+  "chip": "esp32",
+  "flashSize": "4MB",
+  "flashMode": "dio",
+  "flashFreq": "40m",
+  "filesystemOffset": "0x1f0000",
+  "filesystemSize": "0x200000",
+  "parts": [
+    {
+      "path": "bootloader.bin",
+      "offset": 4096,
+      "offsetHex": "0x1000",
+      "bytes": 23520,
+      "sha256": "b2306bbe4af1424d5ea454030d7482774befacaaea068b1add2a621f4328aef8"
+    },
+    {
+      "path": "partitions.bin",
+      "offset": 32768,
+      "offsetHex": "0x8000",
+      "bytes": 3072,
+      "sha256": "bb41ce1f22be278e2018cb4effc255a8b1e0b075d750c9f228f19e59ce279b26"
+    },
+    {
+      "path": "boot_app0.bin",
+      "offset": 57344,
+      "offsetHex": "0xe000",
+      "bytes": 8192,
+      "sha256": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0"
+    },
+    {
+      "path": "firmware.bin",
+      "offset": 65536,
+      "offsetHex": "0x10000",
+      "bytes": 1079056,
+      "sha256": "cdce49c00f74160ff6746297ba3e209e327757ef5c0f4f8816bd704dfd928eb2"
+    },
+    {
+      "path": "littlefs.bin",
+      "offset": 2031616,
+      "offsetHex": "0x1f0000",
+      "bytes": 2097152,
+      "sha256": "dca1326b2f9fda2c870b041c71bbc6681980c84534c36d888139d8b24f238db0"
+    }
+  ]
+}

@@ -173,7 +173,7 @@ function applyTheme(band){
 // living in the same lore_docs/lore_versions row (CR-91) — one-way, from a
 // public Google Calendar the band points it at, nothing written back to Google.
 const BAND_FEATURES = {
-  lakehorse: ['game', 'lore', 'log', 'goals', 'links', 'concept', 'calendar'],
+  lakehorse: ['game', 'lore', 'log', 'goals', 'links', 'concept', 'calendar', 'radio'],
 };
 // Defaults to the band on screen, which is what every call site wants; the
 // argument is there for the gate, which knows the band before it is logged in.
@@ -196,11 +196,15 @@ function applyFeatures(band){
   b.toggle('has-goals',  has.includes('goals'));
   b.toggle('has-links',  has.includes('links'));
   b.toggle('has-calendar', has.includes('calendar'));
+  // The radio is the little ESP32 box in the barn. It gates like the rest,
+  // and sits on the assets shelf because it is a thing the band maintains
+  // rather than a thing the game reads.
+  b.toggle('has-radio', has.includes('radio'));
   // concept is the Art Concepts doc (art-concept.html), reached only through a
   // door on the art page (like Image tools), not from the assets shelf or the
   // Pages menu — so it gates on its own and stays out of has-assets below.
   b.toggle('has-concept', has.includes('concept'));
-  b.toggle('has-assets', has.includes('lore') || has.includes('log') || has.includes('goals') || has.includes('links') || has.includes('calendar'));
+  b.toggle('has-assets', has.includes('lore') || has.includes('log') || has.includes('goals') || has.includes('links') || has.includes('calendar') || has.includes('radio'));
 }
 
 // ---------- Dazzle generator ----------

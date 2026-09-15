@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "source": "flashed with the firmware",
+  "tracks": [
+    {
+      "title": "Mango Tree World",
+      "url": "https://twgukeyoayfqldnojrkg.supabase.co/storage/v1/object/public/tracks/lakehorse/Mango%20Tree%20World/Mango%20Tree%20World%20MIX%208-18-26.mp3"
+    },
+    {
+      "title": "Jupiter Gold",
+      "url": "https://twgukeyoayfqldnojrkg.supabase.co/storage/v1/object/public/tracks/lakehorse/Jupiter%20Gold/JupiterGold%204-26-26.mp3"
+    },
+    {
+      "title": "Light",
+      "url": "https://twgukeyoayfqldnojrkg.supabase.co/storage/v1/object/public/tracks/lakehorse/Light/LAKEHORSE%20-%20Light%20Lessons%20-%2002%20Light.mp3"
+    }
+  ]
+}

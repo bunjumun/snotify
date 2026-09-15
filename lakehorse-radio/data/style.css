@@ -1,0 +1,105 @@
+/* Lakehorse Radio — the player and the setup page share one stylesheet.
+   Deliberately not a copy of the band site's core.css. This has to render from
+   2 MB of flash over a link with no internet behind it, so it carries no
+   webfont, no framework and no image. It borrows the site's palette by eye
+   instead, which keeps the download under a few kilobytes. */
+
+:root {
+  --bg: #0e1116;
+  --bg-row: #161b22;
+  --bg-hover: #1c232c;
+  --line: #262d36;
+  --text: #e6edf3;
+  --text-dim: #9aa6b2;
+  --text-mute: #6b7683;
+  --accent: #6c5ce7;
+  --accent-2: #12706b;
+  --warn: #c98a2c;
+  --err: #e0567a;
+  --ok: #7de08a;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap { max-width: 620px; margin: 0 auto; padding: 24px 16px 48px; }
+
+header { margin-bottom: 20px; }
+h1 { margin: 0; font-size: 22px; letter-spacing: -0.3px; }
+.tagline { margin: 4px 0 0; color: var(--text-dim); font-size: 13.5px; }
+
+/* The network banner is the honest bit. It says which way in the listener came
+   and what that means for them, rather than letting a silent failure look like
+   a broken box. */
+.banner {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: var(--bg-row);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  font-size: 13.5px;
+  color: var(--text-dim);
+}
+.banner.warn { border-left-color: var(--warn); }
+.banner.err { border-left-color: var(--err); }
+.banner b { color: var(--text); }
+
+.tracks { list-style: none; margin: 0; padding: 0; }
+.track {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-row);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: background .14s, border-color .14s;
+}
+.track:hover { background: var(--bg-hover); border-color: var(--accent); }
+.track.playing { border-color: var(--accent); background: var(--bg-hover); }
+.track .n { color: var(--text-mute); font-variant-numeric: tabular-nums; font-size: 13px; min-width: 20px; }
+.track .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track .state { color: var(--accent); font-size: 12px; }
+
+audio { width: 100%; margin-top: 18px; }
+
+.status { display: block; margin-top: 10px; font-size: 13px; min-height: 18px; color: var(--text-dim); }
+.status.err { color: var(--err); }
+.status.ok { color: var(--ok); }
+
+fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin: 0 0 16px; }
+legend { padding: 0 6px; color: var(--text-dim); font-size: 13px; }
+label { display: block; margin: 10px 0 4px; font-size: 13px; color: var(--text-dim); }
+input, select {
+  width: 100%; padding: 10px 12px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+  font: inherit;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 16px; margin-top: 12px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg-row); color: var(--text);
+  font: inherit; cursor: pointer;
+}
+.btn:hover { background: var(--bg-hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn[disabled] { opacity: .5; cursor: default; }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.muted { color: var(--text-mute); font-size: 12.5px; }
+a { color: var(--accent); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }

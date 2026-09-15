@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lakehorse Radio flasher</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📻</text></svg>" />
+<style>
+  /* Standalone on purpose. This page has to work when it is opened from a
+     local server with the band site nowhere in sight, so it borrows core.css
+     by eye rather than linking it. */
+  :root {
+    --bg:#0e1116; --bg-row:#161b22; --bg-hover:#1c232c; --line:#262d36;
+    --text:#e6edf3; --text-dim:#9aa6b2; --text-mute:#6b7683;
+    --accent:#6c5ce7; --warn:#c98a2c; --err:#e0567a; --ok:#7de08a; --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:720px;margin:0 auto;padding:28px 16px 64px}
+  h1{margin:0;font-size:23px;letter-spacing:-.3px}
+  .tagline{margin:6px 0 22px;color:var(--text-dim);font-size:13.5px}
+  fieldset{border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:0 0 16px}
+  legend{padding:0 6px;color:var(--text-dim);font-size:13px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;
+       padding:10px 16px;border:1px solid var(--line);border-radius:8px;
+       background:var(--bg-row);color:var(--text);font:inherit;cursor:pointer}
+  .btn:hover{background:var(--bg-hover)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn[disabled]{opacity:.45;cursor:default}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  label{display:block;margin:10px 0 4px;font-size:13px;color:var(--text-dim)}
+  input,select{width:100%;padding:10px 12px;background:var(--bg);color:var(--text);
+       border:1px solid var(--line);border-radius:8px;font:inherit}
+  .status{display:block;margin-top:10px;font-size:13px;min-height:18px;color:var(--text-dim)}
+  .status.err{color:var(--err)} .status.ok{color:var(--ok)} .status.warn{color:var(--warn)}
+  .part{margin:10px 0}
+  .part .head{display:flex;justify-content:space-between;font-size:12.5px;color:var(--text-dim)}
+  .bar{height:7px;background:var(--bg-row);border:1px solid var(--line);
+       border-radius:99px;overflow:hidden;margin-top:4px}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s}
+  .bar.done i{background:var(--ok)}
+  pre#log{background:#0a0d11;border:1px solid var(--line);border-radius:8px;
+       padding:12px;max-height:230px;overflow:auto;font-size:12px;color:var(--text-dim);
+       white-space:pre-wrap;word-break:break-word}
+  .muted{color:var(--text-mute);font-size:12.5px}
+  .banner{border:1px solid var(--line);border-left:3px solid var(--warn);
+       background:var(--bg-row);border-radius:var(--radius);padding:12px 14px;
+       margin-bottom:18px;font-size:13.5px;color:var(--text-dim)}
+  .banner b{color:var(--text)}
+  code{background:var(--bg-row);padding:1px 5px;border-radius:4px;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📻 Lakehorse Radio flasher</h1>
+  <p class="tagline">Puts the firmware on the box over USB, and pushes it a playlist.</p>
+
+  <div class="banner" id="envBanner">Checking this browser...</div>
+
+  <fieldset>
+    <legend>1. Flash the box over USB</legend>
+    <p class="muted" id="manifestLine">Loading the firmware manifest...</p>
+
+    <div class="row">
+      <button class="btn primary" id="flashBtn" disabled>Connect and flash</button>
+      <label style="margin:0;flex:0 0 auto">
+        <select id="baud" style="width:auto">
+          <option value="115200" selected>115200 baud (safest)</option>
+          <option value="230400">230400 baud</option>
+          <option value="460800">460800 baud</option>
+          <option value="921600">921600 baud</option>
+        </select>
+      </label>
+      <label style="margin:0;flex:0 0 auto;display:flex;align-items:center;gap:6px;color:var(--text-dim)">
+        <input type="checkbox" id="eraseAll" style="width:auto" /> Erase everything first
+      </label>
+    </div>
+
+    <div id="parts"></div>
+    <span class="status" id="flashStatus"></span>
+    <pre id="log" hidden></pre>
+  </fieldset>
+
+  <fieldset>
+    <legend>2. Send it a playlist</legend>
+    <p class="muted">
+      The box has to be on the same network as this computer. Pair once by joining
+      its hotspot and fetching the key, then this works from anywhere on the network.
+    </p>
+
+    <label for="host">Box address</label>
+    <input id="host" value="http://lakehorse.local" />
+
+    <label for="key">Pairing key</label>
+    <input id="key" placeholder="16 hex characters, from the box" autocomplete="off" />
+
+    <div class="row">
+      <button class="btn" id="fetchKeyBtn">Fetch key (on its hotspot)</button>
+      <button class="btn" id="loadLibBtn">Load the band library</button>
+      <button class="btn primary" id="pushBtn">Push playlist</button>
+    </div>
+    <span class="status" id="syncStatus"></span>
+    <div id="trackPreview" class="muted" style="margin-top:10px"></div>
+  </fieldset>
+</div>
+
+<script type="module">
+/* esptool-js is ESM only and is not on cdnjs, so it comes from jsDelivr as a
+ * module. The pinned bundle.js is fully self contained: pako and every flasher
+ * stub are inlined, so it makes no network request of its own at runtime.
+ *
+ * The API changed in 0.6.0 in a way that breaks every older tutorial:
+ * writeFlash now takes Uint8Array, not the "binary string" that
+ * FileReader.readAsBinaryString used to produce. Passing a string here fails in
+ * confusing ways, so the files below are handed over as bytes.
+ */
+import { ESPLoader, Transport } from 'https://cdn.jsdelivr.net/npm/esptool-js@0.6.1/bundle.js';
+
+const $ = (id) => document.getElementById(id);
+const MANIFEST = 'firmware/lakehorse-radio/manifest.json';
+
+let manifest = null;
+let pendingTracks = null;
+
+function say(el, msg, kind) {
+  el.textContent = msg || '';
+  el.className = 'status' + (kind ? ' ' + kind : '');
+}
+
+function logLine(text) {
+  const log = $('log');
+  log.hidden = false;
+  log.textContent += text;
+  log.scrollTop = log.scrollHeight;
+}
+
+/* Web Serial needs a secure context, and ".local" is not one. That catches
+ * people out constantly, so name the actual problem rather than letting
+ * navigator.serial simply be undefined. */
+function checkEnvironment() {
+  const banner = $('envBanner');
+  if (!window.isSecureContext) {
+    banner.className = 'banner';
+    banner.style.borderLeftColor = 'var(--err)';
+    banner.innerHTML = '<b>This page is not in a secure context.</b> '
+      + 'Web Serial only works over https, or from http://localhost. '
+      + 'Serve this folder locally and open it as <code>http://localhost:8899/flasher.html</code>.';
+    return false;
+  }
+  if (!('serial' in navigator)) {
+    banner.className = 'banner';
+    banner.style.borderLeftColor = 'var(--err)';
+    banner.innerHTML = '<b>This browser has no Web Serial.</b> '
+      + 'Use Chrome or Edge on a desktop. Safari and mobile browsers cannot flash.';
+    return false;
+  }
+  banner.className = 'banner';
+  banner.style.borderLeftColor = 'var(--ok)';
+  banner.innerHTML = '<b>Ready.</b> Plug the box in over USB, then press connect. '
+    + 'The board resets itself into download mode, so there is no button to hold.';
+  return true;
+}
+
+async function loadManifest() {
+  try {
+    const res = await fetch(MANIFEST, { cache: 'no-store' });
+    if (!res.ok) throw new Error('manifest returned ' + res.status);
+    manifest = await res.json();
+
+    $('manifestLine').textContent =
+      `${manifest.name}, ${manifest.chip}, ${manifest.flashSize}. `
+      + `Filesystem at ${manifest.filesystemOffset}.`;
+
+    const parts = $('parts');
+    parts.textContent = '';
+    manifest.parts.forEach((p, i) => {
+      const box = document.createElement('div');
+      box.className = 'part';
+      const head = document.createElement('div');
+      head.className = 'head';
+      const name = document.createElement('span');
+      name.textContent = `${p.path}  at ${p.offsetHex}`;
+      const size = document.createElement('span');
+      size.id = 'pct' + i;
+      size.textContent = (p.bytes / 1024).toFixed(0) + ' KB';
+      head.appendChild(name); head.appendChild(size);
+      const bar = document.createElement('div');
+      bar.className = 'bar'; bar.id = 'bar' + i;
+      bar.innerHTML = '<i></i>';
+      box.appendChild(head); box.appendChild(bar);
+      parts.appendChild(box);
+    });
+
+    if (checkEnvironment()) $('flashBtn').disabled = false;
+  } catch (err) {
+    $('manifestLine').textContent = '';
+    say($('flashStatus'),
+      'Could not load the firmware manifest. Build it first with '
+      + 'tools/make_release.py. (' + err.message + ')', 'err');
+  }
+}
+
+async function fetchPart(p) {
+  const res = await fetch('firmware/lakehorse-radio/' + p.path, { cache: 'no-store' });
+  if (!res.ok) throw new Error(p.path + ' returned ' + res.status);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.length !== p.bytes) {
+    // The manifest records the size the release was built with. A mismatch
+    // means the two are out of step, and flashing a stale image is exactly the
+    // kind of failure that looks like a hardware fault later.
+    throw new Error(`${p.path} is ${bytes.length} bytes, manifest says ${p.bytes}`);
+  }
+  return bytes;
+}
+
+async function flash() {
+  const btn = $('flashBtn');
+  btn.disabled = true;
+  $('log').textContent = '';
+  say($('flashStatus'), 'Asking for the serial port...', '');
+
+  let transport = null;
+  try {
+    const files = [];
+    for (const p of manifest.parts) {
+      files.push({ address: p.offset, data: await fetchPart(p) });
+    }
+
+    const port = await navigator.serial.requestPort();
+    transport = new Transport(port, true);
+
+    const esploader = new ESPLoader({
+      transport,
+      baudrate: parseInt($('baud').value, 10),
+      terminal: {
+        clean() { $('log').textContent = ''; },
+        writeLine(d) { logLine(d + '\n'); },
+        write(d) { logLine(d); },
+      },
+    });
+
+    say($('flashStatus'), 'Connecting...', '');
+    const chip = await esploader.main();
+    say($('flashStatus'), 'Connected to ' + chip + '. Writing...', '');
+
+    await esploader.writeFlash({
+      fileArray: files,
+      // Never "detect": esptool-js 0.6.1 fails its own bounds check when the
+      // size is "detect", and every file is rejected as not fitting.
+      flashSize: manifest.flashSize,
+      flashMode: manifest.flashMode,
+      flashFreq: manifest.flashFreq,
+      eraseAll: $('eraseAll').checked,
+      compress: true,
+      reportProgress(fileIndex, written, total) {
+        const bar = $('bar' + fileIndex);
+        const pct = $('pct' + fileIndex);
+        if (!bar) return;
+        const ratio = total ? written / total : 0;
+        bar.firstChild.style.width = (ratio * 100).toFixed(1) + '%';
+        if (pct) pct.textContent = (ratio * 100).toFixed(0) + '%';
+        if (ratio >= 1) bar.classList.add('done');
+      },
+    });
+
+    say($('flashStatus'), 'Written. Resetting the board...', '');
+    await esploader.after('hard_reset');
+    say($('flashStatus'),
+      'Done. The box is rebooting and should appear as its own "Lakehorse Radio" '
+      + 'hotspot within a few seconds.', 'ok');
+  } catch (err) {
+    say($('flashStatus'), 'Flashing failed. ' + (err && err.message ? err.message : err), 'err');
+  } finally {
+    // Always release the port. A held port cannot be reopened without closing
+    // the tab, which presents as "the flasher stopped seeing my board".
+    if (transport) { try { await transport.disconnect(); } catch (e) { /* already gone */ } }
+    btn.disabled = false;
+  }
+}
+
+/* ---------- Playlist side ---------- */
+
+const SUPA_URL = 'https://twgukeyoayfqldnojrkg.supabase.co';
+const SUPA_KEY = 'sb_publishable_zIiAxxA5Zk1yRNzignANXA_rEp3vKdG';
+
+function publicUrl(path) {
+  if (!path) return '';
+  if (/^https?:/.test(path)) return path;
+  return SUPA_URL + '/storage/v1/object/public/tracks/'
+    + path.replace(/^tracks\//, '').split('/').map(encodeURIComponent).join('/');
+}
+
+const isStreamable = (u) => /\.(mp3|m4a|aac|ogg|opus)(\?|$)/i.test(u);
+
+async function loadLibrary() {
+  say($('syncStatus'), 'Asking the band library...', '');
+  try {
+    const res = await fetch(SUPA_URL + '/rest/v1/rpc/game_tracks', {
+      method: 'POST',
+      headers: { apikey: SUPA_KEY, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!res.ok) throw new Error('library returned ' + res.status);
+    const rows = await res.json();
+
+    const all = (rows || []).map((r) => ({ title: r.title, url: publicUrl(r.src) }));
+    pendingTracks = all.filter((t) => isStreamable(t.url));
+    const skipped = all.length - pendingTracks.length;
+
+    $('trackPreview').textContent = pendingTracks.map((t, i) => `${i + 1}. ${t.title}`).join('\n');
+    $('trackPreview').style.whiteSpace = 'pre-wrap';
+
+    say($('syncStatus'),
+      `${pendingTracks.length} streamable tracks ready`
+      + (skipped ? `, ${skipped} skipped as too large or not a stream format.` : '.'), 'ok');
+  } catch (err) {
+    say($('syncStatus'), 'Could not reach the band library. ' + err.message, 'err');
+  }
+}
+
+async function fetchKey() {
+  const host = $('host').value.replace(/\/$/, '');
+  say($('syncStatus'), 'Asking the box for its key...', '');
+  try {
+    const res = await fetch(host + '/api/pair', { cache: 'no-store' });
+    const doc = await res.json();
+    if (!res.ok) throw new Error(doc.error || 'refused');
+    $('key').value = doc.key;
+    say($('syncStatus'), 'Paired with this box.', 'ok');
+  } catch (err) {
+    say($('syncStatus'),
+      'Could not pair. The key is only handed out to a computer joined to the '
+      + 'box\'s own hotspot. (' + err.message + ')', 'err');
+  }
+}
+
+async function push() {
+  if (!pendingTracks || !pendingTracks.length) {
+    say($('syncStatus'), 'Load the band library first.', 'err');
+    return;
+  }
+  const host = $('host').value.replace(/\/$/, '');
+  const key = $('key').value.trim();
+  if (!key) { say($('syncStatus'), 'Fetch the pairing key first.', 'err'); return; }
+
+  say($('syncStatus'), 'Pushing ' + pendingTracks.length + ' tracks...', '');
+  try {
+    const res = await fetch(host + '/api/playlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Lakehorse-Key': key },
+      body: JSON.stringify({ version: 1, source: 'flasher', tracks: pendingTracks }),
+    });
+    const doc = await res.json();
+    if (!res.ok) throw new Error(doc.error || 'rejected');
+    say($('syncStatus'), 'The box now has ' + doc.tracks + ' tracks.', 'ok');
+  } catch (err) {
+    // Worth naming, because from an https page this is the usual cause and the
+    // browser error alone says nothing useful.
+    say($('syncStatus'),
+      'Push failed. ' + err.message + '. If this page is on https, Chrome asks '
+      + 'permission before it will talk to a device on your local network, and '
+      + 'denying that prompt fails exactly like this. Serving the page from '
+      + 'http://localhost avoids the prompt entirely.', 'err');
+  }
+}
+
+$('flashBtn').addEventListener('click', flash);
+$('loadLibBtn').addEventListener('click', loadLibrary);
+$('fetchKeyBtn').addEventListener('click', fetchKey);
+$('pushBtn').addEventListener('click', push);
+
+checkEnvironment();
+loadManifest();
+</script>
+</body>
+</html>

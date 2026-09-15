@@ -6,7 +6,7 @@
 <title>Band assets</title>
 <meta name="description" content="Band assets — the lore document, stacked by draft, with one draft live." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>" />
-<link rel="stylesheet" href="core.css?v=34" />
+<link rel="stylesheet" href="core.css?v=35" />
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
   /* Assets-only surface. Everything shared lives in core.css. */
@@ -27,10 +27,27 @@
      in core.js, which applyTheme() turns into these classes. A band holding
      neither can still reach this page by typing the address, and gets the
      sentence rather than an empty grid that looks like a loading failure. */
-  #cardLore, #cardLog, #cardGoals, #cardLinks, #cardCalendar, #shelfEmpty { display: none; }
-  body.has-lore #cardLore, body.has-log #cardLog, body.has-goals #cardGoals, body.has-links #cardLinks, body.has-calendar #cardCalendar { display: block; }
-  body.authed:not(.has-lore):not(.has-log):not(.has-goals):not(.has-links):not(.has-calendar) #shelfEmpty { display: block; }
+  #cardLore, #cardLog, #cardGoals, #cardLinks, #cardCalendar, #cardRadio, #shelfEmpty { display: none; }
+  body.has-lore #cardLore, body.has-log #cardLog, body.has-goals #cardGoals, body.has-links #cardLinks, body.has-calendar #cardCalendar, body.has-radio #cardRadio { display: block; }
+  body.authed:not(.has-lore):not(.has-log):not(.has-goals):not(.has-links):not(.has-radio):not(.has-calendar) #shelfEmpty { display: block; }
   #shelfEmpty { color: var(--text-dim); font-size: 14px; line-height: 1.55; max-width: 46em; }
+  /* Radio. Same no-drafts shape as Links and Calendar: there is one set
+     list, not a stack of them. The flashing controls sit above the set
+     because getting firmware onto the box is the thing you do first and
+     then almost never again. */
+  .radioSimple { display: none; flex-direction: column; gap: 14px; }
+  .radioStep { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+  .radioStep h3 { margin: 0 0 4px; font-size: 15px; }
+  .radioStep p { margin: 0 0 10px; color: var(--text-dim); font-size: 13px; line-height: 1.5; }
+  .radioRow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .radioBar { height: 7px; background: var(--bg-row); border: 1px solid var(--line); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+  .radioBar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+  .radioPicks { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .radioPick { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .radioPick:last-child { border-bottom: 0; }
+  .radioPick input { width: auto; margin: 0; }
+  .radioPick .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .radioPick .warn { color: var(--warn); font-size: 12px; }
   /* The Game entry in this page's own Pages menu follows the same per-band
      gate as everywhere else (CR-14/15, CR-104). No #assetsBtn here — this
      page is Assets. */
@@ -325,6 +342,14 @@
           <div class="sub" id="linksTally">&nbsp;</div>
         </div>
 
+        <div class="card" id="cardRadio">
+          <div class="glyph">📻</div>
+          <h2>Lakehorse Radio</h2>
+          <p>The little box in the barn. Pick what it plays, put the firmware on
+             it over USB, and send it the set.</p>
+          <div class="sub" id="radioTally">&nbsp;</div>
+        </div>
+
         <div class="card" id="cardCalendar">
           <div class="glyph">📅</div>
           <h2>Calendar</h2>
@@ -391,6 +416,53 @@
       <!-- Calendar skips the drafts/editor layout too, and skips Links' list
            of rows — there's exactly one embed URL. See openCalendar() and
            saveCalendarNow() below. -->
+      <!-- Radio skips the drafts layout for the same reason Links and Calendar
+           do: there is one set list, not a stack of them. Three steps, in the
+           order you actually do them. -->
+      <div class="radioSimple" id="radioSimple">
+
+        <div class="radioStep">
+          <h3>1. What it plays</h3>
+          <p>Tick the mixes that go on the box. Anything that is not a streaming
+             format is listed but cannot be ticked, because a phone on a barn
+             connection stalls on a big uncompressed master and the radio just
+             looks broken.</p>
+          <div class="radioPicks" id="radioPicks"></div>
+          <div class="radioRow" style="margin-top:10px">
+            <button class="btn primary" id="radioSaveBtn">Save the set</button>
+          </div>
+        </div>
+
+        <div class="radioStep">
+          <h3>2. Put the firmware on it</h3>
+          <p>Plug the box into this computer over USB. Chrome or Edge only, and
+             this needs the page to be on https or localhost, which it is.
+             The board resets itself, so there is no button to hold.</p>
+          <div class="radioRow">
+            <button class="btn" id="radioFlashBtn">Connect and flash</button>
+            <span class="hint" id="radioFlashHint"></span>
+          </div>
+          <div class="radioBar" id="radioBar"><i></i></div>
+        </div>
+
+        <div class="radioStep">
+          <h3>3. Send it the set</h3>
+          <p>The box has to be on the same network as this computer. Pair once by
+             joining its own hotspot and fetching the key; after that this works
+             from anywhere on the network.</p>
+          <label class="hint" for="radioHost">Box address</label>
+          <input class="nm" id="radioHost" value="http://lakehorse.local" />
+          <label class="hint" for="radioKey">Pairing key</label>
+          <input class="nm" id="radioKey" placeholder="16 hex characters, from the box" autocomplete="off" />
+          <div class="radioRow" style="margin-top:10px">
+            <button class="btn" id="radioPairBtn">Fetch key</button>
+            <button class="btn primary" id="radioPushBtn">Send the set</button>
+          </div>
+        </div>
+
+        <span class="status" id="radioStatus"></span>
+      </div>
+
       <div class="calendarSimple" id="calendarSimple">
         <div class="calendarAddRow">
           <input class="nm" id="calendarUrlInput"
@@ -442,7 +514,7 @@
     </div>
   </div>
 
-<script src="core.js?v=38"></script>
+<script src="core.js?v=39"></script>
 <script type="module">
 // The parser the GAME uses, imported rather than reimplemented — so what this
 // page reports as "12 exchanges" is what the fish will actually find.
@@ -515,6 +587,14 @@ const DOCS = {
   // 'calendar' slug (CR-91). Bypasses drafts/editor the same way Links does
   // (see openCalendar()) — not called on that path either, kept for the same
   // reason.
+  radio: {
+    title: 'Lakehorse Radio', tally: 'radioTally',
+    count: (body) => {
+      const n = parseRadioDoc(body).tracks.length;
+      return n ? `<b>${n}</b> track${n === 1 ? '' : 's'} in the set.`
+               : 'No set yet, so the box plays what was flashed onto it.';
+    },
+  },
   calendar: {
     title: 'Calendar', tally: 'calendarTally',
     count: (body) => {
@@ -592,6 +672,11 @@ async function init(){
         const items = parseLinksDoc(on ? on.body : '{}').items;
         $(DOCS.links.tally).textContent = items.length
           ? `${items.length} link${items.length === 1 ? '' : 's'}` : 'No links yet.';
+      } else if (slug === 'radio'){
+        // Same non-drafts framing as links: one set list, counted.
+        const n = parseRadioDoc(on ? on.body : '{}').tracks.length;
+        $(DOCS.radio.tally).textContent = n
+          ? `${n} track${n === 1 ? '' : 's'} in the set` : 'No set yet.';
       } else if (slug === 'calendar'){
         // Same non-drafts framing as links, but the field is a single URL.
         const { url } = parseCalendarDoc(on ? on.body : '{}');
@@ -619,6 +704,7 @@ async function openDoc(slug){
   showDoc();
   if (slug === 'links') return openLinks();
   if (slug === 'calendar') return openCalendar();
+  if (slug === 'radio') return openRadio();
   try {
     drafts = (await libRpc('lore_list', { d: slug })) || [];
   } catch (e) {
@@ -752,10 +838,12 @@ function setEditorMode(slug){
   // and openCalendar().
   const isLinks = slug === 'links';
   const isCalendar = slug === 'calendar';
-  document.querySelector('.doclayout').style.display = (isLinks || isCalendar) ? 'none' : '';
+  const isRadio = slug === 'radio';
+  document.querySelector('.doclayout').style.display = (isLinks || isCalendar || isRadio) ? 'none' : '';
   $('linksSimple').style.display = isLinks ? 'flex' : 'none';
   $('calendarSimple').style.display = isCalendar ? 'flex' : 'none';
-  $('newBtn').style.display = (isLinks || isCalendar) ? 'none' : '';
+  $('radioSimple').style.display = isRadio ? 'flex' : 'none';
+  $('newBtn').style.display = (isLinks || isCalendar || isRadio) ? 'none' : '';
   $('linksTrashBtn').style.display = isLinks ? '' : 'none';
 
   const kind = DOCS[slug] && DOCS[slug].struct; // undefined | 'goals'
@@ -1429,12 +1517,275 @@ async function makeLive(){
   } catch (e) { say(e.message, true); }
 }
 
+// ---------- Lakehorse Radio ----------
+// The box is an ESP32 in the barn that serves a web player. It does not play
+// anything itself: whoever opens its page streams the mixes from Supabase on
+// their own phone. That is why this card deals only in track URLs and firmware
+// images, and why the box never needs a password of ours.
+//
+// Three jobs, in the order you do them: choose the set, put firmware on the box
+// over USB, then send it the set over the network.
+
+/** The stored set. Shaped like the other simple docs: parse defensively, because
+ *  a body that will not parse must read as "no set" rather than throw and take
+ *  the whole shelf down with it. */
+function parseRadioDoc(body){
+  try {
+    const d = JSON.parse(body || '{}');
+    return { tracks: Array.isArray(d.tracks) ? d.tracks : [] };
+  } catch { return { tracks: [] }; }
+}
+
+let radioVid = null;
+let radioDoc = { tracks: [] };
+let radioLibrary = [];
+
+// Only formats a phone will actually stream. The library holds uncompressed
+// masters too, and a fifty megabyte wav over the barn connection is
+// indistinguishable from a broken player.
+const radioStreamable = (u) => /\.(mp3|m4a|aac|ogg|opus)(\?|$)/i.test(u || '');
+
+function radioSay(msg, isErr){
+  const el = $('radioStatus');
+  el.textContent = msg || '';
+  el.className = 'status' + (isErr ? ' err' : ' ok');
+  if (msg) setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 6000);
+}
+
+/** Loads the saved set and the band's own library side by side, so the picker
+ *  can show every mix with the chosen ones already ticked. */
+async function openRadio(){
+  try {
+    const list = (await libRpc('lore_list', { d: 'radio' })) || [];
+    const on = list.find(x => x.active) || list[0] || null;
+    radioVid = on ? on.id : null;
+    radioDoc = parseRadioDoc(on ? on.body : '{}');
+  } catch (e) {
+    if (isAuthErr(e)){ clearAuth(curBand); return showGate(curBand, true); }
+    radioVid = null;
+    radioDoc = { tracks: [] };
+    radioSay(e.message || 'Could not load the set.', true);
+  }
+
+  try {
+    const lib = await libRpc('get_library', {});
+    // One entry per song, using its top version, which is the one the band
+    // treats as current everywhere else on the site.
+    radioLibrary = ((lib && lib.songs) || [])
+      .filter(s => s.kind !== 'art' && !s.excluded && (s.versions || []).length)
+      .map(s => {
+        const v = s.versions[0];
+        return { title: s.title || s.folder, version: v.name, url: publicUrl(v.src) };
+      });
+  } catch (e) {
+    if (isAuthErr(e)){ clearAuth(curBand); return showGate(curBand, true); }
+    radioLibrary = [];
+    radioSay(e.message || 'Could not load the library.', true);
+  }
+
+  $('radioKey').value = localStorage.getItem('mp_radio_key_v1') || '';
+  renderRadioPicks();
+  radioFlashHint();
+}
+
+function renderRadioPicks(){
+  const box = $('radioPicks');
+  box.textContent = '';
+
+  if (!radioLibrary.length){
+    const p = document.createElement('div');
+    p.className = 'radioPick';
+    p.textContent = 'No mixes found in the library.';
+    box.appendChild(p);
+    return;
+  }
+
+  const chosen = new Set(radioDoc.tracks.map(t => t.url));
+
+  radioLibrary.forEach((t) => {
+    const row = document.createElement('div');
+    row.className = 'radioPick';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = chosen.has(t.url);
+    cb.disabled = !radioStreamable(t.url);
+    cb.addEventListener('change', () => {
+      if (cb.checked) radioDoc.tracks.push({ title: t.title, url: t.url });
+      else radioDoc.tracks = radioDoc.tracks.filter(x => x.url !== t.url);
+    });
+
+    // textContent, not innerHTML: these titles come back from the database.
+    const nm = document.createElement('span');
+    nm.className = 'nm';
+    nm.textContent = t.title;
+
+    row.appendChild(cb);
+    row.appendChild(nm);
+
+    if (!radioStreamable(t.url)){
+      const w = document.createElement('span');
+      w.className = 'warn';
+      w.textContent = 'not a streaming format';
+      row.appendChild(w);
+    }
+
+    box.appendChild(row);
+  });
+}
+
+async function saveRadioNow(){
+  try {
+    const id = await libRpc('lore_save', {
+      nm: 'Lakehorse Radio', body_in: JSON.stringify(radioDoc), vid: radioVid, d: 'radio',
+    });
+    if (!radioVid) await libRpc('lore_set_active', { vid: id });
+    radioVid = id;
+    radioSay(radioDoc.tracks.length
+      ? `Saved. ${radioDoc.tracks.length} track${radioDoc.tracks.length === 1 ? '' : 's'} in the set.`
+      : 'Saved an empty set.');
+  } catch (e) {
+    if (isAuthErr(e)){ clearAuth(curBand); return showGate(curBand, true); }
+    radioSay(e.message || 'Could not save the set.', true);
+  }
+}
+
+function radioFlashHint(){
+  const hint = $('radioFlashHint');
+  if (!window.isSecureContext) hint.textContent = 'Needs https or localhost.';
+  else if (!('serial' in navigator)) hint.textContent = 'Needs Chrome or Edge on a desktop.';
+  else hint.textContent = '';
+}
+
+/** Flashes the box over USB.
+ *
+ *  esptool-js is imported lazily rather than at page load: it is 218 KB and
+ *  almost nobody opening this shelf is about to flash a board. It is ESM only
+ *  and is not on cdnjs, so it comes from jsDelivr.
+ *
+ *  The offsets are never written here. They come from the manifest that
+ *  tools/make_release.py generates out of partitions.csv, so the page cannot
+ *  drift from the partition table the firmware was built with. */
+async function flashRadio(){
+  const btn = $('radioFlashBtn');
+  const bar = $('radioBar').firstChild;
+
+  if (!('serial' in navigator) || !window.isSecureContext){
+    radioSay('This browser cannot flash. Use Chrome or Edge on a desktop.', true);
+    return;
+  }
+
+  btn.disabled = true;
+  let transport = null;
+  try {
+    radioSay('Loading the flasher...');
+    // Since 0.6.0 writeFlash takes Uint8Array, not the binary strings older
+    // examples build with FileReader. Passing a string fails obscurely.
+    const { ESPLoader, Transport } = await import('https://cdn.jsdelivr.net/npm/esptool-js@0.6.1/bundle.js');
+
+    const manRes = await fetch('firmware/lakehorse-radio/manifest.json', { cache: 'no-store' });
+    if (!manRes.ok) throw new Error('no firmware manifest in this repo');
+    const man = await manRes.json();
+
+    const files = [];
+    for (const p of man.parts){
+      const r = await fetch('firmware/lakehorse-radio/' + p.path, { cache: 'no-store' });
+      if (!r.ok) throw new Error(p.path + ' returned ' + r.status);
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      if (bytes.length !== p.bytes) throw new Error(p.path + ' does not match the manifest');
+      files.push({ address: p.offset, data: bytes });
+    }
+
+    radioSay('Choose the board’s serial port...');
+    const port = await navigator.serial.requestPort();
+    transport = new Transport(port, true);
+
+    const loader = new ESPLoader({ transport, baudrate: 115200, terminal: {
+      clean(){}, writeLine(){}, write(){},
+    } });
+
+    const chip = await loader.main();
+    radioSay('Connected to ' + chip + '. Writing...');
+
+    await loader.writeFlash({
+      fileArray: files,
+      // Never "detect": esptool-js 0.6.1 fails its own bounds check on that
+      // value and rejects every file as not fitting.
+      flashSize: man.flashSize,
+      flashMode: man.flashMode,
+      flashFreq: man.flashFreq,
+      eraseAll: false,
+      compress: true,
+      reportProgress(i, written, total){
+        const done = (i + (total ? written / total : 0)) / files.length;
+        bar.style.width = (done * 100).toFixed(1) + '%';
+      },
+    });
+
+    await loader.after('hard_reset');
+    bar.style.width = '100%';
+    radioSay('Flashed. The box is rebooting and will put up its own hotspot.');
+  } catch (e) {
+    radioSay('Flashing failed. ' + (e && e.message ? e.message : e), true);
+  } finally {
+    // Always let the port go, or it stays locked until the tab is closed.
+    if (transport){ try { await transport.disconnect(); } catch { /* already gone */ } }
+    btn.disabled = false;
+  }
+}
+
+async function pairRadio(){
+  const host = $('radioHost').value.trim().replace(/\/$/, '');
+  try {
+    const r = await fetch(host + '/api/pair', { cache: 'no-store' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'refused');
+    $('radioKey').value = d.key;
+    localStorage.setItem('mp_radio_key_v1', d.key);
+    radioSay('Paired with the box.');
+  } catch (e) {
+    radioSay('Could not pair. The key is only given to a computer joined to the '
+      + 'box’s own hotspot. (' + (e.message || e) + ')', true);
+  }
+}
+
+async function pushRadio(){
+  const host = $('radioHost').value.trim().replace(/\/$/, '');
+  const key = $('radioKey').value.trim();
+  if (!key){ radioSay('Fetch the pairing key first.', true); return; }
+  if (!radioDoc.tracks.length){ radioSay('Tick some tracks first.', true); return; }
+
+  localStorage.setItem('mp_radio_key_v1', key);
+  try {
+    const r = await fetch(host + '/api/playlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Lakehorse-Key': key },
+      body: JSON.stringify({ version: 1, source: 'band assets', tracks: radioDoc.tracks }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'rejected');
+    radioSay('The box now has ' + d.tracks + ' tracks.');
+  } catch (e) {
+    // Worth naming. This page is https and the box is plain http on the local
+    // network, so Chrome asks permission before it will make the request at
+    // all, and a denied prompt fails exactly like a network error.
+    radioSay('Could not reach the box. ' + (e.message || e)
+      + '. Chrome asks permission before a page like this one may talk to a '
+      + 'device on your network, so check for that prompt.', true);
+  }
+}
+
 // ---------- Wiring ----------
 on('cardLore', 'click', () => openDoc('lore'));
 on('cardLog',  'click', () => openDoc('log'));
 on('cardGoals', 'click', () => openDoc('goals'));
 on('cardLinks', 'click', () => openDoc('links'));
 on('cardCalendar', 'click', () => openDoc('calendar'));
+on('cardRadio', 'click', () => openDoc('radio'));
+on('radioSaveBtn', 'click', saveRadioNow);
+on('radioFlashBtn', 'click', flashRadio);
+on('radioPairBtn', 'click', pairRadio);
+on('radioPushBtn', 'click', pushRadio);
 on('backBtn', 'click', () => { showShelf(); });
 on('newBtn', 'click', () => {
   if (dirty && !confirm('Discard unsaved changes?')) return;

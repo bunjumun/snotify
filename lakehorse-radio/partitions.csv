@@ -1,0 +1,24 @@
+# Lakehorse Radio — 4MB flash layout.
+#
+# The Gemini spec put the filesystem at 0x290000. That number was invented and
+# would have written the LittleFS image into the middle of the app partition.
+# The real offset is whatever this table says, and everything downstream
+# (the flasher manifest, the browser flasher) reads it from here rather than
+# hardcoding it a second time.
+#
+# Arithmetic, so a future edit can be checked without a calculator:
+#   0x10000  + 0x1E0000 = 0x1F0000   app0 is 1,966,080 bytes (1.875 MB)
+#   0x1F0000 + 0x200000 = 0x3F0000   littlefs is 2,097,152 bytes (2 MB)
+#   0x3F0000 + 0x10000  = 0x400000   exactly 4 MB, no gap, no overlap
+#
+# The data partition is named and subtyped `spiffs` even though it holds
+# LittleFS. That is not a mistake: LittleFS.begin() defaults to looking for a
+# partition labelled "spiffs", and arduino-esp32's own stock tables do the
+# same. Renaming it means passing the label at every begin() call AND setting
+# board_build.filesystem_partition, for no benefit.
+# Name,     Type, SubType,  Offset,   Size,     Flags
+nvs,        data, nvs,      0x9000,   0x5000,
+otadata,    data, ota,      0xe000,   0x2000,
+app0,       app,  ota_0,    0x10000,  0x1E0000,
+spiffs,     data, spiffs,   0x1F0000, 0x200000,
+coredump,   data, coredump, 0x3F0000, 0x10000,

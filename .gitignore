@@ -17,3 +17,10 @@ tracks/**/*.ogg
 # work product. The notebook it tracks is an Apple Note and was never in here.
 # Consequence worth knowing: a fresh clone starts with no ledger at all.
 change requests/
+
+# PlatformIO build output for the Lakehorse Radio firmware. The compiled images
+# that matter are copied into firmware/lakehorse-radio/ by tools/make_release.py
+# and ARE committed, because GitHub Pages has to serve them to the browser
+# flasher from the same origin as the page. The build tree itself is 100+ MB of
+# object files and is not.
+lakehorse-radio/.pio/

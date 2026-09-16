@@ -48,6 +48,20 @@ uint8_t g_lastReason = 0;
 // disconnects first, waits, and only then begins.
 bool g_reconnectPending = false;
 
+// The same deferral as g_reconnectPending, for forgetting a network, and it
+// exists because skipping it panicked the box on real hardware. forget() used
+// to drop the station and raise the access point from inside the HTTP handler
+// that asked for it. Dropping the station destroys every TCP connection on
+// that interface -- including the one carrying the request being served -- and
+// AsyncTCP's service task then dereferences the freed pcb:
+//
+//   Guru Meditation Error: Core 1 panic'ed (LoadProhibited)
+//   tcp_recved <- AsyncClient::_recv <- _async_service_task
+//
+// So the handler now only erases NVS and sets this, and every radio call
+// happens back in tick(), by which time the reply has left.
+bool g_forgetPending = false;
+
 // True from the moment begin() is called until the radio reports either an
 // address or a failure.
 //
@@ -326,6 +340,18 @@ bool drainApTeardown() {
   return true;
 }
 
+// Carries out a forget() that the HTTP handler only asked for. Drops the
+// station and puts the hotspot up, so the box stays reachable to be
+// re-provisioned -- nothing else will bring it back, since the fallback timer
+// only counts from an attempt and there is nothing left to attempt.
+bool drainForget() {
+  if (!g_forgetPending) return false;
+  g_forgetPending = false;
+  WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/true);
+  if (!g_apActive) raiseAccessPoint();
+  return true;
+}
+
 // A pending reconnect is handled here and out of the request handler that
 // asked for it. Returns true if tick() should stop for this pass, whether
 // because a reconnect just started or because one is still being waited out.
@@ -354,6 +380,7 @@ void maybeRaiseFallbackAp(uint32_t now) {
 }
 
 void tick() {
+  if (drainForget()) return;
   if (drainApTeardown()) return;
   if (drainPendingReconnect()) return;
 
@@ -410,7 +437,14 @@ bool provision(const String& ssid, const String& password) {
   // A new network gets its own fair run at the fallback timer, rather than
   // inheriting "already connected once" from whatever was saved before.
   g_everConnected = false;
-  attemptSaved();
+
+  // Deferred to tick() for the reason spelled out on g_forgetPending above:
+  // the attempt begins with resetRadio(), which tears interfaces down, and
+  // this runs on the web server's task with a live request still in hand.
+  // Set here rather than read back from NVS a moment from now, so a status
+  // poll in between does not claim there is nothing saved.
+  g_haveSaved = true;
+  g_reconnectPending = true;
   return true;
 }
 
@@ -425,13 +459,11 @@ bool forget() {
   g_ssid = "";
   g_reconnectPending = false;
   g_everConnected = false;
-  WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/true);
 
-  // With no saved network left, nothing will ever bring the access point back
-  // via the fallback timer in tick() — that timer only starts counting once an
-  // attempt has actually been made. Raise it directly if it is not already up,
-  // so the box stays reachable to be re-provisioned either way.
-  if (!g_apActive) raiseAccessPoint();
+  // Every radio call this needs happens in tick() instead -- dropping the
+  // station from here kills the connection the caller is still being answered
+  // on. See g_forgetPending above for the panic that taught us this.
+  g_forgetPending = true;
   return true;
 }
 

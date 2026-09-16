@@ -32,8 +32,8 @@
       "path": "firmware.bin",
       "offset": 65536,
       "offsetHex": "0x10000",
-      "bytes": 1085104,
-      "sha256": "0ebca16780d08c0d32ee6f78a51507514226ed7c998309a1261d51000e23fd49"
+      "bytes": 1085200,
+      "sha256": "b6b8534f5ec8f0dc505f0e5ed8bd19b80ec612d22df265b2657f59f26d502edc"
     },
     {
       "path": "littlefs.bin",

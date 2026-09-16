@@ -5,12 +5,21 @@
 
 #include "config.h"
 #include "net_identity.h"
+#include "wifi_manager.h"
 
 namespace portal {
 namespace {
 
 DNSServer g_dns;
 bool g_running = false;
+
+// Whether the access point was up the last time this was checked. Wi-Fi is
+// station-first now (see wifi_manager.h): the access point may not exist at
+// boot, may come up minutes later as a fallback, and may come down again once
+// the station joins. DNSServer binds to whatever address you hand it once and
+// never revisits that choice, so it has to be restarted every time this flag
+// actually changes, not just started once and left alone.
+bool g_apWasActive = false;
 
 // Where a captured request gets sent. Always the AP address rather than the
 // mDNS name: a phone deciding whether it is behind a portal has not resolved
@@ -39,11 +48,30 @@ void redirectToPortal(AsyncWebServerRequest* request) {
   request->send(response);
 }
 
-}  // namespace
+// Notices the access point coming up or going down and follows it. Called
+// from both begin() and tick(): begin() covers the case where the AP is
+// already up the moment this runs (nothing saved, so wifinet::begin() raised
+// it synchronously), and tick() catches every later transition -- the
+// fallback timer raising it minutes into a boot, or it coming down again once
+// the station connects.
+void syncToAccessPoint() {
+  const bool apActive = wifinet::isAccessPointActive();
+  if (apActive == g_apWasActive) return;
+  g_apWasActive = apActive;
 
-void begin() {
-  // Answer every name with our own address. This is what turns an ordinary
-  // web server into a captive portal.
+  if (!apActive) {
+    if (g_running) {
+      g_dns.stop();
+      g_running = false;
+      Serial.println(F("[portal] access point down, DNS capture stopped"));
+    }
+    return;
+  }
+
+  // The access point just came up. Bind to whatever address it is actually
+  // running at right now -- never trust a value cached from before it
+  // existed, which is exactly the bug this function exists to fix.
+  if (g_running) g_dns.stop();
   g_dns.setErrorReplyCode(DNSReplyCode::NoError);
   g_running = g_dns.start(cfg::DNS_PORT, "*", WiFi.softAPIP());
 
@@ -52,6 +80,12 @@ void begin() {
   } else {
     Serial.printf("[portal] capturing DNS at %s\n", WiFi.softAPIP().toString().c_str());
   }
+}
+
+}  // namespace
+
+void begin() {
+  syncToAccessPoint();
 }
 
 void attach(AsyncWebServer& server) {
@@ -88,6 +122,7 @@ void attach(AsyncWebServer& server) {
 }
 
 void tick() {
+  syncToAccessPoint();
   if (g_running) g_dns.processNextRequest();
 }
 

@@ -34,15 +34,6 @@
        border:1px solid var(--line);border-radius:8px;font:inherit}
   .status{display:block;margin-top:10px;font-size:13px;min-height:18px;color:var(--text-dim)}
   .status.err{color:var(--err)} .status.ok{color:var(--ok)} .status.warn{color:var(--warn)}
-  .part{margin:10px 0}
-  .part .head{display:flex;justify-content:space-between;font-size:12.5px;color:var(--text-dim)}
-  .bar{height:7px;background:var(--bg-row);border:1px solid var(--line);
-       border-radius:99px;overflow:hidden;margin-top:4px}
-  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s}
-  .bar.done i{background:var(--ok)}
-  pre#log{background:#0a0d11;border:1px solid var(--line);border-radius:8px;
-       padding:12px;max-height:230px;overflow:auto;font-size:12px;color:var(--text-dim);
-       white-space:pre-wrap;word-break:break-word}
   .muted{color:var(--text-mute);font-size:12.5px}
   .banner{border:1px solid var(--line);border-left:3px solid var(--warn);
        background:var(--bg-row);border-radius:var(--radius);padding:12px 14px;
@@ -54,32 +45,24 @@
 <body>
 <div class="wrap">
   <h1>📻 Lakehorse Radio flasher</h1>
-  <p class="tagline">Puts the firmware on the box over USB, and pushes it a playlist.</p>
+  <p class="tagline">Puts the firmware on the box over USB, then pushes it a playlist.</p>
 
   <div class="banner" id="envBanner">Checking this browser...</div>
 
   <fieldset>
-    <legend>1. Flash the box over USB</legend>
+    <legend>1. Flash over USB</legend>
     <p class="muted" id="manifestLine">Loading the firmware manifest...</p>
+    <p class="muted">
+      Once flashing finishes, join the box's own "Lakehorse Radio" hotspot
+      and open its setup page from there to put it on a network.
+    </p>
 
-    <div class="row">
-      <button class="btn primary" id="flashBtn" disabled>Connect and flash</button>
-      <label style="margin:0;flex:0 0 auto">
-        <select id="baud" style="width:auto">
-          <option value="115200" selected>115200 baud (safest)</option>
-          <option value="230400">230400 baud</option>
-          <option value="460800">460800 baud</option>
-          <option value="921600">921600 baud</option>
-        </select>
-      </label>
-      <label style="margin:0;flex:0 0 auto;display:flex;align-items:center;gap:6px;color:var(--text-dim)">
-        <input type="checkbox" id="eraseAll" style="width:auto" /> Erase everything first
-      </label>
-    </div>
-
-    <div id="parts"></div>
+    <esp-web-install-button id="installButton">
+      <button slot="activate" id="flashActivateBtn" class="btn primary" disabled>Connect and set up</button>
+      <span slot="unsupported" class="status err">Needs Chrome or Edge on a desktop to flash a board.</span>
+      <span slot="not-allowed" class="status err">Needs https, or http://localhost, to flash a board.</span>
+    </esp-web-install-button>
     <span class="status" id="flashStatus"></span>
-    <pre id="log" hidden></pre>
   </fieldset>
 
   <fieldset>
@@ -105,18 +88,14 @@
   </fieldset>
 </div>
 
-<script type="module">
-/* esptool-js is ESM only and is not on cdnjs, so it comes from jsDelivr as a
- * module. The pinned bundle.js is fully self contained: pako and every flasher
- * stub are inlined, so it makes no network request of its own at runtime.
- *
- * The API changed in 0.6.0 in a way that breaks every older tutorial:
- * writeFlash now takes Uint8Array, not the "binary string" that
- * FileReader.readAsBinaryString used to produce. Passing a string here fails in
- * confusing ways, so the files below are handed over as bytes.
- */
-import { ESPLoader, Transport } from 'https://cdn.jsdelivr.net/npm/esptool-js@0.6.1/bundle.js';
+<!-- ESP Web Tools: the same off-the-shelf installer WLED's own install page is
+     built on. Registers <esp-web-install-button>, which drives Web Serial and
+     the actual flashing itself; this used to be hand-rolled against
+     esptool-js directly, which is gone now along with that code. Pinned to
+     an exact version, as everything fetched off a CDN here should be. -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/esp-web-tools@10.4.0/dist/web/install-button.js"></script>
 
+<script type="module">
 const $ = (id) => document.getElementById(id);
 const MANIFEST = 'firmware/lakehorse-radio/manifest.json';
 
@@ -126,13 +105,6 @@ let pendingTracks = null;
 function say(el, msg, kind) {
   el.textContent = msg || '';
   el.className = 'status' + (kind ? ' ' + kind : '');
-}
-
-function logLine(text) {
-  const log = $('log');
-  log.hidden = false;
-  log.textContent += text;
-  log.scrollTop = log.scrollHeight;
 }
 
 /* Web Serial needs a secure context, and ".local" is not one. That catches
@@ -172,27 +144,9 @@ async function loadManifest() {
       `${manifest.name}, ${manifest.chip}, ${manifest.flashSize}. `
       + `Filesystem at ${manifest.filesystemOffset}.`;
 
-    const parts = $('parts');
-    parts.textContent = '';
-    manifest.parts.forEach((p, i) => {
-      const box = document.createElement('div');
-      box.className = 'part';
-      const head = document.createElement('div');
-      head.className = 'head';
-      const name = document.createElement('span');
-      name.textContent = `${p.path}  at ${p.offsetHex}`;
-      const size = document.createElement('span');
-      size.id = 'pct' + i;
-      size.textContent = (p.bytes / 1024).toFixed(0) + ' KB';
-      head.appendChild(name); head.appendChild(size);
-      const bar = document.createElement('div');
-      bar.className = 'bar'; bar.id = 'bar' + i;
-      bar.innerHTML = '<i></i>';
-      box.appendChild(head); box.appendChild(bar);
-      parts.appendChild(box);
-    });
-
-    if (checkEnvironment()) $('flashBtn').disabled = false;
+    $('installButton').manifest = URL.createObjectURL(new Blob(
+      [JSON.stringify(webToolsManifest(manifest))], { type: 'application/json' }));
+    $('flashActivateBtn').disabled = false;
   } catch (err) {
     $('manifestLine').textContent = '';
     say($('flashStatus'),
@@ -201,82 +155,47 @@ async function loadManifest() {
   }
 }
 
-async function fetchPart(p) {
-  const res = await fetch('firmware/lakehorse-radio/' + p.path, { cache: 'no-store' });
-  if (!res.ok) throw new Error(p.path + ' returned ' + res.status);
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  if (bytes.length !== p.bytes) {
-    // The manifest records the size the release was built with. A mismatch
-    // means the two are out of step, and flashing a stale image is exactly the
-    // kind of failure that looks like a hardware fault later.
-    throw new Error(`${p.path} is ${bytes.length} bytes, manifest says ${p.bytes}`);
-  }
-  return bytes;
-}
-
-async function flash() {
-  const btn = $('flashBtn');
-  btn.disabled = true;
-  $('log').textContent = '';
-  say($('flashStatus'), 'Asking for the serial port...', '');
-
-  let transport = null;
-  try {
-    const files = [];
-    for (const p of manifest.parts) {
-      files.push({ address: p.offset, data: await fetchPart(p) });
-    }
-
-    const port = await navigator.serial.requestPort();
-    transport = new Transport(port, true);
-
-    const esploader = new ESPLoader({
-      transport,
-      baudrate: parseInt($('baud').value, 10),
-      terminal: {
-        clean() { $('log').textContent = ''; },
-        writeLine(d) { logLine(d + '\n'); },
-        write(d) { logLine(d); },
-      },
-    });
-
-    say($('flashStatus'), 'Connecting...', '');
-    const chip = await esploader.main();
-    say($('flashStatus'), 'Connected to ' + chip + '. Writing...', '');
-
-    await esploader.writeFlash({
-      fileArray: files,
-      // Never "detect": esptool-js 0.6.1 fails its own bounds check when the
-      // size is "detect", and every file is rejected as not fitting.
-      flashSize: manifest.flashSize,
-      flashMode: manifest.flashMode,
-      flashFreq: manifest.flashFreq,
-      eraseAll: $('eraseAll').checked,
-      compress: true,
-      reportProgress(fileIndex, written, total) {
-        const bar = $('bar' + fileIndex);
-        const pct = $('pct' + fileIndex);
-        if (!bar) return;
-        const ratio = total ? written / total : 0;
-        bar.firstChild.style.width = (ratio * 100).toFixed(1) + '%';
-        if (pct) pct.textContent = (ratio * 100).toFixed(0) + '%';
-        if (ratio >= 1) bar.classList.add('done');
-      },
-    });
-
-    say($('flashStatus'), 'Written. Resetting the board...', '');
-    await esploader.after('hard_reset');
-    say($('flashStatus'),
-      'Done. The box is rebooting and should appear as its own "Lakehorse Radio" '
-      + 'hotspot within a few seconds.', 'ok');
-  } catch (err) {
-    say($('flashStatus'), 'Flashing failed. ' + (err && err.message ? err.message : err), 'err');
-  } finally {
-    // Always release the port. A held port cannot be reopened without closing
-    // the tab, which presents as "the flasher stopped seeing my board".
-    if (transport) { try { await transport.disconnect(); } catch (e) { /* already gone */ } }
-    btn.disabled = false;
-  }
+/* ESP Web Tools wants a different manifest shape than make_release.py writes:
+ * chip names in capitals, and one "builds" entry holding a "parts" list.
+ * Rebuilt here from the one manifest the firmware build already produces,
+ * rather than kept as a second file on disk, so the two cannot drift apart
+ * the way the hardcoded LittleFS offset make_release.py replaced once did.
+ * Handed to the install button as a Blob URL, which is ESP Web Tools' own
+ * documented way to build a manifest at runtime instead of hosting a static
+ * one.
+ *
+ * The sha256 of firmware.bin stands in for a version string: this project
+ * has no version number of its own to put here, and a hash at least never
+ * lies about whether two builds are actually the same one.
+ *
+ * Part paths are resolved against THIS PAGE's URL, not manifest.json's own
+ * folder, because a Blob has no folder of its own to resolve against; the
+ * "firmware/lakehorse-radio/" prefix below is what lands that on the same
+ * files this page used to fetch by hand before flashing moved to ESP Web
+ * Tools. */
+function webToolsManifest(m) {
+  const firmware = m.parts.find((p) => p.path === 'firmware.bin');
+  return {
+    name: m.name,
+    version: firmware ? firmware.sha256.slice(0, 8) : 'dev',
+    // Ask before erasing rather than doing it silently. Matches the default
+    // the old "Erase everything first" checkbox had: most re-flashes should
+    // keep the playlist already sitting in the box's LittleFS.
+    new_install_prompt_erase: true,
+    // This firmware has no Improv Wi-Fi Serial support -- setup happens over
+    // the box's own hotspot instead (see the "1. Flash over USB" copy above).
+    // Without this, ESP Web Tools waits after every install hoping an Improv
+    // handshake arrives, which here it never will.
+    new_install_improv_wait_time: 0,
+    builds: [{
+      chipFamily: m.chip.toUpperCase(),
+      improv: false,
+      parts: m.parts.map((p) => ({
+        path: 'firmware/lakehorse-radio/' + p.path,
+        offset: p.offset,
+      })),
+    }],
+  };
 }
 
 /* ---------- Playlist side ---------- */
@@ -365,7 +284,6 @@ async function push() {
   }
 }
 
-$('flashBtn').addEventListener('click', flash);
 $('loadLibBtn').addEventListener('click', loadLibrary);
 $('fetchKeyBtn').addEventListener('click', fetchKey);
 $('pushBtn').addEventListener('click', push);

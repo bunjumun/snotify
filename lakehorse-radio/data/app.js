@@ -187,15 +187,15 @@
     banner.className = 'banner';
     banner.innerHTML = '';
     if (s.station === 'connected') {
-      banner.textContent = 'The box is on ' + s.ssid + ' at ' + s.ip
-        + '. Reachable at ' + s.mdns + '.';
+      banner.textContent = 'The box is on ' + s.ssid + ' (channel ' + s.stationChannel
+        + ') at ' + s.ip + '. Reachable at ' + s.mdns + '.';
     } else if (s.lastFailure) {
       banner.className = 'banner err';
       banner.textContent = 'The box tried ' + (s.ssid || 'a network')
         + ' and could not join: ' + s.lastFailure + '.';
     } else {
       banner.textContent = 'The box is not on a network yet. Join its "' + s.apSsid
-        + '" hotspot to set it up.';
+        + '" hotspot (channel ' + s.apChannel + ') to set it up.';
     }
   }
 
@@ -242,7 +242,8 @@
         (doc.networks || []).forEach(function (n) {
           var o = document.createElement('option');
           o.value = n.ssid;
-          o.textContent = n.ssid + '  (' + n.rssi + ' dBm)' + (n.open ? '  open' : '');
+          o.textContent = n.ssid + '  (' + n.rssi + ' dBm, ch' + n.channel + ')'
+            + (n.open ? '  open' : '');
           sel.appendChild(o);
         });
       })
@@ -315,16 +316,15 @@
           if (s.station === 'connected') {
             say($('setupStatus'),
                 'On ' + s.ssid + ' at ' + s.ip + '. Reach it at ' + mdns
-                + ' from anything on that network.', 'ok');
+                + ' from anything on that network. Setting up a box next time '
+                + 'can also be done once over USB, with no hotspot needed.', 'ok');
             return;
           }
 
           if (s.lastFailure) {
             say($('setupStatus'),
                 'Could not join ' + ssid + ': ' + s.lastFailure
-                + '. If the password is definitely right, this network may be '
-                + 'using WPA3, which this chip cannot join. A Mac sharing its '
-                + 'connection can be set to WPA2 instead.', 'err');
+                + '. Check the password and that ' + ssid + ' is in range.', 'err');
             return;
           }
 
@@ -342,7 +342,8 @@
             say($('setupStatus'),
                 'The box stopped answering here, which usually means it joined '
                 + ssid + ' and moved its hotspot. Try ' + mdns + ' from that '
-                + 'network.', 'ok');
+                + 'network. Setting up a box next time can also be done once '
+                + 'over USB, with no hotspot needed.', 'ok');
             return;
           }
           if (++tries > WATCH_TRIES_MAX) return;

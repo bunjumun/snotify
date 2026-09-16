@@ -25,9 +25,11 @@ constexpr const char* MDNS_INSTANCE = "Lakehorse Radio";
 constexpr size_t MDNS_HOST_MAX_LEN = 32;
 constexpr const char* NVS_KEY_HOST = "host";
 
-// The SoftAP the box always broadcasts. Deliberately open, with no password:
-// it is a jukebox in a barn, the only thing reachable on it is this firmware,
-// and a password on the AP is one more thing to tell people at a gig.
+// The SoftAP the box falls back to whenever it has no saved network, or
+// hasn't yet reached the one it has (see AP_TEARDOWN_ON_CONNECT below).
+// Deliberately open, with no password: it is a jukebox in a barn, the only
+// thing reachable on it is this firmware, and a password on the AP is one
+// more thing to tell people at a gig.
 constexpr const char* AP_SSID = "Lakehorse Radio";
 constexpr const char* AP_PASSWORD = nullptr;
 
@@ -66,6 +68,19 @@ constexpr uint8_t AP_CHANNEL = 1;
 // WLED's AP_BEHAVIOR_BOOT_NO_CONN, and it is the arrangement that keeps the
 // tuner free for the job that matters.
 constexpr bool AP_TEARDOWN_ON_CONNECT = true;
+
+// WLED's own value for the settle time it gives the radio on each side of a
+// WiFi.mode(WIFI_MODE_NULL) reset: "wait for hardware to be ready" before the
+// mode change, "give the WiFi stack time to complete the mode transition"
+// after it. Copied rather than guessed, same as the reset itself.
+constexpr uint32_t WIFI_MODE_TRANSITION_DELAY_MS = 5;
+
+// How long the boot-time diagnostic scan lingers on each channel while
+// looking for the saved network, so it can log that network's channel next
+// to the SoftAP's before either radio role has actually started. Matches the
+// WiFi library's own default dwell time; named here so it is not a bare
+// literal repeated at the call site, not because the value itself is tuned.
+constexpr uint32_t WIFI_SCAN_DWELL_MS = 300;
 
 // After a disconnect, how long before trying the saved network again. Long
 // enough not to hammer a router that is genuinely down, short enough that the

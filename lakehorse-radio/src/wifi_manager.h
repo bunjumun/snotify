@@ -1,18 +1,35 @@
 #pragma once
 //
-// Wi-Fi — always both an access point and a station, at the same time.
+// Wi-Fi — station first, the hotspot only as a fallback.
 //
-// Why AP_STA permanently rather than the usual "AP only until provisioned":
-// this box lives in a barn and also goes to gigs. On the barn network everyone
-// reaches it at lakehorse.local. At a gig with no network at all, the AP is the
-// only way in. Dropping the AP after provisioning would make the second case
-// require a laptop and a reflash, so the AP stays up for ever.
+// This used to bring the access point and the station up together,
+// permanently, on the theory that a barn box and a gig box are the same box
+// and both need a door. They are, and both still need one — but starting the
+// access point first was the bug. The ESP32 has one radio and one tuner; a
+// SoftAP started with no channel argument silently claims channel 1, and a
+// station then trying to join a network on any other channel just times out
+// on the handshake, forever. It looked exactly like a wrong password. It was
+// a channel fight the station could never win, because the access point had
+// already claimed the radio before the station ever got a turn.
 //
-// The cost of AP_STA, and it is a real one: when the station connects, the ESP32
-// moves its access point onto the station's channel, because the radio has one
-// tuner. Any phone already joined to the AP is briefly kicked off and has to
-// reassociate. That is why provisioning reports success before it switches over
-// rather than after, when the reply might never reach the phone that asked.
+// The fix, copied from WLED rather than reinvented: try the station FIRST,
+// with no access point up to contend with. Only if that has not answered
+// within AP_FALLBACK_AFTER_MS does the hotspot come up at all, and only for
+// as long as the box stays unconnected — the moment the station gets an
+// address, the access point is torn down (AP_TEARDOWN_ON_CONNECT). A box with
+// no saved network at all, or one whose saved network is genuinely out of
+// range for a whole gig, still gets its hotspot and keeps it: nothing here
+// changes the gig case, only the order a cold boot tries things in.
+//
+// One consequence of AP_STA is worth keeping even after this fix, because it
+// follows from "one radio, one tuner" and does not go away: once the fallback
+// access point IS up, giving the station another try (a background retry, or
+// a fresh provisioning request) still needs the same WIFI_MODE_NULL reset
+// WLED uses on every reconnect, which physically tears the access point down
+// for an instant before this file puts it straight back up. A phone already
+// joined to it is briefly kicked off and has to reassociate. That is why
+// provisioning reports success before it switches over rather than after,
+// when the reply might never reach the phone that asked.
 //
 // Credentials live in NVS and nowhere else. They are never compiled in, never
 // written to the filesystem the web server can read, and never logged.
@@ -23,13 +40,14 @@ namespace wifinet {
 
 enum class StationState { Idle, Connecting, Connected, Failed };
 
-// Brings up the access point immediately, then tries any saved network in the
-// background. The AP is up before this returns, so the box is reachable even if
-// the saved network never answers.
+// Tries the saved network first, before anything else touches the radio. The
+// access point is not raised at all unless there is nothing saved, or unless
+// AP_FALLBACK_AFTER_MS passes with no answer — see the file header for why
+// this order is the fix, not a preference.
 void begin();
 
-// Must be called from loop(). Handles the retry timer; the actual connection
-// events arrive as callbacks.
+// Must be called from loop(). Handles the retry timer and the fallback
+// access-point timer; the actual connection events arrive as callbacks.
 void tick();
 
 // Saves credentials and attempts them. Returns false only if the write failed;
@@ -37,8 +55,9 @@ void tick();
 // the caller must report "trying" rather than "connected".
 bool provision(const String& ssid, const String& password);
 
-// Forgets the saved network and drops the station. The AP is untouched, so the
-// box stays reachable to be re-provisioned.
+// Forgets the saved network and drops the station. The access point is
+// brought up if it was not already (or left alone if it was), so the box
+// stays reachable to be re-provisioned either way.
 bool forget();
 
 StationState stationState();
@@ -51,5 +70,22 @@ String stationSsid();
 String stationIp();
 String accessPointIp();
 bool hasSavedNetwork();
+
+// Whether the fallback hotspot is currently up. False before it has ever been
+// needed, and false again once a saved network has answered and
+// AP_TEARDOWN_ON_CONNECT has torn it back down.
+bool isAccessPointActive();
+
+// The channel the hotspot is broadcasting on, or would use if raised right
+// now — meaningful even while it is down, so a diagnostic page can show what
+// a fallback access point would land on rather than nothing at all.
+uint8_t accessPointChannel();
+
+// The channel the station is joined to, or 0 if nothing is connected. On this
+// hardware there is only one radio and hence only one channel, so once both
+// figures are meaningful they are always the same number — which is the
+// whole story this file exists to tell, in two fields a setup page can put
+// side by side instead of asserting it in prose.
+uint8_t stationChannel();
 
 }  // namespace wifinet

@@ -21,7 +21,10 @@
 
 namespace portal {
 
-// Starts the wildcard DNS server on the access-point address.
+// Arms the wildcard DNS server if the access point already happens to be up.
+// Wi-Fi is station-first (see wifi_manager.h), so it usually is not yet --
+// tick() is what actually starts capturing, the moment the access point
+// exists, and re-arms it on every later up/down transition.
 void begin();
 
 // Registers the probe routes and the catch-all redirect on the shared server.

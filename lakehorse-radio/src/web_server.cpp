@@ -84,9 +84,15 @@ void handleStatus(AsyncWebServerRequest* request) {
   doc["hostname"] = netid::hostname();
   doc["apSsid"] = cfg::AP_SSID;
   doc["apIp"] = wifinet::accessPointIp();
+  // The bug that started this rewrite was a station and an access point
+  // silently sitting on different channels, with nothing anywhere to show it.
+  // Both channels ride in the same response so a mismatch is something the
+  // page can display, not something only a serial log can catch.
+  doc["apChannel"] = wifinet::accessPointChannel();
   doc["station"] = stateName(wifinet::stationState());
   doc["ssid"] = wifinet::stationSsid();
   doc["ip"] = wifinet::stationIp();
+  doc["stationChannel"] = wifinet::stationChannel();
   doc["hasSavedNetwork"] = wifinet::hasSavedNetwork();
   doc["lastFailure"] = wifinet::lastFailureText();
   doc["lastFailureCode"] = wifinet::lastFailureReason();
@@ -156,6 +162,10 @@ void handleScan(AsyncWebServerRequest* request) {
       n["ssid"] = WiFi.SSID(i);
       n["rssi"] = WiFi.RSSI(i);
       n["open"] = WiFi.encryptionType(i) == WIFI_AUTH_OPEN;
+      // Same reasoning as apChannel/stationChannel in handleStatus(): a
+      // network's channel used to be invisible, and it is exactly the number
+      // that would have shown this box's original bug before it shipped.
+      n["channel"] = WiFi.channel(i);
     }
     WiFi.scanDelete();
   }

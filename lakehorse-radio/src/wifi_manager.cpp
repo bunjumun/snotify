@@ -4,6 +4,7 @@
 #include <WiFi.h>
 
 #include "config.h"
+#include "net_identity.h"
 
 namespace wifinet {
 namespace {
@@ -12,6 +13,28 @@ StationState g_state = StationState::Idle;
 String g_ssid;
 uint32_t g_lastAttemptMs = 0;
 bool g_haveSaved = false;
+
+// Whether the fallback access point is currently up. Latches true the moment
+// it is raised and stays true through every retry after that — see
+// beginStationAttempt() below for why a retry does not clear it — until
+// AP_TEARDOWN_ON_CONNECT actually tears it down.
+bool g_apActive = false;
+
+// Whether the station has connected at least once since boot (or since the
+// credentials currently saved were last changed — provision() and forget()
+// both reset this). Gates the fallback timer in tick(): WLED's default
+// AP_BEHAVIOR_BOOT_NO_CONN raises the access point only for the FIRST
+// connection attempt, not on every later drop, so a barn router rebooting
+// mid-session does not flash the hotspot on and off while nobody is there to
+// see it. Once true, the fallback timer never fires again until this is
+// cleared.
+bool g_everConnected = false;
+
+// Set by onWiFiEvent() when the station gets an address and the access point
+// needs to come down; drained by tick(). Not acted on inside the event
+// handler itself, for the same reason g_reconnectPending below is drained in
+// tick() rather than at the point that requests it — see that comment.
+bool g_apTeardownPending = false;
 
 // Why the last attempt failed, in the radio's own words, kept so the setup page
 // can say "the password was not accepted" instead of nothing at all. A box that
@@ -56,30 +79,6 @@ bool readSaved(String& ssid, String& password) {
   return ssid.length() > 0;
 }
 
-void attemptSaved() {
-  String ssid, password;
-  if (!readSaved(ssid, password)) {
-    g_haveSaved = false;
-    g_state = StationState::Idle;
-    return;
-  }
-
-  g_haveSaved = true;
-
-  // Refuse to begin() on top of an association already in flight. The caller
-  // leaves the request pending and tick() comes back once the radio has
-  // settled one way or the other.
-  if (g_associating) return;
-
-  g_ssid = ssid;
-  g_state = StationState::Connecting;
-  g_lastAttemptMs = millis();
-  g_associating = true;
-
-  Serial.printf("[wifi] trying saved network \"%s\"\n", ssid.c_str());
-  WiFi.begin(ssid.c_str(), password.c_str());
-}
-
 // The handful of reasons that actually happen in a barn, in plain words. The
 // rest fall through to a number, which is still better than silence.
 const char* describeReason(uint8_t reason) {
@@ -99,12 +98,178 @@ const char* describeReason(uint8_t reason) {
   }
 }
 
+// WLED's disconnect-then-settle-then-hard-reset sequence, run before every
+// single station attempt from here on — boot, a provisioning request, and
+// every background retry alike, not just the first. This is "the whole fix":
+// WiFi.disconnect(true) plus a hard reset to WIFI_MODE_NULL clears whatever
+// state the radio was previously in (a running access point, or a join that
+// never completed) before asking for a clean one. WLED's own comment on the
+// MODE_NULL step: "required on reconnects when mode is already WIFI_STA."
+// Skipping it is how the original bug worked: the access point started first,
+// pinned the radio to its channel, and the station's join against a different
+// channel simply never completed.
+void resetRadio() {
+  WiFi.disconnect(true);
+  delay(cfg::WIFI_MODE_TRANSITION_DELAY_MS);
+  WiFi.mode(WIFI_MODE_NULL);
+  delay(cfg::WIFI_MODE_TRANSITION_DELAY_MS);
+
+  // Set while still in WIFI_MODE_NULL, not after: WLED's own comment on this
+  // is "so that WiFi.mode(WIFI_STA) below actually applies the hostname" --
+  // setting it here leaves it pending, and the mode transition just below is
+  // what commits it to the driver. Calling it while already in WIFI_STA
+  // (unchanged) is a no-op on this core, which is why this has to sit here
+  // rather than anywhere more obvious.
+  WiFi.setHostname(netid::hostname().c_str());
+
+  // Belt-and-braces beyond what WIFI_MODE_NULL already tore down as a side
+  // effect, same as WLED does before every reconnect, not just the first.
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_STA);
+}
+
+// Raises the fallback access point (or re-asserts it after resetRadio() has
+// just torn it down — softAP() is safe to call again to do that). Always the
+// same fixed channel: the ESP32 has one radio and one tuner, so a SoftAp
+// started with no channel argument silently claims channel 1 and then fights
+// any station trying to join a network on any other channel, which is the bug
+// this whole file exists to fix. Passing AP_CHANNEL explicitly is not
+// optional.
+void raiseAccessPoint() {
+  // Explicit, not left to the core's default happening to match: the same
+  // "leaving it implicit is how the bug got in" principle AP_CHANNEL exists
+  // for, applied to the subnet too. 192.168.4.1 is what the flasher and docs
+  // already assume.
+  WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
+                     IPAddress(255, 255, 255, 0));
+  const bool apUp = WiFi.softAP(cfg::AP_SSID, cfg::AP_PASSWORD, cfg::AP_CHANNEL);
+  if (!apUp) {
+    // Nothing else in this firmware can recover from this, and a box with no
+    // AP and no saved network is a brick with a power light. Say so.
+    Serial.println(F("[wifi] the access point failed to start"));
+    // Not left stale-true: a caller re-raising after a resetRadio() teardown
+    // (see beginStationAttempt()) trusts this flag to know whether the AP it
+    // just tore down actually came back.
+    g_apActive = false;
+    return;
+  }
+  g_apActive = true;
+  Serial.printf("[wifi] access point \"%s\" up on channel %u at %s\n", cfg::AP_SSID,
+                (unsigned)cfg::AP_CHANNEL, WiFi.softAPIP().toString().c_str());
+}
+
+// Tears the fallback access point down once the station has an address.
+// Idempotent, so a stray extra call (there should not be one) is harmless.
+void lowerAccessPoint() {
+  if (!g_apActive) return;
+  WiFi.softAPdisconnect(true);
+  g_apActive = false;
+  Serial.println(F("[wifi] access point disabled (connected)"));
+}
+
+// Plan verification step 1: prove the channel-mismatch diagnosis on every real
+// boot, before trusting anything downstream of it, by scanning for the saved
+// network and logging its channel next to the SoftAp's. Filtering the scan to
+// one SSID (rather than sweeping and searching the results) makes it quick,
+// and a blocking scan is the right call specifically here: nothing else has
+// started yet — no access point, no web server, nothing async waiting on the
+// radio — so there is nothing for a few blocking seconds to stall. Runs once
+// per boot, before the station's first attempt to associate, exactly as the
+// plan specifies; it stays in as a permanent boot-time diagnostic rather than
+// a one-off check, because the whole point is that the mismatch is otherwise
+// invisible.
+void logBootChannelDiagnostic(const String& ssid) {
+  if (ssid.length() == 0) {
+    Serial.println(F("[wifi] no saved network; skipping the boot channel scan"));
+    return;
+  }
+
+  const int16_t found =
+      WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/false, /*passive=*/false,
+                         cfg::WIFI_SCAN_DWELL_MS, /*channel=*/0, ssid.c_str());
+  if (found <= 0) {
+    Serial.printf("[wifi] boot scan: \"%s\" not in range (SoftAp channel is %u)\n",
+                  ssid.c_str(), (unsigned)cfg::AP_CHANNEL);
+  } else {
+    const int32_t netChannel = WiFi.channel(0);
+    const bool matches = netChannel == (int32_t)cfg::AP_CHANNEL;
+    Serial.printf("[wifi] boot scan: \"%s\" is on channel %d, SoftAp channel is %u%s\n",
+                  ssid.c_str(), (int)netChannel, (unsigned)cfg::AP_CHANNEL,
+                  matches ? "" : " -- mismatch");
+  }
+  WiFi.scanDelete();
+}
+
+// The actual station attempt, reached from attemptSaved() below whichever way
+// it was triggered (boot, a provisioning request, or a background retry).
+//
+// If the fallback access point is already up, resetRadio() above has just
+// physically torn it down — there is one radio — so it is put straight back
+// up here before WiFi.begin() is called, rather than left down for the whole
+// attempt the way WLED's own default behaviour would leave it. That keeps the
+// interruption to the sub-second blip this file already documents as the cost
+// of AP_STA (a joined phone is briefly kicked off and has to reassociate)
+// instead of turning it into a multi-second gap on every ~30 s retry, which is
+// the one thing a box at a gig cannot do.
+void beginStationAttempt(const String& ssid, const String& password) {
+  // resetRadio() already leaves the radio in WIFI_STA; only the AP, which it
+  // just physically tore down, needs putting back if it was up before.
+  resetRadio();
+
+  if (g_apActive) raiseAccessPoint();
+
+  g_ssid = ssid;
+  g_state = StationState::Connecting;
+  g_lastAttemptMs = millis();
+  g_associating = true;
+
+  Serial.printf("[wifi] trying saved network \"%s\"\n", ssid.c_str());
+  WiFi.begin(ssid.c_str(), password.c_str());
+
+  // Modem sleep makes mDNS replies unreliable: the radio is asleep when the
+  // query arrives and the box simply does not answer, which presents as
+  // "lakehorse.local sometimes works". Costs power we are not saving anyway,
+  // since this thing is mains-powered. Re-applied after every begin() because
+  // the mode transition above can reset it, the same reason WLED re-applies
+  // its own sleep and TX-power settings on every reconnect rather than once.
+  WiFi.setSleep(false);
+}
+
+// Reads NVS and, if anything is saved, starts (or leaves running, if one is
+// already in flight) a station attempt via beginStationAttempt(). Returns
+// false only when there is nothing saved at all, which is begin()'s signal to
+// raise the access point immediately instead.
+bool attemptSaved() {
+  String ssid, password;
+  if (!readSaved(ssid, password)) {
+    g_haveSaved = false;
+    g_state = StationState::Idle;
+    return false;
+  }
+
+  g_haveSaved = true;
+
+  // Refuse to begin() on top of an association already in flight. The caller
+  // leaves the request pending and tick() comes back once the radio has
+  // settled one way or the other.
+  if (g_associating) return true;
+
+  beginStationAttempt(ssid, password);
+  return true;
+}
+
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       g_state = StationState::Connected;
       g_lastReason = 0;
       g_associating = false;
+      g_everConnected = true;
+      // Not torn down here: this handler runs on the WiFi event task and
+      // should not make further WiFi-mutating calls any more than it should
+      // block (see the DISCONNECTED case below), so the actual
+      // softAPdisconnect() happens in tick() once g_apTeardownPending is seen.
+      if (cfg::AP_TEARDOWN_ON_CONNECT && g_apActive) g_apTeardownPending = true;
       Serial.printf("[wifi] joined \"%s\" as %s\n",
                     g_ssid.c_str(), WiFi.localIP().toString().c_str());
       break;
@@ -129,50 +294,74 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
 }  // namespace
 
 void begin() {
-  // AP first and unconditionally, so that a box with a wrong password saved is
-  // still reachable to be corrected. If this ran after the station attempt, a
-  // bad saved network would leave no way in for twenty seconds.
-  WiFi.mode(WIFI_AP_STA);
-
-  // Modem sleep makes mDNS replies unreliable: the radio is asleep when the
-  // query arrives and the box simply does not answer, which presents as
-  // "lakehorse.local sometimes works". Costs power we are not saving anyway,
-  // since this thing is mains-powered.
-  WiFi.setSleep(false);
-
   WiFi.onEvent(onWiFiEvent);
 
-  const bool apUp = (cfg::AP_PASSWORD == nullptr)
-                        ? WiFi.softAP(cfg::AP_SSID)
-                        : WiFi.softAP(cfg::AP_SSID, cfg::AP_PASSWORD);
-  if (!apUp) {
-    // Nothing else in this firmware can recover from this, and a box with no
-    // AP and no saved network is a brick with a power light. Say so.
-    Serial.println(F("[wifi] the access point failed to start"));
-  } else {
-    Serial.printf("[wifi] access point \"%s\" up at %s\n",
-                  cfg::AP_SSID, WiFi.softAPIP().toString().c_str());
-  }
+  // Start from a known-clean radio state before anything else touches it,
+  // same as WLED does at the top of every connection attempt, then put the
+  // radio into station mode long enough to run the boot diagnostic below.
+  // The access point is deliberately NOT raised here even when nothing is
+  // saved: attemptSaved() reports that below and begin() raises it through
+  // exactly the same call the fallback timer in tick() uses, so there is one
+  // place in this file that turns the hotspot on, not two.
+  resetRadio();
 
+  String ssid, password;
+  readSaved(ssid, password);
+  logBootChannelDiagnostic(ssid);
+
+  // If there is a saved network, attemptSaved() below runs resetRadio() again
+  // on a radio nothing has touched since the reset just above -- harmless
+  // (~10-20ms) and not worth restructuring two call paths to avoid.
+  if (!attemptSaved()) raiseAccessPoint();
+}
+
+// A pending access-point teardown, set from the event handler once the
+// station gets an address, is drained here rather than acted on there — see
+// onWiFiEvent()'s GOT_IP case for why. Returns true if it handled one, so
+// tick() knows there is nothing further to do this pass.
+bool drainApTeardown() {
+  if (!g_apTeardownPending) return false;
+  g_apTeardownPending = false;
+  lowerAccessPoint();
+  return true;
+}
+
+// A pending reconnect is handled here and out of the request handler that
+// asked for it. Returns true if tick() should stop for this pass, whether
+// because a reconnect just started or because one is still being waited out.
+bool drainPendingReconnect() {
+  if (!g_reconnectPending) return false;
+  // Wait out whatever is in flight. Nothing else here can make that faster,
+  // and interrupting it is what produced ESP_ERR_WIFI_STATE.
+  if (g_associating) return true;
+  g_reconnectPending = false;
   attemptSaved();
+  return true;
+}
+
+// The hotspot is a fallback of last resort, not a permanent fixture: it comes
+// up once, AP_FALLBACK_AFTER_MS after the first attempt of this connection
+// episode, if the station still has not got on — WLED's AP_BEHAVIOR_BOOT_NO_CONN.
+// It does not re-raise itself after a LATER drop once the box has connected at
+// least once (g_everConnected): a router that reboots mid-session should be
+// waited out quietly in the background, not answered by flashing the hotspot
+// on and off for however long it takes to come back.
+void maybeRaiseFallbackAp(uint32_t now) {
+  if (g_apActive || g_everConnected) return;
+  if (now - g_lastAttemptMs <= cfg::AP_FALLBACK_AFTER_MS) return;
+  Serial.println(F("[wifi] no connection yet, raising the access point as a fallback"));
+  raiseAccessPoint();
 }
 
 void tick() {
-  // A pending reconnect is handled first and out here, never in the request
-  // handler that asked for it.
-  if (g_reconnectPending) {
-    // Wait out whatever is in flight. Nothing else here can make that faster,
-    // and interrupting it is what produced ESP_ERR_WIFI_STATE.
-    if (g_associating) return;
-    g_reconnectPending = false;
-    attemptSaved();
-    return;
-  }
+  if (drainApTeardown()) return;
+  if (drainPendingReconnect()) return;
 
   if (g_state == StationState::Connected) return;
   if (!g_haveSaved) return;
 
   const uint32_t now = millis();
+  maybeRaiseFallbackAp(now);
 
   if (g_state == StationState::Connecting) {
     // Subtraction on unsigned millis is correct across the 49-day rollover;
@@ -196,7 +385,12 @@ void tick() {
 }
 
 bool provision(const String& ssid, const String& password) {
-  if (ssid.length() == 0) return false;
+  // The one boundary both the HTTP setup page and anything else that might
+  // call this in future have to pass through, so it is the one place this
+  // needs enforcing. 802.11 caps an SSID at 32 bytes; WPA2-PSK requires an
+  // 8-63 byte password, except an open network, which has none at all.
+  if (ssid.length() == 0 || ssid.length() > 32) return false;
+  if (password.length() != 0 && (password.length() < 8 || password.length() > 63)) return false;
 
   if (!g_prefs.begin(cfg::NVS_NAMESPACE, /*readOnly=*/false)) {
     Serial.println(F("[wifi] could not open NVS to save credentials"));
@@ -213,6 +407,9 @@ bool provision(const String& ssid, const String& password) {
     return false;
   }
 
+  // A new network gets its own fair run at the fallback timer, rather than
+  // inheriting "already connected once" from whatever was saved before.
+  g_everConnected = false;
   attemptSaved();
   return true;
 }
@@ -227,7 +424,14 @@ bool forget() {
   g_state = StationState::Idle;
   g_ssid = "";
   g_reconnectPending = false;
+  g_everConnected = false;
   WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/true);
+
+  // With no saved network left, nothing will ever bring the access point back
+  // via the fallback timer in tick() — that timer only starts counting once an
+  // attempt has actually been made. Raise it directly if it is not already up,
+  // so the box stays reachable to be re-provisioned either way.
+  if (!g_apActive) raiseAccessPoint();
   return true;
 }
 
@@ -242,5 +446,18 @@ String stationIp() {
 }
 String accessPointIp() { return WiFi.softAPIP().toString(); }
 bool hasSavedNetwork() { return g_haveSaved; }
+bool isAccessPointActive() { return g_apActive; }
+
+uint8_t accessPointChannel() {
+  // While it is up the radio may have followed the station onto a different
+  // channel than the one it was raised with (that following-behaviour is the
+  // other half of "one radio, one tuner" — see the file header); report the
+  // channel actually running rather than assume it is still AP_CHANNEL.
+  return g_apActive ? (uint8_t)WiFi.channel() : cfg::AP_CHANNEL;
+}
+
+uint8_t stationChannel() {
+  return g_state == StationState::Connected ? (uint8_t)WiFi.channel() : 0;
+}
 
 }  // namespace wifinet

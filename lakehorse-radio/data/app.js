@@ -70,6 +70,27 @@
       n.className = 'n';
       n.textContent = String(i + 1);
 
+      // A track's linked art, when the release it came from has any -- see
+      // style.css's .cov/.covph. src is set from the network (Supabase),
+      // never trusted further than an <img> tag; a broken or absent image
+      // just falls back to the placeholder rather than showing as broken.
+      var art;
+      if (t.cover) {
+        art = document.createElement('img');
+        art.className = 'cov';
+        art.src = t.cover;
+        art.alt = '';
+        art.loading = 'lazy';
+        art.addEventListener('error', function () {
+          var ph = document.createElement('span');
+          ph.className = 'covph';
+          art.replaceWith(ph);
+        });
+      } else {
+        art = document.createElement('span');
+        art.className = 'covph';
+      }
+
       // textContent throughout rather than innerHTML: track titles come off the
       // network and are not ours to trust.
       var title = document.createElement('span');
@@ -81,6 +102,7 @@
       state.textContent = i === current ? 'playing' : '';
 
       li.appendChild(n);
+      li.appendChild(art);
       li.appendChild(title);
       li.appendChild(state);
       li.addEventListener('click', function () { play(i); });
@@ -353,6 +375,11 @@
   }
 
   function init() {
+    // dazzle.js is a separate <script>, loaded before this one, and exposes
+    // exactly this one global -- see its header for why it's a copy of the
+    // band site's generator rather than a shared import.
+    if (window.paintRadioDazzle) window.paintRadioDazzle();
+
     $('player').addEventListener('ended', function () {
       if (current + 1 < tracks.length) play(current + 1);
     });

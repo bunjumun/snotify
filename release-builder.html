@@ -36,6 +36,16 @@
   .rcard .rplay:hover { color: var(--accent); }
   .rcard .rplay.disabled, .rcard .rdel.disabled { opacity: .3; cursor: default; }
   .rcard .rplay.disabled:hover { color: var(--text-mute); }
+
+  /* CR-120 follow-up: whether a release is on Lakehorse Radio — independent
+     of the game's per-mix game_ok, and any number of releases can be on at
+     once. A small badge on the grid card, since scanning which releases are
+     live matters more there than in the one detail view open at a time. */
+  .rcard .rradio { color: var(--text-mute); font-size: 13px; }
+  .rcard .rradio.on { color: var(--accent); }
+  .rdetail-head .rradio-toggle { display: flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--text-dim); cursor: pointer; user-select: none; }
+  .rdetail-head .rradio-toggle input { margin: 0; }
   .rbot .rleft { display: flex; align-items: center; }
   .rempty2 { color: var(--text-dim); font-size: 14px; padding: 34px 10px; text-align: center; }
 
@@ -322,6 +332,7 @@ function renderGrid(){
           <span class="rplay ${n ? '' : 'disabled'}" data-rid="${esc(r.id)}"
                 title="${n ? `Play “${esc(r.title)}” in the player` : 'Add tracks first'}">▶</span>
           <span class="rpct">${pct}%</span>
+          <span class="rradio ${r.on_radio ? 'on' : ''}" title="${r.on_radio ? 'On Lakehorse Radio' : 'Not on Lakehorse Radio'}">📻</span>
         </span>
         <span class="rdel" data-rid="${esc(r.id)}" title="Delete “${esc(r.title)}” — the release only, not its songs">🗑</span>
       </div>
@@ -386,6 +397,10 @@ function renderDetail(){
               title="${list.length ? 'Play this release in the player' : 'Add tracks first'}">▶ Play</button>
       <button class="addbtn" id="relAddBtn">+ Add tracks</button>
       <button class="addbtn" id="relShareBtn" title="Copy a link to this release — public or band-only">🔗</button>
+      <label class="rradio-toggle" id="relRadioToggle">
+        <input type="checkbox" id="relRadioTick" ${r.on_radio ? 'checked' : ''} />
+        📻 On Lakehorse Radio
+      </label>
       <span class="rdel" id="relDeleteBtn" style="cursor:pointer;color:var(--text-mute)"
             title="Delete this release — the release only, not its songs">🗑</span>
       <span class="rpctbig">${pct}%</span>
@@ -403,6 +418,19 @@ function renderDetail(){
   $('relPlayBtn').addEventListener('click', () => { if (list.length) location.href = playUrl(r.id); });
   $('relAddBtn').addEventListener('click', () => openPicker(r.id));
   $('relShareBtn').addEventListener('click', () => offerReleaseShare(r));
+  $('relRadioTick').addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    e.target.disabled = true;
+    try {
+      await libRpc('set_release_radio', { rid: r.id, on_: on });
+      r.on_radio = on;
+    } catch (err) {
+      alert(String(err.message || err));
+      e.target.checked = !on;
+    } finally {
+      e.target.disabled = false;
+    }
+  });
   $('relDeleteBtn').addEventListener('click', async () => {
     if (!confirm(`Delete “${r.title}”? The release only — none of its songs are touched.`)) return;
     try { await libRpc('delete_release', { rid: r.id }); curReleaseId = null; await loadAll(); }

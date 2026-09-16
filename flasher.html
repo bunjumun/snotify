@@ -215,7 +215,10 @@ const isStreamable = (u) => /\.(mp3|m4a|aac|ogg|opus)(\?|$)/i.test(u);
 async function loadLibrary() {
   say($('syncStatus'), 'Asking the band library...', '');
   try {
-    const res = await fetch(SUPA_URL + '/rest/v1/rpc/game_tracks', {
+    // radio_tracks, not game_tracks: which songs go to this box is now chosen
+    // by ticking a release in Release Builder, entirely independent of which
+    // mix the swim game plays. See supabase/schema-v40.sql.
+    const res = await fetch(SUPA_URL + '/rest/v1/rpc/radio_tracks', {
       method: 'POST',
       headers: { apikey: SUPA_KEY, 'Content-Type': 'application/json' },
       body: '{}',
@@ -223,7 +226,13 @@ async function loadLibrary() {
     if (!res.ok) throw new Error('library returned ' + res.status);
     const rows = await res.json();
 
-    const all = (rows || []).map((r) => ({ title: r.title, url: publicUrl(r.src) }));
+    const all = (rows || []).map((r) => ({
+      title: r.title,
+      url: publicUrl(r.src),
+      // Resolved to a full URL here, same as the audio, so the box only ever
+      // stores addresses and never has to fetch or hold the image itself.
+      cover: publicUrl(r.cover) || undefined,
+    }));
     pendingTracks = all.filter((t) => isStreamable(t.url));
     const skipped = all.length - pendingTracks.length;
 

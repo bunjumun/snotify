@@ -97,3 +97,71 @@ the earlier CR-120 Wi-Fi fix (already verified on hardware, see
    goes back to empty (or to whatever else is still ticked).
 6. Push the branch, confirmed live per the repo's own "confirm on the live
    site rather than believing git" rule.
+
+## Update, 2026-09-17 — one blocker cleared, one correction, one open question
+
+Written by a different session (the XR18 measurement bench one, reached by
+mistake when the Snalbum session went looking for whichever machine held
+these commits). Appended rather than edited in above, so the original
+session's account stays intact.
+
+**Blocker 1 is cleared.** `supabase/schema-v40.sql` has been applied and
+verified live against `twgukeyoayfqldnojrkg` — migration `20260917054649`,
+confirmed present: `releases.on_radio`, `set_release_radio`, `radio_tracks`
+(anon execute, public revoked, matching `game_tracks`'s posture),
+`versions.game_ok` untouched at 4 rows. The live `get_releases` body was
+diffed against this file's version and matched character-for-character
+except the added `on_radio` key. **Do not run the migration again.** It is
+additive and idempotent so a second run would be harmless, but it is
+unnecessary.
+
+**Commit count was wrong.** Seven commits sit on this branch ahead of
+`origin/main`, not the three listed above. `merge-base(origin/main,
+lakehorse-radio)` is `c126511`, exactly `origin/main`'s tip — a clean
+fast-forward, zero divergence, no merge care needed. Full list, oldest
+first: `f8a0107`, `8cc9b46`, `801f4b8`, `d82f27a`, `8a204ea`, `b1dafb3`,
+`2de64d5`.
+
+**Blocker 2 is still open.** The branch is still not on `origin`. A push
+attempt from a differently-scoped session (the XR18 bench one) was refused
+by its own permission classifier as out-of-place for that session's task —
+not a credentials failure, it never reached the network. The push was
+handed off to the session that actually owns this repo's ESP32 work, but
+the handoff message expired waiting on approval and was never delivered.
+**Still needs `git push -u origin lakehorse-radio` from a session working in
+this repo, or by hand.**
+
+**A real gap, found while answering an unrelated question, and corrected
+once already — read the correction, not just the finding.** Two things
+fetch a jukebox track list, and only one was switched:
+
+```
+flasher.html:221        fetch(.../rpc/radio_tracks, ...)      -- correct
+lakehorse-radio/data/app.js:160  fetch(.../rpc/game_tracks, ...)  -- not switched
+```
+
+`app.js`'s "refresh from library" button — the box's own player page, run
+on a visitor's phone — still calls `game_tracks`. `git show --stat
+b1dafb3` shows `app.js` was touched only for cover art and CSS; the commit
+message itself says only `flasher.html` was switched. Reads as an
+oversight rather than a decision, but that is inference.
+
+**What this is NOT, corrected after an initial overstatement:** it does
+not touch the box's stored playlist. `refreshFromLibrary()` in `app.js`
+sets its own in-memory `tracks` array (`tracks = fresh;`) and nothing
+else — there is no `fetch('/api/playlist', {method: 'POST', ...})`
+anywhere in the file, and it never sends the `X-Lakehorse-Key` header the
+box requires to accept a playlist write, so it could not persist a change
+even if it tried. Pressing the button shows the *game's* list to that one
+phone for that one session; reloading the page restores the pushed radio
+playlist. Wrong list on one screen, not data loss.
+
+This has been logged as a decision for him rather than fixed silently —
+leave it alone unless he says otherwise. If he does want it switched, it
+is a one-line change: `game_tracks` → `radio_tracks` at `app.js:160`,
+mirroring what `flasher.html:221` already does.
+
+**Knock-on for step 4 of the verification list above:** load the box's
+page and do *not* press refresh, or you are looking at the game's list
+rather than testing the pushed radio playlist. Reload restores it either
+way.

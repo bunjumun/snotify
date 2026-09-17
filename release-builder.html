@@ -34,6 +34,10 @@
      song modules the Music page shows, filtered and ordered to the release. */
   .rcard .rplay { color: var(--text-mute); cursor: pointer; font-size: 13px; margin-right: 10px; }
   .rcard .rplay:hover { color: var(--accent); }
+  /* The radio toggle reuses .addbtn; only its on-state needs to read as lit,
+   * and it borrows the accent the progress fill already uses on this page. */
+  .radiobtn.on { border-color: var(--accent); color: var(--accent); }
+  .rcard .rsub .onair { color: var(--accent); }
   .rcard .rplay.disabled, .rcard .rdel.disabled { opacity: .3; cursor: default; }
   .rcard .rplay.disabled:hover { color: var(--text-mute); }
   .rbot .rleft { display: flex; align-items: center; }
@@ -315,7 +319,7 @@ function renderGrid(){
     return `
     <div class="rcard" data-rid="${esc(r.id)}">
       <h3 title="${esc(r.title)}">${esc(r.title)}</h3>
-      <div class="rsub">${n} track${n===1?'':'s'}</div>
+      <div class="rsub">${n} track${n===1?'':'s'}${r.on_radio ? ' · <span class="onair">📻 on the radio</span>' : ''}</div>
       <div class="track"><span class="fill" style="width:${pct}%"></span></div>
       <div class="rbot">
         <span class="rleft">
@@ -386,6 +390,9 @@ function renderDetail(){
               title="${list.length ? 'Play this release in the player' : 'Add tracks first'}">▶ Play</button>
       <button class="addbtn" id="relAddBtn">+ Add tracks</button>
       <button class="addbtn" id="relShareBtn" title="Copy a link to this release — public or band-only">🔗</button>
+      <button class="addbtn radiobtn ${r.on_radio ? 'on' : ''}" id="relRadioBtn"
+              title="${r.on_radio ? 'On Lakehorse Radio — the box plays this release. Click to take it off.'
+                                  : 'Not on Lakehorse Radio. Click to put this release on the air.'}">📻 ${r.on_radio ? 'On the radio' : 'Off air'}</button>
       <span class="rdel" id="relDeleteBtn" style="cursor:pointer;color:var(--text-mute)"
             title="Delete this release — the release only, not its songs">🗑</span>
       <span class="rpctbig">${pct}%</span>
@@ -403,6 +410,15 @@ function renderDetail(){
   $('relPlayBtn').addEventListener('click', () => { if (list.length) location.href = playUrl(r.id); });
   $('relAddBtn').addEventListener('click', () => openPicker(r.id));
   $('relShareBtn').addEventListener('click', () => offerReleaseShare(r));
+  // No optimistic flip: loadAll() re-reads get_releases and re-renders, so the
+  // button's state comes from the database rather than from a local guess. On
+  // failure nothing has moved and the alert says why.
+  $('relRadioBtn').addEventListener('click', async () => {
+    try {
+      await libRpc('set_release_radio', { rid: r.id, on_: !r.on_radio });
+      await loadAll();
+    } catch (err){ alert(String(err.message || err)); }
+  });
   $('relDeleteBtn').addEventListener('click', async () => {
     if (!confirm(`Delete “${r.title}”? The release only — none of its songs are touched.`)) return;
     try { await libRpc('delete_release', { rid: r.id }); curReleaseId = null; await loadAll(); }

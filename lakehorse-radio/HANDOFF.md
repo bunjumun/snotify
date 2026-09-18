@@ -145,3 +145,13 @@ venv.
 - **Not pushed.** Waiting on the fallback-case test decision above before
   pushing — "the push is Claude's" per the repo rule, but the live check for
   firmware is the board, not a website, and items 3/5/6 haven't been seen yet.
+- **Stale as of 2026-09-18: two more features landed on this branch since the
+  above was written, and neither is reflected here.** `b1dafb3` (release-level
+  radio track selection) and `2de64d5` (this file's counterpart for that
+  feature). Full state — 7 commits ahead of `origin/main`, clean fast-forward,
+  `supabase/schema-v40.sql` applied and verified live, one known display-only
+  gap (`lakehorse-radio/data/app.js` still calls `game_tracks` where
+  `flasher.html` calls `radio_tracks`) — is in
+  `../docs/lakehorse-radio-integration-handoff.md`, not duplicated here.
+  **Still not pushed.** `git push -u origin lakehorse-radio` is the single
+  outstanding action; nothing else blocks it.

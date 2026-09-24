@@ -2390,6 +2390,10 @@ function setCollectionCover(src){
 async function init() {
   if (!WaveSurfer) return; // engine failed to load; message already shown
   curProject = null; curBand = null; singleMix = false;
+  // CR-121: reset with the rest of it. The shared-token and single-mix branches
+  // below `return` before `folders` is ever assigned, so on a hashchange out of a
+  // band library this kept the previous band's folder headers.
+  folders = [];
   progress = Object.create(null);
   $('albumProg').innerHTML = ''; delete $('albumProg').dataset.sig;
   document.body.classList.remove('shared', 'singlemix', 'release');
@@ -3379,17 +3383,40 @@ function songRowHtml(s, i){
 // descendant selector finds. Reordering (▲▼) still walks the whole flat
 // `songs` array regardless of which folder a row is filed under — folders are
 // a view over that array, not a second ordering of it.
-function renderList() {
-  $('list').className = 'songlist';
-  $('trackCount').textContent = `${songs.length} song${songs.length===1?'':'s'}`;
+// CR-121: the one place that decides how the library is arranged. renderList
+// draws in this order and buildOrder plays in it, so "what comes next" is always
+// the row underneath. Those two used to disagree: buildOrder walked the flat
+// `songs` array (get_library's `position, created_at desc`) while renderList drew
+// folders first and loose songs last, so on any band with a music folder the next
+// song came from somewhere else on the page entirely and it read as shuffle.
+// A song whose folderId is not among `folders` counts as loose rather than being
+// dropped: release view empties `folders` deliberately, and a release song that
+// also sits in a music folder must still appear.
+function groupedSongs(){
   const byFolder = new Map();
   const loose = [];
+  const known = new Set(folders.map(f => f.id));
   songs.forEach((s, i) => {
-    if (s.folderId){
+    if (s.folderId && known.has(s.folderId)){
       if (!byFolder.has(s.folderId)) byFolder.set(s.folderId, []);
       byFolder.get(s.folderId).push(i);
     } else loose.push(i);
   });
+  return { byFolder, loose };
+}
+// Every song index in the order the page draws it. Songs inside COLLAPSED
+// folders are included on purpose: the play order must not change as the
+// accordion opens and closes, or playing the record through would silently omit
+// whatever happened to be shut. Leaving songs out of the album is what the
+// per-folder and per-song `%` exclude controls are for.
+function displayOrder(){
+  const { byFolder, loose } = groupedSongs();
+  return [...folders.flatMap(f => byFolder.get(f.id) || []), ...loose];
+}
+function renderList() {
+  $('list').className = 'songlist';
+  $('trackCount').textContent = `${songs.length} song${songs.length===1?'':'s'}`;
+  const { byFolder, loose } = groupedSongs();
   const folderHtml = folders.map(f => {
     const idxs = byFolder.get(f.id) || [];
     const open = openFolders.has(f.id);
@@ -3963,7 +3990,13 @@ function buildOrder(start){
     const rest = songs.map((_,i)=>i).filter(i=>i!==start);
     for (let i=rest.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [rest[i],rest[j]]=[rest[j],rest[i]]; }
     order=[start,...rest]; pos=0;
-  } else { order=songs.map((_,i)=>i); pos=start; }
+  } else {
+    // CR-121: the order on the screen, not the order the server happened to
+    // return. `pos` is now a position in `order` rather than a song index, so it
+    // has to be looked up — they coincided only while order was the identity.
+    order = displayOrder();
+    pos = Math.max(0, order.indexOf(start));
+  }
 }
 // startVer lets the row's version picker open the song on a mix other than the
 // latest; everything else still starts at the top of the stack.

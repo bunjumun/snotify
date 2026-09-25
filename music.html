@@ -1899,6 +1899,9 @@
 <!-- The two checklists and the arithmetic. No DOM, no network; it throws at
      load if the weights stop summing to 100, which is deliberate. -->
 <script src="progress.js?v=16"></script>
+<!-- CR-103: the checklist's own render/wire/persist code, shared with
+     Release Builder now that it needs the same accordion. -->
+<script src="progress-ui.js?v=5"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -1925,11 +1928,11 @@ App.onLock   = () => {          // hard gate went up: don't leave a library behi
   // The album bar is band data too. Leaving it up behind the gate would show
   // how far along a record is to someone who has just been told to log in.
   $('albumProg').innerHTML = ''; delete $('albumProg').dataset.sig;
-  progress = Object.create(null);
+  PROGRESS_UI.loadChecklistData();
 };
 App.onLogout = () => {          // tear the player down before the band is forgotten
   commentCache = {};
-  progress = Object.create(null);
+  PROGRESS_UI.loadChecklistData();
   $('albumProg').innerHTML = ''; delete $('albumProg').dataset.sig;
   try { destroyPlayers(); } catch {}
   activeSong = null; activeSongIndex = -1;
@@ -1943,21 +1946,11 @@ let songs = [];
 let folders = [];
 let openFolders = new Set();
 let curProject = null;             // project scoping the current view (via #/p/<slug>)
-// Progress ticks, keyed 'song/<folder>' and 'album/<project slug>' → Set of
-// task keys. Only ticked tasks are ever stored or sent, so membership IS the
-// state and there is no third value to reason about. Empty until the band is
-// logged in; a shared link never loads it, because progress is band data.
-let progress = Object.create(null);
-// Assignee, notes and due date per task, keyed 'scope/ref/key' → {assignee,
-// notes, due_on}. Separate from `progress` because a task can carry meta
-// without being ticked — that is the whole point of phase 2 — so this is not
-// a Set and does not share progKey's per-scope shape.
-let progMeta = Object.create(null);
-const metaKey = (scope, ref, key) => scope + '/' + ref + '/' + key;
-// His own additions and removals, raw as the server returns them. One object
-// for the whole band; PROGRESS.shapeFor narrows it to one song or one record.
-let progShape = { items: [], hidden: [] };
-const shapeOf = (scope, ref) => PROGRESS.shapeFor(progShape, scope, ref);
+// Progress ticks, his own added/removed steps and their assignee/notes/due
+// meta all moved into progress-ui.js at CR-103, shared now with Release
+// Builder. `PROGRESS_UI.ticksFor`/`shapeOf` are the same functions this page
+// used to keep as its own module-level `progress`/`progShape` — everything
+// downstream of them (songPctOf, albumPctOf) is unchanged.
 let order = [], pos = -1;          // play order over songs
 let shuffle = false, repeat = 'off';
 let curVolume = parseFloat(localStorage.getItem('mp_vol') ?? '0.9');
@@ -2394,7 +2387,7 @@ async function init() {
   // below `return` before `folders` is ever assigned, so on a hashchange out of a
   // band library this kept the previous band's folder headers.
   folders = [];
-  progress = Object.create(null);
+  PROGRESS_UI.loadChecklistData();
   $('albumProg').innerHTML = ''; delete $('albumProg').dataset.sig;
   document.body.classList.remove('shared', 'singlemix', 'release');
   setCollectionCover(null);
@@ -2686,16 +2679,6 @@ function showEmpty() {
 // accordion and then rebuilding the list underneath it would close the thing
 // you are using. So a tick patches the two numbers it can change — this song's
 // bar and the album's — and leaves every element where it is.
-// First letters of up to two words, for the collapsed-row badge. "Sam" -> S,
-// "Sam Lee" -> SL. Never more than two, so a full name typed by accident does
-// not stretch the row.
-const initials = (name) => String(name || '').trim().split(/\s+/).slice(0, 2)
-  .map(w => w[0]).join('').toUpperCase();
-const progKey = (scope, ref) => scope + '/' + ref;
-function ticksFor(scope, ref){
-  const k = progKey(scope, ref);
-  return progress[k] || (progress[k] = new Set());
-}
 // A song with no folder is a legacy flat row with no stable key to hang
 // progress on. It gets no bar rather than a bar that cannot be saved.
 const progressable = (s) => !!(s && s.folder) && !!window.PROGRESS;
@@ -2710,7 +2693,7 @@ function todosOf(s){
   return { open, done };
 }
 const songPctOf = (s) => progressable(s)
-  ? PROGRESS.songPct(ticksFor('song', s.folder), shapeOf('song', s.folder), todosOf(s)) : 0;
+  ? PROGRESS.songPct(PROGRESS_UI.ticksFor('song', s.folder), PROGRESS_UI.shapeOf('song', s.folder), todosOf(s)) : 0;
 // Effective exclusion from the album %, CR-81. A song excludes itself, or
 // inherits exclusion from whichever folder it currently sits in — nothing is
 // copied onto the song row, so moving it in or out of an excluded folder
@@ -2741,6 +2724,17 @@ function albumsInView(){
   }
   return out;
 }
+
+// CR-103: the four things the shared checklist (progress-ui.js) cannot work
+// out for itself, because they depend on which songs this page is currently
+// showing — see that file's own header for why the split falls here rather
+// than being pulled inside it.
+PROGRESS_UI.initChecklist({
+  getSong: (ref) => songs.find(s => s.folder === ref),
+  getAutoFeedSongs: (ref) => (albumsInView().find(a => a.slug === ref) || {}).songs || [],
+  songPctOf, excludedFromAlbumPct, todosOf,
+  onChange: refreshProgressNumbers,
+});
 // The album's number, including the mean of every song IN THE ALBUM — songs
 // nobody has touched included, so ten songs with one finished is a tenth of
 // that phase and not half of it. Adding a song lowers the bar, which is honest:
@@ -2752,8 +2746,8 @@ function albumsInView(){
 // and counts toward "N of M songs finished"; only what feeds the mean changes.
 function albumPctOf(al){
   const counted = al.songs.filter(s => !excludedFromAlbumPct(s));
-  return PROGRESS.albumPct(ticksFor('album', al.slug), counted.map(songPctOf),
-                           shapeOf('album', al.slug));
+  return PROGRESS.albumPct(PROGRESS_UI.ticksFor('album', al.slug), counted.map(songPctOf),
+                           PROGRESS_UI.shapeOf('album', al.slug));
 }
 
 async function loadProgress(){
@@ -2772,15 +2766,7 @@ async function loadProgress(){
     // is nothing half-drawn to explain, so nothing is said.
     return;
   }
-  progress = Object.create(null);
-  progMeta = Object.create(null);
-  progShape = shape || { items: [], hidden: [] };
-  for (const r of (rows || [])) {
-    if (r.done) ticksFor(r.scope, r.ref).add(r.key);
-    if (r.assignee || r.notes || r.due_on)
-      progMeta[metaKey(r.scope, r.ref, r.key)] =
-        { assignee: r.assignee || '', notes: r.notes || '', due_on: r.due_on || '' };
-  }
+  PROGRESS_UI.loadChecklistData(rows, shape);
   // The ticks usually land AFTER renderList has already drawn the rows, because
   // this is fired off in the background rather than awaited. Drawing bars that
   // are missing and then correcting the numbers on the ones already there are
@@ -2791,385 +2777,17 @@ async function loadProgress(){
   renderAlbumProgress();
 }
 
-function barHtml(pct, cls){
-  const w = Math.round(pct);
-  return `<span class="pbar ${cls || ''}${w >= 100 ? ' done' : ''}${w === 0 ? ' zero' : ''}" title="Production progress — click for the checklist">
-      <span class="track"><span class="fill" style="width:${w}%"></span></span>
-      <span class="pct">${w}%</span>
-    </span>`;
-}
-
-// The checklist itself. `auto` phases have no boxes — the album's 50% song
-// average is the mean of the songs and there is nothing on it a person could
-// tick — so they render as a sentence saying what the number came from.
-// The averaged phase, which has no boxes because it is worked out from the songs
-// rather than ticked. Shown as the arithmetic rather than as a single number,
-// because "31%" tells him nothing about what to do next and a list of songs with
-// their own scores tells him exactly which ones are holding the record back.
-//
-// The formula, stated once here and nowhere else:
-//   album %  =  (album's own ticked weights, out of 50)
-//             +  50 x (mean of every song's own %) / 100
-// A song's own % is the sum of its ticked stage weights, so a song part-way
-// through the pipeline contributes part-way. That is what makes this work for
-// any mix of stages: three finished, one being mastered and two still being
-// written all fall out of the same average without a special case.
-function autoPhaseHtml(ref, ph){
-  const al = albumsInView().find(a => a.slug === ref);
-  const inAlbum = al ? al.songs : [];
-  // CR-81: an excluded song is left out of the mean this phase explains, same
-  // as albumPctOf — this is the one place that shows the arithmetic behind
-  // the number, so it has to agree with it. Still listed below, tagged, so an
-  // excluded song doesn't just silently vanish from its own record's page.
-  const counted = inAlbum.filter(s => !excludedFromAlbumPct(s));
-  const pcts = counted.map(songPctOf);
-  const mean = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : 0;
-  const done = pcts.filter(p => p >= 100).length;
-  const pts = mean / 100 * ph.weight;
-  return `<div class="pphase pphase-auto">
-    <div class="pphase-h">${esc(ph.name)} <span class="w">${ph.weight}%</span></div>
-    <div class="pauto">Worked out from the songs, never ticked. The average of every
-      counted song on the record, including ones nobody has started, is <b>${mean.toFixed(1)}%</b>
-      &mdash; ${done} of ${pcts.length} finished &mdash; which is
-      <b>${pts.toFixed(1)}</b> of the ${ph.weight} points here.</div>
-    <div class="pbreak">
-      ${inAlbum.map((sg, n) => {
-        const excl = excludedFromAlbumPct(sg);
-        const w = songPctOf(sg);
-        return `<div class="pbrow ${w >= 100 ? 'full' : ''} ${excl ? 'excluded' : ''}">
-          <span class="n">${n + 1}</span>
-          <span class="t">${esc(sg.title)}${excl ? ' <i>(excluded from %)</i>' : ''}</span>
-          <span class="b"><span style="width:${Math.round(w)}%"></span></span>
-          <span class="p">${Math.round(w)}%</span>
-        </div>`;
-      }).join('')}
-    </div>
-    <div class="pnote">Pick any of them in the dropdown above to fill it in, and this moves.</div>
-  </div>`;
-}
-
-// CR-86, "the hidden variable" made visible. The bar already moves by this on
-// every note and every custom item (progress.js's todoSwing); this just says
-// so out loud, the same way autoPhaseHtml spells out the album mean instead of
-// leaving him to trust a single percentage. Song scope only, since a to-do
-// modal and its notes are a song's, not a record's; an album's own swing is
-// only ever its own custom checklist items, already visible as -1/+4 badges
-// on those rows.
-function todoSwingHtml(scope, ref, ticks, shaped){
-  if (scope !== 'song') return '';
-  const song = songs.find(s => s.folder === ref);
-  const todos = song ? todosOf(song) : { open: 0, done: 0 };
-  let itemOpen = 0, itemDone = 0;
-  for (const ph of shaped) for (const t of ph.tasks)
-    if (t.custom) (ticks.has(t.key) ? itemDone++ : itemOpen++);
-  const open = todos.open + itemOpen, done = todos.done + itemDone;
-  if (!open && !done) return '';
-  const swing = PROGRESS.todoSwing(shaped, ticks, todos);
-  return `<div class="pswing" title="Every open or resolved note, plus your own checklist items">
-    <b>To-do swing:</b> ${open} open (${PROGRESS.TODO_OPEN * open}%), ${done} resolved
-    (+${PROGRESS.TODO_DONE * done}%) &mdash; net ${swing >= 0 ? '+' : ''}${swing}%,
-    already folded into the total above.
-  </div>`;
-}
-
-function accHtml(list, scope, ref){
-  const ticks = ticksFor(scope, ref);
-  const shape = shapeOf(scope, ref);
-  const shaped = PROGRESS.shapedList(list, shape);
-  return todoSwingHtml(scope, ref, ticks, shaped) + shaped.map(ph => {
-    if (ph.auto) return autoPhaseHtml(ref, ph);
-    const full = ph.tasks.length && ph.tasks.every(t => ticks.has(t.key));
-    return `<div class="pphase">
-      <div class="pphase-h clickable" data-phase="${esc(ph.key)}"
-           title="${full ? 'Clear every box in ' + esc(ph.name) : 'Tick every box in ' + esc(ph.name)}">
-        ${esc(ph.name)} <span class="w">${Math.round(ph.weight)}%</span>
-        <span class="phall">${full ? 'clear' : 'tick all'}</span>
-      </div>
-      ${ph.tasks.map(t => {
-        const on = ticks.has(t.key);
-        const id = `pt-${esc(scope)}-${esc(ref)}-${esc(t.key)}`;
-        const meta = progMeta[metaKey(scope, ref, t.key)];
-        return `<div class="ptask ${on ? 'on' : ''} ${t.custom ? 'mine' : ''}" data-key="${esc(t.key)}">
-          <input type="checkbox" id="${id}" ${on ? 'checked' : ''} />
-          <label for="${id}">${esc(t.name)}</label>
-          ${meta && meta.assignee ? `<span class="pwho" title="Assigned to ${esc(meta.assignee)}">${esc(initials(meta.assignee))}</span>` : ''}
-          <!-- His own to-do items do not carry a share of the 100; they swing
-               the bar instead, so the badge says what they actually do. -->
-          <span class="w">${t.custom ? '&minus;2 / +4%' : t.weight.toFixed(t.weight < 10 ? 1 : 0) + '%'}</span>
-          <span class="pinsp" title="Assignee, notes, due date" data-inspect="${esc(t.key)}">&#9998;</span>
-          <span class="pdrop" title="${t.custom ? 'Delete this item' : 'Remove this step from this one only'}"
-                data-drop="${esc(t.key)}" data-mine="${t.custom ? esc(t.id) : ''}">&times;</span>
-        </div>`;
-      }).join('')}
-      <div class="padd" data-addphase="${esc(ph.key)}">
-        <span class="lnk">+ add a step to ${esc(ph.name)}</span>
-      </div>
-    </div>`;
-  }).join('')
-  + hiddenHtml(list, scope, ref)
-  + `<div class="pnote editonly">Click a category heading to fill it in or empty it. Removing a
-       step shares its weight out inside its own category, so this still adds up to 100.</div>`
-  + peditHtml();
-}
-
-// The link at the foot of a checklist that turns it into an editor of itself,
-// named in his own words. Both labels are always in the markup and CSS shows one
-// of them, because the panel is repainted on every tick and a label rendered
-// from a mode variable would need that variable carried through every repaint
-// path — the class on the container survives innerHTML replacement, so it is the
-// one place the mode can live without being reset by an unrelated click.
-//
-// Takes no arguments and reads nothing: the mode belongs to the panel on screen,
-// not to a song. Opening a different song's checklist starts it as a checklist
-// again, which is the right default for a control you reach for rarely.
-function peditHtml(){
-  return `<div class="pedit">
-    <span class="lnk" data-editcrit="1">
-      <span class="e-off">Edit progress criteria</span>
-      <span class="e-on">Done editing</span>
-    </span>
-  </div>`;
-}
-
-// What he has taken off THIS song or record, so removing something is visibly
-// reversible rather than a one-way door. Absent entirely when nothing is hidden.
-function hiddenHtml(list, scope, ref){
-  const hid = shapeOf(scope, ref).hidden;
-  if (!hid.size) return '';
-  const names = [];
-  for (const ph of list) for (const t of (ph.tasks || []))
-    if (hid.has(t.key)) names.push(t);
-  if (!names.length) return '';
-  return `<div class="phidden">
-    <span class="hl">Not counted here:</span>
-    ${names.map(t => `<span class="hchip" data-restore="${esc(t.key)}"
-        title="Put this step back">${esc(t.name)} <b>+</b></span>`).join('')}
-  </div>`;
-}
-
-// The bulk row that sits above a checklist. Separate from accHtml's output only
-// in that it is prepended, so that the "everything" controls read as being about
-// the list rather than as another line inside it.
-function bulkHtml(list, scope, ref){
-  const ticks = ticksFor(scope, ref);
-  const all = PROGRESS.shapedList(list, shapeOf(scope, ref))
-    .filter(ph => !ph.auto).flatMap(ph => ph.tasks);
-  const on = all.filter(t => ticks.has(t.key)).length;
-  return `<div class="pbulk">
-    <span class="bcount">${on} of ${all.length} ticked</span>
-    <span class="lnk" data-bulk="all">Tick everything</span>
-    <span class="lnk" data-bulk="none">Clear everything</span>
-  </div>`;
-}
-
-
-// Wire one accordion. Delegated on the container, so re-rendering its innards
-// never leaves a listener behind on an element that has gone.
-// Tick or clear a set of keys in one go, from a category heading or from the
-// "everything" controls. One round trip either way: v25 shipped the bulk insert
-// and v26 added the matching delete, because a control that fills two dozen
-// boxes in a click and then needs two dozen calls to undo is a trap rather than
-// a pair of controls — and the undo is what you reach for right after a
-// mistake, which is the worst moment to be slow.
-async function bulkSet(el, keys, on){
-  if (!keys.length) return;
-  const scope = el.dataset.scope, ref = el.dataset.ref;
-  const ticks = ticksFor(scope, ref);
-  const before = new Set(ticks);
-  keys.forEach(k => on ? ticks.add(k) : ticks.delete(k));
-  paintAcc(el);
-  refreshProgressNumbers(null);
-  try {
-    await libRpc(on ? 'progress_set_many' : 'progress_clear_many',
-      on ? { scope_in: scope, ref_in: ref, keys, ver_in: PROGRESS.VERSION }
-         : { scope_in: scope, ref_in: ref, keys });
-  } catch (err){
-    // Put back exactly what was there, rather than inverting what we just did:
-    // some of these keys may already have been ticked before the click, and
-    // undoing by inversion would clear those too.
-    progress[progKey(scope, ref)] = before;
-    paintAcc(el);
-    refreshProgressNumbers(null);
-    alert('Could not save that: ' + (err.message || err));
-  }
-}
-
-function wireAcc(el){
-  el.addEventListener('click', (e) => {
-    e.stopPropagation();                                    // never plays the song
-    const scope = el.dataset.scope, ref = el.dataset.ref;
-    const list = PROGRESS.shapedList(scope === 'album' ? PROGRESS.ALBUM : PROGRESS.SONG,
-                                     shapeOf(scope, ref));
-    const ticks = ticksFor(scope, ref);
-
-    const bulk = e.target.closest('[data-bulk]');
-    if (bulk){
-      const all = list.filter(ph => !ph.auto).flatMap(ph => ph.tasks).map(t => t.key);
-      const want = bulk.dataset.bulk === 'all';
-      // Send only what actually changes. Clearing a list that is already half
-      // empty should not ask the server to delete rows that were never there.
-      return bulkSet(el, all.filter(k => ticks.has(k) !== want), want);
-    }
-
-    const insp = e.target.closest('[data-inspect]');
-    if (insp){
-      const task = list.flatMap(ph => ph.tasks).find(t => t.key === insp.dataset.inspect);
-      if (task) openInspector(scope, ref, task);
-      return;
-    }
-
-    // --- his own items: add, remove, put back -----------------------------
-    const drop = e.target.closest('[data-drop]');
-    if (drop){
-      const key = drop.dataset.drop, mine = drop.dataset.mine;
-      if (mine){
-        // His own item. Deleting it takes its tick with it, which is why this
-        // asks: a built-in can be restored from the chip below, a typed one
-        // cannot be recovered once the words are gone.
-        if (!confirm('Delete this step? It only exists here, so this cannot be undone.')) return;
-        progShape.items = progShape.items.filter(i => i.id !== mine);
-        ticksFor(el.dataset.scope, el.dataset.ref).delete(key);
-        paintAcc(el); refreshProgressNumbers(null);
-        libRpc('progress_item_del', { id_in: mine }).catch(err => {
-          alert('Could not delete that: ' + (err.message || err)); loadProgress();
-        });
-      } else {
-        // A built-in, taken off this one song. Reversible from the chip below,
-        // so this used to go through without asking. It asks now, at his word
-        // on 22 Aug ("if I am removing, ask me if I'm sure first"), unqualified
-        // as to which kind. Worded to say it IS reversible, so the two prompts
-        // are not mistaken for each other: the one above warns that typed words
-        // are gone for good, this one only confirms the intent.
-        if (!confirm('Remove this step from this one? You can put it back from the chip below.')) return;
-        progShape.hidden = progShape.hidden.concat(
-          [{ scope: el.dataset.scope, ref: el.dataset.ref, key }]);
-        ticksFor(el.dataset.scope, el.dataset.ref).delete(key);
-        paintAcc(el); refreshProgressNumbers(null);
-        libRpc('progress_hide', { scope_in: el.dataset.scope, ref_in: el.dataset.ref,
-                                  key_in: key, hide: true })
-          .catch(err => { alert('Could not remove that: ' + (err.message || err)); loadProgress(); });
-      }
-      return;
-    }
-
-    const back = e.target.closest('[data-restore]');
-    if (back){
-      const key = back.dataset.restore;
-      progShape.hidden = progShape.hidden.filter(h =>
-        !(h.scope === el.dataset.scope && h.ref === el.dataset.ref && h.key === key));
-      paintAcc(el); refreshProgressNumbers(null);
-      libRpc('progress_hide', { scope_in: el.dataset.scope, ref_in: el.dataset.ref,
-                                key_in: key, hide: false })
-        .catch(err => { alert('Could not put that back: ' + (err.message || err)); loadProgress(); });
-      return;
-    }
-
-    // Editing mode is a class on the panel and nothing else — nothing is saved,
-    // because which mode a panel is in is not a fact about the record.
-    if (e.target.closest('[data-editcrit]')){
-      el.classList.toggle('editing');
-      return;
-    }
-
-    const add = e.target.closest('[data-addphase]');
-    if (add){
-      const phase = add.dataset.addphase;
-      const label = (prompt('What is the step called? It will only exist on this one.') || '').trim();
-      if (!label) return;
-      const scope = el.dataset.scope, ref = el.dataset.ref;
-      libRpc('progress_item_add', { scope_in: scope, ref_in: ref,
-                                    phase_in: phase, label_in: label, weight_in: 0 })
-        .then(id => {
-          // The server hands back the id, so the item can appear without a
-          // second round trip to ask what was just made.
-          progShape.items = progShape.items.concat(
-            [{ id, scope, ref, phase, label, weight: 0, sort: 999 }]);
-          paintAcc(el); refreshProgressNumbers(null);
-        })
-        .catch(err => alert('Could not add that: ' + (err.message || err)));
-      return;
-    }
-
-    const head = e.target.closest('.pphase-h[data-phase]');
-    if (head){
-      const ph = list.find(x => x.key === head.dataset.phase);
-      if (!ph || !ph.tasks.length) return;
-      const full = ph.tasks.every(t => ticks.has(t.key));
-      return bulkSet(el, ph.tasks.filter(t => ticks.has(t.key) === full).map(t => t.key), !full);
-    }
-  });
-  el.addEventListener('change', async (e) => {
-    const box = e.target.closest('input[type=checkbox]');
-    if (!box) return;
-    // Read the target off the element, not out of a closure. The record's panel
-    // can be pointed at any track on it, and a closure captured at wiring time
-    // would happily go on writing ticks to the record while the dropdown said
-    // otherwise — the worst kind of bug, because the screen would look right.
-    const scope = el.dataset.scope, ref = el.dataset.ref;
-    const row = box.closest('.ptask');
-    const key = row.dataset.key;
-    const on  = box.checked;
-    const ticks = ticksFor(scope, ref);
-    // Optimistic, and put back if the write fails: a checkbox that waits for a
-    // round trip before it moves feels broken, and this one is cheap to undo.
-    on ? ticks.add(key) : ticks.delete(key);
-    row.classList.toggle('on', on);
-    refreshProgressNumbers(el);
-    try {
-      await libRpc('progress_set', { scope_in: scope, ref_in: ref, key_in: key,
-                                     done_in: on, ver_in: PROGRESS.VERSION });
-    } catch (err){
-      on ? ticks.delete(key) : ticks.add(key);
-      box.checked = !on; row.classList.toggle('on', !on);
-      refreshProgressNumbers(el);
-      alert('Could not save that tick: ' + (err.message || err));
-      return;
-    }
-    if (!on) return;
-    // Phase 4 of the album-progress plan, last of the four: "mark all prior
-    // steps... completed?" Cascade across every phase before this task, not
-    // just its own category — backfilling an imported song's furthest-along
-    // task should offer Writing and Tracking too, not just the rest of
-    // Mixing. Only offered on a tick, never an untick, and only when
-    // something earlier is genuinely still open, so ticking boxes in the
-    // normal top-to-bottom order never triggers it. Reuses progress_set_many
-    // exactly as the phase-heading "tick all" control already does — no new
-    // RPC, no migration.
-    const shaped = PROGRESS.shapedList(scope === 'album' ? PROGRESS.ALBUM : PROGRESS.SONG,
-                                       shapeOf(scope, ref));
-    const flat = shaped.filter(p => !p.auto).flatMap(p => p.tasks);
-    const idx = flat.findIndex(t => t.key === key);
-    const prior = idx > 0 ? flat.slice(0, idx).filter(t => !ticks.has(t.key)) : [];
-    if (prior.length && confirm('Mark all prior steps in this '
-        + (scope === 'album' ? 'record' : 'song') + ' as completed?')){
-      const keys = prior.map(t => t.key);
-      keys.forEach(k => ticks.add(k));
-      paintAcc(el);
-      refreshProgressNumbers(el);
-      try {
-        await libRpc('progress_set_many', { scope_in: scope, ref_in: ref, keys, ver_in: PROGRESS.VERSION });
-      } catch (err){
-        keys.forEach(k => ticks.delete(k));
-        paintAcc(el);
-        refreshProgressNumbers(el);
-        alert('Could not backfill those: ' + (err.message || err));
-      }
-    }
-  });
-}
-
-// Draw an accordion from whatever it is currently pointed at.
-function paintAcc(acc){
-  const scope = acc.dataset.scope, ref = acc.dataset.ref;
-  if (!scope || !ref) return;
-  const list = scope === 'album' ? PROGRESS.ALBUM : PROGRESS.SONG;
-  acc.innerHTML = bulkHtml(list, scope, ref) + accHtml(list, scope, ref);
-}
-
-
 // Patch every number in place. Called after a tick, and cheap enough to call
 // after any of them: it touches at most one element per song plus two.
+//
+// CR-103: the checklist's own render/wire/tick-persist code (barHtml through
+// paintAcc, plus the inspector modal) moved into progress-ui.js, shared with
+// Release Builder. What stays here is page chrome only — the song rows, the
+// library's own album bars — which is what PROGRESS_UI.refreshChecklists
+// cannot know how to repaint on this page's behalf. See progress-ui.js's own
+// header for why the split falls there.
 function refreshProgressNumbers(except){
+  PROGRESS_UI.refreshChecklists(except);
   document.querySelectorAll('#list .song').forEach(el => {
     const s = songs[Number(el.dataset.i)];
     const bar = el.querySelector(':scope > .meta .pbar');
@@ -3187,25 +2805,8 @@ function refreshProgressNumbers(except){
     el.querySelector('.fill').style.width = w + '%';
     el.querySelector('.pct').textContent = w + '%';
   });
-  // The same track can be open in two places at once — on its own row and in
-  // the record's panel — and the record's note quotes numbers that move when
-  // any song is ticked. So redraw every open checklist except the one under the
-  // pointer, which has to keep its focus.
-  document.querySelectorAll('.pacc').forEach(acc => {
-    if (acc.hidden || acc === except) return;
-    paintAcc(acc);
-  });
   document.querySelectorAll('#albumProg .aprog').forEach(showPickPct);
   if (profiling && activeSong && $('pProgPct')) paintProfileProgHead();
-  // The one under the pointer keeps its focus, so it is not redrawn. The only
-  // part of it that can have gone stale is the averaged phase, and that can be
-  // swapped on its own without touching a single checkbox — and only ever says
-  // something different when the tick was on a song rather than on this record.
-  if (except && !except.hidden && except.dataset.scope === 'album'){
-    const auto = PROGRESS.ALBUM.find(ph => ph.auto);
-    const phase = except.querySelector('.pphase-auto');
-    if (auto && phase) phase.outerHTML = autoPhaseHtml(except.dataset.ref, auto);
-  }
 }
 
 
@@ -3219,17 +2820,17 @@ function renderProgressBars(){
     if (!s || !progressable(s) || el.querySelector(':scope > .meta .pbar')) return;
     const sub = el.querySelector(':scope > .meta .sub');
     if (!sub) return;
-    sub.insertAdjacentHTML('beforeend', barHtml(songPctOf(s)));
+    sub.insertAdjacentHTML('beforeend', PROGRESS_UI.barHtml(songPctOf(s)));
     const bar = sub.querySelector('.pbar');
     const acc = document.createElement('div');
     acc.className = 'pacc'; acc.hidden = true;
     acc.dataset.scope = 'song'; acc.dataset.ref = s.folder;
     el.appendChild(acc);
-    wireAcc(acc);
+    PROGRESS_UI.wireAcc(acc);
     bar.addEventListener('click', (e) => {
       e.stopPropagation();                       // the row plays; the bar opens
       acc.hidden = !acc.hidden;
-      if (!acc.hidden) paintAcc(acc);
+      if (!acc.hidden) PROGRESS_UI.paintAcc(acc);
     });
   });
 }
@@ -3314,11 +2915,11 @@ function renderAlbumProgress(){
       const acc  = el.querySelector('.pacc');
       const pick = el.querySelector('.apick');
       const sel  = el.querySelector('.apicksel');
-      wireAcc(acc);
+      PROGRESS_UI.wireAcc(acc);
       const retarget = () => {
         const [scope, ...rest] = sel.value.split(':');
         acc.dataset.scope = scope; acc.dataset.ref = rest.join(':');
-        paintAcc(acc);
+        PROGRESS_UI.paintAcc(acc);
         showPickPct(el);
       };
       sel.addEventListener('change', retarget);
@@ -5597,47 +5198,11 @@ $('refToggle').onclick = () => openReference();
 $('refClose').onclick = closeReference;
 $('refModal').addEventListener('click', (e) => { if (e.target === $('refModal')) closeReference(); });
 
-// The progress inspector. `progInspTarget` is set on open and read on save,
-// same shape as refSubject above: one slot, remembered between the two calls
-// rather than threaded through the DOM.
-let progInspTarget = null;
-function openInspector(scope, ref, task){
-  progInspTarget = { scope, ref, key: task.key };
-  const meta = progMeta[metaKey(scope, ref, task.key)] || {};
-  $('progInspTitle').textContent = task.name;
-  $('progInspWho').value = meta.assignee || '';
-  $('progInspDue').value = meta.due_on || '';
-  $('progInspNotes').value = meta.notes || '';
-  $('progInspStatus').textContent = '';
-  $('progInspStatus').className = 'status';
-  $('progModal').classList.add('open');
-}
-function closeInspector(){ $('progModal').classList.remove('open'); progInspTarget = null; }
-$('progInspClose').onclick = closeInspector;
-$('progModal').addEventListener('click', (e) => { if (e.target === $('progModal')) closeInspector(); });
-$('progInspSave').onclick = async () => {
-  if (!progInspTarget) return;
-  const { scope, ref, key } = progInspTarget;
-  const assignee = $('progInspWho').value.trim();
-  const notes = $('progInspNotes').value.trim();
-  const due = $('progInspDue').value || null;
-  $('progInspStatus').textContent = 'Saving…';
-  try {
-    await libRpc('progress_set_meta', { scope_in: scope, ref_in: ref, key_in: key,
-      assignee_in: assignee, notes_in: notes, due_in: due, ver_in: PROGRESS.VERSION });
-    const k = metaKey(scope, ref, key);
-    if (assignee || notes || due) progMeta[k] = { assignee, notes, due_on: due || '' };
-    else delete progMeta[k];
-    // Rows carrying meta but no tick are invisible to a bare accordion repaint
-    // unless it is told to run — same reason a tick calls paintAcc rather than
-    // trusting the DOM already matches.
-    document.querySelectorAll(`.pacc[data-scope="${scope}"][data-ref="${CSS.escape(ref)}"]`)
-      .forEach(paintAcc);
-    closeInspector();
-  } catch (err){
-    $('progInspStatus').textContent = 'Could not save that: ' + (err.message || err);
-  }
-};
+// The progress inspector (assignee, notes, due date) moved into
+// progress-ui.js at CR-103 along with the rest of the checklist — it is the
+// same #progModal markup, now wired from there. One call, once, since the
+// modal's own buttons are not re-created per repaint.
+PROGRESS_UI.wireInspectorOnce();
 
 $('refVersions').addEventListener('click', (e) => {
   const v = e.target.closest('[data-rv]');
@@ -6463,8 +6028,8 @@ function renderProfileProgress(){
   // nothing else.
   if (acc.dataset.ref !== s.folder) acc.hidden = true;
   acc.dataset.scope = 'song'; acc.dataset.ref = s.folder;
-  if (!acc.dataset.wired){ acc.dataset.wired = '1'; wireAcc(acc); }
-  if (!acc.hidden) paintAcc(acc);
+  if (!acc.dataset.wired){ acc.dataset.wired = '1'; PROGRESS_UI.wireAcc(acc); }
+  if (!acc.hidden) PROGRESS_UI.paintAcc(acc);
   paintProfileProgHead();
 }
 
@@ -6474,7 +6039,7 @@ function renderProfileProgress(){
 function paintProfileProgHead(){
   const acc = $('pProgAcc'), s = activeSong;
   if (!acc || !s) return;
-  $('pProgPct').innerHTML = barHtml(songPctOf(s));
+  $('pProgPct').innerHTML = PROGRESS_UI.barHtml(songPctOf(s));
   $('pProgToggle').textContent = acc.hidden ? 'show the checklist' : 'hide';
 }
 
@@ -6486,7 +6051,7 @@ function toggleProfileProg(){
   const acc = $('pProgAcc');
   if (!acc) return;
   acc.hidden = !acc.hidden;
-  if (!acc.hidden) paintAcc(acc);
+  if (!acc.hidden) PROGRESS_UI.paintAcc(acc);
   paintProfileProgHead();
 }
 

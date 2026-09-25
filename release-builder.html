@@ -86,6 +86,195 @@
   #gameBtn, #assetsBtn { display: none; }
   body.has-game #gameBtn { display: inline-flex; }
   body.authed.has-assets #assetsBtn { display: inline-flex; }
+
+  /* ---------- The album checklist (CR-103) ----------
+     Copied wholesale from music.html rather than trimmed to what this page
+     uses today: it is the exact CSS the shared progress-ui.js markup expects,
+     and a page-by-page trim would just be a second copy to keep in sync by
+     hand. `.aprog`/`.apick` are music.html's own record-panel chrome, kept
+     here too so a release's checklist head can reuse that look rather than
+     inventing a second one. */
+  .pbar {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer; flex: none;
+    padding: 3px 8px 3px 4px; border-radius: 999px;
+    background: var(--field); border: 1px solid var(--line);
+    transition: border-color .12s, background .12s;
+  }
+  .pbar:hover { border-color: var(--accent); background: var(--bg-hover); }
+  .pbar .track {
+    width: 84px; height: 8px; border-radius: 999px; background: var(--bg-row);
+    border: 1px solid var(--line); overflow: hidden;
+  }
+  .pbar .fill {
+    display: block; height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width .18s ease-out;
+  }
+  .pbar .pct {
+    font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+    color: var(--text); min-width: 34px; text-align: right;
+  }
+  .pbar.done { border-color: var(--accent-2); }
+  .pbar.done .pct { color: var(--accent-2); }
+  .pbar.zero .pct { color: var(--text-mute); font-weight: 600; }
+  .pedit {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 6px 2px; margin-top: 4px; border-top: 1px solid var(--line);
+  }
+  .pedit .lnk { font-size: 12px; cursor: pointer; color: var(--accent-2);
+    border-bottom: 1px dotted var(--accent-2); }
+  .pedit .lnk:hover { color: var(--text); border-bottom-color: var(--text); }
+  .pacc:not(.editing) .e-on,
+  .pacc.editing .e-off { display: none; }
+  .pacc:not(.editing) .pdrop,
+  .pacc:not(.editing) .padd,
+  .pacc:not(.editing) .phidden,
+  .pacc:not(.editing) .pnote.editonly { display: none; }
+
+  #albumProg:empty { display: none; }
+  #albumProg { margin: 0 0 14px; }
+  .aprog + .aprog { margin-top: 8px; }
+  .aprog .head {
+    display: flex; align-items: center; gap: 14px; cursor: pointer;
+    padding: 14px 18px; border-radius: 12px; background: var(--bg-row);
+    border: 1px solid var(--line); user-select: none;
+    transition: border-color .12s, background .12s;
+  }
+  .aprog .head:hover { background: var(--bg-hover); border-color: var(--accent); }
+  .aprog .head .lbl { font-size: 15px; font-weight: 700; letter-spacing: .01em; }
+  .aprog .head .sub2 { font-size: 12px; color: var(--text-mute); flex: none; }
+  .aprog .head .track { flex: 1 1 120px; height: 12px; border-radius: 999px;
+    background: var(--field); border: 1px solid var(--line); overflow: hidden; }
+  .aprog .head .fill { display: block; height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .18s ease-out; }
+  .aprog .head .pct { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums;
+    flex: none; min-width: 62px; text-align: right; letter-spacing: -.02em; }
+
+  .apick {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 14px 0; cursor: default;
+  }
+  .apick[hidden] { display: none; }
+  .apick label { font-size: 12px; color: var(--text-dim); flex: none; }
+  .apick select {
+    flex: 1 1 200px; min-width: 0; font: inherit; font-size: 13px;
+    padding: 5px 8px; border-radius: 8px;
+    background: var(--field); color: var(--text); border: 1px solid var(--line);
+  }
+  .apick select:focus { border-color: var(--accent); outline: none; }
+  .apick .apctnow {
+    flex: none; font-size: 13px; font-weight: 700;
+    font-variant-numeric: tabular-nums; color: var(--text-dim);
+  }
+
+  .pacc { flex: 1 1 100%; min-width: 0; margin-top: 10px; cursor: default; }
+  .pacc[hidden] { display: none; }
+  .pphase { margin-bottom: 10px; }
+  .pphase-h {
+    display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px;
+    font-size: 12px; font-weight: 700; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .pphase-h .w { font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .7; }
+  .pphase-h.clickable { cursor: pointer; user-select: none; }
+  .pphase-h.clickable:hover { color: var(--text); }
+  .pphase-h .phall {
+    margin-left: auto; font-size: 10px; font-weight: 600; letter-spacing: .03em;
+    opacity: 0; transition: opacity .12s; color: var(--accent-2); flex: none;
+  }
+  .pphase-h.clickable:hover .phall { opacity: 1; }
+  .pbulk {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 2px 6px 8px; border-bottom: 1px solid var(--line); margin-bottom: 8px;
+  }
+  .pbulk .bcount { font-size: 12px; color: var(--text-mute);
+    font-variant-numeric: tabular-nums; margin-right: auto; }
+  .pbulk .lnk {
+    font-size: 12px; cursor: pointer; color: var(--text-dim);
+    border-bottom: 1px dotted var(--line); user-select: none;
+  }
+  .pbulk .lnk:hover { color: var(--accent-2); border-bottom-color: var(--accent-2); }
+  .ptask {
+    display: flex; align-items: flex-start; gap: 8px; padding: 4px 6px;
+    border-radius: 6px; font-size: 13px; line-height: 1.35;
+  }
+  .ptask:hover { background: var(--bg-hover); }
+  .ptask input { margin: 2px 0 0; flex: none; accent-color: var(--accent); cursor: pointer; }
+  .ptask label { cursor: pointer; flex: 1 1 auto; min-width: 0; }
+  .ptask.on label { color: var(--text-dim); text-decoration: line-through; text-decoration-thickness: 1px; }
+  .ptask .w { flex: none; font-size: 11px; color: var(--text-mute); font-variant-numeric: tabular-nums;
+    min-width: 30px; text-align: right; }
+  .ptask.mine label { border-bottom: 1px dotted var(--accent-2); }
+  .ptask .pdrop {
+    flex: none; width: 16px; text-align: center; cursor: pointer;
+    color: var(--text-mute); opacity: 0; transition: opacity .12s, color .12s;
+    font-size: 14px; line-height: 1;
+  }
+  .ptask:hover .pdrop { opacity: 1; }
+  .ptask .pdrop:hover { color: var(--danger, #e0567a); }
+  .ptask .pwho {
+    flex: none; font-size: 9.5px; font-weight: 700; letter-spacing: .02em;
+    color: var(--bg); background: var(--accent-2); border-radius: 999px;
+    width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
+  }
+  .ptask .pinsp {
+    flex: none; width: 16px; text-align: center; cursor: pointer;
+    color: var(--text-mute); opacity: 0; transition: opacity .12s, color .12s;
+    font-size: 12px; line-height: 1;
+  }
+  .ptask:hover .pinsp { opacity: 1; }
+  .ptask .pinsp:hover { color: var(--accent-2); }
+  .padd { padding: 3px 6px 2px; }
+  .padd .lnk {
+    font-size: 12px; color: var(--text-mute); cursor: pointer;
+    border-bottom: 1px dotted transparent;
+  }
+  .padd .lnk:hover { color: var(--accent-2); border-bottom-color: var(--accent-2); }
+  .phidden { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    padding: 8px 6px 2px; margin-top: 4px; border-top: 1px solid var(--line); }
+  .phidden .hl { font-size: 11.5px; color: var(--text-mute); }
+  .hchip {
+    font-size: 11.5px; color: var(--text-dim); cursor: pointer;
+    background: var(--field); border: 1px solid var(--line);
+    border-radius: 999px; padding: 2px 8px;
+  }
+  .hchip:hover { color: var(--text); border-color: var(--accent-2); }
+  .hchip b { color: var(--accent-2); }
+  .pauto { font-size: 12.5px; color: var(--text-dim); padding: 4px 6px; }
+  .pbreak { padding: 2px 6px 0; }
+  .pbrow {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; padding: 2px 0; color: var(--text-dim);
+  }
+  .pbrow .n { flex: none; width: 14px; text-align: right; color: var(--text-mute);
+    font-variant-numeric: tabular-nums; }
+  .pbrow .t { flex: 1 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .pbrow .b { flex: 0 0 60px; height: 4px; border-radius: 2px;
+    background: var(--field); border: 1px solid var(--line); overflow: hidden; }
+  .pbrow .b span { display: block; height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+  .pbrow .p { flex: none; width: 34px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  .pbrow.full .t, .pbrow.full .p { color: var(--accent-2); font-weight: 600; }
+  .pbrow.excluded { opacity: .5; }
+  .pbrow.excluded .t i { font-style: normal; color: var(--text-mute); }
+  .pauto b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .pnote { font-size: 12px; color: var(--text-mute); padding: 2px 6px 6px; }
+  .pswing { font-size: 12.5px; color: var(--text-dim); padding: 4px 6px 8px; }
+  .pswing b { color: var(--text); }
+
+  /* This page's own mount point: no apick track-switcher (a release's
+     checklist targets its album directly, nothing to choose), and expanded
+     by default rather than behind a click, since being asked for was the
+     whole point of the item. */
+  .rprog { margin: 0 0 18px; }
+  .rprog + .rprog { margin-top: 10px; }
+  .rprog .rphead {
+    display: flex; align-items: center; gap: 14px; padding: 14px 18px 0;
+  }
+  .rprog .rphead .lbl { font-size: 14px; font-weight: 700; color: var(--text-dim); }
+  .rprog .pacc { margin: 10px 18px 0; }
 </style>
 </head>
 <body class="locked">
@@ -177,12 +366,36 @@
     </div>
   </div>
 
+  <!-- Progress inspector: assignee, notes, due date on one task. Same
+       markup/ids as music.html's #progModal — CR-103's shared checklist
+       (progress-ui.js) wires it from there, identically on both pages. -->
+  <div class="modal-back" id="progModal">
+    <div class="modal" style="max-width:420px">
+      <h2 id="progInspTitle">Task</h2>
+      <label>Assignee</label>
+      <input type="text" id="progInspWho" maxlength="80" placeholder="Whose job is this…" />
+      <label>Due</label>
+      <input type="date" id="progInspDue" />
+      <label>Notes</label>
+      <textarea id="progInspNotes" maxlength="2000" placeholder="Anything worth remembering about this one…"></textarea>
+      <div class="status" id="progInspStatus"></div>
+      <div class="actions">
+        <button class="btn ghost" id="progInspClose">Close</button>
+        <button class="btn primary" id="progInspSave">Save</button>
+      </div>
+    </div>
+  </div>
+
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
 <script src="core.js?v=38"></script>
 <!-- The song-completion maths (songPct), so a release's rollup is the exact
      same number the player shows per song — never a second copy of it. -->
 <script src="progress.js?v=16"></script>
+<!-- CR-103: the full interactive checklist, shared with music.html, so a
+     release can be driven to done from here without hopping to the Music
+     page. -->
+<script src="progress-ui.js?v=5"></script>
 <script type="module">
 // core.js owns the gate, the route and every Supabase call — these are the
 // two moments it has to hand control back to this page.
@@ -194,8 +407,17 @@ App.onLock = () => { curReleaseId = null; };
 // release only ever stores folders, never a copy of title/cover/etc.
 // releases: [{id, title, songs: [folder,...]}], from get_releases.
 // curReleaseId: null = grid view, otherwise the release open in detail view.
-let songs = [], releases = [], curReleaseId = null;
-let ticks = Object.create(null), shapeRaw = { items: [], hidden: [] }, todosByKey = Object.create(null);
+// folders: kept alongside songs at CR-103, for excludedFromAlbumPct below —
+// this page never needed it before, since nothing here read a folder's own
+// excluded flag until the checklist's auto-phase started needing to.
+let songs = [], folders = [], releases = [], curReleaseId = null;
+let todosByKey = Object.create(null);
+// CR-103: ticks, his own added/removed steps and their meta all moved into
+// progress-ui.js, shared with music.html — this page used to keep its own
+// `ticks`/`shapeRaw` copy, fed from the same rows, which is what let the
+// "count a row with no done flag" bug (fixed alongside this) go unnoticed:
+// two copies of the same data is exactly the shape that lets one of them be
+// wrong. `PROGRESS_UI.ticksFor`/`shapeOf` are that one copy now.
 // A band-link (?rel=<id>) opens straight into that release, once, the first
 // time loadAll() resolves after page load — read here rather than through
 // core.js's shared `route` (every other page's route shape), since this
@@ -251,18 +473,14 @@ async function loadAll(){
     return;
   }
   songs = ((lib && lib.songs) || []).filter(s => s && s.folder);
+  folders = (lib && lib.folders) || [];
   releases = rel || [];
   if (pendingRelId){
     if (releases.some(r => r.id === pendingRelId)) curReleaseId = pendingRelId;
     pendingRelId = null;
   }
 
-  ticks = Object.create(null);
-  for (const r of (rows || [])) {
-    const k = r.scope + '/' + r.ref;
-    (ticks[k] || (ticks[k] = new Set())).add(r.key);
-  }
-  shapeRaw = shape || { items: [], hidden: [] };
+  PROGRESS_UI.loadChecklistData(rows, shape);
   // song_id -> {open, done}, ROOTS ONLY — same rule music.html's to-do tabs
   // and progress-ui.js use, so this agrees with every other bar on the site.
   todosByKey = Object.create(null);
@@ -283,9 +501,8 @@ function todosFor(s){
 
 function songPctOf(s){
   if (!s || !s.folder || !window.PROGRESS) return 0;
-  const k = 'song/' + s.folder;
-  const set = ticks[k] || (ticks[k] = new Set());
-  return PROGRESS.songPct(set, PROGRESS.shapeFor(shapeRaw, 'song', s.folder), todosFor(s));
+  return PROGRESS.songPct(PROGRESS_UI.ticksFor('song', s.folder),
+                          PROGRESS_UI.shapeOf('song', s.folder), todosFor(s));
 }
 
 // A release with none of its tracks started reads 0%, not 100% — the same
@@ -294,6 +511,104 @@ function releaseRollup(r){
   const list = (r.songs || []).map(songByFolder).filter(Boolean);
   if (!list.length) return 0;
   return Math.round(list.reduce((a, s) => a + songPctOf(s), 0) / list.length);
+}
+
+// ---------- The album checklist (CR-103) ----------
+// Album layer, same rule as music.html's albumOf/albumSlugOf: a song with no
+// album set belongs to the band's own record. Every song has a null album
+// today, so this makes one record named after the band per band.
+const albumOf = (s) => (s && s.album) || curBandTitle || curBand || '';
+const albumSlugOf = (s) => slug(albumOf(s));
+// Same exclusion rule as music.html's CR-81, against this page's own
+// `folders` — a song excludes itself, or inherits exclusion from whichever
+// folder it currently sits in. `music_folder_id` is the raw get_library field
+// name (music.html's own normalize() step renames it to `folderId` on its
+// own song objects — this page never normalizes, so it has to use the raw
+// name, same as progress-ui.js's own read-only mount() does).
+const excludedFromAlbumPct = (s) =>
+  !!(s && (s.excluded || (s.music_folder_id && (folders.find(f => f.id === s.music_folder_id) || {}).excluded)));
+
+// His answer settled this (10 Sep): a release's checklist is the SAME ticks
+// as its album's, on the Music page, not an independent copy — so the auto
+// phase has to average the whole album's songs, not just the release's
+// subset. `songs` here is already the whole library (see loadAll above), so
+// this needs no extra fetch: it is exactly the album-membership rule
+// music.html's own albumsInView applies, just grouped from the release's
+// songs outward instead of from the current view. Almost always one album,
+// since no song anywhere has its `album` field set yet; a release spanning
+// two would get one panel each rather than a false single average.
+function albumsOfRelease(relSongs){
+  const out = [], seen = new Set();
+  for (const rs of relSongs){
+    const k = albumSlugOf(rs);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ slug: k, name: albumOf(rs), songs: songs.filter(s => albumSlugOf(s) === k) });
+  }
+  return out;
+}
+
+PROGRESS_UI.initChecklist({
+  getSong: (ref) => songByFolder(ref),
+  getAutoFeedSongs: (ref) => songs.filter(s => albumSlugOf(s) === ref),
+  songPctOf, excludedFromAlbumPct, todosOf: todosFor,
+  onChange: refreshReleaseProgress,
+});
+PROGRESS_UI.wireInspectorOnce();
+
+// The chrome this page owns and progress-ui.js cannot repaint for it: the
+// release's own big percentage, each song row's own number, and each
+// checklist panel's own head bar — the same split as music.html's
+// refreshProgressNumbers, for the same reason (see progress-ui.js's header).
+function refreshReleaseProgress(except){
+  PROGRESS_UI.refreshChecklists(except);
+  const r = releases.find(x => x.id === curReleaseId);
+  if (!r) return;
+  const list = (r.songs || []).map(songByFolder).filter(Boolean);
+  const pct = releaseRollup(r);
+  const big = document.querySelector('.rpctbig');
+  if (big) big.textContent = pct + '%';
+  document.querySelectorAll('#relSongList .relsong').forEach(el => {
+    const s = songByFolder(el.dataset.f);
+    const out = el.querySelector('.rpct2');
+    if (s && out) out.textContent = Math.round(songPctOf(s)) + '%';
+  });
+  document.querySelectorAll('#relProgWrap .rprog').forEach(el => {
+    const a = albumsOfRelease(list).find(x => x.slug === el.dataset.slug);
+    if (!a) return;
+    const counted = a.songs.filter(s => !excludedFromAlbumPct(s));
+    const w = Math.round(PROGRESS.albumPct(PROGRESS_UI.ticksFor('album', a.slug),
+      counted.map(songPctOf), PROGRESS_UI.shapeOf('album', a.slug)));
+    const fill = el.querySelector('.fill'), pctEl = el.querySelector('.rphead .pct');
+    if (fill) fill.style.width = w + '%';
+    if (pctEl) pctEl.textContent = w + '%';
+  });
+}
+
+// Mounted under .rdetail-head in renderDetail(). One panel per album the
+// release's songs belong to — in practice always one, today, since no song
+// anywhere has its own `album` set.
+function renderReleaseProgress(list){
+  const wrap = document.getElementById('relProgWrap');
+  if (!wrap) return;
+  const albums = albumsOfRelease(list);
+  wrap.innerHTML = albums.map(a => {
+    const counted = a.songs.filter(s => !excludedFromAlbumPct(s));
+    const w = Math.round(PROGRESS.albumPct(PROGRESS_UI.ticksFor('album', a.slug),
+      counted.map(songPctOf), PROGRESS_UI.shapeOf('album', a.slug)));
+    return `<div class="rprog aprog" data-slug="${esc(a.slug)}">
+      <div class="rphead">
+        <span class="lbl">${esc(a.name)} — album checklist</span>
+        <span class="track"><span class="fill" style="width:${w}%"></span></span>
+        <span class="pct">${w}%</span>
+      </div>
+      <div class="pacc" data-scope="album" data-ref="${esc(a.slug)}"></div>
+    </div>`;
+  }).join('');
+  wrap.querySelectorAll('.pacc').forEach(acc => {
+    PROGRESS_UI.wireAcc(acc);
+    PROGRESS_UI.paintAcc(acc);
+  });
 }
 
 // ---------- Render ----------
@@ -397,10 +712,14 @@ function renderDetail(){
             title="Delete this release — the release only, not its songs">🗑</span>
       <span class="rpctbig">${pct}%</span>
     </div>
+    <div id="relProgWrap"></div>
     <div class="rsonglist" id="relSongList">
       ${list.length ? list.map((s, i) => relSongRowHtml(s, i, list.length)).join('')
                     : `<div class="rempty2">Nothing in this release yet. “+ Add tracks” pulls from your library.</div>`}
     </div>`;
+  // CR-103: mounted after innerHTML is set, same as every other listener
+  // below — .pacc's own wiring needs the element to exist in the DOM first.
+  if (window.PROGRESS) renderReleaseProgress(list);
   $('relTitleEl').addEventListener('click', async () => {
     const t = (prompt('Rename release:', r.title) || '').trim();
     if (!t || t === r.title) return;

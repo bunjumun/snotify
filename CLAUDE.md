@@ -132,9 +132,24 @@ has no such gap and no clipboard in it: AppleScript `get body of note id
 exact-string replacements in Python with each replacement asserted to hit once,
 then `set body` from that file read back `as «class utf8»`. Diff before against
 after and confirm three things before writing: the first line is byte-identical,
-the `&lt` count is unchanged (36 as of 16 Aug), and nothing outside the intended
-edits moved. Notes will normalise nested `<i><strike>` into split runs on its own;
-that is the only difference a clean write should show on read-back.
+the `&lt` count is unchanged (**73 as of 24 Sep**; it said 36 as of 16 Aug and has
+grown since, so treat the count as "same as the read you just took", never as a
+literal), and nothing outside the intended edits moved. Notes will normalise nested
+`<i><strike>` into split runs on its own; that is the only difference a clean write
+should show on read-back.
+
+**↳ CORRECTED 2026-09-24 — that last sentence is wrong, and so is comparing
+byte-for-byte.** Apple Notes also **collapses runs of whitespace** on every body
+write: on the CR-121 write, three of his QUEUE lines held double spaces after full
+stops and came back single, although the bytes written held the doubles. So diff
+**modulo whitespace runs** (`re.sub(r'[ \t]+', ' ', t)` on both sides should compare
+equal), and keep the byte-for-byte test for the first line, the `&lt` count and the
+exact strings you meant to change. A whitespace-only difference is Notes; anything
+else is damage. And wrap the `tell` block in `with timeout of 540 seconds` — a 41KB
+body dies on the 120s default with `AppleEvent timed out (-1712)`, which says
+nothing about whether the write landed. That time it had not: the read-back was
+byte-identical to before. Read back and compare against **both** the intended body
+and the original, so "did not land" and "landed damaged" cannot be confused.
 
 Tags are `[bug]` and `[?]` only. Both legends live in the note and the ledger.
 

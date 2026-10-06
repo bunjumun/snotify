@@ -187,8 +187,9 @@ export class School {
   /**
    * @param {THREE.Vector3} playerPos
    * @param {number} react 0..1 loudness — a loud passage pulls the school in tight
+   * @param {number} kick 0..1 bass onset — the school flashes on the beat
    */
-  update(dt, playerPos, react = 0) {
+  update(dt, playerPos, react = 0, kick = 0) {
     // Far schools stop thinking entirely. Past the fog you couldn't see them
     // moving anyway, and this is what keeps six schools affordable on a phone.
     const far = this.home.distanceTo(playerPos) > CFG.fish.cullDistance + this.radius;
@@ -198,6 +199,15 @@ export class School {
 
     this._t += dt;
     if (this._uniforms) this._uniforms.uSwim.value = this._t;
+
+    // The beat, in the scales. Set here rather than in setTrip because setTrip
+    // only runs when the trip moves and a kick moves every frame. Far schools
+    // returned above and keep whatever setTrip last gave them, which nobody can
+    // see. While the bowl is working the flash is multiplied by tripBoost, so a
+    // trip does not just brighten the school, it makes it hit harder.
+    const R = CFG.reactive;
+    const trip = this._trip || 0;
+    this.material.emissiveIntensity = 0.06 + trip * 0.7 + R.fishGlow * kick * (1 + trip * R.tripBoost);
 
     const F = CFG.fish;
     const W = F.weights;

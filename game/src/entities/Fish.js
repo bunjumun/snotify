@@ -10,6 +10,7 @@
 // as a creature that knows something rather than an icon that dispenses text.
 
 import * as THREE from 'three';
+import { CFG } from '../../config.js';
 
 let SHARED = null;
 function shared() {
@@ -102,8 +103,11 @@ export class GuideFish {
     return c;
   }
 
-  /** @param {THREE.Vector3} playerPos */
-  update(dt, t, playerPos) {
+  /**
+   * @param {THREE.Vector3} playerPos
+   * @param {{kick:number}|null} [react] the record; its lure flashes on the beat
+   */
+  update(dt, t, playerPos, react = null) {
     const wob = this.phase + t * 0.55;
     const dist = this._pos.distanceTo(playerPos);
 
@@ -142,13 +146,19 @@ export class GuideFish {
 
     // Tail beats faster when it's paying attention to you.
     this.tail.rotation.y = Math.sin(t * (5 + this.attention * 7) + this.phase) * 0.55;
-    this.bodyMat.emissiveIntensity = 0.45 + this.attention * 0.9;
-    this.light.intensity = 42 + this.attention * 70;
+    // The lure is the one light in the lake that says "come here", so it is the
+    // one that keeps time. Body and light swell together on the kick, and by
+    // tripBoost more while the bowl is working.
+    const R = CFG.reactive;
+    const swell = 1 + (react ? react.kick : 0) * R.lureGlow * (1 + (this._trip || 0) * R.tripBoost);
+    this.bodyMat.emissiveIntensity = (0.45 + this.attention * 0.9) * swell;
+    this.light.intensity = (42 + this.attention * 70) * swell;
   }
 
   distanceTo(pos) { return this.group.position.distanceTo(pos); }
 
   setTrip(v) {
+    this._trip = v;
     this.light.distance = 18 * (1 + v * 0.6);
   }
 }

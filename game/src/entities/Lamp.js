@@ -317,7 +317,10 @@ export class Lamp {
     // beam breathing, and the highs push each source further toward its own
     // colour — so a busy passage is visibly more coloured than a quiet one.
     // All of it scales with `m`: a dead lamp doesn't dance.
-    const beat = 1 + (r.kick * L.beatKick + r.mid * L.beatMid) * m;
+    // The bong turns it up: the same beat, times 1 + trip * tripBoost. Before
+    // setTrip has ever run `_tripBoost` is undefined, hence the guard.
+    const tb = 1 + (this._tripBoost || 0) * CFG.reactive.tripBoost;
+    const beat = 1 + (r.kick * L.beatKick + r.mid * L.beatMid) * m * tb;
     const tintAmt = L.tintAmount * m * (1 - L.beatTint * 0.5 + r.high * L.beatTint);
 
     for (let i = 0; i < this.heads.length; i++) {

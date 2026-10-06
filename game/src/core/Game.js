@@ -690,9 +690,9 @@ export class Game {
     // ---- FX ----
     const react = this.audio?.react ?? { low: 0, mid: 0, high: 0, kick: 0 };
     this.kelpie.setReact(react);
-    this.flora.update(dt, react.low, current, react.mid);
+    this.flora.update(dt, react.low, current, react.mid, react.kick, this.trip.value);
     // Schools tighten in loud passages — the most visible thing the analyser does.
-    this.shoals.update(dt, this.kelpie.position, react.mid);
+    this.shoals.update(dt, this.kelpie.position, react.mid, react.kick);
     this.godrays.update(dt, react.low, this.weather.lightScale());
     // The bong sequence reads the record too. Handed over every frame; the
     // shader only looks at it while uTrip is up.

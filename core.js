@@ -1131,8 +1131,16 @@ function resolveTools(band, ov, includeHidden){
   out.sort((a, b) => rank(a) - rank(b));
   return includeHidden ? out : out.filter(t => !t.hidden);
 }
+// A band with a menu of its own (a shipped set in BAND_TOOLS, or a saved
+// "<band> only" list from the tools manager) reads that. Every other band
+// falls back to the "All bands (site-wide)" list, which is what the manager's
+// own hint promises. Before CR-124 nothing read tools.custom at render time,
+// so a tool saved site-wide showed in the manager and nowhere else.
 function loadToolList(){
-  toolList = resolveTools(toolBand, parseOverrides(siteText['tools.' + toolBand]), false);
+  const own = siteText['tools.' + toolBand];
+  toolList = (BAND_TOOLS[bandSlugOf(toolBand)] || own)
+    ? resolveTools(toolBand, parseOverrides(own), false)
+    : resolveTools('', parseOverrides(siteText['tools.custom']), false);
 }
 // Called whenever the band becomes known, so the menu follows the login.
 function setToolBand(band){

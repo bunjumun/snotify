@@ -54,6 +54,10 @@ export class Flora {
       uSway: { value: R.kelpSway },
       uRippleGain: { value: R.kelpRipple },
       uCurrent: { value: new THREE.Vector2(0, 0) },
+      // The glow. Amount is driven from update(); the share and colour never move.
+      uGlowAmt: { value: R.floraGlowRest },
+      uLit: { value: R.floraLit },
+      uGlowCol: { value: new THREE.Color(R.floraGlowColor) },
     };
 
     const COUNT = F.count;
@@ -78,11 +82,16 @@ export class Flora {
       shader.uniforms.uSway = this.uniforms.uSway;
       shader.uniforms.uRippleGain = this.uniforms.uRippleGain;
       shader.uniforms.uCurrent = this.uniforms.uCurrent;
+      shader.uniforms.uGlowAmt = this.uniforms.uGlowAmt;
+      shader.uniforms.uLit = this.uniforms.uLit;
+      shader.uniforms.uGlowCol = this.uniforms.uGlowCol;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `
           #include <common>
           uniform float uTime; uniform float uReact; uniform float uRipple;
           uniform float uSway; uniform float uRippleGain; uniform vec2 uCurrent;
+          uniform float uLit;
+          varying float vGlow;
         `)
         .replace('#include <begin_vertex>', `
           #include <begin_vertex>
@@ -96,6 +105,13 @@ export class Flora {
           // tall stand and a scrap of turf hinge identically and correctly.
           float h = clamp(transformed.y / ${BLADE_H.toFixed(1)}, 0.0, 1.0);
           float bend = h * h;
+          // Which strands are luminous, and how much of each one. The roll comes
+          // from the strand's own position, so it is the same strand every frame
+          // and every session with no attribute to upload. The glow lives in the
+          // top third only: a lit tip on a dark stalk reads as a living thing,
+          // where a glowing whole strand reads as a neon sign.
+          float roll = fract(sin(dot(iorg.xz, vec2(12.9898, 78.233))) * 43758.5453);
+          vGlow = step(roll, uLit) * smoothstep(0.62, 1.0, h);
           float s = sin(uTime * 0.85 + phase) * (0.55 + uReact * uSway);
           // The mids, as a wave crossing the bed. The phase term is a plane
           // travelling over the lake rather than each strand's own offset, so a
@@ -109,8 +125,20 @@ export class Flora {
                          + ripple * bend * 0.6 + uCurrent.y * bend * 2.4;
           transformed.y -= bend * 0.35 * abs(s); // shortens as it leans over
         `);
+      // The fragment half. Added to the emissive term, so the glow survives the
+      // dark murk and is still tinted by fog like everything else in the lake.
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `
+          #include <common>
+          uniform float uGlowAmt; uniform vec3 uGlowCol;
+          varying float vGlow;
+        `)
+        .replace('#include <emissivemap_fragment>', `
+          #include <emissivemap_fragment>
+          totalEmissiveRadiance += uGlowCol * vGlow * uGlowAmt;
+        `);
     };
-    mat.customProgramCacheKey = () => 'kelp';
+    mat.customProgramCacheKey = () => 'kelp-glow';
 
     const mesh = new THREE.InstancedMesh(blade, mat, COUNT);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion();
@@ -177,8 +205,14 @@ export class Flora {
     return rng.shuffle(bag);
   }
 
-  update(dt, react = 0, current = null, mid = 0) {
+  update(dt, react = 0, current = null, mid = 0, kick = 0, trip = 0) {
     this.uniforms.uTime.value += dt;
+    // The glow rides the onset with a little of the low level underneath. Not
+    // eased: `kick` already decays on its own, and easing it again would smear
+    // the hit into a swell, which is exactly what it is here to not be.
+    const R = CFG.reactive;
+    const energy = Math.min(1, kick * 0.7 + react * 0.5);
+    this.uniforms.uGlowAmt.value = (R.floraGlowRest + R.floraGlow * energy) * (1 + trip * R.tripBoost);
     // Ease both reactions so a snare hit doesn't snap the whole seabed sideways.
     // Same rate for both on purpose: they are two readings of one record, and
     // letting them drift apart makes the bed argue with itself.

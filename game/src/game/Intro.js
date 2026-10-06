@@ -106,7 +106,7 @@ export class Intro {
     const g = this.game;
 
     for (const f of this.fish) {
-      f.update(dt, g.time, g.kelpie.position);
+      f.update(dt, g.time, g.kelpie.position, g.audio?.react);
       f.setTrip(g.trip.value);
     }
     if (this.lighter) this.lighter.update(dt);

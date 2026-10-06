@@ -92,6 +92,22 @@ export const CFG = {
     motes: 1.5,           // multiplier on the kick push through the particulate
     shoals: 1.45,         // multiplier on how hard the mids turn a school
     ease: 6,              // shared smoothing rate; a snare must not snap the bed
+
+    // ---- Light: the record in the glow (CR-125) ----
+    // Everything above moves things; these make things shine on the beat. All of
+    // them ride `kick` (the onset) with a little of the low level underneath, for
+    // the reason Post gives: a level makes things glow, an onset makes them hit,
+    // and what flashes should flash on the beat rather than on the volume.
+    floraLit: 0.3,        // share of strands that are luminous at all, dealt by position so it never reshuffles
+    floraGlowRest: 0.1,   // their glow with the music silent, so there is something to pulse FROM
+    floraGlow: 0.95,      // extra tip glow at a full kick; the tip only, so it reads as growth rather than paint
+    floraGlowColor: 0x6dffc8,
+    fishGlow: 0.9,        // extra school emissive at a full kick, on top of the 0.06 resting level
+    lureGlow: 0.8,        // guide fish: how far its body and lure light swell at a full kick (1 = doubles)
+    // While the bowl is working EVERY light above, and the lamps' own beat, is
+    // multiplied by 1 + trip * this. One number, so "intensify when high" is a
+    // single dial rather than six, and a sober game pays exactly nothing for it.
+    tripBoost: 1.6,
   },
 
   // Superior is cold, green and close. Visibility is the single biggest lever on

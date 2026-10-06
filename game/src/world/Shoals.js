@@ -58,8 +58,8 @@ export class Shoals {
     return new THREE.Vector3(x, this.seabed.heightAt(x, z) + sp.hover[0], z);
   }
 
-  update(dt, playerPos, react) {
-    for (const s of this.schools) s.update(dt, playerPos, react);
+  update(dt, playerPos, react, kick = 0) {
+    for (const s of this.schools) s.update(dt, playerPos, react, kick);
   }
 
   setTrip(v) { for (const s of this.schools) s.setTrip(v); }

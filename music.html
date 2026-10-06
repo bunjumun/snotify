@@ -7037,8 +7037,20 @@ function trashBadge(n){ $('trashCount').textContent = n ? ` ${n}` : ''; }
 async function refreshTrash(){
   if (!curBand || !isAuthed(curBand)) return { songs: [], versions: [] };
   try {
-    const t = await libRpc('get_trash', {});
-    trashBadge((t.songs || []).length + (t.versions || []).length);
+    // Audio and artwork share one list (CR-117): get_trash is asked per kind,
+    // and the artwork rows are tagged so they read as pictures, not songs.
+    // The art call is allowed to fail on its own, so a hiccup there never
+    // hides the audio trash that has always been here.
+    const [a, art] = await Promise.all([
+      libRpc('get_trash', {}),
+      libRpc('get_trash', { k: 'art' }).catch(() => ({ songs: [], versions: [] })),
+    ]);
+    const tag = (r) => ({ ...r, art: true });
+    const t = {
+      songs: [...(a.songs || []), ...(art.songs || []).map(tag)],
+      versions: [...(a.versions || []), ...(art.versions || []).map(tag)],
+    };
+    trashBadge(t.songs.length + t.versions.length);
     return t;
   } catch { return { songs: [], versions: [] }; }
 }
@@ -7069,14 +7081,14 @@ function renderTrash(t){
     songRows.map(s => `
     <div class="trash-item" data-kind="song" data-folder="${esc(s.folder)}" data-label="${esc(s.title)}">
       <span class="tname">${esc(s.title)}</span>
-      <span class="tmeta">${s.versions} version${s.versions===1?'':'s'}</span>
+      <span class="tmeta">${s.art ? 'artwork · ' : ''}${s.versions} ${s.art ? 'revision' : 'version'}${s.versions===1?'':'s'}</span>
       <button class="btn ghost restore">Restore</button>
       <button class="btn danger">Delete forever</button>
     </div>`).join('') +
     verRows.map(v => `
     <div class="trash-item" data-kind="version" data-folder="${esc(v.folder)}" data-name="${esc(v.name)}" data-label="${esc(v.name)}">
       <span class="tname"><span style="color:var(--text-mute)">${esc(v.song)} · </span>${esc(v.name)}</span>
-      <span class="tmeta">version</span>
+      <span class="tmeta">${v.art ? 'artwork revision' : 'version'}</span>
       <button class="btn ghost restore">Restore</button>
       <button class="btn danger">Delete forever</button>
     </div>`).join('');

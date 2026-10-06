@@ -288,6 +288,7 @@
         <label for="linkSel">Linked song</label>
         <select id="linkSel"></select>
         <a class="linky" id="linkGo" style="display:none">Open in the player →</a>
+        <button class="btn ghost" id="trashPieceBtn" style="margin-left:auto" title="Move this piece to the Trash on the Music page">🗑 Move to trash</button>
       </div>
       <!-- The song this artwork belongs to, playable without leaving the piece. -->
       <div class="linkplay" id="linkPlay" style="display:none">
@@ -910,6 +911,24 @@ $('lpSeek').addEventListener('input', () => {
   const a = $('lpAudio');
   if (a.duration) a.currentTime = ($('lpSeek').value / 1000) * a.duration;
 });
+// ---------- Move a piece to the trash (CR-117) ----------
+// Trashing is a timestamp, not a deletion: the piece leaves this page at once
+// and shows up in the Trash on the Music page, labelled as artwork, where it can
+// be restored or deleted forever (which frees the file). There was no way in
+// from this side before, so art could only ever be hidden by deleting it
+// outright elsewhere. A plain confirm is enough because it is undoable.
+$('trashPieceBtn').addEventListener('click', async () => {
+  if (!activePiece || singleShare) return;
+  const piece = activePiece;
+  if (!confirm(`Move “${piece.title}” to the trash?\n\nIt leaves this page now. Restore it, or delete it forever, from the Trash on the Music page.`)) return;
+  try { await libRpc('trash_song', { f: piece.folder }); }
+  catch (err){ alert('Could not move to trash: ' + (err.message || err)); return; }
+  const i = pieces.indexOf(piece);
+  if (i !== -1) pieces.splice(i, 1);
+  closeStage();
+  renderList();
+});
+
 $('linkSel').addEventListener('change', async (e) => {
   if (!activePiece) return;
   const target = e.target.value || null;

@@ -253,15 +253,15 @@
      transient still registers). */
   .vol .meter.warn span { background: #e8c21f; }
   .vol .meter.clip span { background: #e6402c; }
-  .vol .meter-db { font: 500 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-dim); min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; letter-spacing: -.02em; flex: none; transition: color .12s linear; }
-  .vol .meter.warn ~ .meter-db { color: #e8c21f; }
-  .vol .meter.clip ~ .meter-db { color: #e6402c; }
+  .vol .meter-time { font: 500 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-dim); min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; letter-spacing: -.02em; flex: none; transition: color .12s linear; }
+  .vol .meter.warn ~ .meter-time { color: #e8c21f; }
+  .vol .meter.clip ~ .meter-time { color: #e6402c; }
   /* The meter is fed by a Web Audio tap that we deliberately never install on
      a touch device (see meterWanted), because routing playback through it
      costs iOS dropouts and pitch shifts. A phone in landscape is wide enough
      to clear the 660px rule below and would otherwise show a bar that can
      never move, so hide it by the same test the tap uses. */
-  @media (pointer: coarse) { .vol .meter, .vol .meter-db { display: none; } }
+  @media (pointer: coarse) { .vol .meter, .vol .meter-time { display: none; } }
 
 
   /* Single-mix view (?b&s&v, no login): playback only — no comments, no
@@ -1886,7 +1886,7 @@
             <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 00-2.5-4.03v8.06A4.5 4.5 0 0016.5 12z"/></svg>
             <input type="range" id="vol" min="0" max="1" step="0.01" value="0.9" aria-label="Volume" />
             <div class="meter" id="meter" aria-hidden="true"><span id="meterFill"></span></div>
-            <span class="meter-db" id="meterDb" aria-hidden="true">--</span>
+            <span class="meter-time" id="meterTime" aria-hidden="true">0:00</span>
           </div>
         </div>
       </div>
@@ -2045,25 +2045,17 @@ function meterStart(){
   if (meterRAF) return;
   const fill  = $('meterFill');
   const meter = $('meter');
-  const dbEl  = $('meterDb');
-  // The number is throttled to ~8/s but holds the highest peak seen since the
-  // last update, so a brief transient shows rather than being sampled past.
-  // The red state is likewise held ~0.8s after the last hot frame.
-  let lastText = 0, winPeak = -Infinity, redUntil = 0;
+  // The red state is held ~0.8s after the last hot frame, so a brief
+  // transient shows rather than being sampled past.
+  let redUntil = 0;
   const tick = (now) => {
-    const { level, peakDb, state } = meterLevel();
+    const { level, state } = meterLevel();
     if (fill) fill.style.width = (level * 100).toFixed(1) + '%';
-    if (peakDb > winPeak) winPeak = peakDb;
     if (state === 1) redUntil = now + 800;
     if (meter){
       const red = state === 1 || now < redUntil;
       meter.classList.toggle('clip', red);
       meter.classList.toggle('warn', !red && state === 0);
-    }
-    if (dbEl && now - lastText > 120){
-      dbEl.textContent = winPeak > -60 ? winPeak.toFixed(1) : '--';
-      lastText = now;
-      winPeak = -Infinity;
     }
     meterRAF = requestAnimationFrame(tick);
   };
@@ -2077,8 +2069,8 @@ function meterStop(){
   if (fill) fill.style.width = '0%';
   const meter = $('meter');
   if (meter) meter.classList.remove('warn', 'clip');
-  const dbEl = $('meterDb');
-  if (dbEl) dbEl.textContent = '--';
+  // The readout beside the bar is the playback clock, not a level, so it keeps
+  // its value across a pause — the time handlers own it.
 }
 
 // Read fresh for every player rather than once at load: the band's theme isn't
@@ -3768,7 +3760,7 @@ function wireVersion(w, vi){
     }
     renderVersions();
   });
-  w.on('timeupdate', (t) => { if (vi === activeVer){ $('curTime').textContent = fmt(t); $('atTime').textContent = fmt(t); moveRiders(w); } });
+  w.on('timeupdate', (t) => { if (vi === activeVer){ $('curTime').textContent = fmt(t); $('atTime').textContent = fmt(t); $('meterTime').textContent = fmt(t); moveRiders(w); } });
   w.on('play',  () => { if (vi === activeVer){ setPlayingUI(true); refStopAll('main'); meterStart(); } });
   w.on('pause', () => { if (vi === activeVer){ setPlayingUI(false); meterStop(); } });
   w.on('finish',() => { if (vi === activeVer) next(true); });
@@ -3859,6 +3851,7 @@ function switchVersion(vi){
     }
     $('durTime').textContent = fmt(to.getDuration());
     $('curTime').textContent = fmt(to.getCurrentTime());
+    $('meterTime').textContent = fmt(to.getCurrentTime());
     updateNow(); renderVersions(); renderMarkers(); renderVlog();
     // The comment list is version-scoped, so it has to follow the swap wherever
     // it currently is: in the drawer, or on the song's own page.
@@ -4506,7 +4499,7 @@ async function toggleDismiss(cid, versionId, dismiss){
   }
   renderComments(); renderMarkers(); refreshListBadges();
 }
-function seekTo(t){ const w=curWS(); if (w){ w.setTime(t); $('curTime').textContent=fmt(t); $('atTime').textContent=fmt(t); moveRiders(w); } }
+function seekTo(t){ const w=curWS(); if (w){ w.setTime(t); $('curTime').textContent=fmt(t); $('atTime').textContent=fmt(t); $('meterTime').textContent=fmt(t); moveRiders(w); } }
 
 // The boat sails on the playhead. Themed pages show it; everyone else's CSS
 // keeps it hidden, so this is just a cheap style write on the others.

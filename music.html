@@ -245,14 +245,14 @@
   .vol input[type=range] { -webkit-appearance: none; appearance: none; width: 90px; height: 4px; border-radius: 4px; background: var(--wave); outline: none; cursor: pointer; }
   .vol input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--text); cursor: pointer; }
   .vol input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border: none; border-radius: 50%; background: var(--text); cursor: pointer; }
-  .vol .meter { position: relative; width: 34px; height: 4px; border-radius: 4px; background: var(--wave); overflow: hidden; flex: none; }
-  .vol .meter span { position: absolute; inset: 0; width: 0%; background: var(--wave-prog); border-radius: inherit; transition: background-color .12s linear; }
+  .vol .meter, .ref-transport .meter { position: relative; width: 34px; height: 4px; border-radius: 4px; background: var(--wave); overflow: hidden; flex: none; }
+  .vol .meter span, .ref-transport .meter span { position: absolute; inset: 0; width: 0%; background: var(--wave-prog); border-radius: inherit; transition: background-color .12s linear; }
   /* Colour is driven by frame peak, not by the RMS bar fill: "near clipping"
      is about the loudest sample, and RMS on music never reaches 0dBFS. Yellow
      from -6dBFS peak, red from -1dBFS or an outright clip (held ~0.8s so a
      transient still registers). */
-  .vol .meter.warn span { background: #e8c21f; }
-  .vol .meter.clip span { background: #e6402c; }
+  .vol .meter.warn span, .ref-transport .meter.warn span { background: #e8c21f; }
+  .vol .meter.clip span, .ref-transport .meter.clip span { background: #e6402c; }
   .vol .meter-time { font: 500 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-dim); min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; letter-spacing: -.02em; flex: none; transition: color .12s linear; }
   .vol .meter.warn ~ .meter-time { color: #e8c21f; }
   .vol .meter.clip ~ .meter-time { color: #e6402c; }
@@ -262,6 +262,8 @@
      to clear the 660px rule below and would otherwise show a bar that can
      never move, so hide it by the same test the tap uses. */
   @media (pointer: coarse) { .vol .meter, .vol .meter-time { display: none; } }
+  /* The reference bars follow the same rule as meterWanted(): no tap, no bar. */
+  @media not all and (min-width: 661px) and (pointer: fine) { .ref-transport .meter { display: none; } }
 
 
   /* Single-mix view (?b&s&v, no login): playback only — no comments, no
@@ -1352,6 +1354,7 @@
           <div class="ref-transport">
             <button class="ref-play" id="refMixPlay" title="Play this mix">▶</button>
             <input type="range" id="refMixSeek" min="0" max="1000" value="0" />
+            <div class="meter" id="refMixMeter" aria-hidden="true"><span></span></div>
             <span class="ref-time" id="refMixTime">0:00</span>
           </div>
           <div class="ref-vol">
@@ -1367,6 +1370,7 @@
           <div class="ref-transport" id="refOwnTransport">
             <button class="ref-play" id="refPlay" title="Play the reference">▶</button>
             <input type="range" id="refSeek" min="0" max="1000" value="0" />
+            <div class="meter" id="refMeter" aria-hidden="true"><span></span></div>
             <span class="ref-time" id="refTime">0:00</span>
           </div>
           <div class="ref-vol" id="refVolRow">
@@ -1990,8 +1994,8 @@ let meterRAF = 0;
 const meterWanted = () =>
   window.matchMedia('(min-width: 661px) and (pointer: fine)').matches;
 
-function meterTap(w){
-  if (!meterWanted()) return;   // leaves meterAnalyser null, so meterStart() no-ops too
+function meterTapEl(el){
+  if (!meterWanted()) return null;   // leaves meterAnalyser null, so meterStart() no-ops too
   if (!meterCtx){
     const AC = window.AudioContext || window.webkitAudioContext;
     meterCtx = new AC();
@@ -2002,11 +2006,15 @@ function meterTap(w){
     meterData = new Float32Array(meterAnalyser.fftSize);
   }
   try {
-    const src = meterCtx.createMediaElementSource(w.getMediaElement());
+    const src = meterCtx.createMediaElementSource(el);
     src.connect(meterCtx.destination);   // keep the sound actually playing
     src.connect(meterAnalyser);          // and feed the meter
-    meterSources.push(src);
-  } catch {}   // element not attached yet, or already tapped: skip this version
+    return src;
+  } catch { return null; }   // element not attached yet, or already tapped: skip it
+}
+function meterTap(w){
+  const src = meterTapEl(w.getMediaElement());
+  if (src) meterSources.push(src);
 }
 
 // Returns { level, peakDb, state } for the current frame. `level` is the 0..1
@@ -2035,16 +2043,34 @@ function meterLevel(){
   return { level, peakDb, state };
 }
 
-function meterStart(){
+// Three bars share the one analyser: the dock's ('main') and the two in the
+// reference player ('refmix' = this song's mix, 'ref' = the attached track).
+// Only one source ever plays, so whoever started last owns the loop. A pause
+// event arrives a beat after the next source has started, so meterStop(owner)
+// from anyone but the current owner is a stale event and is ignored.
+let meterOwner = null;
+const METER_IDS = { main: 'meter', refmix: 'refMixMeter', ref: 'refMeter' };
+
+function meterClear(owner){
+  const m = $(METER_IDS[owner]);
+  if (!m) return;
+  m.classList.remove('warn', 'clip');
+  if (m.firstElementChild) m.firstElementChild.style.width = '0%';
+}
+
+function meterStart(owner = 'main'){
   if (!meterAnalyser) return;
   // Resume before the early return, not after: browsers open a context
   // suspended when it was built outside a gesture, and everything tapped
   // is routed THROUGH it, so a context left suspended is silent playback
   // rather than merely a dead meter.
   if (meterCtx.state === 'suspended') meterCtx.resume();
-  if (meterRAF) return;
-  const fill  = $('meterFill');
-  const meter = $('meter');
+  if (meterRAF && meterOwner === owner) return;
+  if (meterOwner && meterOwner !== owner) meterClear(meterOwner);
+  cancelAnimationFrame(meterRAF);
+  meterOwner = owner;
+  const meter = $(METER_IDS[owner]);
+  const fill  = meter && meter.firstElementChild;
   // The red state is held ~0.8s after the last hot frame, so a brief
   // transient shows rather than being sampled past.
   let redUntil = 0;
@@ -2062,15 +2088,14 @@ function meterStart(){
   meterRAF = requestAnimationFrame(tick);
 }
 
-function meterStop(){
+function meterStop(owner){
+  if (owner && owner !== meterOwner) return;   // a late pause from a source already handed over
   cancelAnimationFrame(meterRAF);
   meterRAF = 0;
-  const fill = $('meterFill');
-  if (fill) fill.style.width = '0%';
-  const meter = $('meter');
-  if (meter) meter.classList.remove('warn', 'clip');
-  // The readout beside the bar is the playback clock, not a level, so it keeps
-  // its value across a pause — the time handlers own it.
+  if (meterOwner) meterClear(meterOwner);
+  meterOwner = null;
+  // The readout beside the dock bar is the playback clock, not a level, so it
+  // keeps its value across a pause — the time handlers own it.
 }
 
 // Read fresh for every player rather than once at load: the band's theme isn't
@@ -3762,7 +3787,7 @@ function wireVersion(w, vi){
   });
   w.on('timeupdate', (t) => { if (vi === activeVer){ $('curTime').textContent = fmt(t); $('atTime').textContent = fmt(t); $('meterTime').textContent = fmt(t); moveRiders(w); } });
   w.on('play',  () => { if (vi === activeVer){ setPlayingUI(true); refStopAll('main'); meterStart(); } });
-  w.on('pause', () => { if (vi === activeVer){ setPlayingUI(false); meterStop(); } });
+  w.on('pause', () => { if (vi === activeVer){ setPlayingUI(false); meterStop('main'); } });
   w.on('finish',() => { if (vi === activeVer) next(true); });
   w.on('error', () => {
     readyByVer[vi] = 'failed';
@@ -4990,6 +5015,8 @@ function refreshListBadges(){
 // The rule that makes comparing worth anything: only one thing is ever making
 // a sound. Starting either side stops the other — including the page's main
 // transport, so opening the reference never leaves two tracks fighting.
+let refMixMedia = null, refMixTap = null;   // the mix side's element and its meter tap
+let refAudioTap = null;                    // the same for #refAudio, once it has one
 let refMixWS = null;          // a wavesurfer of its own, so the main deck is untouched
 let refVerIdx = 0;
 const REF_VOL_KEY = 'mp_ref_vol', MIX_VOL_KEY = 'mp_ref_mixvol';
@@ -5150,17 +5177,32 @@ function renderRefVersions(){
     + `${sides ? ' · every mix below starts here, so pick one and then the other to A/B' : ''}</div>`;
 }
 
+// Destroying a wavesurfer built on our own element does not stop that element.
+function refMixRelease(){
+  if (refMixWS){ try { refMixWS.destroy(); } catch {} refMixWS = null; }
+  if (refMixTap){ try { refMixTap.disconnect(); } catch {} refMixTap = null; }
+  if (refMixMedia){ try { refMixMedia.pause(); refMixMedia.removeAttribute('src'); refMixMedia.load(); } catch {} refMixMedia = null; }
+  meterStop('refmix');
+}
+
 function refLoadMix(i){
   if (!activeSong) return;
   refVerIdx = Math.max(0, Math.min(i, activeSong.versions.length - 1));
   renderRefVersions();
   const src = activeSong.versions[refVerIdx].src;
-  if (refMixWS){ try { refMixWS.destroy(); } catch {} refMixWS = null; }
+  refMixRelease();
   const holder = document.createElement('div');            // headless: no waveform needed here
-  refMixWS = WaveSurfer.create({ container: holder, url: src, height: 0, backend: 'MediaElement' });
+  // Our own element, for the same reason streamVersion makes one: the meter
+  // routes it through Web Audio, which is silent for cross-origin without CORS.
+  const media = new Audio();
+  media.crossOrigin = 'anonymous';
+  media.preload = 'auto';
+  refMixMedia = media;
+  refMixWS = WaveSurfer.create({ container: holder, media, url: src, height: 0, backend: 'MediaElement' });
+  refMixTap = meterTapEl(media);
   refMixWS.setVolume(parseFloat($('refMixVol').value));
-  refMixWS.on('play',  () => { refStopAll('refmix'); $('refMixPlay').textContent = '❚❚'; });
-  refMixWS.on('pause', () => { $('refMixPlay').textContent = '▶'; });
+  refMixWS.on('play',  () => { refStopAll('refmix'); $('refMixPlay').textContent = '❚❚'; meterStart('refmix'); });
+  refMixWS.on('pause', () => { $('refMixPlay').textContent = '▶'; meterStop('refmix'); });
   refMixWS.on('timeupdate', (t) => {
     const d = refMixWS.getDuration() || 0;
     if (d) $('refMixSeek').value = Math.round((t / d) * 1000);
@@ -5214,7 +5256,7 @@ function renderReference(){
   $('refHint').textContent = '';
   $('refAttachSum').textContent = r ? 'Change what is attached' : 'Attach a reference';
   const own = $('refOwnTransport'), vol = $('refVolRow');
-  const a = $('refAudio');
+  let a = $('refAudio');
   if (!a.paused) a.pause();
   a.removeAttribute('src');
 
@@ -5247,7 +5289,24 @@ function renderReference(){
   } else {
     $('refKind').textContent = r.kind === 'file' ? '· uploaded' : '· link';
     own.style.display = 'flex'; vol.style.display = 'flex';
+    // Only an uploaded file is on our storage host, which answers CORS, so only
+    // that can be metered. An arbitrary link would go silent once tapped — or
+    // fail to load at all with crossOrigin set — so it plays natively, unmetered.
+    const meterable = r.kind === 'file';
+    if (refAudioTap && !meterable){
+      // A tapped element cannot be untapped; swap in a clean one for the link.
+      try { refAudioTap.disconnect(); } catch {}
+      refAudioTap = null;
+      const n = a.cloneNode(false);
+      n.removeAttribute('crossorigin');
+      a.replaceWith(n);
+      wireRefAudio(n);
+      a = n;
+    }
+    $('refMeter').style.display = meterable ? '' : 'none';
+    if (meterable) a.crossOrigin = 'anonymous';          // has to precede src
     a.src = refSrcUrl(r);
+    if (meterable && !refAudioTap) refAudioTap = meterTapEl(a);
     a.volume = parseFloat($('refVol').value);
     $('refHint').textContent = 'Only one side plays at a time — starting either pauses the other.';
   }
@@ -5286,7 +5345,7 @@ function openReference(subject){
 }
 function closeReference(){
   refStopAll(null);
-  if (refMixWS){ try { refMixWS.destroy(); } catch {} refMixWS = null; }
+  refMixRelease();
   $('refModal').classList.remove('open');
 }
 $('refToggle').onclick = () => openReference();
@@ -5331,24 +5390,28 @@ function refSeekIntoSection(){
   const t = a.currentTime || 0;
   if ((i !== null && t < i - 0.05) || (o !== null && t >= o - 0.02)) a.currentTime = i ?? 0;
 }
-$('refAudio').addEventListener('play',  () => { refStopAll('ref'); $('refPlay').textContent = '❚❚'; });
-$('refAudio').addEventListener('pause', () => { $('refPlay').textContent = '▶'; });
-$('refAudio').addEventListener('timeupdate', () => {
-  const a = $('refAudio');
-  if (!a.duration) return;
-  // The out point, enforced here rather than by the element: HTMLAudioElement
-  // has no "stop at" and its loop flag only ever loops the whole file.
-  const r = refCurrent(), o = refOut(r);
-  if (o !== null && a.currentTime >= o){
-    if (refLoops(r)){ a.currentTime = refIn(r) ?? 0; }
-    else { a.pause(); a.currentTime = refIn(r) ?? 0; }
-  } else if (refLoops(r) && o === null && a.currentTime >= a.duration - 0.05){
-    a.currentTime = refIn(r) ?? 0;                 // loop with no out: back to in
-    a.play().catch(() => {});
-  }
-  $('refSeek').value = Math.round((a.currentTime / a.duration) * 1000);
-  $('refTime').textContent = fmt(a.currentTime);
-});
+// Listeners live in a function because a tapped element has to be replaced when
+// the next reference is a link (see renderReference), and the new one needs them too.
+function wireRefAudio(a){
+  a.addEventListener('play',  () => { refStopAll('ref'); $('refPlay').textContent = '❚❚'; meterStart('ref'); });
+  a.addEventListener('pause', () => { $('refPlay').textContent = '▶'; meterStop('ref'); });
+  a.addEventListener('timeupdate', () => {
+    if (!a.duration) return;
+    // The out point, enforced here rather than by the element: HTMLAudioElement
+    // has no "stop at" and its loop flag only ever loops the whole file.
+    const r = refCurrent(), o = refOut(r);
+    if (o !== null && a.currentTime >= o){
+      if (refLoops(r)){ a.currentTime = refIn(r) ?? 0; }
+      else { a.pause(); a.currentTime = refIn(r) ?? 0; }
+    } else if (refLoops(r) && o === null && a.currentTime >= a.duration - 0.05){
+      a.currentTime = refIn(r) ?? 0;                 // loop with no out: back to in
+      a.play().catch(() => {});
+    }
+    $('refSeek').value = Math.round((a.currentTime / a.duration) * 1000);
+    $('refTime').textContent = fmt(a.currentTime);
+  });
+}
+wireRefAudio($('refAudio'));
 $('refSeek').addEventListener('input', () => {
   const a = $('refAudio');
   if (a.duration) a.currentTime = ($('refSeek').value / 1000) * a.duration;

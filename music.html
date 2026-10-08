@@ -3607,10 +3607,27 @@ function playSong(i, startVer = 0){ buildOrder(i); openSong(order[pos], true, st
 let objectUrls = [];
 let openGen = 0; // guards async version loads against song switches
 
+// CR-127: playback must not wait for a download. The version that is playing
+// streams straight from its URL through a media element of our own, so the
+// browser buffers ahead of the playhead and answers a seek with a fresh Range
+// request. It used to be fetched whole as a blob and decoded first, which meant
+// nothing played until the entire file had arrived, and a song with two mixes
+// split the bandwidth between them so each took twice as long.
+let streamEls = [];     // media elements built here: wavesurfer leaves a handed-in one alone
+let startByVer = [];    // vi -> the function that builds that version's player, until it has run
+let wantVer = -1;       // a chip clicked before its player existed: swap to it once it is ready
+let loadAbort = null;   // cancels the background downloads when the song is left
+const PRELOAD_VERSIONS = 3;   // how many other mixes load behind the playing one
+
 function destroyPlayers(){
   stopCompare();   // CR-69: a comparison cannot survive the song it was about
   wsByVer.forEach(w => { try { w.destroy(); } catch(e){} });
-  wsByVer = []; layerByVer = []; readyByVer = [];
+  wsByVer = []; layerByVer = []; readyByVer = []; startByVer = []; wantVer = -1;
+  // Destroying a wavesurfer built on our own element does not stop that
+  // element, so without this the old song would keep streaming under the new one.
+  streamEls.forEach(a => { try { a.pause(); a.removeAttribute('src'); a.load(); } catch(e){} });
+  streamEls = [];
+  if (loadAbort){ try { loadAbort.abort(); } catch(e){} loadAbort = null; }
   objectUrls.forEach(u => URL.revokeObjectURL(u));
   objectUrls = [];
   meterSources.forEach(s => { try { s.disconnect(); } catch(e){} });
@@ -3627,38 +3644,96 @@ function openSong(songIndex, autoplay, startVer = 0){
   activeSong = s; activeSongIndex = songIndex;
   activeVer = Math.min(Math.max(0, startVer), s.versions.length - 1);
 
+  loadAbort = window.AbortController ? new AbortController() : null;
+  const signal = loadAbort ? loadAbort.signal : undefined;
+
+  // What every version needs once its wavesurfer exists, however it got there.
+  const adopt = (w, vi) => {
+    w.setVolume(curVolume);
+    meterTap(w);
+    wireVersion(w, vi);
+    wsByVer[vi] = w;
+    if (wantVer === vi){ wantVer = -1; switchVersion(vi); }   // clicked while it was still on its way
+    renderVersions();
+  };
+
+  // Streamed: the version plays from its URL as it arrives, and the waveform is
+  // drawn from peaks worked out earlier, so there is nothing to download first
+  // or decode. crossOrigin matters beyond tidiness: meterTap() routes this
+  // element through Web Audio, and a cross-origin element read that way is
+  // silent unless the request was a CORS one. The storage host answers with
+  // Access-Control-Allow-Origin: *.
+  const streamVersion = (vi) => {
+    const v = s.versions[vi];
+    const media = new Audio();
+    media.crossOrigin = 'anonymous';
+    media.preload = 'auto';
+    streamEls.push(media);
+    const pk = storedPeaks(v);
+    // No peaks on file yet: a flat line stands in so playback can start now,
+    // and the real shape is drawn when it has been worked out (below).
+    const w = WaveSurfer.create({ container: layerByVer[vi], media, url: v.src,
+      peaks: [pk ? Float32Array.from(pk) : new Float32Array(PEAK_N).fill(0.02)],
+      ...waveOpts() });
+    adopt(w, vi);
+    if (!pk) peaksFor(v.src, v).then(p => {
+      // Same source, so wavesurfer redraws without touching playback.
+      if (p && gen === openGen && wsByVer[vi] === w)
+        w.load(media.currentSrc || v.src, [Float32Array.from(p)]).catch(() => {});
+    });
+    return w;
+  };
+
+  // Fetched whole, in the background: a blob is already in memory, so swapping
+  // to it mid-song is instant, and a blob URL is always seekable, which a plain
+  // URL on a host without Range support is not.
+  const blobVersion = async (vi) => {
+    const v = s.versions[vi];
+    let url = v.src;
+    try {
+      const resp = await fetch(v.src, { signal });
+      if (resp.ok){
+        const u = URL.createObjectURL(await resp.blob());
+        if (gen !== openGen){ URL.revokeObjectURL(u); return; }
+        objectUrls.push(u); url = u;
+      }
+    } catch {}
+    if (gen !== openGen) return;
+    const pk = storedPeaks(v);
+    adopt(WaveSurfer.create({ container: layerByVer[vi], url,
+      ...(pk ? { peaks: [Float32Array.from(pk)] } : {}), ...waveOpts() }), vi);
+  };
+
   s.versions.forEach((v, vi) => {
     const layer = document.createElement('div');
     layer.className = 'wave-layer' + (vi===activeVer ? ' show' : '');
     $('wavewrap').appendChild(layer);
     layerByVer[vi] = layer;
     readyByVer[vi] = false;
-
-    (async () => {
-      // Fetch each version ONCE as a blob: the same download feeds the
-      // waveform decode and playback, and blob URLs are always seekable.
-      // Plain URLs are unseekable on servers without HTTP Range support
-      // (python http.server, some static hosts) — seeks silently land at
-      // 0:00, which broke mid-play version switching on full-length songs.
-      let url = v.src;
-      try {
-        const resp = await fetch(v.src);
-        if (resp.ok){
-          const u = URL.createObjectURL(await resp.blob());
-          if (gen !== openGen){ URL.revokeObjectURL(u); return; }
-          objectUrls.push(u); url = u;
-        }
-      } catch {}
-      if (gen !== openGen) return;
-      const w = WaveSurfer.create({ container: layer, url, ...waveOpts() });
-      w.setVolume(curVolume);
-      meterTap(w);
-      wireVersion(w, vi);
-      wsByVer[vi] = w;
-      if (vi === activeVer && autoplay) w.once('ready', () => { if (gen === openGen) w.play(); });
-      renderVersions();
-    })();
+    startByVer[vi] = (mode) => mode === 'blob' ? blobVersion(vi) : streamVersion(vi);
   });
+
+  // The one he pressed starts now, and nothing else is allowed to slow it.
+  const w = startVersion(activeVer);
+  if (autoplay) w.once('ready', () => { if (gen === openGen) w.play(); });
+  // Once it is ready, the nearest few mixes load behind it, one at a time, so
+  // they never share its bandwidth. A song can carry a dozen mixes and the old
+  // code started every one of them at the same moment. Any further away, or
+  // clicked before its turn, streams instead (startVersion's default).
+  const near = s.versions.map((_, i) => i).filter(i => i !== activeVer)
+    .sort((a, b) => Math.abs(a - activeVer) - Math.abs(b - activeVer))
+    .slice(0, PRELOAD_VERSIONS);
+  let preloading = false;
+  const preload = async () => {
+    if (preloading) return;
+    preloading = true;
+    for (const i of near){
+      if (gen !== openGen) return;
+      await startVersion(i, 'blob');
+    }
+  };
+  w.once('ready', preload); w.once('error', preload);
+  setTimeout(preload, 10000);   // a stalled first load must not hold the rest back forever
 
   renderVersions();
   updateNow();
@@ -3710,8 +3785,36 @@ function wireVersion(w, vi){
 }
 
 // ---------- Seamless version switching ----------
+// Run a version's player-building function once. The song he pressed starts
+// straight away; the others are held back until it is ready (CR-127).
+function startVersion(vi, mode){
+  const go = startByVer[vi];
+  if (!go) return;
+  startByVer[vi] = null;
+  return go(mode);
+}
+
+// Peaks worked out earlier, found without touching the network: on the version
+// row, in memory, or in this browser's storage (peaksFor fills all three).
+function storedPeaks(v){
+  if (Array.isArray(v.peaks) && v.peaks.length) return v.peaks;
+  if (peaksMem.has(v.src)) return peaksMem.get(v.src);
+  try {
+    const c = JSON.parse(localStorage.getItem('mp_pk1_' + v.src));
+    if (Array.isArray(c) && c.length) return c;
+  } catch {}
+  return null;
+}
+
 function switchVersion(vi){
-  if (vi === activeVer || !wsByVer[vi]) return;
+  if (vi === activeVer) return;
+  if (!wsByVer[vi]){
+    // Its player is not built yet (it waits for the playing one, then downloads).
+    // Start it now if it has not started, and swap the moment it is ready; the
+    // chip pulses meanwhile, as it does for any version still buffering.
+    wantVer = vi; startVersion(vi); renderVersions();
+    return;
+  }
   if (readyByVer[vi] === 'failed'){
     // Clicking a failed chip retries the load.
     readyByVer[vi] = false;
@@ -4230,11 +4333,10 @@ function compareGoto(vi, t){
   seekTo(t);
   const w = curWS(); if (w && !w.isPlaying()) w.play();
   if (vi === activeVer) return;
-  // A version's player is built asynchronously when the song opens, so on a
-  // very early click the target may not exist yet. One retry rather than a
-  // dead button.
-  if (wsByVer[vi]) switchVersion(vi);
-  else setTimeout(() => { if (compareCid && wsByVer[vi]) switchVersion(vi); }, 600);
+  // A version's player is built asynchronously when the song opens (the
+  // non-playing mixes wait for the playing one, CR-127), so the target may not
+  // exist yet. switchVersion starts it and swaps when it is ready.
+  switchVersion(vi);
 }
 // Anything that moves the ground under a comparison ends it: the exemption in
 // commentRelevantTo is a deliberate hole in the version-scoping rule and must

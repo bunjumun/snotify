@@ -1149,6 +1149,34 @@
   /* CR-86: the to-do swing spelled out, same tone as .pauto above it. */
   .pswing { font-size: 12.5px; color: var(--text-dim); padding: 4px 6px 8px; }
   .pswing b { color: var(--text); }
+
+  /* CR-128: the Logic markers dialog. Rows wrap rather than squeeze, because
+     it opens on a phone as often as at the desk, and a five-field row at
+     375px is unreadable. number inputs are not covered by core.css's .modal
+     field rule, which names text/password/select/textarea only. */
+  #cmkModal input[type=number] { width: 100%; background: var(--field); border: 1px solid var(--line);
+    color: var(--text); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13px; outline: none; }
+  #cmkModal input[type=number]:focus { border-color: var(--accent); background: var(--field-on); }
+  .cmk-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .cmk-row > div { flex: 1 1 110px; min-width: 0; }
+  .cmk-sig { display: flex; gap: 6px; align-items: center; }
+  .cmk-head { display: flex; align-items: baseline; justify-content: space-between; margin: 14px 0 6px; }
+  .cmk-head .pj-lbl { margin: 0; }
+  #cmkList { max-height: 30vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
+  .cmk-group { position: sticky; top: 0; background: var(--bg-soft); padding: 7px 10px 4px; font-size: 11.5px;
+               font-weight: 700; letter-spacing: .3px; color: var(--text-mute); }
+  /* #cmkList in front: core.css's .modal label (block, with a margin) is more
+     specific than a bare .cmk-item and would otherwise flatten the row. */
+  #cmkList .cmk-item { display: flex; align-items: baseline; gap: 10px; margin: 0; padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 13px; color: var(--text); }
+  #cmkList .cmk-item:last-child { border-bottom: none; }
+  #cmkList .cmk-item input { flex: none; width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; align-self: center; }
+  #cmkList .cmk-item .t { flex: none; width: 3.4em; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--accent); }
+  #cmkList .cmk-item .x { flex: 1; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+  #cmkList .cmk-item .x small { display: block; color: var(--text-mute); font-size: 11.5px; }
+  #cmkList .cmk-item.done .t, #cmkList .cmk-item.done .x { color: var(--text-mute); text-decoration: line-through; }
+  #cmkList .cmk-item.off .x { color: var(--text-mute); }
+  #cmkHow { margin: 10px 0 0; padding-left: 1.2em; }
+  #cmkHow li { margin: 2px 0; }
 </style>
 </head>
 <body class="locked">
@@ -1304,6 +1332,49 @@
       <div id="trashCommentList" style="display:none"></div>
       <div class="status" id="trashStatus"></div>
       <div class="actions"><button class="btn ghost" id="trashClose">Close</button></div>
+    </div>
+  </div>
+
+  <!-- CR-128: the open song's comments as a WAV with an embedded marker at each
+       one, for Logic's Import Marker from Audio File. All the maths and the
+       file format live in marker-wav.js; this is only the form. -->
+  <div class="modal-back" id="cmkModal">
+    <div class="modal" style="max-width:640px">
+      <h2>♪ Logic markers</h2>
+      <div class="hint" style="margin-bottom:6px">
+        A WAV with a low ding at the bounce start and a higher one at every comment, each carrying a Logic marker.
+      </div>
+      <label class="check"><input type="checkbox" id="cmkDone"> Include checked-off comments</label>
+      <div class="cmk-row">
+        <div><label for="cmkLen">Label length (chars)</label><input type="number" id="cmkLen" min="10" max="200" value="48"></div>
+        <div><label for="cmkSr">Sample rate</label>
+          <select id="cmkSr"><option value="48000">48 kHz</option><option value="44100">44.1 kHz</option></select></div>
+        <div><label for="cmkBpm">BPM (optional)</label><input type="number" id="cmkBpm" min="20" max="400" step="0.01" placeholder="none"></div>
+        <div><label for="cmkTop">Time signature</label>
+          <div class="cmk-sig"><select id="cmkTop" aria-label="Beats per bar"></select><span aria-hidden="true">/</span>
+            <select id="cmkBot" aria-label="Beat note value"><option>2</option><option selected>4</option><option>8</option><option>16</option></select></div></div>
+      </div>
+      <div class="cmk-row">
+        <div><label for="cmkOffMode">Bounce starts at</label>
+          <select id="cmkOffMode"><option value="none">wherever I place it</option><option value="bar">bar.beat</option><option value="sec">time</option></select></div>
+        <div><label for="cmkOffVal">&nbsp;</label><input type="text" id="cmkOffVal" placeholder="5 or 5.3" aria-label="Bounce start position" hidden></div>
+      </div>
+      <div class="hint" id="cmkHint"></div>
+      <div class="cmk-head">
+        <span class="pj-lbl" id="cmkCount">Comments</span>
+        <span><span class="linky" id="cmkAll">Select all</span> &nbsp; <span class="linky" id="cmkNone">Select none</span></span>
+      </div>
+      <div id="cmkList"></div>
+      <div class="status" id="cmkStatus"></div>
+      <ol class="hint" id="cmkHow">
+        <li id="cmkHowPlace"></li>
+        <li>Select the region, then Navigate &gt; Other &gt; Import Marker from Audio File.</li>
+        <li>Match the sample rate to your Logic project, or the markers land in the wrong place.</li>
+      </ol>
+      <div class="actions">
+        <button class="btn ghost" id="cmkClose">Close</button>
+        <button class="btn primary" id="cmkGo">Download marker WAV</button>
+      </div>
     </div>
   </div>
 
@@ -1651,6 +1722,7 @@
       <div class="pad">
         <h3>Comments <span id="cdrawerHint" style="text-transform:none;font-weight:400"></span>
           <button class="cdl" id="cdlBtn" title="Download these comments as a text file">↓ .txt</button>
+          <button class="cdl" id="cmkBtn" style="margin-right:6px" title="Make a WAV that puts a Logic marker on every comment">♪ Logic markers</button>
         </h3>
         <div class="composer">
           <span class="at" id="atTime" title="Comment is pinned to this timestamp — seek the waveform to move it">0:00</span>
@@ -1906,6 +1978,8 @@
 <!-- CR-103: the checklist's own render/wire/persist code, shared with
      Release Builder now that it needs the same accordion. -->
 <script src="progress-ui.js?v=5"></script>
+<!-- CR-128: the comments-to-Logic-markers maths and the WAV writer. No DOM. -->
+<script src="marker-wav.js?v=1"></script>
 <script type="module">
 // Audio engine with CDN fallback — if unpkg is unreachable, try jsDelivr.
 let WaveSurfer = null;
@@ -4698,6 +4772,7 @@ function renderComments(){
   $('cCount').textContent = list.length;
   if (profiling && activeSong){ renderProfileChips(); renderProfileVersions(); }
   $('cdlBtn').disabled = !activeSong || !rootsFor(activeSong.id).length;
+  $('cmkBtn').disabled = $('cdlBtn').disabled;
   $('cdrawerHint').textContent = activeSong ? `on “${activeSong.title}”${verName ? ` · ${verName}` : ''}` : '';
   if (!activeSong){ $('clist').innerHTML = `<div class="cempty">Play a song to leave comments.</div>`; return; }
   if (!list.length){ $('clist').innerHTML = `<div class="cempty">No open comments on this version — seek to a spot and add one.</div>`; return; }
@@ -4889,6 +4964,126 @@ function downloadComments(){
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 $('cdlBtn').onclick = downloadComments;
+
+// ---------- CR-128: the same comments, as Logic markers ----------
+// The .txt puts the notes beside the DAW; this puts them ON its timeline: a WAV
+// that carries one marker per comment, which Logic's Import Marker from Audio
+// File turns into real markers. The maths and the file format are in
+// marker-wav.js. This is only the form around them.
+//
+// It reads the comments themselves (rootsFor), never the .txt, so a comment's
+// fractional time survives; the export prints m:ss, which floors it.
+//
+// cmk.items is rebuilt on every open and holds the SONG that was open at that
+// moment, not whichever is playing when Download is pressed: the player can
+// auto-advance while the dialog is up, and the file must stay the one he
+// ticked rows for.
+const cmk = { song: null, items: [] };
+function cmkTempo(){ return MARKERWAV.tempoOf($('cmkBpm').value, $('cmkTop').value, $('cmkBot').value); }
+function cmkOffset(){ return MARKERWAV.startOffset($('cmkOffMode').value, $('cmkOffVal').value, cmkTempo()); }
+function cmkLen(){
+  const C = MARKERWAV.CFG;
+  return Math.max(C.labelLenMin, Math.min(C.labelLenMax, +$('cmkLen').value || C.labelLen));
+}
+// Checked-off comments are hidden unless asked for, and only visible ones count.
+function cmkVisible(){ return cmk.items.filter(i => $('cmkDone').checked || !i.c.resolved); }
+function cmkSetStatus(msg, kind){
+  const s = $('cmkStatus');
+  s.textContent = msg;
+  s.classList.toggle('err', kind === 'err');
+  s.classList.toggle('ok', kind === 'ok');
+}
+function cmkCount(){
+  $('cmkCount').textContent = `Comments · ${cmkVisible().filter(i => i.on).length} selected`;
+}
+function cmkRender(){
+  const t = cmkTempo(), o = cmkOffset(), n = cmkLen(), mode = $('cmkOffMode').value;
+  $('cmkOffVal').hidden = mode === 'none';
+  $('cmkOffVal').placeholder = mode === 'bar' ? '5 or 5.3' : '0:07.5';
+  const hint = $('cmkHint');
+  hint.style.color = o.err ? 'var(--warn)' : '';
+  if (o.err) hint.textContent = o.err;
+  else if (o.none) hint.textContent = t.bpm ? 'Bar positions count the bounce start as bar 1.' : '';
+  else hint.textContent = `Bounce start lands at ${o.sec.toFixed(3)} s`
+    + (t.bpm ? ` (bar ${MARKERWAV.barBeat(o.sec, t)})` : '')
+    + '. Bar maths assumes bar 1 at 0:00 and a steady tempo.';
+  // With a start entered the WAV begins at project start, silent until the
+  // start ding, so the region goes at bar 1. With none, the start ding is
+  // sample 0 and he lines the region up by hand.
+  $('cmkHowPlace').textContent = (o.none || o.err)
+    ? 'Drop the WAV on an empty track with its left edge where the commented bounce starts.'
+    : 'Drop the WAV on an empty track with its left edge at the very start of the project (bar 1).';
+  let html = '', last = null;
+  cmk.items.forEach((it, idx) => {
+    if (!($('cmkDone').checked || !it.c.resolved)) return;
+    const c = it.c;
+    if (c.version !== last){ last = c.version; html += `<div class="cmk-group">${esc(c.version || 'unknown mix')}</div>`; }
+    const sub = c.text.length > n ? (c.name ? c.name + ': ' : '') + c.text : c.name;
+    html += `<label class="cmk-item${c.resolved ? ' done' : ''}${it.on ? '' : ' off'}" data-i="${idx}">`
+          + `<input type="checkbox"${it.on ? ' checked' : ''}>`
+          + `<span class="t">${fmt(c.time)}</span>`
+          + `<span class="x">${esc(MARKERWAV.labelFor(c, n, o.sec, t))}${sub ? `<small>${esc(sub)}</small>` : ''}</span></label>`;
+  });
+  $('cmkList').innerHTML = html || '<div class="cempty">No unchecked comments. Tick “Include checked-off comments” to see the rest.</div>';
+  cmkCount();
+}
+function openMarkers(){
+  if (!activeSong) return;
+  const roots = rootsFor(activeSong.id);
+  if (!roots.length) return;
+  // Grouped by mix in the song's own mix order, like the .txt; a comment on a
+  // since-renamed mix still lands in a group of its own rather than vanishing.
+  const order = activeSong.versions.map(v => v.name);
+  const rank = (c) => { const k = order.indexOf(c.version); return k < 0 ? order.length : k; };
+  cmk.song = activeSong;
+  cmk.items = roots.slice()
+    .sort((a, b) => rank(a) - rank(b) || (a.version || '').localeCompare(b.version || '') || a.time - b.time)
+    .map(c => ({ c, on: !c.resolved }));
+  $('cmkDone').checked = false;
+  cmkSetStatus('');
+  cmkRender();
+  $('cmkModal').classList.add('open');
+}
+function closeMarkers(){ $('cmkModal').classList.remove('open'); }
+function downloadMarkers(){
+  const sel = cmkVisible().filter(i => i.on).map(i => i.c);
+  if (!sel.length){ cmkSetStatus('Select at least one comment.', 'err'); return; }
+  const o = cmkOffset();
+  if (o.err){ cmkSetStatus(o.err, 'err'); return; }
+  const markers = MARKERWAV.markersFromComments(sel, { labelLen: cmkLen(), offsetSec: o.sec, tempo: cmkTempo() });
+  const wav = MARKERWAV.buildWav(markers, +$('cmkSr').value);
+  const name = MARKERWAV.fileName(cmk.song.title);
+  const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  cmkSetStatus(`Downloaded ${name} (${sel.length} marker${sel.length === 1 ? '' : 's'} plus the start, ${(wav.length / 1048576).toFixed(1)} MB).`, 'ok');
+}
+for (let i = 1; i <= 16; i++){
+  const op = document.createElement('option');
+  op.textContent = i; if (i === 4) op.selected = true;
+  $('cmkTop').append(op);
+}
+['cmkLen', 'cmkBpm', 'cmkOffVal'].forEach(id => $(id).addEventListener('input', cmkRender));
+['cmkTop', 'cmkBot', 'cmkOffMode'].forEach(id => $(id).addEventListener('change', cmkRender));
+// Ticking "include checked-off" ticks them too: the label says include, and a
+// row that appears unticked under that label reads as the box having done nothing.
+$('cmkDone').onchange = () => { cmk.items.forEach(i => { if (i.c.resolved) i.on = $('cmkDone').checked; }); cmkRender(); };
+$('cmkAll').onclick = () => { cmkVisible().forEach(i => i.on = true); cmkRender(); };
+$('cmkNone').onclick = () => { cmkVisible().forEach(i => i.on = false); cmkRender(); };
+// Not a full re-render: that would snap the list back to the top mid-scroll.
+$('cmkList').addEventListener('change', (e) => {
+  const row = e.target.closest('.cmk-item'); if (!row) return;
+  const it = cmk.items[+row.dataset.i];
+  it.on = e.target.checked;
+  row.classList.toggle('off', !it.on);
+  cmkCount();
+});
+$('cmkBtn').onclick = openMarkers;
+$('cmkClose').onclick = closeMarkers;
+$('cmkGo').onclick = downloadMarkers;
+$('cmkModal').addEventListener('click', (e) => { if (e.target === $('cmkModal')) closeMarkers(); });
 
 // A comment is a buoy moored at the second it was left. On the themed player
 // it floats on the surface — the marker sits at the height of the swell at its
@@ -7574,7 +7769,7 @@ $('pjGo').onclick = async () => {
 // ---------- Keyboard ----------
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape'){
-    closeAdd(); closeTrash(); closeReference();
+    closeAdd(); closeTrash(); closeReference(); closeMarkers();
     if (!document.body.classList.contains('locked')) $('gateModal').classList.remove('open');
     if (shareCloser) shareCloser(null);
     // The artwork picker opens ON TOP of the builder, so it has to be the one

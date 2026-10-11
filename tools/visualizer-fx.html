@@ -18,12 +18,13 @@
     up and lets it drain away over a second or so, so a colour arrives as a
     payoff rather than as wallpaper. The pad's X button is the same hit by hand.
 
-    Nothing needs plugging in to get going. With no audio connected a built-in
-    pulse (a kick, a hat, a slow mid) stands in for the room, and the default
-    routing already maps bass, mids and highs onto the effect's parameters, so
-    the first thing you see is it already moving. Connect a mic or a DAW bus
-    and the real signal takes over; pick an effect by hand and the auto-cycle
-    stops.
+    Left alone it is ambient: slow drift, a slow breathing in the effect's own
+    parameters, a new effect every so often, no beat and no flash. It only
+    wakes when something is played into it: a stick or button on the pad, a
+    mic or DAW bus with signal on it, or the camera. The routing that maps
+    bass, mids and highs onto the effect is already loaded, so connecting audio
+    is all it takes for it to start dancing; the demo pulse in the settings is
+    an optional stand-in for audio, to hear what the map does without any.
 
     The camera is a layer, not a mode: hold the left trigger (or Q) to dissolve
     to it, let go and it springs back. It is requested the first time you reach
@@ -92,9 +93,13 @@
     }
     .hud-sub { font-size: 0.65rem; color: rgba(255,255,255,0.45); letter-spacing: 0.06em; }
 
+    /* The shared bar (tool.js) is fixed across the top and about 54px tall, and sits
+       above everything here, so the buttons and the settings panel start below it. */
+    :root { --bar: 56px; }
+
     /* ── Top-right buttons ── */
     .top-btns {
-      position: fixed; top: 20px; right: 20px;
+      position: fixed; top: calc(var(--bar) + 14px); right: 20px;
       display: flex; gap: 10px; z-index: 30;
     }
     .icon-btn {
@@ -151,8 +156,8 @@
 
     /* ══ SETTINGS PANEL ══ */
     #panel {
-      position: fixed; top: 0; right: 0;
-      width: 400px; max-width: 100vw; height: 100vh;
+      position: fixed; top: var(--bar); right: 0;
+      width: 400px; max-width: 100vw; height: calc(100vh - var(--bar));
       background: rgba(10,0,16,0.94);
       border-left: 1px solid rgba(255,255,255,0.12);
       backdrop-filter: blur(20px);
@@ -377,14 +382,14 @@
   <div class="hud-deck"><b>A</b><span id="hud-a">PLASMA</span></div>
   <div class="hud-xf"><i id="hud-xf"></i></div>
   <div class="hud-deck"><b>B</b><span id="hud-b">TUNNEL RUSH</span></div>
-  <div class="hud-sub" id="hud-sub">demo pulse</div>
+  <div class="hud-sub" id="hud-sub">ambient</div>
 </div>
 
 <div id="link-pill"><span id="link-text">pad live</span></div>
 
 <div id="pad-hint">
   <div style="font-size:2rem;margin-bottom:8px;">🎛</div>
-  It plays itself until you drive it<br>
+  It drifts quietly until you play it<br>
   <span style="font-size:0.7rem;opacity:0.8">
     A / B change the effect · hold LT to blend the camera in<br>
     X throws a colour hit · D-pad ◀ ▶ crossfades the decks<br>
@@ -426,7 +431,7 @@
         </select>
       </label>
       <label class="fld">
-        <span>Auto-cycle effects</span>
+        <span>Auto-cycle effects (on the beat when audio is playing, every 45 seconds when nothing is)</span>
         <select id="cycle-sel">
           <option value="0">Off</option>
           <option value="8">Every 8 beats</option>
@@ -511,7 +516,7 @@
 
     <div class="sect">
       <div class="sect-title">Audio Input</div>
-      <div class="status off" id="audio-status">Not connected: the demo pulse is standing in.</div>
+      <div class="status off" id="audio-status">Not connected: it drifts on its own until you play it.</div>
 
       <label class="fld">
         <span>Input device</span>
@@ -572,6 +577,10 @@
         <input type="range" id="idle" min="0" max="1.5" step="0.05" value="0.35" />
       </label>
       <label class="fld">
+        <span>Pulse <em id="pulse-val">0.50</em></span>
+        <input type="range" id="pulse" min="0" max="1.5" step="0.05" value="0.5" />
+      </label>
+      <label class="fld">
         <span>Beat threshold <em id="beat-val">1.5</em></span>
         <input type="range" id="beat" min="0.6" max="4" step="0.1" value="1.5" />
       </label>
@@ -580,8 +589,10 @@
         <button class="btn ghost sm" data-cfg="auto">Auto level</button>
       </div>
       <div class="note">
-        <strong>Demo pulse</strong> stands in for the room when no audio is connected, so it
-        never sits still. <strong>Auto level</strong> learns each band's own floor and peak,
+        <strong>Pulse</strong> is how hard the sound hits the picture: 0 ignores it, 1.5
+        lets it throw everything about. <strong>Demo pulse</strong> is an optional
+        stand-in for audio, so you can see what the map does with nothing connected; it
+        is off by default and with nothing playing the tool is ambient. <strong>Auto level</strong> learns each band's own floor and peak,
         so the same mapping works from a quiet mic or a hot DAW bus.
         <strong>Idle motion</strong> sets how alive it is with no input at all.
         <strong>Beat threshold</strong> is how far the bass must jump above its own average
@@ -731,7 +742,7 @@ Esc                close the panel</div>
   const TRAIL_P = [0, 0.07, 0.17, 0.34, 0.58, 0.82];
   let xfade    = 0.5;
   let trailIdx = 1;
-  const FLAGS  = { strobe: false, blackout: false, negative: false, zoomPulse: false, beatFlash: true };
+  const FLAGS  = { strobe: false, blackout: false, negative: false, zoomPulse: false, beatFlash: false };
   let strobePh = 0, flashOp = 0, zoomScale = 1;
 
   const FX = [
@@ -770,9 +781,10 @@ Esc                close the panel</div>
     { ch: -1, band: 'full', target: 'colorSpeed', depth: 0.4 },
   ];
   const DEFAULTS = {
+    v: 2,                      // bumped when a saved value from an older build has to be discarded
     deviceId: '', channels: 2,
     gain: 1.0, smoothing: 0.65, idle: 0.35, beat: 1.5,
-    auto: true, demo: true,
+    auto: true, demo: false, pulse: 0.5,
     cycle: 16, colorMode: 'auto', colorEvery: 8,
     fx:  { fxAmount: 0.55, fxScale: 0.35, fxAngle: 0.5, fxShift: 0.2, fxWarp: 0.1, fxThresh: 0.5, fxColor: 0 },
     cam: { deviceId: '', mirror: true, blend: 'mix', mix: 0 },
@@ -790,6 +802,9 @@ Esc                close the panel</div>
         const out = Object.assign(fresh, saved);
         out.fx  = Object.assign({}, DEFAULTS.fx,  saved.fx);
         out.cam = Object.assign({}, DEFAULTS.cam, saved.cam);
+        // The first build left the demo pulse on, and any visit that changed a
+        // setting saved that. It is off by default now, so do not carry it over.
+        if (saved.v !== DEFAULTS.v) { out.demo = false; out.v = DEFAULTS.v; }
         return out;
       }
     } catch (e) {}
@@ -923,7 +938,15 @@ Esc                close the panel</div>
      and its own peak, which decays over a few seconds, and reports where the
      signal sits between the two. With no audio connected the demo pulse stands
      in, so the default map is already doing something on first load. */
-  const LEV = { mix: { full: 0, low: 0, mid: 0, high: 0 }, ch: [], demoBeat: false };
+  const LEV = {
+    mix: { full: 0, low: 0, mid: 0, high: 0 },    // what the routes read: instant attack, slow release
+    raw: { full: 0, low: 0, mid: 0, high: 0 },    // what beat detection reads: no release
+    ch: [], demoBeat: false,
+  };
+  // A hit lands at once but lets go over about a fifth of a second, so a steady
+  // beat is a swell rather than a flicker.
+  const REL = 0.93;
+  function slew(dst, src) { for (const k in dst) dst[k] = Math.max(src[k], dst[k] * REL); }
   const agcState = {};
   function agc(key, raw, span) {
     if (!CONFIG.auto) return Math.min(1, raw * 1.6 * CONFIG.gain);
@@ -940,37 +963,44 @@ Esc                close the panel</div>
   function demoLevels(now) {
     const bpm = tapBPM > 0 ? tapBPM : 124;
     const beats = now / 60000 * bpm, ph = beats % 1, s = now / 1000;
-    const kick = Math.exp(-ph * 5.5), hat = Math.exp(-((ph + 0.5) % 1) * 9);
+    const kick = Math.exp(-ph * 4), hat = Math.exp(-((ph + 0.5) % 1) * 7);
     const idx = Math.floor(beats);
     LEV.demoBeat = idx !== demoBeatIdx; demoBeatIdx = idx;
     const c = v => Math.max(0, Math.min(1, v * CONFIG.gain));
-    const low  = 0.12 + 0.88 * kick;
-    const mid  = 0.35 + 0.25 * Math.sin(s * 0.9) + 0.15 * Math.sin(s * 2.7 + 1.0) + 0.2 * kick;
-    const high = 0.12 + 0.6 * hat + 0.2 * Math.max(0, Math.sin(s * 7.3) * Math.sin(s * 1.1));
+    const low  = 0.2 + 0.6 * kick;
+    const mid  = 0.3 + 0.2 * Math.sin(s * 0.9) + 0.12 * Math.sin(s * 2.7 + 1.0) + 0.1 * kick;
+    const high = 0.15 + 0.35 * hat + 0.12 * Math.max(0, Math.sin(s * 7.3) * Math.sin(s * 1.1));
     return { low: c(low), mid: c(mid), high: c(high), full: c(0.3 * low + 0.4 * mid + 0.3 * high) };
   }
 
+  const SILENCE = { full: 0, low: 0, mid: 0, high: 0 };
   function updateLevels(now) {
     LEV.demoBeat = false;
     if (Audio.connected) {
-      const m = { full: 0, low: 0, mid: 0, high: 0 };
+      const rawM = { full: 0, low: 0, mid: 0, high: 0 };
       LEV.ch.length = Audio.channels;
       for (let i = 0; i < Audio.channels; i++) {
         const b = Audio.bands[i];
-        const c = LEV.ch[i] || (LEV.ch[i] = {});
-        c.full = agc(i + ':f', Audio.levels[i], 0.03);
-        c.low  = agc(i + ':l', b.low,  0.12);
-        c.mid  = agc(i + ':m', b.mid,  0.12);
-        c.high = agc(i + ':h', b.high, 0.12);
-        for (const k in m) m[k] = Math.max(m[k], c[k]);
+        const c = LEV.ch[i] || (LEV.ch[i] = { full: 0, low: 0, mid: 0, high: 0 });
+        const nv = {
+          full: agc(i + ':f', Audio.levels[i], 0.03),
+          low:  agc(i + ':l', b.low,  0.12),
+          mid:  agc(i + ':m', b.mid,  0.12),
+          high: agc(i + ':h', b.high, 0.12),
+        };
+        for (const k in rawM) rawM[k] = Math.max(rawM[k], nv[k]);
+        slew(c, nv);
       }
-      LEV.mix = m;
+      LEV.raw = rawM;
+      slew(LEV.mix, rawM);
     } else if (CONFIG.demo) {
       LEV.ch.length = 0;
-      LEV.mix = demoLevels(now);
+      LEV.raw = demoLevels(now);
+      slew(LEV.mix, LEV.raw);
     } else {
       LEV.ch.length = 0;
-      LEV.mix = { full: 0, low: 0, mid: 0, high: 0 };
+      LEV.raw = SILENCE;
+      slew(LEV.mix, SILENCE);
     }
   }
 
@@ -1006,16 +1036,20 @@ Esc                close the panel</div>
 
   function updateAud(now) {
     aud.beat  = false;
-    aud.flash = Math.max(0, aud.flash - 0.1);
+    aud.flash = Math.max(0, aud.flash - 0.06);
 
-    const m = LEV.mix;
-    aud.bass = m.low; aud.mid = m.mid; aud.high = m.high;
-    aud.level = m.low * 0.55 + m.mid * 0.3 + m.high * 0.15;
+    // Pulse is how hard the sound is allowed to hit the picture. It scales what
+    // the mixer scenes see and, below, every route; beats are still found on the
+    // unscaled signal so turning it down never makes the tool deaf.
+    const p = CONFIG.pulse, m = LEV.mix;
+    aud.bass = m.low * p; aud.mid = m.mid * p; aud.high = m.high * p;
+    aud.level = aud.bass * 0.55 + aud.mid * 0.3 + aud.high * 0.15;
 
     let beat = false;
     if (Audio.connected) {
-      bassAvg = bassAvg * 0.94 + aud.bass * 0.06;
-      if (aud.bass > bassAvg * CONFIG.beat && aud.bass > 0.3 && now - lastBeatAt > 180) beat = true;
+      const rb = LEV.raw.low;
+      bassAvg = bassAvg * 0.94 + rb * 0.06;
+      if (rb > bassAvg * CONFIG.beat && rb > 0.3 && now - lastBeatAt > 180) beat = true;
     } else if (CONFIG.demo) {
       beat = LEV.demoBeat;
     }
@@ -1025,7 +1059,7 @@ Esc                close the panel</div>
       const beatMs = 60000 / tapBPM;
       if ((now % beatMs) / beatMs < 0.04 && now - lastBeatAt > 150) beat = true;
     }
-    if (beat) { aud.beat = true; aud.flash = 1; lastBeatAt = now; onBeat(); }
+    if (beat) { aud.beat = true; aud.flash = p; lastBeatAt = now; onBeat(); }
   }
 
   // The payoff. Colour is thrown up on the bar line, a smaller flicker on the
@@ -1034,12 +1068,12 @@ Esc                close the panel</div>
 
   function onBeat() {
     beatCount++;
-    fxSeed = (fxSeed + 1.618) % 97;
+    if (beatCount % 4 === 0) fxSeed = (fxSeed + 1.618) % 97;   // the stipple re-rolls once a bar, not every beat
     const e = CONFIG.colorEvery;
     if (e > 0) {
       if (beatCount % e === 0) colorHit(1);
       else if (e >= 4 && beatCount % e === e / 2) colorHit(0.25);
-    } else if (e < 0 && aud.bass > 0.9) {
+    } else if (e < 0 && LEV.raw.low > 0.9) {
       colorHit(1);
     }
     if (cycleActive() && beatCount % CONFIG.cycle === 0) setFx((fxMode + 1) % RAW, true);
@@ -1054,6 +1088,7 @@ Esc                close the panel</div>
   function setFx(i, auto) {
     fxMode = (i % FX.length + FX.length) % FX.length;
     if (!auto) cycleHeld = true;
+    lastCycleAt = performance.now();
     showHud(); syncUI();
   }
   function toggleCycle() {
@@ -1235,6 +1270,7 @@ Esc                close the panel</div>
   // keyboard standing in for one. The analogue sticks and triggers are not here:
   // they are read every frame, not on a press.
   function onButton(i) {
+    poke();
     switch (i) {
       case 0:  setFx(fxMode + 1); break;                                  // A
       case 1:  setFx(fxMode - 1); break;                                  // B
@@ -1329,19 +1365,43 @@ Esc                close the panel</div>
     for (const r of CONFIG.routes) {
       const tgt = TARGETS[r.target];
       if (!tgt) continue;
-      m[r.target] = (m[r.target] || 0) + channelValue(r.ch, r.band) * r.depth * tgt.max;
+      m[r.target] = (m[r.target] || 0) + channelValue(r.ch, r.band) * r.depth * tgt.max * CONFIG.pulse;
     }
     return m;
   }
 
-  function resolveParams() {
+  // The effect's own slow breathing, [size, period in seconds]. It is always on,
+  // underneath whatever is played, and is all that moves the effect when nothing is.
+  const BREATH = { fxAmount: [0.07, 31], fxScale: [0.05, 43], fxAngle: [0.04, 57], fxWarp: [0.06, 37], fxShift: [0.05, 29] };
+
+  function resolveParams(now) {
     const pm = padMod(), am = audioMod();
     for (const key in TARGETS) {
       const tg = TARGETS[key];
       M[key] = (pm[key] || 0) + (am[key] || 0);
-      const v  = restOf(key) + tg.idleGain * CONFIG.idle + M[key];
+      let v  = restOf(key) + tg.idleGain * CONFIG.idle + M[key];
+      const b = BREATH[key];
+      if (b) v += b[0] * Math.sin(now / 1000 * Math.PI * 2 / b[1]);
       P[key] = Math.max(0, Math.min(tg.max, v));
     }
+  }
+
+  /* ── Activity ──
+     Whether anything is playing it. A stick or trigger off centre, a button or
+     key, a MIDI message, audio with signal on it (an open but silent mic does
+     not count) or the camera in the picture all raise it at once; it takes about
+     ten seconds to settle back to nothing. At nothing the decks run at a
+     third of their speed and the effect only breathes and, every so often,
+     changes. */
+  let activity = 0, lastCycleAt = performance.now();
+  function poke() { activity = 1; }
+  function updateActivity() {
+    const moved = Math.abs(P.xShift) + Math.abs(P.yShift) + Math.abs(P.twist) + Math.abs(P.pitch) + P.ltrigger + P.rtrigger > 0.06;
+    const audioIn = Audio.connected && LEV.mix.full > 0.12;
+    const camIn = cam.on && camMix > 0.05;
+    if (moved || audioIn || camIn || CONFIG.demo) activity = Math.min(1, activity + 0.1);
+    else activity *= 0.996;
+    if (activity < 0.002) activity = 0;
   }
 
   /* ── Keyboard → virtual pad ── */
@@ -1361,6 +1421,7 @@ Esc                close the panel</div>
   addEventListener('keydown', e => {
     if (e.target.matches && e.target.matches('input, select, textarea')) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    poke();
 
     // The crossfader is the one discrete key worth letting auto-repeat.
     if (e.code === 'Comma')  { nudgeXfade(-0.05); return; }
@@ -1443,6 +1504,7 @@ Esc                close the panel</div>
     const bits = [];
     if (Audio.connected) bits.push(Audio.channels + 'ch audio');
     else if (CONFIG.demo) bits.push('demo pulse');
+    if (activity < 0.05) bits.push('ambient');
     if (padConnected) bits.push('gamepad');
     else if (VPAD.active) bits.push('keyboard');
     if (midiCount) bits.push('midi');
@@ -2097,7 +2159,7 @@ Esc                close the panel</div>
     vec3 fxRGB(vec2 px) {
       vec2 dir = vec2(cos(uAngle), sin(uAngle));
       float band = floor(px.y / (12.0 * uRS));
-      float tt = floor(uTime * 10.0);
+      float tt = floor(uTime * 4.0);
       float g = hash(vec2(band, tt)) - 0.5;
       float slice = step(0.82 - uAmt * 0.25, hash(vec2(band * 1.3, tt + 9.0)));
       vec2 p = px + vec2(g * uAmt * 90.0 * uRS * slice, 0.0);
@@ -2340,7 +2402,7 @@ Esc                close the panel</div>
     gl.uniform1f(glLoc.uThresh, P.fxThresh);
     gl.uniform1f(glLoc.uNeg, FLAGS.negative ? 1 : 0);
     gl.uniform1f(glLoc.uSat, saturation());
-    gl.uniform1f(glLoc.uSeed, fxSeed + Math.floor(now / 250) * 0.37);
+    gl.uniform1f(glLoc.uSeed, fxSeed);
     gl.uniform1f(glLoc.uRS, rs);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -2427,6 +2489,7 @@ Esc                close the panel</div>
   }
 
   function onMIDI(msg) {
+    poke();
     const [st, d1, d2] = msg.data, type = st & 0xf0;
     if (type === 0xb0) {
       if (learnTarget && learnTarget.type === 'cc') {
@@ -2616,7 +2679,7 @@ Esc                close the panel</div>
       el.textContent = `Connected · ${Audio.channels} channel${Audio.channels > 1 ? 's' : ''} @ ${Math.round(Audio.ctx.sampleRate / 1000)}kHz`;
     } else {
       el.className = 'status off';
-      el.textContent = CONFIG.demo ? 'Not connected: the demo pulse is standing in.' : 'Not connected.';
+      el.textContent = CONFIG.demo ? 'Not connected: the demo pulse is standing in.' : 'Not connected: it drifts on its own until you play it.';
     }
   }
 
@@ -2719,6 +2782,7 @@ Esc                close the panel</div>
   bindSlider('smooth', 'smoothing', v => v.toFixed(2));
   bindSlider('idle',   'idle',      v => v.toFixed(2));
   bindSlider('beat',   'beat',      v => v.toFixed(1));
+  bindSlider('pulse',  'pulse',     v => v.toFixed(2));
 
   $('ch-req').value = CONFIG.channels;
   $('ch-req-val').textContent = CONFIG.channels;
@@ -2731,13 +2795,14 @@ Esc                close the panel</div>
   $('reset-btn').onclick = () => {
     CONFIG = JSON.parse(JSON.stringify(DEFAULTS));
     save();
-    [['gain', 'gain'], ['smooth', 'smoothing'], ['idle', 'idle'], ['beat', 'beat']].forEach(([id, key]) => {
+    [['gain', 'gain'], ['smooth', 'smoothing'], ['idle', 'idle'], ['beat', 'beat'], ['pulse', 'pulse']].forEach(([id, key]) => {
       $(id).value = CONFIG[key];
     });
     $('gain-val').textContent   = CONFIG.gain.toFixed(1) + '×';
     $('smooth-val').textContent = CONFIG.smoothing.toFixed(2);
     $('idle-val').textContent   = CONFIG.idle.toFixed(2);
     $('beat-val').textContent   = CONFIG.beat.toFixed(1);
+    $('pulse-val').textContent  = CONFIG.pulse.toFixed(2);
     $('ch-req').value = CONFIG.channels;
     $('ch-req-val').textContent = CONFIG.channels;
     learnTarget = null;
@@ -2867,6 +2932,8 @@ Esc                close the panel</div>
       : 'Tap in time to set the pulse\'s tempo, with or without audio.');
     setVal($('beat'), CONFIG.beat);
     setText($('beat-val'), CONFIG.beat.toFixed(1));
+    setVal($('pulse'), CONFIG.pulse);
+    setText($('pulse-val'), CONFIG.pulse.toFixed(2));
 
     fxBtns.forEach((b, i) => b.classList.toggle('on', i === fxMode));
     fxSliderEls.forEach(({ s, inp, out }) => {
@@ -2962,7 +3029,8 @@ Esc                close the panel</div>
     readAudio();
     updateLevels(now);
     updateAud(now);
-    resolveParams();
+    resolveParams(now);
+    updateActivity();
 
     colorEnv *= 0.955;                 // under a second to drain: a pop, not a wash
     if (colorEnv < 0.003) colorEnv = 0;
@@ -2972,6 +3040,13 @@ Esc                close the panel</div>
     camMix += (Math.max(CONFIG.cam.mix, P.ltrigger) - camMix) * 0.4;
     if (camMix > 0.03 && !cam.on && !cam.starting && !cam.error) startCamera();
 
+    // Nothing playing it: a new effect now and then, on the clock, since there
+    // is no beat to count.
+    if (cycleActive() && activity < 0.05 && now - lastCycleAt > 45000) setFx((fxMode + 1) % RAW, true);
+
+    // At rest the decks run slow; playing it brings them up to speed.
+    const amb = 0.3 + 0.7 * activity;
+
     for (const D of decks) {
       Object.assign(D.q, P);
       // The Visualizer scenes apply Speed twice (once in the clock below, once in
@@ -2979,9 +3054,9 @@ Esc                close the panel</div>
       // that slider linear. The mixer scenes use D.speed directly.
       D.q.speed = P.speed * Math.sqrt(D.speed);
       if (D.frozen) continue;
-      D.ms    += dt;
-      D.t     += 0.016 * D.q.speed;
-      D.drift += 0.4 * P.colorSpeed;
+      D.ms    += dt * amb;
+      D.t     += 0.016 * D.q.speed * amb;
+      D.drift += 0.4 * P.colorSpeed * amb;
     }
 
     compose();
@@ -3018,6 +3093,8 @@ Esc                close the panel</div>
     get colorEnv() { return colorEnv; },
     get camMix() { return camMix; },
     get beats() { return beatCount; },
+    get activity() { return activity; },
+    poke,
     link: LINK, step: () => tick(16),
     setScene, setXfade, setFx, colorHit,
     setMode: m => setScene(0, m),

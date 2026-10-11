@@ -413,7 +413,7 @@
         <input type="range" id="trails" min="0" max="5" step="1" value="1" />
       </label>
       <div class="toggles">
-        <button class="btn ghost sm" data-fx="strobe" title="Strobe. Mash it and it takes two presses and comes up dimmer each time; five quiet seconds put it back to normal.">Strobe</button>
+        <button class="btn ghost sm" data-fx="strobe" title="Strobe. The longer it runs the quieter it gets, and it eases down to a tenth. Mash it and it takes two presses and comes up dimmer each time; five quiet seconds put it back to normal.">Strobe</button>
         <button class="btn ghost sm" data-fx="blackout">Blackout</button>
         <button class="btn ghost sm" data-fx="invert">Invert</button>
         <button class="btn ghost sm" data-fx="zoomPulse">Zoom pulse</button>
@@ -950,10 +950,12 @@ Esc                close the panel</div>
      100%, 75%, 50%, 25%, then a 20% floor. Five quiet seconds put it back to a
      single press at full brightness. The five seconds restart on every press, so
      mashing keeps the limit up; a strobe already running keeps the brightness it
-     started at until it is turned off. */
-  const STROBE = { last: 0, count: 0, armedAt: 0, level: 1 };
+     started at (less the fade below) until it is turned off. The five seconds also
+     run from the moment a strobe is turned off. */
+  const STROBE = { last: 0, count: 0, armedAt: 0, level: 1, onAt: 0 };
   function strobeRequest() {
-    if (FLAGS.strobe) { FLAGS.strobe = false; return; }
+    // Off is instant, and the cooldown runs from the end of a run, however long it was.
+    if (FLAGS.strobe) { FLAGS.strobe = false; STROBE.last = performance.now(); return; }
     const now = performance.now();
     if (now - STROBE.last > 5000) STROBE.count = 0;
     const limited = STROBE.count > 0;
@@ -966,7 +968,17 @@ Esc                close the panel</div>
     STROBE.armedAt = 0;
     STROBE.level = Math.max(0.2, 1 - 0.25 * STROBE.count);
     STROBE.count++;
+    STROBE.onAt = now;
     FLAGS.strobe = true;
+  }
+  // A strobe that has been running a while gets quieter rather than being cut off:
+  // full for four seconds, then eased down over the next four to a tenth, where it
+  // stays (going gently) until it is turned off. Multiplies the brightness above.
+  function strobeRun() {
+    const t = (performance.now() - STROBE.onAt) / 1000;
+    if (t <= 4) return 1;
+    const k = Math.min(1, (t - 4) / 4);
+    return 1 - 0.9 * k * k * (3 - 2 * k);
   }
   function toggle(flag) {
     if (flag === 'strobe') strobeRequest(); else FLAGS[flag] = !FLAGS[flag];
@@ -1236,7 +1248,7 @@ Esc                close the panel</div>
     else if (VPAD.active) bits.push('keyboard');
     if (midiCount) bits.push('midi');
     if (tapBPM > 0) bits.push('tap ' + Math.round(tapBPM));
-    if (FLAGS.strobe)    bits.push('strobe' + (STROBE.level < 1 ? ' ' + Math.round(STROBE.level * 100) + '%' : ''));
+    if (FLAGS.strobe)    { const sl = STROBE.level * strobeRun(); bits.push('strobe' + (sl < 0.99 ? ' ' + Math.round(sl * 100) + '%' : '')); }
     if (FLAGS.blackout)  bits.push('blackout');
     if (FLAGS.invert)    bits.push('invert');
     if (FLAGS.zoomPulse) bits.push('zoom pulse');
@@ -1710,7 +1722,7 @@ Esc                close the panel</div>
 
     strobePh++;
     if (FLAGS.strobe && strobePh % 6 < 3) {
-      ctx.globalAlpha = 0.92 * STROBE.level; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 0.92 * STROBE.level * strobeRun(); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
       ctx.globalAlpha = 1;
       return;
     }
@@ -2299,6 +2311,7 @@ Esc                close the panel</div>
 
   /* ── Scripted control hook (testing / demos) ── */
   window.MPFVIZ = {
+    STROBE, strobeRun,
     params: P, pad: VPAD, audio: Audio, targets: TARGETS, decks, flags: FLAGS, aud,
     get config() { return CONFIG; },
     get xfade() { return xfade; },

@@ -413,7 +413,7 @@
         <input type="range" id="trails" min="0" max="5" step="1" value="1" />
       </label>
       <div class="toggles">
-        <button class="btn ghost sm" data-fx="strobe" title="Strobe. The longer it runs the quieter it gets, and it eases down to a tenth. Mash it and it takes two presses and comes up dimmer each time; five quiet seconds put it back to normal.">Strobe</button>
+        <button class="btn ghost sm" data-fx="strobe" title="Strobe (R). It fades itself out and switches off within five seconds, and each time it fires it is 10% dimmer than the last, until five seconds go by with no strobe.">Strobe</button>
         <button class="btn ghost sm" data-fx="blackout">Blackout</button>
         <button class="btn ghost sm" data-fx="invert">Invert</button>
         <button class="btn ghost sm" data-fx="zoomPulse">Zoom pulse</button>
@@ -681,7 +681,7 @@ Esc                close the panel</div>
   let xfade    = 0;            // opens on deck A alone, so it still rests quiet
   let trailIdx = 1;
   const FLAGS  = { strobe: false, blackout: false, invert: false, zoomPulse: false, beatFlash: true };
-  let strobePh = 0, flashOp = 0, zoomScale = 1;
+  let flashOp = 0, zoomScale = 1;
 
   /* ══════════════════════════════════════════
      CONFIG (persisted)
@@ -944,41 +944,43 @@ Esc                close the panel</div>
   const nudgeXfade = d => setXfade(xfade + d);
 
   /* ── Strobe limiter ──
-     Mashing the strobe is how a show ends in a headache. Turning it off is
-     always instant. Turning it on again within five seconds of the last press
-     takes two presses (the first only arms it) and comes up dimmer each time:
-     100%, 75%, 50%, 25%, then a 20% floor. Five quiet seconds put it back to a
-     single press at full brightness. The five seconds restart on every press, so
-     mashing keeps the limit up; a strobe already running keeps the brightness it
-     started at (less the fade below) until it is turned off. The five seconds also
-     run from the moment a strobe is turned off. */
-  const STROBE = { last: 0, count: 0, armedAt: 0, level: 1, onAt: 0 };
+     Each time the strobe fires it is 10% dimmer than the time before (100%, 90%,
+     80% and so on, never below 10%), until five seconds go by with no strobe, which
+     puts it back to full. The five seconds run from the moment a strobe ends or is
+     turned off. Turning it off is always instant. */
+  const STROBE = { last: 0, count: 0, level: 1, onAt: 0 };
   function strobeRequest() {
-    // Off is instant, and the cooldown runs from the end of a run, however long it was.
-    if (FLAGS.strobe) { FLAGS.strobe = false; STROBE.last = performance.now(); return; }
     const now = performance.now();
+    if (FLAGS.strobe) { FLAGS.strobe = false; STROBE.last = now; return; }
     if (now - STROBE.last > 5000) STROBE.count = 0;
-    const limited = STROBE.count > 0;
-    STROBE.last = now;
-    if (limited && (!STROBE.armedAt || now - STROBE.armedAt > 1500)) {
-      STROBE.armedAt = now;
-      hudNote('Strobe is cooling down: press again to fire it');
-      return;
-    }
-    STROBE.armedAt = 0;
-    STROBE.level = Math.max(0.2, 1 - 0.25 * STROBE.count);
+    STROBE.level = Math.max(0.1, 1 - 0.1 * STROBE.count);
     STROBE.count++;
     STROBE.onAt = now;
+    STROBE.last = now;
     FLAGS.strobe = true;
   }
-  // A strobe that has been running a while gets quieter rather than being cut off:
-  // full for four seconds, then eased down over the next four to a tenth, where it
-  // stays (going gently) until it is turned off. Multiplies the brightness above.
+  // A strobe fades itself out. It is full for the first second and a half, eased down
+  // to nothing by the five second mark, and then switched off: nobody is left under a
+  // strobe that runs on. Every way of firing one (the R key, the panel, the strip, MIDI)
+  // goes through strobeRequest, so every one of them is held to this. The pad has no
+  // strobe at all, so the audience cannot start one. Multiplies the brightness above.
+  const STROBE_FULL = 1.5, STROBE_END = 5;
   function strobeRun() {
     const t = (performance.now() - STROBE.onAt) / 1000;
-    if (t <= 4) return 1;
-    const k = Math.min(1, (t - 4) / 4);
-    return 1 - 0.9 * k * k * (3 - 2 * k);
+    if (t <= STROBE_FULL) return 1;
+    if (t >= STROBE_END) return 0;
+    const k = (t - STROBE_FULL) / (STROBE_END - STROBE_FULL);
+    return 1 - k * k * (3 - 2 * k);
+  }
+  // Called every frame. By now the brightness is already zero, so this ends it without a cut.
+  function strobeGuard() {
+    if (!FLAGS.strobe) return;
+    const now = performance.now();
+    if (now - STROBE.onAt < STROBE_END * 1000) return;
+    FLAGS.strobe = false;
+    STROBE.last = now;                       // so the five quiet seconds run from the end of this one
+    hudNote('Strobe finished');
+    syncUI();
   }
   function toggle(flag) {
     if (flag === 'strobe') strobeRequest(); else FLAGS[flag] = !FLAGS[flag];
@@ -1226,7 +1228,7 @@ Esc                close the panel</div>
   /* ── HUD ── */
   let hudTimer = null, hudPinned = false;
   // A line of text on the readout for a moment, for things that did not happen
-  // (a strobe press that was only an arming press, say).
+  // (a strobe that has finished itself, say).
   let noteText = '', noteUntil = 0;
   function hudNote(text, ms = 2200) { noteText = text; noteUntil = performance.now() + ms; showHud(); hudSig = ''; }
   function showHud() {
@@ -1720,8 +1722,10 @@ Esc                close the panel</div>
 
     if (FLAGS.blackout) return;
 
-    strobePh++;
-    if (FLAGS.strobe && strobePh % 6 < 3) {
+    // Ten flashes a second by the clock, not by the frame count: counted in frames it
+    // would be twenty on a 120 Hz screen, which is the worst rate there is for
+    // photosensitivity, and no longer what was tested.
+    if (FLAGS.strobe && Math.floor(performance.now() / 50) % 2 === 0) {
       ctx.globalAlpha = 0.92 * STROBE.level * strobeRun(); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
       ctx.globalAlpha = 1;
       return;
@@ -2264,6 +2268,7 @@ Esc                close the panel</div>
   let meterTick = 0, lastTs = performance.now();
 
   function tick(dtOverride) {
+    strobeGuard();
     const now = performance.now();
     const dt  = dtOverride !== undefined ? dtOverride : Math.min(now - lastTs, 50);
     lastTs = now;

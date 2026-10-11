@@ -57,6 +57,20 @@ body { padding: 0 0 40px !important; }
   transition: background .12s, color .12s, border-color .12s;
 }
 #toolbar a.tb-back:hover { background: var(--t-text); color: #08080a; border-color: var(--t-edge); }
+#toolbar button.tb-dl {
+  flex: none; cursor: pointer; background: none; font-family: inherit; color: var(--t-dim);
+  border: 1px solid var(--t-line); border-radius: 2px; padding: 6px 12px; margin: 0;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+  transition: background .12s, color .12s, border-color .12s;
+}
+#toolbar button.tb-dl:hover:not(:disabled) { background: var(--t-text); color: #08080a; border-color: var(--t-edge); }
+#toolbar button.tb-dl:disabled { cursor: default; opacity: .7; }
+#toolbar button.tb-dl .tb-dl-i { margin-right: 6px; }
+/* On a narrow bar the arrow alone stands in for the words. */
+@media (max-width: 560px) {
+  #toolbar button.tb-dl .tb-dl-t { display: none; }
+  #toolbar button.tb-dl .tb-dl-i { margin: 0; }
+}
 
 /* Tools whose whole surface is one canvas keep the bar out of the way. */
 body.tool-fullbleed #toolbar { position: fixed; left: 0; right: 0; background: rgba(8,8,10,.6); border-bottom-color: var(--t-line); }

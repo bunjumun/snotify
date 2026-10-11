@@ -4,6 +4,24 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Visualizer — Midwest Psych Fest</title>
+  <!--
+    One tool where there used to be two. The old Visualizer was an instrument:
+    sticks and triggers drove a single scene, and a DAW's channels were routed
+    onto its parameters. The old VJ mixer was a console: two generators, a
+    crossfader, strobe and trails, MIDI. Both took a gamepad, both listened to
+    audio, and a visitor had to guess which one to open.
+
+    Here the console is the frame and the instrument is what plays inside it.
+    Two decks each run any of eleven scenes (the Visualizer's five and the
+    mixer's six) and a crossfader blends them. The expressive layer (sticks,
+    triggers, idle motion, audio routes) shapes the picture on both decks, and
+    the discrete layer (scene cycling, freeze, strobe, trails, tap tempo, MIDI)
+    works the mix. The two sets of controls fought over the same buttons, so
+    the map below is a settlement rather than a union: see the Controls section
+    of the settings panel for the whole thing.
+
+    The previous versions are kept in archive/tools-v1/.
+  -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -27,6 +45,7 @@
       display: flex;
       align-items: center;
       gap: 14px;
+      max-width: calc(100vw - 40px);
       background: rgba(0,0,0,0.55);
       border: 1px solid rgba(255,255,255,0.12);
       border-radius: 40px;
@@ -37,11 +56,23 @@
       pointer-events: none;
       z-index: 10;
       white-space: nowrap;
+      overflow: hidden;
     }
     #hud.hidden { opacity: 0; }
-    .hud-mode {
+    .hud-deck {
       font-size: 0.72rem; font-weight: 700;
       letter-spacing: 0.12em; text-transform: uppercase;
+      display: flex; gap: 7px; align-items: baseline;
+    }
+    .hud-deck b { color: #ff3cac; }
+    .hud-xf {
+      position: relative; width: 84px; height: 4px; flex-shrink: 0;
+      border-radius: 3px; background: rgba(255,255,255,0.14);
+    }
+    .hud-xf > i {
+      position: absolute; top: -4px; width: 4px; height: 12px;
+      margin-left: -2px; border-radius: 2px; background: #4fffb0;
+      box-shadow: 0 0 8px rgba(79,255,176,0.6);
     }
     .hud-dot {
       width: 8px; height: 8px; border-radius: 50%;
@@ -72,14 +103,6 @@
       background: rgba(79,255,176,0.15);
       box-shadow: 0 0 16px rgba(79,255,176,0.35);
     }
-
-    #back {
-      position: fixed; top: 20px; left: 20px;
-      font-size: 0.72rem; color: rgba(255,255,255,0.25);
-      text-decoration: none; letter-spacing: 0.1em;
-      z-index: 30; transition: color 0.2s;
-    }
-    #back:hover { color: rgba(255,255,255,0.7); }
 
     /* ── Hint ── */
     #pad-hint {
@@ -160,6 +183,7 @@
       display: block; font-size: 0.68rem; color: rgba(255,255,255,0.5);
       margin-bottom: 5px; letter-spacing: 0.05em;
     }
+    label.fld em { color: #ff8dd0; font-style: normal; }
 
     select, input[type=number] {
       width: 100%;
@@ -195,7 +219,14 @@
     }
     .btn.ghost:hover { border-color: #fff; color: #fff; background: rgba(255,255,255,0.1); }
     .btn.wide { width: 100%; }
+    .btn.sm { padding: 5px 10px; font-size: 0.68rem; }
+    .btn.on {
+      background: rgba(79,255,176,0.15);
+      border-color: rgba(79,255,176,0.55);
+      color: #7dffc8;
+    }
     .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+    .toggles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 
     .note {
       font-size: 0.66rem; color: rgba(255,255,255,0.35);
@@ -210,6 +241,20 @@
     .status.ok  { background: rgba(79,255,176,0.1);  border: 1px solid rgba(79,255,176,0.3);  color: #7dffc8; }
     .status.off { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.45); }
     .status.err { background: rgba(255,80,80,0.1);   border: 1px solid rgba(255,80,80,0.35);  color: #ff9b9b; }
+
+    /* ── Decks ── */
+    .deck {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 8px;
+    }
+    .deck-head { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .deck-head b { color: #ff3cac; font-size: 0.85rem; width: 14px; text-align: center; }
+    .deck-head select { flex: 1; font-size: 0.72rem; padding: 6px 7px; }
+    .deck label.fld { margin-bottom: 8px; }
+    .deck label.fld:last-child { margin-bottom: 0; }
 
     /* ── Channel meters ── */
     .ch-strip { display: flex; flex-direction: column; gap: 4px; }
@@ -254,8 +299,41 @@
       border: 1px dashed rgba(255,255,255,0.12); border-radius: 8px;
     }
 
+    /* ── MIDI learn ── */
+    .midi-group {
+      font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase;
+      color: rgba(255,255,255,0.3); margin: 12px 0 4px;
+    }
+    .midi-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 5px 8px; cursor: pointer; font-size: 0.7rem;
+      border: 1px solid transparent; border-radius: 6px;
+    }
+    .midi-row:hover { background: rgba(255,255,255,0.05); }
+    .midi-row.waiting {
+      background: rgba(255,204,79,0.12); border-color: rgba(255,204,79,0.5);
+      color: #ffcc4f; animation: blink 0.6s infinite;
+    }
+    .midi-bind { color: rgba(255,255,255,0.35); font-size: 0.64rem; margin-left: auto; }
+    .midi-bind.set { color: #4fffb0; }
+    .midi-clear { color: rgba(255,255,255,0.25); margin-left: 10px; }
+    .midi-clear:hover { color: #ff6b6b; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+    .keys {
+      font-size: 0.64rem; line-height: 1.85; color: rgba(255,255,255,0.5);
+      white-space: pre-wrap;
+    }
+    .keys b { color: rgba(255,255,255,0.8); font-weight: 700; }
+
     @media (max-width: 460px) {
       #panel { width: 100vw; }
+    }
+    /* The readout is two deck names and a fader wide; on a phone it would sit
+       on top of the link pill, so the pill rides above it instead. */
+    @media (max-width: 760px) {
+      #link-pill { bottom: 66px; }
+      .hud-sub { display: none; }
     }
   </style>
 
@@ -274,8 +352,10 @@
 
 <div id="hud">
   <div class="hud-dot"></div>
-  <div class="hud-mode" id="hud-mode">COSMIC WAVE</div>
-  <div class="hud-sub"  id="hud-sub">no input</div>
+  <div class="hud-deck"><b>A</b><span id="hud-a">COSMIC WAVE</span></div>
+  <div class="hud-xf"><i id="hud-xf"></i></div>
+  <div class="hud-deck"><b>B</b><span id="hud-b">PLASMA</span></div>
+  <div class="hud-sub" id="hud-sub">no input</div>
 </div>
 
 <div id="link-pill"><span id="link-text">pad live</span></div>
@@ -284,9 +364,10 @@
   <div style="font-size:2rem;margin-bottom:8px;">🎛</div>
   It rests quiet until you drive it<br>
   <span style="font-size:0.7rem;opacity:0.65">
-    WASD left stick · Arrows right stick · Q/E triggers<br>
-    Z X C V face buttons · 1–5 mode · [ ] cycle<br>
-    ⚙ to route DAW audio channels<br>
+    Sticks and triggers shape it · D-pad ◀ ▶ crossfades deck A to B<br>
+    A / B change a deck's scene · Y strobe · LB / RB freeze<br>
+    WASD · arrows · Q E · Z X C V play it from the keyboard<br>
+    ⚙ for decks, audio routing, MIDI and the full control map<br>
     keep this window uncovered and the pad keeps driving from the background
   </span>
 </div>
@@ -302,6 +383,41 @@
   <div class="panel-body">
 
     <div class="sect">
+      <div class="sect-title">Mix</div>
+      <label class="fld">
+        <span>Crossfader <em id="xf-val">A</em></span>
+        <input type="range" id="xf" min="0" max="1" step="0.01" value="0" />
+      </label>
+      <label class="fld">
+        <span>Trails <em id="trails-val">0.07</em></span>
+        <input type="range" id="trails" min="0" max="5" step="1" value="1" />
+      </label>
+      <div class="toggles">
+        <button class="btn ghost sm" data-fx="strobe">Strobe</button>
+        <button class="btn ghost sm" data-fx="blackout">Blackout</button>
+        <button class="btn ghost sm" data-fx="invert">Invert</button>
+        <button class="btn ghost sm" data-fx="zoomPulse">Zoom pulse</button>
+        <button class="btn ghost sm" data-fx="beatFlash">Beat flash</button>
+        <button class="btn ghost sm" id="flash-btn">Flash</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn ghost sm" id="tap-btn">Tap tempo</button>
+        <button class="btn ghost sm" id="tap-clear">Clear tap</button>
+      </div>
+      <div class="note" id="tap-note">Tap in time to pulse the beat flash and zoom without any audio.</div>
+    </div>
+
+    <div class="sect">
+      <div class="sect-title">Decks</div>
+      <div id="decks"></div>
+      <div class="note">
+        The six mixer scenes (Tunnel, Plasma, Stars, Waves, Grid, Vortex) follow
+        the sticks as position, twist and zoom. The five Visualizer scenes take every
+        parameter and every audio route.
+      </div>
+    </div>
+
+    <div class="sect">
       <div class="sect-title">Audio Input</div>
       <div class="status off" id="audio-status">Not connected.</div>
 
@@ -311,7 +427,7 @@
       </label>
 
       <label class="fld">
-        <span>Request channels <em id="ch-req-val" style="color:#ff8dd0;font-style:normal">2</em></span>
+        <span>Request channels <em id="ch-req-val">2</em></span>
         <input type="range" id="ch-req" min="1" max="16" step="1" value="2" />
       </label>
 
@@ -347,21 +463,76 @@
     <div class="sect">
       <div class="sect-title">Response</div>
       <label class="fld">
-        <span>Input gain <em id="gain-val" style="color:#ff8dd0;font-style:normal">1.0×</em></span>
+        <span>Input gain <em id="gain-val">1.0×</em></span>
         <input type="range" id="gain" min="0.1" max="8" step="0.1" value="1.6" />
       </label>
       <label class="fld">
-        <span>Smoothing <em id="smooth-val" style="color:#ff8dd0;font-style:normal">0.65</em></span>
+        <span>Smoothing <em id="smooth-val">0.65</em></span>
         <input type="range" id="smooth" min="0" max="0.95" step="0.05" value="0.65" />
       </label>
       <label class="fld">
-        <span>Idle motion <em id="idle-val" style="color:#ff8dd0;font-style:normal">0.35</em></span>
+        <span>Idle motion <em id="idle-val">0.35</em></span>
         <input type="range" id="idle" min="0" max="1.5" step="0.05" value="0.35" />
+      </label>
+      <label class="fld">
+        <span>Beat threshold <em id="beat-val">1.5</em></span>
+        <input type="range" id="beat" min="0.6" max="4" step="0.1" value="1.5" />
       </label>
       <div class="note">
         <strong>Idle motion</strong> sets how alive it is with no input at all.
         Turn it down so your gestures and audio read as the whole show.
+        <strong>Beat threshold</strong> is how far the bass must jump above its
+        own average to count as a beat: higher means fewer beats.
       </div>
+    </div>
+
+    <div class="sect" id="midi-sect">
+      <div class="sect-title">MIDI</div>
+      <div class="status off" id="midi-status">MIDI is off.</div>
+      <button class="btn ghost wide" id="midi-btn">Enable MIDI</button>
+      <div class="note">
+        Click a row, then move a knob or press a pad. Assignments save to this browser.
+        MIDI is only requested once you enable it, so the browser does not ask on every visit.
+      </div>
+      <div class="midi-group">Continuous (CC)</div>
+      <div id="midi-cc"></div>
+      <div class="midi-group">Triggers (note on)</div>
+      <div id="midi-note"></div>
+      <div class="btn-row">
+        <button class="btn ghost sm" id="midi-reset">Restore default map</button>
+      </div>
+    </div>
+
+    <div class="sect">
+      <div class="sect-title">Controls</div>
+      <div class="keys"><b>GAMEPAD</b>
+sticks, triggers   shape the picture
+D-pad ◀ ▶          crossfade A ↔ B
+D-pad ▲ ▼          more / fewer trails
+A / B              next scene on deck A / B
+X                  both hues +60°
+Y                  strobe
+LB / RB            freeze deck A / B
+L3                 audio on / off
+R3                 beat flash on / off
+Back / Start       blackout / flash
+
+<b>KEYBOARD</b>
+W A S D, arrows    left stick, right stick
+Q / E              triggers
+Z X C V            the A B X Y buttons
+[ ]   ; '          deck A / deck B scene back, forward
+, .                crossfade
+1 2   3 4          deck A / deck B hue
+F G                freeze deck A / B
+B   Space          blackout / flash
+M   N              audio / beat flash
+O   P              beat threshold down / up
+T   U   I          trails / zoom pulse / invert
+Tab                tap tempo
+H                  keep the readout on screen
+`                  this panel, at MIDI
+Esc                close the panel</div>
     </div>
 
     <div class="sect">
@@ -379,17 +550,28 @@
 (function () {
   'use strict';
 
+  const $ = id => document.getElementById(id);
+
   /* ══════════════════════════════════════════
-     CANVAS
+     CANVAS + DECKS
+
+     Each deck draws into a canvas of its own, with its own trail, and the
+     two are blended onto the visible canvas. That is what lets one scene fade
+     out while another fades in: the Visualizer's scenes clear themselves with
+     a translucent black wash each frame, which would wipe a shared canvas.
   ══════════════════════════════════════════ */
-  const canvas = document.getElementById('c');
+  const canvas = $('c');
   const ctx    = canvas.getContext('2d');
+  const decks  = [];
   // `host` is the window currently showing the canvas — this one normally, or
   // the floating picture-in-picture window when that's open. Everything driven
   // by the compositor (rAF, size) and the focus-gated Gamepad API has to come
   // from whichever window is actually on screen, or it stalls.
   let host = window;
-  function resize() { canvas.width = host.innerWidth; canvas.height = host.innerHeight; }
+  function resize() {
+    canvas.width = host.innerWidth; canvas.height = host.innerHeight;
+    for (const D of decks) { D.cv.width = canvas.width; D.cv.height = canvas.height; }
+  }
   addEventListener('resize', resize);
   resize();
 
@@ -419,9 +601,19 @@
     xShift: 0, yShift: 0, twist: 0, pitch: 0,
     ltrigger: 0, rtrigger: 0,
   };
+  // What the sticks, triggers and audio routes added, without the rest and idle
+  // floor. The mixer scenes follow Speed through this, so an untouched screen
+  // plays them at their own pace instead of the Visualizer's quiet one.
+  const M = {};
 
-  const MODE_NAMES = ['COSMIC WAVE', 'KALEIDOSCOPE', 'PARTICLE STORM', 'LISSAJOUS', 'TUNNEL RUSH'];
-  let mode = 0, t = 0, hue = 0;
+  /* ══════════════════════════════════════════
+     MIX STATE
+  ══════════════════════════════════════════ */
+  const TRAIL_P = [0, 0.07, 0.17, 0.34, 0.58, 0.82];
+  let xfade    = 0;            // opens on deck A alone, so it still rests quiet
+  let trailIdx = 1;
+  const FLAGS  = { strobe: false, blackout: false, invert: false, zoomPulse: false, beatFlash: true };
+  let strobePh = 0, flashOp = 0, zoomScale = 1;
 
   /* ══════════════════════════════════════════
      CONFIG (persisted)
@@ -429,17 +621,19 @@
   const CONFIG_KEY = 'mpf_viz_config';
   const DEFAULTS = {
     deviceId: '', channels: 2,
-    gain: 1.6, smoothing: 0.65, idle: 0.35,
+    gain: 1.6, smoothing: 0.65, idle: 0.35, beat: 1.5,
     routes: [],
+    midiOn: false, midi: { cc: {}, note: {} },
   };
   let CONFIG = load();
 
   function load() {
+    const fresh = JSON.parse(JSON.stringify(DEFAULTS));
     try {
       const raw = localStorage.getItem(CONFIG_KEY);
-      if (raw) return Object.assign({}, DEFAULTS, JSON.parse(raw));
+      if (raw) return Object.assign(fresh, JSON.parse(raw));
     } catch (e) {}
-    return JSON.parse(JSON.stringify(DEFAULTS));
+    return fresh;
   }
   function save() {
     try { localStorage.setItem(CONFIG_KEY, JSON.stringify(CONFIG)); } catch (e) {}
@@ -527,6 +721,11 @@
     updateAudioBtn();
   }
 
+  function toggleMic() {
+    if (Audio.connected) { disconnectAudio(); renderPanel(); }
+    else connectAudio(CONFIG.deviceId, CONFIG.channels);
+  }
+
   function bandEnergy(analyser, range) {
     analyser.getByteFrequencyData(Audio.freqBuf);
     const nyquist = (Audio.ctx ? Audio.ctx.sampleRate : 48000) / 2;
@@ -567,6 +766,122 @@
     return Math.min(1, raw * CONFIG.gain);
   }
 
+  /* ── Whole-mix audio ──
+     The mixer scenes were written against one summary of the room (bass, mid,
+     high, a beat pulse) rather than routed channels, and the beat flash, zoom
+     pulse and tap tempo all hang off the same pulse. So the channels are also
+     boiled down to that summary here. It takes the loudest channel rather than
+     the mean: on a 16-channel bus a quiet kick channel must not be averaged
+     into silence by fifteen others. */
+  const aud = { bass: 0, mid: 0, high: 0, level: 0, beat: false, flash: 0 };
+  let bassAvg = 0.08;
+
+  let tapTimes = [], tapBPM = 0, tapLast = 0;
+  function tapTempo() {
+    const now = performance.now();
+    // A bounce or a double-registered key would read as an impossible tempo.
+    if (tapTimes.length && now - tapLast < 150) return;
+    if (now - tapLast > 2000) tapTimes = [];
+    tapLast = now;
+    tapTimes.push(now);
+    if (tapTimes.length > 8) tapTimes.shift();
+    if (tapTimes.length >= 2) {
+      let total = 0;
+      for (let i = 1; i < tapTimes.length; i++) total += tapTimes[i] - tapTimes[i - 1];
+      tapBPM = 60000 / (total / (tapTimes.length - 1));
+    }
+    syncUI();
+  }
+  function clearTap() { tapTimes = []; tapBPM = 0; syncUI(); }
+
+  function updateAud(ts) {
+    aud.beat  = false;
+    aud.flash = Math.max(0, aud.flash - 0.1);
+
+    // Tap tempo is a beat source in its own right, audio or not.
+    if (tapBPM > 0) {
+      const beatMs = 60000 / tapBPM;
+      if ((ts % beatMs) / beatMs < 0.04) { aud.beat = true; aud.flash = 1; }
+    }
+
+    if (!Audio.connected) {
+      aud.bass *= 0.8; aud.mid *= 0.8; aud.high *= 0.8; aud.level *= 0.8;
+      return;
+    }
+    let b = 0, m = 0, h = 0;
+    for (let ch = 0; ch < Audio.channels; ch++) {
+      b = Math.max(b, channelValue(ch, 'low'));
+      m = Math.max(m, channelValue(ch, 'mid'));
+      h = Math.max(h, channelValue(ch, 'high'));
+    }
+    aud.bass = b; aud.mid = m; aud.high = h;
+    aud.level = b * 0.55 + m * 0.3 + h * 0.15;
+
+    bassAvg = bassAvg * 0.94 + aud.bass * 0.06;
+    if (aud.bass > bassAvg * CONFIG.beat && aud.bass > 0.12) { aud.beat = true; aud.flash = 1; }
+  }
+
+  /* ══════════════════════════════════════════
+     SCENES AND DECKS
+  ══════════════════════════════════════════ */
+  const SCENES = [
+    { name: 'COSMIC WAVE',    viz: true,  draw: drawCosmicWave },
+    { name: 'KALEIDOSCOPE',   viz: true,  draw: drawKaleidoscope },
+    { name: 'PARTICLE STORM', viz: true,  draw: drawParticleStorm },
+    { name: 'LISSAJOUS',      viz: true,  draw: drawLissajous },
+    { name: 'TUNNEL RUSH',    viz: true,  draw: drawTunnelRush },
+    { name: 'TUNNEL',         viz: false, draw: drawTunnel },
+    { name: 'PLASMA',         viz: false, draw: drawPlasma },
+    { name: 'STARS',          viz: false, draw: drawStars },
+    { name: 'WAVES',          viz: false, draw: drawWaves },
+    { name: 'GRID',           viz: false, draw: drawGrid },
+    { name: 'VORTEX',         viz: false, draw: drawVortex },
+  ];
+  const PLASMA = 6;
+
+  function makeDeck(scene, hue) {
+    const cv = document.createElement('canvas');
+    cv.width = canvas.width; cv.height = canvas.height;
+    return {
+      cv, cx: cv.getContext('2d', { alpha: false }),
+      q: Object.assign({}, P),          // P with this deck's speed folded in
+      scene, hue, speed: 1, intensity: 1, frozen: false,
+      ms: 0,                            // clock for the mixer scenes, in milliseconds
+      t: 0, drift: 0,                   // clock and colour drift for the Visualizer scenes
+      particles: [], stars: [],
+    };
+  }
+  decks.push(makeDeck(0, 0), makeDeck(PLASMA, 180));
+
+  function setScene(i, s) {
+    const D = decks[i];
+    D.scene = (s % SCENES.length + SCENES.length) % SCENES.length;
+    // A scene change only fades the previous frame; without a hard clear the old
+    // scene ghosts for seconds because alpha compositing never quite reaches black.
+    D.cx.globalCompositeOperation = 'source-over'; D.cx.globalAlpha = 1;
+    D.cx.fillStyle = '#000';
+    D.cx.fillRect(0, 0, D.cv.width, D.cv.height);
+    D.particles.length = 0; D.stars.length = 0;
+    showHud(); syncUI();
+  }
+  function cycleScene(i, dir) { setScene(i, decks[i].scene + dir); }
+  function toggleFreeze(i) { decks[i].frozen = !decks[i].frozen; showHud(); syncUI(); }
+  function hueStep(i, deg) { decks[i].hue = (decks[i].hue + deg + 360) % 360; syncUI(); }
+
+  function setXfade(v) {
+    const n = Math.max(0, Math.min(1, v));
+    if (n === xfade) return;
+    xfade = n; showHud(); syncUI();
+  }
+  const nudgeXfade = d => setXfade(xfade + d);
+
+  function toggle(flag) { FLAGS[flag] = !FLAGS[flag]; showHud(); syncUI(); }
+  function stepTrails(dir, wrap) {
+    const n = TRAIL_P.length;
+    trailIdx = wrap ? (trailIdx + dir + n) % n : Math.max(0, Math.min(n - 1, trailIdx + dir));
+    showHud(); syncUI();
+  }
+
   /* ══════════════════════════════════════════
      GAMEPAD + VIRTUAL PAD
   ══════════════════════════════════════════ */
@@ -575,20 +890,20 @@
     buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
     active: false,
   };
-  const btnPrev = new Array(20).fill(false);
+  const prevReal = new Array(20).fill(false);
+  const prevVirt = new Array(20).fill(false);
   let padConnected = false;
 
-  const padHint = document.getElementById('pad-hint');
-  const hudSub  = document.getElementById('hud-sub');
-  const hudMode = document.getElementById('hud-mode');
-  const hud     = document.getElementById('hud');
+  const padHint = $('pad-hint');
+  const hudSub  = $('hud-sub');
+  const hud     = $('hud');
 
-  addEventListener('gamepadconnected', e => {
+  addEventListener('gamepadconnected', () => {
     padConnected = true;
     padHint.classList.add('hidden');
-    showHud();
+    showHud(); syncUI();
   });
-  addEventListener('gamepaddisconnected', () => { padConnected = false; });
+  addEventListener('gamepaddisconnected', () => { padConnected = false; syncUI(); });
 
   function deadzone(v, dz = 0.12) {
     if (Math.abs(v) < dz) return 0;
@@ -610,14 +925,48 @@
     P.pitch  *= k; P.ltrigger *= k; P.rtrigger *= k;
   }
 
+  // Everything a button can do, whether it came from the pad or from the
+  // keyboard standing in for one. The analogue sticks and triggers are not here:
+  // they are read every frame, not on a press.
+  function onButton(i) {
+    switch (i) {
+      case 0:  cycleScene(0, 1); break;                                   // A
+      case 1:  cycleScene(1, 1); break;                                   // B
+      case 2:  decks.forEach(D => { D.hue = (D.hue + 60) % 360; }); syncUI(); break;   // X
+      case 3:  toggle('strobe'); break;                                   // Y
+      case 4:  toggleFreeze(0); break;                                    // LB
+      case 5:  toggleFreeze(1); break;                                    // RB
+      case 8:  toggle('blackout'); break;                                 // Back
+      case 9:  flashOp = 1; break;                                        // Start
+      case 10: toggleMic(); break;                                        // L3
+      case 11: toggle('beatFlash'); break;                                // R3
+      case 12: stepTrails(1); break;                                      // D-pad up
+      case 13: stepTrails(-1); break;                                     // D-pad down
+    }
+  }
+  const PRESS_BUTTONS = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13];
+  function scan(buttons, prev) {
+    for (const i of PRESS_BUTTONS) {
+      const now = !!(buttons[i] && buttons[i].pressed);
+      if (now && !prev[i]) onButton(i);
+      prev[i] = now;
+    }
+  }
+
   function pollGamepad() {
     const nowMs = performance.now();
     const nav = host.navigator;
     const pads = nav.getGamepads ? nav.getGamepads() : [];
     let pad = null;
     for (const p of pads) { if (p) { pad = p; break; } }
-    if (!pad && VPAD.active) pad = VPAD;
-    if (!pad) {
+
+    // The keyboard's Z X C V stay live beside a real pad, so a button that only
+    // the keyboard offers (there is none today, but Y and the bumpers have keys
+    // of their own) never goes dead just because a controller is plugged in.
+    if (VPAD.active) scan(VPAD.buttons, prevVirt);
+
+    const src = pad || (VPAD.active ? VPAD : null);
+    if (!src) {
       LINK.state = 'none';
       // Glide to centre over ~1s. A hard zero reads as a crash on the wall when
       // a wireless pad drops a single frame.
@@ -625,7 +974,7 @@
       return;
     }
 
-    if (pad !== VPAD) {
+    if (pad) {
       if (pad.timestamp !== LINK.padTs) { LINK.padTs = pad.timestamp; LINK.lastAdvance = nowMs; }
       // A perfectly still stick also stops advancing the timestamp, so holding
       // the pose here is a no-op in that case and a graceful freeze otherwise.
@@ -634,27 +983,19 @@
     }
     LINK.state = host.document.hasFocus() ? 'live' : 'bg';
 
-    P.xShift   = deadzone(pad.axes[0] || 0);
-    P.yShift   = deadzone(pad.axes[1] || 0);
-    P.twist    = deadzone(pad.axes[2] || 0);
-    P.pitch    = deadzone(pad.axes[3] || 0);
-    P.ltrigger = (pad.buttons[6] && pad.buttons[6].value) || 0;
-    P.rtrigger = (pad.buttons[7] && pad.buttons[7].value) || 0;
+    P.xShift   = deadzone(src.axes[0] || 0);
+    P.yShift   = deadzone(src.axes[1] || 0);
+    P.twist    = deadzone(src.axes[2] || 0);
+    P.pitch    = deadzone(src.axes[3] || 0);
+    P.ltrigger = (src.buttons[6] && src.buttons[6].value) || 0;
+    P.rtrigger = (src.buttons[7] && src.buttons[7].value) || 0;
 
-    for (let i = 0; i < 4; i++) {
-      const now = !!(pad.buttons[i] && pad.buttons[i].pressed);
-      if (now && !btnPrev[i]) {
-        if (i === 0) nextMode();
-        if (i === 1) prevMode();
-        if (i === 2) hue += 60;
-      }
-      btnPrev[i] = now;
+    if (pad) {
+      scan(pad.buttons, prevReal);
+      // D-pad left/right slide the crossfader for as long as they are held.
+      if (pad.buttons[14] && pad.buttons[14].pressed) nudgeXfade(-0.015);
+      if (pad.buttons[15] && pad.buttons[15].pressed) nudgeXfade(0.015);
     }
-    const dpUp   = !!(pad.buttons[12] && pad.buttons[12].pressed);
-    const dpDown = !!(pad.buttons[13] && pad.buttons[13].pressed);
-    if (dpUp   && !btnPrev[12]) nextMode();
-    if (dpDown && !btnPrev[13]) prevMode();
-    btnPrev[12] = dpUp; btnPrev[13] = dpDown;
   }
 
   // Gamepad contribution to each modulation target
@@ -686,23 +1027,10 @@
     const pm = padMod(), am = audioMod();
     for (const key in TARGETS) {
       const tg = TARGETS[key];
-      const v  = tg.rest + tg.idleGain * CONFIG.idle + (pm[key] || 0) + (am[key] || 0);
+      M[key] = (pm[key] || 0) + (am[key] || 0);
+      const v  = tg.rest + tg.idleGain * CONFIG.idle + M[key];
       P[key] = Math.max(0, Math.min(tg.max, v));
     }
-  }
-
-  /* ── Modes ── */
-  function nextMode() { setMode((mode + 1) % MODE_NAMES.length); }
-  function prevMode() { setMode((mode + MODE_NAMES.length - 1) % MODE_NAMES.length); }
-  function setMode(m) {
-    mode = m;
-    // Modes only fade the previous frame; without a hard clear the old mode
-    // ghosts for seconds because alpha compositing never quite reaches black.
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    particles.length = 0;
-    hudMode.textContent = MODE_NAMES[mode];
-    showHud();
   }
 
   /* ── Keyboard → virtual pad ── */
@@ -716,11 +1044,18 @@
     if (VPAD.active) return;
     VPAD.active = true;
     padHint.classList.add('hidden');
-    showHud();
+    showHud(); syncUI();
   }
 
   addEventListener('keydown', e => {
-    if (e.repeat || e.target.matches('input, select')) return;
+    if (e.target.matches && e.target.matches('input, select, textarea')) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    // The crossfader is the one discrete key worth letting auto-repeat.
+    if (e.code === 'Comma')  { nudgeXfade(-0.05); return; }
+    if (e.code === 'Period') { nudgeXfade(0.05);  return; }
+
+    if (e.repeat) return;
     if (AXIS_KEYS[e.code]) {
       const [ax, dir] = AXIS_KEYS[e.code];
       VPAD.axes[ax] = dir; activateVirtual(); e.preventDefault(); return;
@@ -729,10 +1064,37 @@
       const b = VPAD.buttons[BTN_KEYS[e.code]];
       b.pressed = true; b.value = 1; activateVirtual(); return;
     }
-    if (e.code === 'BracketRight') nextMode();
-    if (e.code === 'BracketLeft')  prevMode();
-    if (/^Digit[1-5]$/.test(e.code)) setMode(+e.code.slice(5) - 1);
-    if (e.code === 'Escape') closePanel();
+    switch (e.code) {
+      case 'BracketLeft':  cycleScene(0, -1); break;
+      case 'BracketRight': cycleScene(0, 1);  break;
+      case 'Semicolon':    cycleScene(1, -1); break;
+      case 'Quote':        cycleScene(1, 1);  break;
+      case 'Digit1': hueStep(0, -20); break;
+      case 'Digit2': hueStep(0, 20);  break;
+      case 'Digit3': hueStep(1, -20); break;
+      case 'Digit4': hueStep(1, 20);  break;
+      case 'KeyF': toggleFreeze(0); break;
+      case 'KeyG': toggleFreeze(1); break;
+      case 'KeyB': toggle('blackout'); break;
+      case 'Space': e.preventDefault(); flashOp = 1; break;
+      case 'KeyM': toggleMic(); break;
+      case 'KeyN': toggle('beatFlash'); break;
+      case 'KeyO': setBeat(CONFIG.beat - 0.1); break;
+      case 'KeyP': setBeat(CONFIG.beat + 0.1); break;
+      case 'KeyT': stepTrails(1, true); break;
+      case 'KeyU': toggle('zoomPulse'); break;
+      case 'KeyI': toggle('invert'); break;
+      case 'KeyH': toggleHudPin(); break;
+      case 'Tab':
+        // Leave Tab alone while the panel is open so its controls stay reachable.
+        if (!panel.classList.contains('open')) { e.preventDefault(); tapTempo(); }
+        break;
+      case 'Backquote':
+        if (panel.classList.contains('open')) closePanel();
+        else { openPanel(); $('midi-sect').scrollIntoView(); }
+        break;
+      case 'Escape': closePanel(); break;
+    }
   });
 
   addEventListener('keyup', e => {
@@ -748,20 +1110,46 @@
     }
   });
 
+  function setBeat(v) {
+    CONFIG.beat = Math.max(0.6, Math.min(4, Math.round(v * 10) / 10));
+    save(); syncUI();
+  }
+
   /* ── HUD ── */
-  let hudTimer = null;
+  let hudTimer = null, hudPinned = false;
   function showHud() {
     hud.classList.remove('hidden');
     clearTimeout(hudTimer);
-    hudTimer = setTimeout(() => hud.classList.add('hidden'), 3000);
+    if (!hudPinned) hudTimer = setTimeout(() => hud.classList.add('hidden'), 3000);
   }
-  function updateHudSub() {
+  function toggleHudPin() {
+    hudPinned = !hudPinned;
+    showHud();
+  }
+
+  let hudSig = '';
+  function hudRefresh() {
     const bits = [];
     if (Audio.connected) bits.push(Audio.channels + 'ch audio');
     if (padConnected) bits.push('gamepad');
     else if (VPAD.active) bits.push('keyboard');
+    if (midiCount) bits.push('midi');
+    if (tapBPM > 0) bits.push('tap ' + Math.round(tapBPM));
+    if (FLAGS.strobe)    bits.push('strobe');
+    if (FLAGS.blackout)  bits.push('blackout');
+    if (FLAGS.invert)    bits.push('invert');
+    if (FLAGS.zoomPulse) bits.push('zoom pulse');
+    if (decks[0].frozen) bits.push('A frozen');
+    if (decks[1].frozen) bits.push('B frozen');
+    const sig = [decks[0].scene, decks[1].scene, xfade.toFixed(2), bits.join('·')].join('|');
+    if (sig === hudSig) return;
+    hudSig = sig;
+    $('hud-a').textContent = SCENES[decks[0].scene].name;
+    $('hud-b').textContent = SCENES[decks[1].scene].name;
+    $('hud-xf').style.left = (xfade * 100) + '%';
     hudSub.textContent = bits.length ? bits.join(' · ') : 'no input';
   }
+
   showHud();
   setTimeout(() => padHint.classList.add('hidden'), 8000);
 
@@ -769,38 +1157,52 @@
      DRAW HELPERS
   ══════════════════════════════════════════ */
   const hsla = (h, s, l, a) => `hsla(${h % 360},${s}%,${l}%,${a})`;
-  const blur = () => P.glow * 34;
+  const blur = q => q.glow * 34;
   // More glow = longer trails; quiet scenes clear themselves faster.
-  const fade = () => 0.16 - P.glow * 0.11;
+  const fade = q => 0.16 - q.glow * 0.11;
 
-  /* ── MODE 0 — COSMIC WAVE ── */
-  function drawCosmicWave() {
-    const W = canvas.width, H = canvas.height;
-    const cy = H / 2 + P.yShift * H * 0.25;
+  // One trails control for every scene. `base` is how hard the scene wants to
+  // clear itself (the Visualizer scenes tie this to glow, the mixer scenes
+  // clear fully) and the trails setting stretches that into a longer smear.
+  function wipe(D, base) {
+    const c = D.cx;
+    c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+    c.fillStyle = `rgba(0,0,0,${base * (1 - TRAIL_P[trailIdx])})`;
+    c.fillRect(0, 0, D.cv.width, D.cv.height);
+  }
 
-    ctx.fillStyle = `rgba(0,0,0,${fade()})`;
-    ctx.fillRect(0, 0, W, H);
+  // The mixer scenes scale their own speed by the deck's, and follow the
+  // Speed parameter only for what the sticks and routes add on top.
+  const vjSpeed = D => D.speed * (1 + M.speed * 0.8);
 
-    const layers = Math.max(1, Math.round(1 + P.complexity * 4));
+  /* ── SCENE 0 — COSMIC WAVE ── */
+  function drawCosmicWave(D) {
+    const ctx = D.cx, q = D.q, W = D.cv.width, H = D.cv.height;
+    const t = D.t, hue = D.hue + D.drift;
+    const cy = H / 2 + q.yShift * H * 0.25;
+
+    wipe(D, fade(q));
+
+    const layers = Math.max(1, Math.round(1 + q.complexity * 4));
     for (let l = 0; l < layers; l++) {
-      const freq  = 1 + l * 0.7 + P.complexity;
-      const phase = t * (0.4 + l * 0.15) * P.speed + l * Math.PI * 0.4;
-      const amp   = (H * 0.13 + l * 9) * P.amplitude;
-      const h     = hue + l * (360 / layers) + P.twist * 180;
-      const alpha = Math.min(0.85, 0.22 + P.glow * 0.7) - l * 0.03;
+      const freq  = 1 + l * 0.7 + q.complexity;
+      const phase = t * (0.4 + l * 0.15) * q.speed + l * Math.PI * 0.4;
+      const amp   = (H * 0.13 + l * 9) * q.amplitude;
+      const h     = hue + l * (360 / layers) + q.twist * 180;
+      const alpha = Math.min(0.85, 0.22 + q.glow * 0.7) - l * 0.03;
 
       ctx.beginPath();
       ctx.strokeStyle = hsla(h, 100, 62, Math.max(0.05, alpha));
-      ctx.lineWidth   = 1.2 + P.glow * 1.8;
+      ctx.lineWidth   = 1.2 + q.glow * 1.8;
       ctx.shadowColor = hsla(h, 100, 70, 0.8);
-      ctx.shadowBlur  = blur();
+      ctx.shadowBlur  = blur(q);
 
       for (let x = 0; x <= W; x += 2) {
         const nx = x / W;
         const y  = cy
           + Math.sin(nx * freq * Math.PI * 2 + phase) * amp
           + Math.sin(nx * freq * 3.7 * Math.PI + phase * 1.3) * amp * 0.3
-          + P.pitch * H * 0.2;
+          + q.pitch * H * 0.2;
         x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
       }
       ctx.stroke();
@@ -808,33 +1210,33 @@
     ctx.shadowBlur = 0;
   }
 
-  /* ── MODE 1 — KALEIDOSCOPE ── */
-  function drawKaleidoscope() {
-    const W = canvas.width, H = canvas.height;
+  /* ── SCENE 1 — KALEIDOSCOPE ── */
+  function drawKaleidoscope(D) {
+    const ctx = D.cx, q = D.q, W = D.cv.width, H = D.cv.height;
+    const t = D.t, hue = D.hue + D.drift;
 
-    ctx.fillStyle = `rgba(0,0,0,${fade()})`;
-    ctx.fillRect(0, 0, W, H);
+    wipe(D, fade(q));
 
-    const slices    = Math.round(4 + P.complexity * 8);
+    const slices    = Math.round(4 + q.complexity * 8);
     const halfAngle = Math.PI / slices;
-    const R         = Math.min(W, H) * 0.42 * P.zoom;
-    const speed     = t * P.speed;
+    const R         = Math.min(W, H) * 0.42 * q.zoom;
+    const speed     = t * q.speed;
 
     // Build one wedge, then mirror + rotate it into every slice. Angles stay
     // inside ±halfAngle so no point strays outside its own wedge.
-    const pts  = Math.round(5 + P.complexity * 8);
+    const pts  = Math.round(5 + q.complexity * 8);
     const seed = [];
     for (let i = 0; i < pts; i++) {
       const fi = (i + 0.5) / pts;
       const r  = R * (0.12 + fi * 0.88);
-      const th = Math.sin(speed * (0.5 + fi * 1.2) + fi * Math.PI * 4 + P.pitch * Math.PI)
+      const th = Math.sin(speed * (0.5 + fi * 1.2) + fi * Math.PI * 4 + q.pitch * Math.PI)
                  * halfAngle * 0.85;
-      seed.push({ x: Math.cos(th) * r, y: Math.sin(th) * r, size: (3 + fi * 16) * P.amplitude, fi });
+      seed.push({ x: Math.cos(th) * r, y: Math.sin(th) * r, size: (3 + fi * 16) * q.amplitude, fi });
     }
 
     ctx.save();
-    ctx.translate(W / 2 + P.xShift * 80, H / 2 + P.yShift * 80);
-    ctx.rotate(P.spin * Math.PI + t * 0.15 * P.speed);
+    ctx.translate(W / 2 + q.xShift * 80, H / 2 + q.yShift * 80);
+    ctx.rotate(q.spin * Math.PI + t * 0.15 * q.speed);
 
     for (let s = 0; s < slices; s++) {
       ctx.save();
@@ -845,9 +1247,9 @@
         const h = hue + p.fi * 180 + s * (360 / slices);
         ctx.beginPath();
         ctx.arc(p.x, p.y, Math.max(0.5, p.size), 0, Math.PI * 2);
-        ctx.fillStyle   = hsla(h, 100, 60, Math.min(0.8, 0.25 + P.glow * 0.6));
+        ctx.fillStyle   = hsla(h, 100, 60, Math.min(0.8, 0.25 + q.glow * 0.6));
         ctx.shadowColor = hsla(h, 100, 75, 0.9);
-        ctx.shadowBlur  = blur();
+        ctx.shadowBlur  = blur(q);
         ctx.fill();
       }
       ctx.restore();
@@ -856,8 +1258,7 @@
     ctx.shadowBlur = 0;
   }
 
-  /* ── MODE 2 — PARTICLE STORM ── */
-  const particles = [];
+  /* ── SCENE 2 — PARTICLE STORM ── */
   const MAX_PARTICLES = 1400;
 
   // This mode used to set ctx.shadowBlur per particle, which costs a full
@@ -883,42 +1284,45 @@
     glowSprites.push(s);
   }
 
-  function spawnParticle() {
-    const W = canvas.width, H = canvas.height;
-    const cx = W / 2 + P.xShift * W * 0.3;
-    const cy = H / 2 + P.yShift * H * 0.3;
+  function spawnParticle(D) {
+    const q = D.q, W = D.cv.width, H = D.cv.height;
+    const cx = W / 2 + q.xShift * W * 0.3;
+    const cy = H / 2 + q.yShift * H * 0.3;
     const angle = Math.random() * Math.PI * 2;
-    const speed = (1 + Math.random() * 5) * (0.4 + P.amplitude);
-    particles.push({
+    const speed = (1 + Math.random() * 5) * (0.4 + q.amplitude);
+    D.particles.push({
       x: cx + (Math.random() - 0.5) * 60,
       y: cy + (Math.random() - 0.5) * 60,
-      vx: Math.cos(angle) * speed + P.twist * 5 + (Math.random() - 0.5) * P.scatter * 8,
-      vy: Math.sin(angle) * speed + P.pitch * 5 + (Math.random() - 0.5) * P.scatter * 8,
+      vx: Math.cos(angle) * speed + q.twist * 5 + (Math.random() - 0.5) * q.scatter * 8,
+      vy: Math.sin(angle) * speed + q.pitch * 5 + (Math.random() - 0.5) * q.scatter * 8,
       life: 1, decay: 0.004 + Math.random() * 0.008,
-      size: 1.5 + Math.random() * 5 * (0.4 + P.amplitude),
-      hue: hue + Math.random() * 300,
+      size: 1.5 + Math.random() * 5 * (0.4 + q.amplitude),
+      hue: D.hue + D.drift + Math.random() * 300,
     });
   }
 
-  function drawParticleStorm() {
-    const W = canvas.width, H = canvas.height;
-    ctx.fillStyle = `rgba(0,0,0,${fade()})`;
-    ctx.fillRect(0, 0, W, H);
+  function drawParticleStorm(D) {
+    const ctx = D.cx, q = D.q, W = D.cv.width, H = D.cv.height, particles = D.particles;
+    wipe(D, fade(q));
 
-    const spawn = Math.round(1 + P.complexity * 8 + P.amplitude * 2);
-    for (let i = 0; i < spawn && particles.length < MAX_PARTICLES; i++) spawnParticle();
+    if (!D.frozen) {
+      const spawn = Math.round(1 + q.complexity * 8 + q.amplitude * 2);
+      for (let i = 0; i < spawn && particles.length < MAX_PARTICLES; i++) spawnParticle(D);
+    }
 
     ctx.globalCompositeOperation = 'lighter';
     // Glow rides the same param the old shadowBlur did, so the right trigger
     // still swells the bloom the way it always has.
-    const spread = 1.5 + P.glow * 1.5;
-    const hueShift = t * 30 * P.colorSpeed;
+    const spread = 1.5 + q.glow * 1.5;
+    const hueShift = D.t * 30 * q.colorSpeed;
 
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
-      p.x += p.vx * P.speed; p.y += p.vy * P.speed;
-      p.vy += 0.04;
-      p.life -= p.decay;
+      if (!D.frozen) {
+        p.x += p.vx * q.speed; p.y += p.vy * q.speed;
+        p.vy += 0.04;
+        p.life -= p.decay;
+      }
       if (p.life <= 0 || p.x < -60 || p.x > W + 60 || p.y > H + 120) {
         // Draw order doesn't matter here, so swap-pop rather than splice —
         // splice memmoves the tail on every death, which at 1400 particles
@@ -933,26 +1337,26 @@
       // Additive blending accumulates where the old source-over fills did not,
       // so this rides far lower than the 0.35–0.95 the shadowBlur version used
       // — overlapping particles supply the brightness instead of each one.
-      ctx.globalAlpha = p.life * (0.022 + P.glow * 0.045);
+      ctx.globalAlpha = p.life * (0.022 + q.glow * 0.045);
       ctx.drawImage(glowSprites[idx], p.x - r, p.y - r, r * 2, r * 2);
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  /* ── MODE 3 — LISSAJOUS ── */
-  function drawLissajous() {
-    const W = canvas.width, H = canvas.height;
-    ctx.fillStyle = `rgba(0,0,0,${fade()})`;
-    ctx.fillRect(0, 0, W, H);
+  /* ── SCENE 3 — LISSAJOUS ── */
+  function drawLissajous(D) {
+    const ctx = D.cx, q = D.q, W = D.cv.width, H = D.cv.height;
+    const hue = D.hue + D.drift;
+    wipe(D, fade(q));
 
-    const a = 2 + Math.floor(P.complexity * 3 + Math.abs(P.xShift) * 3);
-    const b = 1 + Math.floor(P.complexity * 3 + Math.abs(P.yShift) * 3);
-    const d = t * P.speed * 0.4;
-    const scl = Math.min(W, H) * 0.42 * P.zoom;
-    const cx  = W / 2 + P.twist * W * 0.15;
-    const cy  = H / 2 + P.pitch * H * 0.15;
-    const amp = 0.35 + P.amplitude * 0.6;
+    const a = 2 + Math.floor(q.complexity * 3 + Math.abs(q.xShift) * 3);
+    const b = 1 + Math.floor(q.complexity * 3 + Math.abs(q.yShift) * 3);
+    const d = D.t * q.speed * 0.4;
+    const scl = Math.min(W, H) * 0.42 * q.zoom;
+    const cx  = W / 2 + q.twist * W * 0.15;
+    const cy  = H / 2 + q.pitch * H * 0.15;
+    const amp = 0.35 + q.amplitude * 0.6;
 
     const steps = 600;
     let px = 0, py = 0;
@@ -961,13 +1365,13 @@
       const x  = cx + Math.sin(a * th + d) * scl * amp;
       const y  = cy + Math.sin(b * th) * scl * amp;
       if (i) {
-        const h = hue + (i / steps) * 240 * P.colorSpeed;
+        const h = hue + (i / steps) * 240 * q.colorSpeed;
         ctx.beginPath();
         ctx.moveTo(px, py); ctx.lineTo(x, y);
-        ctx.strokeStyle = hsla(h, 100, 65, Math.min(0.9, 0.3 + P.glow * 0.7));
-        ctx.lineWidth   = 1 + P.glow * 2.5;
+        ctx.strokeStyle = hsla(h, 100, 65, Math.min(0.9, 0.3 + q.glow * 0.7));
+        ctx.lineWidth   = 1 + q.glow * 2.5;
         ctx.shadowColor = hsla(h, 100, 75, 0.6);
-        ctx.shadowBlur  = blur();
+        ctx.shadowBlur  = blur(q);
         ctx.stroke();
       }
       px = x; py = y;
@@ -975,42 +1379,42 @@
     ctx.shadowBlur = 0;
   }
 
-  /* ── MODE 4 — TUNNEL RUSH ── */
-  function drawTunnel() {
-    const W = canvas.width, H = canvas.height;
-    const cx = W / 2 + P.xShift * 80, cy = H / 2 + P.yShift * 80;
+  /* ── SCENE 4 — TUNNEL RUSH ── */
+  function drawTunnelRush(D) {
+    const ctx = D.cx, q = D.q, W = D.cv.width, H = D.cv.height;
+    const t = D.t, hue = D.hue + D.drift;
+    const cx = W / 2 + q.xShift * 80, cy = H / 2 + q.yShift * 80;
 
-    ctx.fillStyle = `rgba(0,0,0,${fade() + 0.04})`;
-    ctx.fillRect(0, 0, W, H);
+    wipe(D, fade(q) + 0.04);
 
-    const rings  = Math.round(8 + P.complexity * 8);
-    const offset = (t * P.speed * 0.6) % 1;
+    const rings  = Math.round(8 + q.complexity * 8);
+    const offset = (t * q.speed * 0.6) % 1;
 
     for (let r = rings; r >= 0; r--) {
       const fi    = ((r / rings) + offset) % 1;
-      const size  = Math.pow(fi, 1.8) * Math.min(W, H) * 0.6 * P.zoom;
-      const h     = hue + fi * 360 * P.colorSpeed + P.twist * 180;
-      const sides = Math.round(4 + P.complexity * 4);
-      const rot   = fi * Math.PI * 2 * (0.5 + P.pitch * 0.5) + t * 0.1 + P.spin;
+      const size  = Math.pow(fi, 1.8) * Math.min(W, H) * 0.6 * q.zoom;
+      const h     = hue + fi * 360 * q.colorSpeed + q.twist * 180;
+      const sides = Math.round(4 + q.complexity * 4);
+      const rot   = fi * Math.PI * 2 * (0.5 + q.pitch * 0.5) + t * 0.1 + q.spin;
 
       ctx.beginPath();
       for (let i = 0; i <= sides; i++) {
         const ang = (i / sides) * Math.PI * 2 + rot;
-        const s   = size * (0.4 + P.amplitude * 0.6);
+        const s   = size * (0.4 + q.amplitude * 0.6);
         const x = cx + Math.cos(ang) * s, y = cy + Math.sin(ang) * s;
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
       }
       ctx.closePath();
-      ctx.strokeStyle = hsla(h, 100, 60, Math.min(0.9, (0.25 + P.glow * 0.65) - fi * 0.25));
-      ctx.lineWidth   = (1 - fi) * 2.5 + 0.4 + P.glow * 2;
+      ctx.strokeStyle = hsla(h, 100, 60, Math.min(0.9, (0.25 + q.glow * 0.65) - fi * 0.25));
+      ctx.lineWidth   = (1 - fi) * 2.5 + 0.4 + q.glow * 2;
       ctx.shadowColor = hsla(h, 100, 75, 0.8);
-      ctx.shadowBlur  = blur();
+      ctx.shadowBlur  = blur(q);
       ctx.stroke();
 
       // Inner rings only — filling the screen-sized outer rings stacks up
       // faster than the trail fade can clear and washes the scene grey.
       if (r % 3 === 0 && size > 10 && fi < 0.5) {
-        ctx.fillStyle = hsla(h, 100, 50, 0.03 + P.glow * 0.05);
+        ctx.fillStyle = hsla(h, 100, 50, 0.03 + q.glow * 0.05);
         ctx.fill();
       }
     }
@@ -1018,13 +1422,391 @@
   }
 
   /* ══════════════════════════════════════════
+     MIXER SCENES
+
+     Ported from the old VJ mixer. They were written to be blended onto a
+     shared canvas with the 'screen' operation, so each one still draws that
+     way, now into its own deck. drawDeck() wraps them in the stick-driven
+     position, twist and zoom, since none of them has those parameters itself.
+  ══════════════════════════════════════════ */
+  const screenMode = c => { c.globalAlpha = 1; c.globalCompositeOperation = 'screen'; };
+
+  /* ── SCENE 5 — TUNNEL ── */
+  function drawTunnel(D) {
+    const ctx = D.cx, W = D.cv.width, H = D.cv.height;
+    screenMode(ctx);
+    const cx = W / 2, cy = H / 2, maxR = Math.hypot(cx, cy) * 1.1;
+    const tSpeed = vjSpeed(D) * (1 + aud.bass * 1.8);
+    const t = D.ms * 0.001 * tSpeed;
+    const rings = 10 + (D.intensity * 8 | 0), bb = aud.flash * 40;
+    for (let i = rings; i >= 0; i--) {
+      const ph = ((t * 0.5 + i / rings) % 1), r = ph * maxR;
+      const lw = (1.5 + D.intensity * 4) * (1 - ph * 0.6);
+      const br = Math.min(95, 25 + ph * 55 + bb * (1 - ph));
+      ctx.strokeStyle = `hsl(${(D.hue + i * 28 + t * 25) % 360},100%,${br}%)`;
+      ctx.lineWidth = lw;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+
+  /* ── SCENE 6 — PLASMA ── */
+  function drawPlasma(D) {
+    const ctx = D.cx, W = D.cv.width, H = D.cv.height;
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'screen';
+    const t = D.ms * 0.001 * vjSpeed(D);
+    const blobs = 4 + (D.intensity * 2 | 0);
+    const spread = Math.min(W, H) * (0.33 + aud.mid * 0.25);
+    const baseR  = Math.min(W, H) * (0.2 + D.intensity * 0.15 + aud.bass * 0.18);
+    for (let i = 0; i < blobs; i++) {
+      const ang = t * (0.2 + i * 0.11) + i * (Math.PI * 2 / blobs);
+      const cx = W / 2 + Math.cos(ang) * spread, cy = H / 2 + Math.sin(ang * 0.65 + t * 0.28) * spread;
+      const r = baseR * (0.75 + Math.sin(t * 1.1 + i) * 0.35);
+      const hue = (D.hue + i * (360 / blobs) + t * 18) % 360;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0,   `hsla(${hue},100%,${70 + aud.flash * 25}%,1)`);
+      g.addColorStop(0.5, `hsla(${(hue + 45) % 360},100%,32%,0.7)`);
+      g.addColorStop(1,   `hsla(${hue},100%,5%,0)`);
+      ctx.save();
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+      ctx.fillStyle = g; ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      ctx.restore();
+    }
+  }
+
+  /* ── SCENE 7 — STARS ── */
+  function spawnStar(s, hue, speedMult, W, H) {
+    const a = Math.random() * Math.PI * 2, spd = (0.6 + Math.random() * 3.5) * (speedMult || 1);
+    s.x = W / 2 + (Math.random() - 0.5) * 30; s.y = H / 2 + (Math.random() - 0.5) * 30;
+    s.vx = Math.cos(a) * spd; s.vy = Math.sin(a) * spd;
+    s.life = 0; s.maxLife = 80 + Math.random() * 140;
+    s.hue = (hue + Math.random() * 60 - 30 + 360) % 360; s.sz = 1 + Math.random() * 2.5;
+  }
+
+  function drawStars(D) {
+    const ctx = D.cx, W = D.cv.width, H = D.cv.height;
+    if (!D.stars.length) {
+      for (let i = 0; i < 280; i++) {
+        const s = { x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 100, hue: 0, sz: 1 };
+        spawnStar(s, D.hue, 1, W, H);
+        s.life = Math.random() * s.maxLife;
+        D.stars.push(s);
+      }
+    }
+    ctx.globalCompositeOperation = 'screen';
+    const sp = vjSpeed(D), bm = 1 + aud.flash * 3.5, sm = 1 + aud.mid * 0.8;
+    for (const s of D.stars) {
+      if (!D.frozen) { s.x += s.vx * sp * bm; s.y += s.vy * sp * bm; s.life++; }
+      if (s.x < -20 || s.x > W + 20 || s.y < -20 || s.y > H + 20 || s.life >= s.maxLife)
+        if (!D.frozen) spawnStar(s, D.hue, 1 + aud.bass * 2, W, H);
+      const tt = s.life / s.maxLife;
+      const fd = tt < 0.15 ? tt / 0.15 : 1 - (tt - 0.15) / 0.85;
+      const sz = s.sz * (1 + tt * 2.5 * D.intensity) * sm;
+      ctx.globalAlpha = fd * D.intensity;
+      ctx.fillStyle = `hsl(${s.hue % 360},100%,78%)`;
+      ctx.fillRect(s.x - sz / 2, s.y - sz / 2, sz, sz);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* ── SCENE 8 — WAVES ── */
+  function drawWaves(D) {
+    const ctx = D.cx, W = D.cv.width, H = D.cv.height;
+    screenMode(ctx);
+    const t = D.ms * 0.001 * vjSpeed(D), n = 6 + (D.intensity * 10 | 0);
+    const amp = H * 0.13 * (0.4 + D.intensity) * (1 + aud.mid * 2.2);
+    const vOff = H * 0.28 * (1 + aud.bass * 0.6);
+    const steps = Math.ceil(W / 3);
+    for (let i = 0; i < n; i++) {
+      const hue = (D.hue + i * (300 / n)) % 360, ph = i / n * Math.PI * 2, freq = 1.5 + i * 0.38;
+      const yBase = H / 2 + Math.sin(t * 0.28 + i) * vOff;
+      ctx.strokeStyle = `hsl(${hue},100%,${55 + aud.flash * 30}%)`;
+      ctx.lineWidth = 1 + D.intensity * 2 * (1 - i / n * 0.6);
+      ctx.beginPath();
+      for (let xi = 0; xi <= steps; xi++) {
+        const x = xi / steps * W, y = yBase + Math.sin(x / W * Math.PI * 2 * freq + t + ph) * amp;
+        xi === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  /* ── SCENE 9 — GRID ── */
+  function drawGrid(D) {
+    const ctx = D.cx, W = D.cv.width, H = D.cv.height;
+    screenMode(ctx);
+    const t = D.ms * 0.001 * vjSpeed(D), wa = (22 + D.intensity * 50) * (1 + aud.bass * 2.5);
+    const br = 42 + aud.flash * 35, cols = 10, rows = 7, segs = 36;
+    for (let i = 0; i <= cols; i++) {
+      ctx.strokeStyle = `hsl(${(D.hue + i * 11) % 360},100%,${br}%)`; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let j = 0; j <= segs; j++) {
+        const p = j / segs, x = i * (W / cols) + Math.sin(p * Math.PI * 2 + t * 1.2 + i * 0.55) * wa, y = p * H;
+        j === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    for (let j = 0; j <= rows; j++) {
+      ctx.strokeStyle = `hsl(${(D.hue + j * 22 + 90) % 360},100%,${br}%)`; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i <= segs; i++) {
+        const p = i / segs, y = j * (H / rows) + Math.sin(p * Math.PI * 2 + t * 0.85 + j * 0.65) * wa, x = p * W;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  /* ── SCENE 10 — VORTEX ── */
+  function drawVortex(D) {
+    const ctx = D.cx, W = D.cv.width, H = D.cv.height;
+    screenMode(ctx);
+    const cx = W / 2, cy = H / 2;
+    const t = D.ms * 0.001 * vjSpeed(D) * (1 + aud.bass * 2);
+    const arms = 2 + (D.intensity * 4 | 0), maxR = Math.hypot(cx, cy);
+    const twists = 3 + D.intensity * 3 + aud.flash * 4, steps = 280;
+    for (let arm = 0; arm < arms; arm++) {
+      const base = (arm / arms) * Math.PI * 2 + t;
+      ctx.strokeStyle = `hsl(${(D.hue + arm * (360 / arms)) % 360},100%,${58 + aud.flash * 30}%)`;
+      ctx.lineWidth = 1 + D.intensity;
+      ctx.beginPath();
+      for (let i = 0; i <= steps; i++) {
+        const p = i / steps, r = p * maxR, ang = base + p * Math.PI * 2 * twists;
+        i === 0 ? ctx.moveTo(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r)
+                : ctx.lineTo(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function drawDeck(D) {
+    const S = SCENES[D.scene];
+    if (S.viz) { S.draw(D); return; }
+
+    const ctx = D.cx, W = D.cv.width, H = D.cv.height;
+    wipe(D, 1);
+    ctx.save();
+    ctx.translate(W / 2 + P.xShift * 80, H / 2 + P.yShift * 80);
+    ctx.rotate(P.spin * Math.PI);
+    const z = P.zoom / TARGETS.zoom.rest;      // 1 at rest, so an untouched scene is unscaled
+    ctx.scale(z, z);
+    ctx.translate(-W / 2, -H / 2);
+    S.draw(D);
+    ctx.restore();
+  }
+
+  /* ══════════════════════════════════════════
+     COMPOSITOR
+  ══════════════════════════════════════════ */
+  function compose() {
+    const W = canvas.width, H = canvas.height;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    if (FLAGS.blackout) return;
+
+    strobePh++;
+    if (FLAGS.strobe && strobePh % 6 < 3) {
+      ctx.globalAlpha = 0.92; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    // Zoom pulse on the beat, about the centre
+    if (FLAGS.zoomPulse && aud.flash > 0) zoomScale = 1 + aud.flash * 0.04;
+    else zoomScale += (1 - zoomScale) * 0.2;
+    if (Math.abs(zoomScale - 1) > 0.001) {
+      ctx.setTransform(zoomScale, 0, 0, zoomScale, W / 2 * (1 - zoomScale), H / 2 * (1 - zoomScale));
+    }
+
+    // Equal-power crossfade, so the middle of the fader is not a dip in brightness.
+    const gains = [Math.cos(xfade * Math.PI / 2), Math.sin(xfade * Math.PI / 2)];
+    ctx.globalCompositeOperation = 'screen';
+    decks.forEach((D, i) => {
+      const g = gains[i] * D.intensity;
+      if (g < 0.004) {
+        // Out of the mix: don't spend a frame on it, and don't leave a ghost
+        // behind for when it comes back.
+        D.cx.globalCompositeOperation = 'source-over'; D.cx.globalAlpha = 1;
+        D.cx.fillStyle = '#000'; D.cx.fillRect(0, 0, D.cv.width, D.cv.height);
+        return;
+      }
+      drawDeck(D);
+      ctx.globalAlpha = g;
+      ctx.drawImage(D.cv, 0, 0);
+    });
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+
+    if (FLAGS.invert) {
+      ctx.globalCompositeOperation = 'difference';
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    if (FLAGS.beatFlash && aud.flash > 0) {
+      ctx.globalAlpha = aud.flash * 0.16;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, W, H);
+    }
+    if (flashOp > 0) {
+      ctx.globalAlpha = flashOp;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, W, H);
+      flashOp = Math.max(0, flashOp - 0.055);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* ══════════════════════════════════════════
+     MIDI
+
+     Requested only once it is switched on, because Chrome now asks permission
+     for MIDI even without sysex, and a visitor who only wants the gamepad
+     should not be asked on every load. Switching it on is remembered.
+  ══════════════════════════════════════════ */
+  // Each CC param: { id, label, def (default CC number), cc (live; null = unmapped), set(0-1) }
+  const CC_PARAMS = [
+    { id: 'xfade',   label: 'Crossfader',       def: 1,  set: v => setXfade(v) },
+    { id: 'a-int',   label: 'A Level',          def: 7,  set: v => { decks[0].intensity = v; } },
+    { id: 'a-hue',   label: 'A Hue',            def: 10, set: v => { decks[0].hue = v * 360; } },
+    { id: 'a-speed', label: 'A Speed',          def: 74, set: v => { decks[0].speed = 0.1 + v * 6.9; } },
+    { id: 'b-int',   label: 'B Level',          def: 11, set: v => { decks[1].intensity = v; } },
+    { id: 'b-hue',   label: 'B Hue',            def: 73, set: v => { decks[1].hue = v * 360; } },
+    { id: 'b-speed', label: 'B Speed',          def: 71, set: v => { decks[1].speed = 0.1 + v * 6.9; } },
+    { id: 'trails',  label: 'Trails',           def: 75, set: v => { trailIdx = Math.round(v * (TRAIL_P.length - 1)); } },
+    { id: 'beat',    label: 'Beat sensitivity', def: 76, set: v => { CONFIG.beat = Math.round((0.6 + (1 - v) * 3.4) * 10) / 10; } },
+  ];
+  // Each NOTE param: { id, label, def (default note), note (live), fn() }
+  const NOTE_PARAMS = [
+    { id: 'strobe',   label: 'Strobe',           def: 48, fn: () => toggle('strobe') },
+    { id: 'trails-c', label: 'Trails step',      def: 50, fn: () => stepTrails(1, true) },
+    { id: 'a-scene',  label: 'Deck A next scene', def: 52, fn: () => cycleScene(0, 1) },
+    { id: 'b-scene',  label: 'Deck B next scene', def: 53, fn: () => cycleScene(1, 1) },
+    { id: 'blackout', label: 'Blackout',         def: 55, fn: () => toggle('blackout') },
+    { id: 'flash',    label: 'Flash',            def: 57, fn: () => { flashOp = 1; } },
+    { id: 'freeze-a', label: 'Freeze A',         def: 59, fn: () => toggleFreeze(0) },
+    { id: 'freeze-b', label: 'Freeze B',         def: 60, fn: () => toggleFreeze(1) },
+    { id: 'mic',      label: 'Audio on / off',   def: 62, fn: () => toggleMic() },
+    { id: 'invert',   label: 'Invert',           def: 64, fn: () => toggle('invert') },
+    { id: 'zoom',     label: 'Zoom pulse',       def: 65, fn: () => toggle('zoomPulse') },
+  ];
+
+  let CC_MAP = {}, NOTE_MAP = {};
+  function loadMidiMap() {
+    const saved = CONFIG.midi || { cc: {}, note: {} };
+    CC_PARAMS.forEach(p   => { p.cc   = (p.id in saved.cc)   ? saved.cc[p.id]   : p.def; });
+    NOTE_PARAMS.forEach(p => { p.note = (p.id in saved.note) ? saved.note[p.id] : p.def; });
+    buildMaps();
+  }
+  function buildMaps() {
+    CC_MAP = {}; NOTE_MAP = {};
+    CC_PARAMS.forEach(p   => { if (p.cc   !== null) CC_MAP[p.cc]     = v => { p.set(v / 127); showHud(); syncUI(); }; });
+    NOTE_PARAMS.forEach(p => { if (p.note !== null) NOTE_MAP[p.note] = p.fn; });
+  }
+  function saveMidiMap() {
+    CONFIG.midi = { cc: {}, note: {} };
+    CC_PARAMS.forEach(p   => { if (p.cc   !== p.def) CONFIG.midi.cc[p.id]   = p.cc; });
+    NOTE_PARAMS.forEach(p => { if (p.note !== p.def) CONFIG.midi.note[p.id] = p.note; });
+    save(); buildMaps();
+  }
+  loadMidiMap();
+
+  let learnTarget = null;          // { type: 'cc' | 'note', param }
+  let midiCount = 0, midiState = CONFIG.midiOn ? 'asking' : 'off';
+
+  function enableMidi() {
+    CONFIG.midiOn = true; save();
+    if (!navigator.requestMIDIAccess) { midiState = 'unsupported'; renderMidi(); return; }
+    midiState = 'asking'; renderMidi();
+    navigator.requestMIDIAccess({ sysex: false }).then(access => {
+      function bind() {
+        midiCount = 0;
+        for (const inp of access.inputs.values()) { inp.onmidimessage = onMIDI; midiCount++; }
+        midiState = midiCount ? 'ready' : 'none';
+        renderMidi(); syncUI();
+      }
+      bind(); access.onstatechange = bind;
+    }).catch(() => { midiState = 'denied'; renderMidi(); });
+  }
+
+  function onMIDI(msg) {
+    const [st, d1, d2] = msg.data, type = st & 0xf0;
+    if (type === 0xb0) {
+      if (learnTarget && learnTarget.type === 'cc') {
+        learnTarget.param.cc = d1;
+        learnTarget = null; saveMidiMap(); renderMidi(); return;
+      }
+      if (CC_MAP[d1]) CC_MAP[d1](d2);
+    } else if (type === 0x90 && d2 > 0) {
+      if (learnTarget && learnTarget.type === 'note') {
+        learnTarget.param.note = d1;
+        learnTarget = null; saveMidiMap(); renderMidi(); return;
+      }
+      if (NOTE_MAP[d1]) NOTE_MAP[d1]();
+    }
+  }
+
+  function renderMidi() {
+    const st = $('midi-status'), btn = $('midi-btn');
+    const msg = {
+      off:         ['off', 'MIDI is off.'],
+      asking:      ['off', 'Waiting for the browser to allow MIDI…'],
+      unsupported: ['err', 'This browser has no Web MIDI. Chrome or Edge will.'],
+      denied:      ['err', 'MIDI was blocked. Allow it in the address bar, then enable again.'],
+      none:        ['off', 'MIDI is on, but no devices are plugged in.'],
+      ready:       ['ok',  `${midiCount} MIDI device${midiCount > 1 ? 's' : ''} connected.`],
+    }[midiState];
+    st.className = 'status ' + msg[0];
+    st.textContent = msg[1];
+    btn.style.display = (midiState === 'ready' || midiState === 'none') ? 'none' : '';
+
+    function row(type, p) {
+      const assigned = type === 'cc' ? p.cc : p.note;
+      const div = document.createElement('div');
+      div.className = 'midi-row' + (learnTarget && learnTarget.param === p ? ' waiting' : '');
+      const label = document.createElement('span');
+      label.textContent = p.label;
+      const bind = document.createElement('span');
+      bind.className = 'midi-bind' + (assigned !== null ? ' set' : '');
+      bind.textContent = assigned === null ? '—' : (type === 'cc' ? 'CC ' : 'NOTE ') + assigned;
+      const clr = document.createElement('span');
+      clr.className = 'midi-clear'; clr.textContent = '✕'; clr.title = 'Unmap';
+      clr.onclick = ev => {
+        ev.stopPropagation();
+        if (type === 'cc') p.cc = null; else p.note = null;
+        saveMidiMap(); renderMidi();
+      };
+      div.append(label, bind, clr);
+      div.onclick = () => {
+        learnTarget = (learnTarget && learnTarget.param === p) ? null : { type, param: p };
+        renderMidi();
+      };
+      return div;
+    }
+    const cc = $('midi-cc'), nt = $('midi-note');
+    cc.innerHTML = ''; nt.innerHTML = '';
+    CC_PARAMS.forEach(p => cc.appendChild(row('cc', p)));
+    NOTE_PARAMS.forEach(p => nt.appendChild(row('note', p)));
+  }
+
+  $('midi-btn').onclick = enableMidi;
+  $('midi-reset').onclick = () => {
+    CONFIG.midi = { cc: {}, note: {} }; save(); learnTarget = null;
+    loadMidiMap(); renderMidi();
+  };
+  if (CONFIG.midiOn) enableMidi();
+
+  /* ══════════════════════════════════════════
      SETTINGS PANEL
   ══════════════════════════════════════════ */
-  const $ = id => document.getElementById(id);
   const panel = $('panel');
 
-  function openPanel()  { panel.classList.add('open'); refreshDevices(); renderPanel(); }
-  function closePanel() { panel.classList.remove('open'); }
+  function openPanel()  { panel.classList.add('open'); refreshDevices(); renderPanel(); syncUI(); }
+  function closePanel() { panel.classList.remove('open'); learnTarget = null; }
 
   $('gear-btn').onclick    = () => panel.classList.contains('open') ? closePanel() : openPanel();
   $('panel-close').onclick = closePanel;
@@ -1080,14 +1862,11 @@
     };
   }
 
-  $('audio-btn').onclick = () => {
-    if (Audio.connected) disconnectAudio();
-    else connectAudio(CONFIG.deviceId, CONFIG.channels);
-  };
+  $('audio-btn').onclick = toggleMic;
 
   function updateAudioBtn() {
     $('audio-btn').classList.toggle('active', Audio.connected);
-    updateHudSub();
+    syncUI();
   }
 
   async function refreshDevices() {
@@ -1185,7 +1964,7 @@
     });
   }
 
-  function renderPanel() { renderStatus(); renderChannels(); renderRoutes(); }
+  function renderPanel() { renderStatus(); renderChannels(); renderRoutes(); renderMidi(); }
 
   $('add-route').onclick = () => {
     CONFIG.routes.push({ ch: 0, target: 'amplitude', band: 'full', depth: 0.7 });
@@ -1214,6 +1993,7 @@
   bindSlider('gain',   'gain',      v => v.toFixed(1) + '×');
   bindSlider('smooth', 'smoothing', v => v.toFixed(2));
   bindSlider('idle',   'idle',      v => v.toFixed(2));
+  bindSlider('beat',   'beat',      v => v.toFixed(1));
 
   $('ch-req').value = CONFIG.channels;
   $('ch-req-val').textContent = CONFIG.channels;
@@ -1226,17 +2006,99 @@
   $('reset-btn').onclick = () => {
     CONFIG = JSON.parse(JSON.stringify(DEFAULTS));
     save();
-    ['gain', 'smooth', 'idle'].forEach(id => {
-      const key = id === 'smooth' ? 'smoothing' : id;
+    [['gain', 'gain'], ['smooth', 'smoothing'], ['idle', 'idle'], ['beat', 'beat']].forEach(([id, key]) => {
       $(id).value = CONFIG[key];
     });
     $('gain-val').textContent   = CONFIG.gain.toFixed(1) + '×';
     $('smooth-val').textContent = CONFIG.smoothing.toFixed(2);
     $('idle-val').textContent   = CONFIG.idle.toFixed(2);
+    $('beat-val').textContent   = CONFIG.beat.toFixed(1);
     $('ch-req').value = CONFIG.channels;
     $('ch-req-val').textContent = CONFIG.channels;
+    learnTarget = null;
+    loadMidiMap();
     renderPanel();
   };
+
+  /* ── Mix and deck controls ── */
+  $('xf').oninput     = () => setXfade(+$('xf').value);
+  $('trails').oninput = () => { trailIdx = +$('trails').value; showHud(); syncUI(); };
+  document.querySelectorAll('[data-fx]').forEach(b => {
+    b.onclick = () => { toggle(b.dataset.fx); b.blur(); };
+  });
+  $('flash-btn').onclick  = e => { flashOp = 1; e.currentTarget.blur(); };
+  $('tap-btn').onclick    = e => { tapTempo(); e.currentTarget.blur(); };
+  $('tap-clear').onclick  = e => { clearTap(); e.currentTarget.blur(); };
+
+  const deckEls = [];
+  function buildDeckUI() {
+    const wrap = $('decks');
+    wrap.innerHTML = '';
+    decks.forEach((D, i) => {
+      const el = document.createElement('div');
+      el.className = 'deck';
+      el.innerHTML = `
+        <div class="deck-head">
+          <b>${'AB'[i]}</b>
+          <select data-k="scene">${SCENES.map((s, j) => `<option value="${j}">${s.name}</option>`).join('')}</select>
+          <button class="btn ghost sm" data-k="frozen" title="Freeze this deck">Freeze</button>
+        </div>
+        <label class="fld"><span>Hue <em data-o="hue"></em></span>
+          <input type="range" data-k="hue" min="0" max="360" step="1" /></label>
+        <label class="fld"><span>Speed <em data-o="speed"></em></span>
+          <input type="range" data-k="speed" min="0.1" max="7" step="0.1" /></label>
+        <label class="fld"><span>Level <em data-o="intensity"></em></span>
+          <input type="range" data-k="intensity" min="0" max="1" step="0.01" /></label>`;
+      const refs = { D };
+      el.querySelectorAll('[data-k]').forEach(inp => {
+        const k = inp.dataset.k;
+        refs[k] = inp;
+        if (k === 'scene')       inp.onchange = () => { setScene(i, +inp.value); inp.blur(); };
+        else if (k === 'frozen') inp.onclick  = () => { toggleFreeze(i); inp.blur(); };
+        else inp.oninput = () => { D[k] = +inp.value; syncUI(); };
+      });
+      refs.out = {};
+      el.querySelectorAll('[data-o]').forEach(o => { refs.out[o.dataset.o] = o; });
+      wrap.appendChild(el);
+      deckEls.push(refs);
+    });
+  }
+  buildDeckUI();
+
+  const setText = (el, txt) => { if (el && el.textContent !== txt) el.textContent = txt; };
+
+  // Brings the HUD and, if it is open, the panel into line with the state. The
+  // pad, the keyboard and MIDI all change that state behind the panel's back, so
+  // a control being dragged is left alone and every other one just follows.
+  function syncUI() {
+    hudRefresh();
+    if (!panel.classList.contains('open')) return;
+    const act = document.activeElement;
+    const setVal = (el, v) => { if (el && el !== act && el.value !== String(v)) el.value = v; };
+
+    setVal($('xf'), xfade);
+    setText($('xf-val'), xfade < 0.02 ? 'A' : xfade > 0.98 ? 'B' : Math.round(xfade * 100) + '% toward B');
+    setVal($('trails'), trailIdx);
+    setText($('trails-val'), TRAIL_P[trailIdx].toFixed(2));
+    document.querySelectorAll('[data-fx]').forEach(b => b.classList.toggle('on', !!FLAGS[b.dataset.fx]));
+    setText($('tap-note'), tapBPM > 0
+      ? `Tapped tempo: ${tapBPM.toFixed(0)} BPM`
+      : 'Tap in time to pulse the beat flash and zoom without any audio.');
+    setVal($('beat'), CONFIG.beat);
+    setText($('beat-val'), CONFIG.beat.toFixed(1));
+
+    deckEls.forEach(r => {
+      const D = r.D;
+      setVal(r.scene, D.scene);
+      setVal(r.hue, Math.round(D.hue));
+      setVal(r.speed, D.speed);
+      setVal(r.intensity, D.intensity);
+      setText(r.out.hue, String(Math.round(D.hue)));
+      setText(r.out.speed, D.speed.toFixed(1));
+      setText(r.out.intensity, D.intensity.toFixed(2));
+      r.frozen.classList.toggle('on', D.frozen);
+    });
+  }
 
   // Live meters while the panel is open
   function updateMeters() {
@@ -1254,10 +2116,11 @@
   navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
   refreshDevices();
   renderPanel();
+  syncUI();
 
   /* ── Link pill ── */
-  const linkPill = document.getElementById('link-pill');
-  const linkText = document.getElementById('link-text');
+  const linkPill = $('link-pill');
+  const linkText = $('link-text');
   let linkShown = null;
 
   function updateLinkPill() {
@@ -1285,21 +2148,35 @@
   /* ══════════════════════════════════════════
      MAIN LOOP
   ══════════════════════════════════════════ */
-  const drawFns = [drawCosmicWave, drawKaleidoscope, drawParticleStorm, drawLissajous, drawTunnel];
-  let meterTick = 0;
+  let meterTick = 0, lastTs = performance.now();
 
-  function tick() {
+  function tick(dtOverride) {
+    const now = performance.now();
+    const dt  = dtOverride !== undefined ? dtOverride : Math.min(now - lastTs, 50);
+    lastTs = now;
+
     pollGamepad();
     updateLinkPill();
     readAudio();
+    updateAud(now);
     resolveParams();
 
-    t   += 0.016 * P.speed;
-    hue += 0.4   * P.colorSpeed;
+    for (const D of decks) {
+      Object.assign(D.q, P);
+      // The Visualizer scenes apply Speed twice (once in the clock below, once in
+      // their own formulas), so the deck's speed enters as a square root to keep
+      // that slider linear. The mixer scenes use D.speed directly.
+      D.q.speed = P.speed * Math.sqrt(D.speed);
+      if (D.frozen) continue;
+      D.ms    += dt;
+      D.t     += 0.016 * D.q.speed;
+      D.drift += 0.4 * P.colorSpeed;
+    }
 
-    drawFns[mode]();
+    compose();
 
     if (++meterTick % 3 === 0) updateMeters();
+    if (meterTick % 6 === 0) syncUI();
   }
 
   // Split from tick() so a covered window — where rAF is suspended — can still
@@ -1317,13 +2194,16 @@
 
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  updateHudSub();
   restartLoop();
 
   /* ── Scripted control hook (testing / demos) ── */
   window.MPFVIZ = {
-    params: P, pad: VPAD, config: CONFIG, audio: Audio, targets: TARGETS,
-    setMode, link: LINK, step: tick,
+    params: P, pad: VPAD, audio: Audio, targets: TARGETS, decks, flags: FLAGS, aud,
+    get config() { return CONFIG; },
+    get xfade() { return xfade; },
+    link: LINK, step: () => tick(16),
+    setScene, setXfade,
+    setMode: m => setScene(0, m),
     axis(i, v) { VPAD.axes[i] = v; activateVirtual(); },
     button(i, v) { const b = VPAD.buttons[i]; b.pressed = !!v; b.value = v ? 1 : 0; activateVirtual(); },
     reset() { VPAD.axes = [0, 0, 0, 0]; VPAD.buttons.forEach(b => { b.pressed = false; b.value = 0; }); },

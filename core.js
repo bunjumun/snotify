@@ -1033,6 +1033,8 @@ const BAND_TOOLS = {
       hint: 'Panels, stripe angles, seed — save as SVG or PNG' },
     { href: 'tools/visualizer.html', label: '◉  Visualizer',
       hint: 'Two decks, crossfade, audio reactive, gamepad, keyboard or MIDI driven' },
+    { href: 'tools/visualizer-fx.html', label: '◉  Visualizer FX',
+      hint: 'The Visualizer through halftone, stipple, line and CMYK displacement and dazzle camo; camera on the left trigger' },
     { href: 'tools/moire-maker.html', label: '◎  Moiré pattern toy',
       hint: 'Two line fields, live interference' },
     { href: 'tools/moire-zip.html', label: '⧉  Moiré colour separation',

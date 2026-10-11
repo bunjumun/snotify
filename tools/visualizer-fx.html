@@ -409,6 +409,63 @@
     }
     .keys b { color: rgba(255,255,255,0.8); font-weight: 700; }
 
+    /* ── Settings panel: pinned live controls, tabs, groups ──
+       The panel had grown into one long scroll, and it covers the buttons at the top
+       right, so the things you reach for during a show were exactly the things it hid.
+       Now: the live controls stay pinned at the top of the panel, the rest is split
+       into tabs, sections and groups fold, and the long explanations sit behind an
+       info button so they are there when wanted and not in the way when not. */
+    #panel { width: min(460px, 100vw); }
+    .live {
+      display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.025);
+      flex-shrink: 0;
+    }
+    .live .lv { flex: 1 1 22%; min-width: 74px; padding: 9px 6px; font-size: 0.64rem; text-align: center; }
+    .tabs { display: flex; padding: 0 10px; border-bottom: 1px solid rgba(255,255,255,0.1); flex-shrink: 0; }
+    .tabs .tab {
+      flex: 1; background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0;
+      padding: 11px 4px 9px; font-family: inherit; font-size: 0.68rem; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.45); cursor: pointer;
+    }
+    .tabs .tab:hover { color: #fff; background: none; }
+    .tabs .tab.on { color: #ff3cac; border-bottom-color: #ff3cac; background: none; }
+    #panel .sect { display: none; }
+    #panel[data-tab="show"]   .sect[data-tab="show"],
+    #panel[data-tab="camera"] .sect[data-tab="camera"],
+    #panel[data-tab="stage"]  .sect[data-tab="stage"],
+    #panel[data-tab="sound"]  .sect[data-tab="sound"],
+    #panel[data-tab="help"]   .sect[data-tab="help"] { display: block; }
+    .sect > .sect-title { cursor: pointer; user-select: none; }
+    .sect > .sect-title::before { content: '▾'; font-size: 0.7rem; opacity: 0.5; margin-right: -2px; }
+    .sect.collapsed > .sect-title::before { content: '▸'; }
+    .sect.collapsed > :not(.sect-title) { display: none; }
+    .sect .note:not(.keep) { display: none; }
+    .sect.notes-on .note { display: block; }
+    .sect-title .info {
+      background: none; border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.55);
+      border-radius: 50%; width: 20px; height: 20px; padding: 0; font-size: 0.7rem; line-height: 1;
+      letter-spacing: 0; text-transform: none; cursor: pointer;
+    }
+    .sect-title .info:hover { color: #fff; border-color: #fff; background: rgba(255,255,255,0.1); }
+    .sect.notes-on .sect-title .info { color: #4fffb0; border-color: rgba(79,255,176,0.55); }
+    .grp { margin: 4px 0 14px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: rgba(255,255,255,0.025); }
+    .grp > summary {
+      cursor: pointer; padding: 10px 12px; font-size: 0.68rem; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.6); list-style: none;
+    }
+    .grp > summary::-webkit-details-marker { display: none; }
+    .grp > summary::before { content: '▸ '; opacity: 0.6; }
+    .grp[open] > summary::before { content: '▾ '; }
+    .grp[open] > summary { border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px; }
+    .grp > :not(summary) { margin-left: 12px; margin-right: 12px; }
+    .grp > :last-child { margin-bottom: 12px; }
+    /* Bigger to grab: the sliders are what is touched most, often quickly and in the dark. */
+    #panel input[type=range] { height: 6px; }
+    #panel input[type=range]::-webkit-slider-thumb { width: 20px; height: 20px; }
+    #panel input[type=range]::-moz-range-thumb { width: 20px; height: 20px; }
+    #panel label.fld { margin-bottom: 14px; }
+
     @media (max-width: 460px) {
       #panel { width: 100vw; }
     }
@@ -473,9 +530,26 @@
     <h2>Visualizer FX Settings</h2>
     <button class="panel-close" id="panel-close" title="Close settings (Esc)">×</button>
   </div>
+  <div class="live" id="live">
+    <button class="btn ghost sm lv" id="lv-aud" title="Audience control (J). Lets the controller plugged into this laptop drive the projector. Off, the controller is ignored; this screen, the keyboard and MIDI keep working.">Audience · off</button>
+    <button class="btn ghost sm lv" data-fx="blackout" title="Blackout (B)">Blackout</button>
+    <button class="btn ghost sm lv" data-fx="strobe" title="Strobe (R). It fades itself out and switches off within five seconds, and each time it fires it is 10% dimmer than the last, until five seconds go by with no strobe.">Strobe</button>
+    <button class="btn ghost sm lv" id="lv-frza" title="Freeze deck A (F)">Freeze A</button>
+    <button class="btn ghost sm lv" id="lv-frzb" title="Freeze deck B (G)">Freeze B</button>
+    <button class="btn ghost sm lv" data-fx="negative" title="Negative (I, or Y on the pad)">Negative</button>
+    <button class="btn ghost sm lv" id="hit-btn" title="Colour hit (X on the pad)">Colour</button>
+    <button class="btn ghost sm lv" id="flash-btn" title="Flash (Space, or Start on the pad)">Flash</button>
+  </div>
+  <div class="tabs" id="tabs" role="tablist">
+    <button class="tab" data-tab="show">Show</button>
+    <button class="tab" data-tab="camera">Camera</button>
+    <button class="tab" data-tab="stage">Stage</button>
+    <button class="tab" data-tab="sound">Sound</button>
+    <button class="tab" data-tab="help">Help</button>
+  </div>
   <div class="panel-body">
 
-    <div class="sect">
+    <div class="sect" data-tab="stage">
       <div class="sect-title">Projector</div>
       <div class="status off" id="stage-status">Not projecting.</div>
       <label class="fld" id="stage-screen-wrap" style="display:none">
@@ -498,87 +572,77 @@
       </div>
     </div>
 
-    <div class="sect">
+    <div class="sect" data-tab="show">
       <div class="sect-title">Effects</div>
       <div class="fxgrid" id="fx-grid"></div>
-      <div class="sect-title" style="margin-top:4px">The controller can reach</div>
-      <div class="fxgrid" id="fx-allow"></div>
-      <div class="btn-row" style="margin-top:0;margin-bottom:12px">
-        <button class="btn ghost sm" id="fx-allow-all">All</button>
-        <button class="btn ghost sm" id="fx-allow-cur">Only the one showing</button>
-      </div>
-      <div class="note" style="margin-top:0;margin-bottom:14px">
-        The controller steps effects with the stick clicks (R3, L3), and the auto-cycle
-        only moves between ticked ones. Tick a single effect to hold the show on it: the
-        buttons then simply do nothing, with no message. Picking an effect above, or with the
-        number keys, always works for you.
-      </div>
       <div id="fx-sliders"></div>
-      <label class="fld">
-        <span>Colour</span>
-        <select id="color-sel">
-          <option value="auto">Auto: black and white, colour on sound hits</option>
-          <option value="mono">Mono: never any colour</option>
-          <option value="full">Full: always colour</option>
-        </select>
-      </label>
-      <label class="fld">
-        <span>Colour hits</span>
-        <select id="color-every">
-          <option value="0">Never (only the X button)</option>
-          <option value="8">Every 8 beats, two bars</option>
-          <option value="4">Every 4 beats, the bar line</option>
-          <option value="2">Every 2 beats</option>
-          <option value="-1">Only on big bass hits</option>
-        </select>
-      </label>
-      <label class="fld">
-        <span>Glitch on kicks <em id="glitch-val">0.50</em></span>
-        <input type="range" id="glitch" min="0" max="1" step="0.05" value="0.5" />
-      </label>
-      <label class="fld">
-        <span>Auto-cycle effects (on the beat when audio is playing, every 45 seconds when nothing is)</span>
-        <select id="cycle-sel">
-          <option value="0">Off</option>
-          <option value="8">Every 8 beats</option>
-          <option value="16">Every 16 beats</option>
-          <option value="32">Every 32 beats</option>
-        </select>
-      </label>
-      <div class="toggles">
-        <button class="btn ghost sm" data-fx="negative">Negative</button>
-      </div>
-      <div class="note" id="fx-note">
+      <details class="grp" open>
+        <summary>Colour, glitch and cycling</summary>
+        <label class="fld">
+          <span>Colour</span>
+          <select id="color-sel">
+            <option value="auto">Auto: black and white, colour on sound hits</option>
+            <option value="mono">Mono: never any colour</option>
+            <option value="full">Full: always colour</option>
+          </select>
+        </label>
+        <label class="fld">
+          <span>Colour hits</span>
+          <select id="color-every">
+            <option value="0">Never (only the X button)</option>
+            <option value="8">Every 8 beats, two bars</option>
+            <option value="4">Every 4 beats, the bar line</option>
+            <option value="2">Every 2 beats</option>
+            <option value="-1">Only on big bass hits</option>
+          </select>
+        </label>
+        <label class="fld">
+          <span>Glitch on kicks <em id="glitch-val">0.50</em></span>
+          <input type="range" id="glitch" min="0" max="1" step="0.05" value="0.5" />
+        </label>
+        <label class="fld">
+          <span>Auto-cycle effects</span>
+          <select id="cycle-sel">
+            <option value="0">Off</option>
+            <option value="8">Every 8 beats</option>
+            <option value="16">Every 16 beats</option>
+            <option value="32">Every 32 beats</option>
+          </select>
+        </label>
+      </details>
+      <details class="grp">
+        <summary>Limit what the controller can reach</summary>
+        <div class="fxgrid" id="fx-allow"></div>
+        <div class="btn-row" style="margin-top:0;margin-bottom:12px">
+          <button class="btn ghost sm" id="fx-allow-all">All</button>
+          <button class="btn ghost sm" id="fx-allow-cur">Only the one showing</button>
+        </div>
+        <div class="note" style="margin-top:0">
+          The controller steps effects with the stick clicks (R3, L3), and the auto-cycle
+          only moves between ticked ones. Tick a single effect to hold the show on it: the
+          buttons then simply do nothing, with no message. Picking an effect above, or with the
+          number keys, always works for you.
+        </div>
+      </details>
+      <div class="note keep" id="fx-note">
         Each slider is the resting value; the thin bar under it is where the sound
-        and the sticks have actually pushed it. Choosing an effect by hand pauses the auto-cycle.
+        and the sticks have actually pushed it. Choosing an effect by hand pauses the auto-cycle
+        (on the beat when audio is playing, every 45 seconds when nothing is).
       </div>
     </div>
 
-    <div class="sect">
+    <div class="sect" data-tab="camera">
       <div class="sect-title">Camera layer</div>
       <div class="status off" id="cam-status">Camera is off.</div>
-      <label class="fld">
-        <span>Camera</span>
-        <select id="cam-sel"><option value="">Default camera</option></select>
-      </label>
-      <label class="fld">
-        <span>Blend</span>
-        <select id="cam-blend">
-          <option value="mix">Dissolve</option>
-          <option value="screen">Screen</option>
-          <option value="difference">Difference</option>
-          <option value="multiply">Multiply</option>
-        </select>
-      </label>
-      <label class="fld">
-        <span>Camera mix <em id="cam-mix-val">0.50</em></span>
-        <input type="range" id="cam-mix" min="0" max="1" step="0.01" value="0.5" />
-      </label>
-      <div class="btn-row">
+      <div class="btn-row" style="margin-top:0;margin-bottom:14px">
         <button class="btn wide" id="cam-toggle">Enable camera</button>
         <button class="btn ghost" id="cam-mirror">Mirror</button>
         <button class="btn ghost" id="cam-centre">50%</button>
       </div>
+      <label class="fld">
+        <span>Camera mix <em id="cam-mix-val">0.50</em></span>
+        <input type="range" id="cam-mix" min="0" max="1" step="0.01" value="0.5" />
+      </label>
       <div class="note">
         With the camera on, the <strong>right stick</strong> (the arrow keys on a keyboard) moves the
         mix: up toward all camera, down toward all animations, faster the further you hold it. It
@@ -587,53 +651,80 @@
         mix. The camera is only started from here, with <strong>K</strong>, or from the camera button,
         never by the controller. The picture is processed on this page and never uploaded.
       </div>
-      <div class="sect-title" style="margin-top:16px">Movement</div>
-      <label class="fld">
-        <span>Camera shows</span>
-        <select id="mot-show">
-          <option value="picture">The picture</option>
-          <option value="both">The picture, with what moves lifted</option>
-          <option value="bodies">Only what moves</option>
-        </select>
-      </label>
-      <div id="mot-sliders"></div>
-      <div class="toggles">
-        <button class="btn ghost sm" id="mot-flicker" title="Scale each frame to the stage's average brightness before looking for movement, so the show lighting the band is not mistaken for the band moving.">Ignore light changes</button>
-      </div>
-      <canvas id="motion-prev" width="128" height="72" style="width:100%;height:auto;border:1px solid rgba(255,255,255,0.12);border-radius:6px;background:#000;margin-top:10px"></canvas>
-      <div class="note" id="mot-readout" style="margin-top:4px">What the camera sees moving shows here.</div>
-      <div class="btn-row">
-        <button class="btn wide" id="mot-auto">Auto balance</button>
-        <button class="btn ghost" id="mot-learn">Learn background</button>
-      </div>
-      <div class="note">
-        The camera is aimed at a stage the projector is lighting, so it watches for
-        <strong>movement</strong> rather than light, and lifts the band out of the picture.
-        <strong>Auto balance</strong> takes the stage as it is lit now as the background and sets the
-        noise floor from two seconds of the show's own flicker; <strong>Learn background</strong> does
-        just the first part (use it when the stage is empty). A person who stands still melts into the
-        background after the learning time, and moving again lights them back up. Sensitivity and the
-        noise floor decide how big a change counts; Trail leaves a shape behind a moving body; Lift and
-        Stillness dimmed decide how hard the moving parts stand out; Outline draws the edge of the
-        moving shape. Movement is also a source for the routes below, so it can drive the effect.
-      </div>
 
-      <div class="sect-title" style="margin-top:16px">Camera picture</div>
-      <div id="cam-adj"></div>
-      <div class="btn-row">
-        <button class="btn wide" id="cam-auto">Auto levels</button>
-        <button class="btn ghost" id="cam-reset">Reset</button>
-      </div>
-      <div class="note" id="cam-adj-note">
-        Auto levels reads the camera's current frame and sets these: black and white points from
-        its darkest and brightest parts, colour balance so the average colour is neutral, and gamma
-        so the middle tones land where the effects work best. It suits a steady scene; on a stage lit
-        by the projector, use the movement controls above instead. Everything stays adjustable by hand.
-        Set the effect to RAW to see the camera on its own while you dial it in.
-      </div>
+      <details class="grp" open>
+        <summary>Movement</summary>
+        <label class="fld">
+          <span>Camera shows</span>
+          <select id="mot-show">
+            <option value="picture">The picture</option>
+            <option value="both">The picture, with what moves lifted</option>
+            <option value="bodies">Only what moves</option>
+          </select>
+        </label>
+        <div class="btn-row" style="margin-top:0;margin-bottom:14px">
+          <button class="btn wide" id="mot-auto">Auto balance</button>
+          <button class="btn ghost" id="mot-learn">Learn background</button>
+        </div>
+        <canvas id="motion-prev" width="128" height="72" style="width:100%;height:auto;border:1px solid rgba(255,255,255,0.12);border-radius:6px;background:#000"></canvas>
+        <div class="note keep" id="mot-readout" style="margin-top:4px">What the camera sees moving shows here.</div>
+        <div id="mot-sliders" style="margin-top:10px"></div>
+        <div class="toggles" style="margin-bottom:12px">
+          <button class="btn ghost sm" id="mot-flicker" title="Scale each frame to the stage's average brightness before looking for movement, so the show lighting the band is not mistaken for the band moving.">Ignore light changes</button>
+        </div>
+        <div class="note">
+          The camera is aimed at a stage the projector is lighting, so it watches for
+          <strong>movement</strong> rather than light, and lifts the band out of the picture.
+          <strong>Auto balance</strong> takes the stage as it is lit now as the background and sets the
+          noise floor from two seconds of the show's own flicker; <strong>Learn background</strong> does
+          just the first part (use it when the stage is empty). A person who stands still melts into the
+          background after the learning time, and moving again lights them back up. Sensitivity and the
+          noise floor decide how big a change counts; Trail leaves a shape behind a moving body; Lift and
+          Stillness dimmed decide how hard the moving parts stand out; Outline draws the edge of the
+          moving shape. Movement is also a source for the routes on the Sound tab, so it can drive the effect,
+          and <strong>Movement adds colour and zoom</strong> sets how much a moving band lends the picture a
+          little saturation and a slight push in. <strong>Camera position dynamics</strong> sets how much
+          <em>where</em> it moves steers the effect: left and right rotate it, up and down rescale it, and the
+          push in leans toward the movement (the ring in the preview is where it thinks that is). 0 turns the
+          position off. All of it gives itself back once everything is still.
+        </div>
+      </details>
+
+      <details class="grp">
+        <summary>Picture</summary>
+        <div id="cam-adj"></div>
+        <div class="btn-row" style="margin-top:0;margin-bottom:12px">
+          <button class="btn wide" id="cam-auto">Auto levels</button>
+          <button class="btn ghost" id="cam-reset">Reset</button>
+        </div>
+        <div class="note" id="cam-adj-note">
+          Auto levels reads the camera's current frame and sets these: black and white points from
+          its darkest and brightest parts, colour balance so the average colour is neutral, and gamma
+          so the middle tones land where the effects work best. It suits a steady scene; on a stage lit
+          by the projector, use the movement controls instead. Everything stays adjustable by hand.
+          Set the effect to RAW to see the camera on its own while you dial it in.
+        </div>
+      </details>
+
+      <details class="grp">
+        <summary>Camera device and blend</summary>
+        <label class="fld">
+          <span>Camera</span>
+          <select id="cam-sel"><option value="">Default camera</option></select>
+        </label>
+        <label class="fld">
+          <span>Blend</span>
+          <select id="cam-blend">
+            <option value="mix">Dissolve</option>
+            <option value="screen">Screen</option>
+            <option value="difference">Difference</option>
+            <option value="multiply">Multiply</option>
+          </select>
+        </label>
+      </details>
     </div>
 
-    <div class="sect">
+    <div class="sect" data-tab="stage">
       <div class="sect-title">Controller</div>
       <div class="status off" id="pad-status">No controller yet: press a button on it.</div>
       <label class="fld">
@@ -644,22 +735,25 @@
         <button class="btn ghost sm" id="rumble-test">Test rumble</button>
       </div>
       <label class="fld">
-        <span>Tilt amount <em id="motion-val">0.60</em></span>
-        <input type="range" id="motion" min="0" max="1" step="0.05" value="0.6" />
-      </label>
-      <div class="status off" id="motion-status">Tilt sensors not connected.</div>
-      <div class="btn-row">
-        <button class="btn wide" id="motion-connect">Connect tilt sensors</button>
-        <button class="btn ghost" id="motion-zero">Level</button>
-      </div>
-      <div class="btn-row">
-        <button class="btn ghost sm" id="motion-flipx">Flip left / right</button>
-        <button class="btn ghost sm" id="motion-flipy">Flip forward / back</button>
-      </div>
-      <label class="fld" style="margin-top:14px">
         <span>Automated mode after <em id="autoAfter-val">10 s</em> without the controller</span>
         <input type="range" id="autoAfter" min="0" max="60" step="5" value="10" />
       </label>
+      <details class="grp">
+        <summary>Tilt sensors</summary>
+        <label class="fld">
+          <span>Tilt amount <em id="motion-val">0.60</em></span>
+          <input type="range" id="motion" min="0" max="1" step="0.05" value="0.6" />
+        </label>
+        <div class="status off" id="motion-status">Tilt sensors not connected.</div>
+        <div class="btn-row" style="margin-top:0">
+          <button class="btn wide" id="motion-connect">Connect tilt sensors</button>
+          <button class="btn ghost" id="motion-zero">Level</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn ghost sm" id="motion-flipx">Flip left / right</button>
+          <button class="btn ghost sm" id="motion-flipy">Flip forward / back</button>
+        </div>
+      </details>
       <div class="note">
         <strong>Automated mode</strong>: with nobody on the controls for that long (a controller being
         ignored counts as nobody), the rotate, scale, split, push and warp drift on their own, and the
@@ -675,7 +769,7 @@
       </div>
     </div>
 
-    <div class="sect">
+    <div class="sect" data-tab="show">
       <div class="sect-title">Mix</div>
       <label class="fld">
         <span>Crossfader <em id="xf-val">A</em></span>
@@ -686,31 +780,26 @@
         <input type="range" id="trails" min="0" max="5" step="1" value="1" />
       </label>
       <div class="toggles">
-        <button class="btn ghost sm" data-fx="strobe" title="Strobe. The longer it runs the quieter it gets, and it eases down to a tenth. Mash it and it takes two presses and comes up dimmer each time; five quiet seconds put it back to normal.">Strobe</button>
-        <button class="btn ghost sm" data-fx="blackout">Blackout</button>
         <button class="btn ghost sm" data-fx="zoomPulse">Zoom pulse</button>
         <button class="btn ghost sm" data-fx="beatFlash">Beat flash</button>
-        <button class="btn ghost sm" id="flash-btn">Flash</button>
-        <button class="btn ghost sm" id="hit-btn">Colour hit</button>
-      </div>
-      <div class="btn-row">
         <button class="btn ghost sm" id="tap-btn">Tap tempo</button>
         <button class="btn ghost sm" id="tap-clear">Clear tap</button>
       </div>
-      <div class="note" id="tap-note">Tap in time to set the pulse's tempo, with or without audio.</div>
+      <div class="note keep" id="tap-note">Tap in time to set the pulse's tempo, with or without audio.</div>
     </div>
 
-    <div class="sect">
+    <div class="sect" data-tab="show">
       <div class="sect-title">Decks</div>
       <div id="decks"></div>
       <div class="note">
-        The six mixer scenes (Tunnel, Plasma, Stars, Waves, Grid, Vortex) follow
-        the sticks as position, twist and zoom. The five Visualizer scenes take every
-        parameter and every audio route.
+        The scenes no longer follow the sticks: the controller belongs to the effect, and
+        the scenes are moved by the sound and by what is routed to them. The Visualizer's
+        five scenes take every audio route; the mixer's six (Tunnel, Plasma, Stars, Waves,
+        Grid, Vortex) follow the sound through their own reactions.
       </div>
     </div>
 
-    <div class="sect">
+    <div class="sect" data-tab="sound">
       <div class="sect-title">Audio Input</div>
       <div class="status off" id="audio-status">Not connected: it drifts on its own until you play it.</div>
 
@@ -737,13 +826,13 @@
       </div>
     </div>
 
-    <div class="sect" id="ch-sect" style="display:none">
+    <div class="sect" id="ch-sect" data-tab="sound" style="display:none">
       <div class="sect-title">Live Channels</div>
       <div class="ch-strip" id="ch-strip"></div>
       <div class="note">Solo a track in your DAW to find which channel it lands on.</div>
     </div>
 
-    <div class="sect">
+    <div class="sect" data-tab="sound">
       <div class="sect-title">Modulation Routing</div>
       <div id="routes"></div>
       <div class="btn-row">
@@ -758,7 +847,7 @@
       </div>
     </div>
 
-    <div class="sect">
+    <div class="sect" data-tab="sound">
       <div class="sect-title">Response</div>
       <label class="fld">
         <span>Input gain <em id="gain-val">1.0×</em></span>
@@ -801,7 +890,7 @@
       </div>
     </div>
 
-    <div class="sect" id="midi-sect">
+    <div class="sect" id="midi-sect" data-tab="sound">
       <div class="sect-title">MIDI</div>
       <div class="status off" id="midi-status">MIDI is off.</div>
       <button class="btn ghost wide" id="midi-btn">Enable MIDI</button>
@@ -818,7 +907,7 @@
       </div>
     </div>
 
-    <div class="sect">
+    <div class="sect" data-tab="help">
       <div class="sect-title">Controls</div>
       <div class="keys"><b>GAMEPAD</b>
 left stick ← →     rotate the effect
@@ -858,7 +947,7 @@ H                  keep the readout on screen
 Esc                close the panel</div>
     </div>
 
-    <div class="sect">
+    <div class="sect" data-tab="help">
       <div class="sect-title">Config</div>
       <div class="btn-row">
         <button class="btn ghost wide" id="reset-btn">Reset to defaults</button>
@@ -1011,7 +1100,7 @@ Esc                close the panel</div>
   let xfade    = 0.5;
   let trailIdx = 1;
   const FLAGS  = { strobe: false, blackout: false, negative: false, zoomPulse: false, beatFlash: false };
-  let strobePh = 0, flashOp = 0, zoomScale = 1;
+  let flashOp = 0, zoomScale = 1;
 
   const FX = [
     { name: 'LINE DISPLACE' },
@@ -1067,7 +1156,7 @@ Esc                close the panel</div>
     fx:  { fxAmount: 0.55, fxScale: 0.35, fxAngle: 0.5, fxShift: 0.2, fxWarp: 0.1, fxThresh: 0.5, fxColor: 0 },
     cam: { deviceId: '', mirror: true, blend: 'mix', mix: 0.5,
            adj: { bright: 0, contrast: 1, gamma: 1, black: 0, white: 1, sat: 1, temp: 0, tint: 0 },
-           motion: { show: 'picture', sens: 0.5, trail: 0.5, boost: 1.6, dim: 0.3, edge: 0.5, learn: 20, floor: 0.03, flicker: true } },
+           motion: { show: 'picture', sens: 0.5, trail: 0.5, boost: 1.6, dim: 0.3, edge: 0.5, learn: 20, floor: 0.03, flicker: true, influence: 0.5, xy: 0.5 } },
     routes: PARTY_ROUTES,
     midiOn: false, midi: { cc: {}, note: {} },
   };
@@ -1471,41 +1560,43 @@ Esc                close the panel</div>
   const nudgeXfade = d => setXfade(xfade + d);
 
   /* ── Strobe limiter ──
-     Mashing the strobe is how a show ends in a headache. Turning it off is
-     always instant. Turning it on again within five seconds of the last press
-     takes two presses (the first only arms it) and comes up dimmer each time:
-     100%, 75%, 50%, 25%, then a 20% floor. Five quiet seconds put it back to a
-     single press at full brightness. The five seconds restart on every press, so
-     mashing keeps the limit up; a strobe already running keeps the brightness it
-     started at (less the fade below) until it is turned off. The five seconds also
-     run from the moment a strobe is turned off. */
-  const STROBE = { last: 0, count: 0, armedAt: 0, level: 1, onAt: 0 };
+     Each time the strobe fires it is 10% dimmer than the time before (100%, 90%,
+     80% and so on, never below 10%), until five seconds go by with no strobe, which
+     puts it back to full. The five seconds run from the moment a strobe ends or is
+     turned off. Turning it off is always instant. */
+  const STROBE = { last: 0, count: 0, level: 1, onAt: 0 };
   function strobeRequest() {
-    // Off is instant, and the cooldown runs from the end of a run, however long it was.
-    if (FLAGS.strobe) { FLAGS.strobe = false; STROBE.last = performance.now(); return; }
     const now = performance.now();
+    if (FLAGS.strobe) { FLAGS.strobe = false; STROBE.last = now; return; }
     if (now - STROBE.last > 5000) STROBE.count = 0;
-    const limited = STROBE.count > 0;
-    STROBE.last = now;
-    if (limited && (!STROBE.armedAt || now - STROBE.armedAt > 1500)) {
-      STROBE.armedAt = now;
-      hudNote('Strobe is cooling down: press again to fire it');
-      return;
-    }
-    STROBE.armedAt = 0;
-    STROBE.level = Math.max(0.2, 1 - 0.25 * STROBE.count);
+    STROBE.level = Math.max(0.1, 1 - 0.1 * STROBE.count);
     STROBE.count++;
     STROBE.onAt = now;
+    STROBE.last = now;
     FLAGS.strobe = true;
   }
-  // A strobe that has been running a while gets quieter rather than being cut off:
-  // full for four seconds, then eased down over the next four to a tenth, where it
-  // stays (going gently) until it is turned off. Multiplies the brightness above.
+  // A strobe fades itself out. It is full for the first second and a half, eased down
+  // to nothing by the five second mark, and then switched off: nobody is left under a
+  // strobe that runs on. Every way of firing one (the R key, the panel, the strip, MIDI)
+  // goes through strobeRequest, so every one of them is held to this. The pad has no
+  // strobe at all, so the audience cannot start one. Multiplies the brightness above.
+  const STROBE_FULL = 1.5, STROBE_END = 5;
   function strobeRun() {
     const t = (performance.now() - STROBE.onAt) / 1000;
-    if (t <= 4) return 1;
-    const k = Math.min(1, (t - 4) / 4);
-    return 1 - 0.9 * k * k * (3 - 2 * k);
+    if (t <= STROBE_FULL) return 1;
+    if (t >= STROBE_END) return 0;
+    const k = (t - STROBE_FULL) / (STROBE_END - STROBE_FULL);
+    return 1 - k * k * (3 - 2 * k);
+  }
+  // Called every frame. By now the brightness is already zero, so this ends it without a cut.
+  function strobeGuard() {
+    if (!FLAGS.strobe) return;
+    const now = performance.now();
+    if (now - STROBE.onAt < STROBE_END * 1000) return;
+    FLAGS.strobe = false;
+    STROBE.last = now;                       // so the five quiet seconds run from the end of this one
+    hudNote('Strobe finished');
+    syncUI();
   }
   function toggle(flag) {
     if (flag === 'strobe') strobeRequest(); else FLAGS[flag] = !FLAGS[flag];
@@ -1617,7 +1708,10 @@ Esc                close the panel</div>
                 prev: new Float32Array(128 * 72), f: new Float32Array(128 * 72), fm: new Float32Array(128 * 72),
                 away: new Float32Array(128 * 72), fill: new Float32Array(128 * 72), lab: new Int32Array(128 * 72), mem: new Int32Array(128 * 72),
                 bytes: new Uint8Array(128 * 72), hist: new Uint16Array(241),
-                have: false, dirty: false, last: 0, level: 0, noise: 0, thr: 0, bgMean: 0, cv: null, cx: null, calib: null };   // automated mode: how far in it is, and when anyone last touched the controls
+                have: false, dirty: false, last: 0, level: 0, noise: 0, thr: 0, bgMean: 0, cv: null, cx: null, calib: null,
+                cxm: 0.5, cym: 0.5, sum: 0 };   // cxm, cym: where in the camera's frame the movement is (centroid)
+  // How much the camera's picture is moving right now, smoothed: quick to rise, slow to fall.
+  const MOVE = { env: 0, x: 0, y: 0 };   // x, y: where in the picture it is moving, -1 to 1, right and up positive   // automated mode: how far in it is, and when anyone last touched the controls
   const prevVirt = new Array(20).fill(false);
   let padConnected = false;
 
@@ -1787,6 +1881,16 @@ Esc                close the panel</div>
     };
   }
 
+  // Where the band moves steers the effect, by as much as the Camera position dynamics
+  // setting allows, and only while there is movement to steer by: left and right
+  // rotate it, up and down rescale it. Added to whatever the hands and the sound
+  // are doing, and gone when everything is still.
+  function camMod() {
+    const dyn = CONFIG.cam.motion.xy * MOVE.env;
+    if (!(dyn > 0.002)) return {};
+    return { fxAngle: MOVE.x * 0.15 * dyn, fxScale: MOVE.y * 0.3 * dyn };
+  }
+
   function audioMod() {
     const m = {};
     for (const r of CONFIG.routes) {
@@ -1802,10 +1906,10 @@ Esc                close the panel</div>
   const BREATH = { fxAmount: [0.07, 31], fxScale: [0.05, 43], fxAngle: [0.04, 57], fxWarp: [0.06, 37], fxShift: [0.05, 29] };
 
   function resolveParams(now) {
-    const pm = padMod(), am = audioMod();
+    const pm = padMod(), am = audioMod(), cm = camMod();
     for (const key in TARGETS) {
       const tg = TARGETS[key];
-      M[key] = (pm[key] || 0) + (am[key] || 0);
+      M[key] = (pm[key] || 0) + (am[key] || 0) + (cm[key] || 0);
       let v  = restOf(key) + tg.idleGain * CONFIG.idle + M[key];
       const b = BREATH[key];
       if (b) v += b[0] * Math.sin(now / 1000 * Math.PI * 2 / b[1]);
@@ -1895,7 +1999,7 @@ Esc                close the panel</div>
         break;
       case 'Backquote':
         if (panel.classList.contains('open')) closePanel();
-        else { openPanel(); $('midi-sect').scrollIntoView(); }
+        else { openPanel(); showTab('sound'); $('midi-sect').scrollIntoView(); }
         break;
       case 'Escape': closePanel(); break;
     }
@@ -1922,7 +2026,7 @@ Esc                close the panel</div>
   /* ── HUD ── */
   let hudTimer = null, hudPinned = false;
   // A line of text on the readout for a moment, for things that did not happen
-  // (a strobe press that was only an arming press, say).
+  // (a strobe that has finished itself, say).
   let noteText = '', noteUntil = 0;
   function hudNote(text, ms = 2200) { noteText = text; noteUntil = performance.now() + ms; showHud(); hudSig = ''; }
   function showHud() {
@@ -2427,8 +2531,10 @@ Esc                close the panel</div>
 
     if (FLAGS.blackout) return;
 
-    strobePh++;
-    if (FLAGS.strobe && strobePh % 6 < 3) {
+    // Ten flashes a second by the clock, not by the frame count: counted in frames it
+    // would be twenty on a 120 Hz screen, which is the worst rate there is for
+    // photosensitivity, and no longer what was tested.
+    if (FLAGS.strobe && Math.floor(performance.now() / 50) % 2 === 0) {
       ctx.globalAlpha = 0.92 * STROBE.level * strobeRun(); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
       ctx.globalAlpha = 1;
       return;
@@ -2506,7 +2612,8 @@ Esc                close the panel</div>
     uniform sampler2D uTex;
     uniform vec2  uRes;
     uniform float uTime, uMode, uModeA, uXf, uAmt, uScale, uAngle, uShift, uWarp, uThresh;
-    uniform float uNeg, uSat, uSeed, uRS;
+    uniform float uNeg, uSat, uSeed, uRS, uZoom;
+    uniform vec2 uZoomC;
     uniform sampler2D uCam;
     uniform vec2  uCamFit;
     uniform float uCamMix, uCamBlend, uMirror;
@@ -2556,7 +2663,8 @@ Esc                close the panel</div>
     // What every effect reads: the decks, with the camera mixed in when it is on.
     // The warp applies to both, so the wobble moves the camera too.
     vec3 src(vec2 px) {
-      vec2 uv = warpPx(px) / uRes;
+      // The movement zoom: a slight push in on everything, decks and camera alike.
+      vec2 uv = (warpPx(px) / uRes - uZoomC) / uZoom + uZoomC;
       vec3 d = texture2D(uTex, uv).rgb;
       if (uCamMix < 0.002) return d;
       vec2 cuv = uv;
@@ -2819,7 +2927,7 @@ Esc                close the panel</div>
                     'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS',
                     'uCam', 'uCamFit', 'uCamMix', 'uCamBlend', 'uMirror', 'uCamBright', 'uCamContrast',
                     'uCamGamma', 'uCamBlack', 'uCamWhite', 'uCamSat', 'uCamTemp', 'uCamTint',
-                    'uMot', 'uMotTexel', 'uMotMode', 'uMotBoost', 'uMotDim', 'uMotEdge'];
+                    'uMot', 'uMotTexel', 'uMotMode', 'uMotBoost', 'uMotDim', 'uMotEdge', 'uZoom', 'uZoomC'];
   let gl = null, glProg = null, glTex = null, glCamTex = null, glLoc = {}, glOk = false, fb2d = null;
   let glOv = null, glOvLoc = {}, glMotTex = null;   // the glitch overlay's own small program
   let glNote = '';
@@ -2968,7 +3076,7 @@ Esc                close the panel</div>
   function saturation() {
     if (CONFIG.colorMode === 'mono') return 0;
     if (CONFIG.colorMode === 'full') return 1;
-    return Math.max(0, Math.min(1, P.fxColor + colorEnv + fxTrans.boost));
+    return Math.max(0, Math.min(1, P.fxColor + colorEnv + fxTrans.boost + MOVE.env * CONFIG.cam.motion.influence * 0.35));
   }
 
   function present(now) {
@@ -3051,6 +3159,8 @@ Esc                close the panel</div>
     gl.uniform1f(glLoc.uSat, saturation());
     gl.uniform1f(glLoc.uSeed, fxSeed);
     gl.uniform1f(glLoc.uRS, rs);
+    gl.uniform1f(glLoc.uZoom, 1 + 0.08 * MOVE.env * CONFIG.cam.motion.influence);
+    gl.uniform2f(glLoc.uZoomC, 0.5 + 0.5 * MOVE.x * CONFIG.cam.motion.xy, 0.5 + 0.5 * MOVE.y * CONFIG.cam.motion.xy);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     snapshotFrame();          // before the glitch goes on, so a glitch never repeats a glitch
     glitchOverlay(now);
@@ -3168,15 +3278,17 @@ Esc                close the panel</div>
     }
     const decay = 0.5 + 0.47 * mo.trail;
     const alpha = 1 - Math.exp(-dtMs / (mo.learn * 1000));
-    let sum = 0;
+    let sum = 0, sx = 0, sy = 0;
     for (let i = 0; i < n; i++) {
       const e = Math.max(fill[i], E[i] * decay);
-      E[i] = e; sum += e;
+      E[i] = e; sum += e; sx += e * (i % w); sy += e * ((i / w) | 0);
       bg[i] += (cur[i] - bg[i]) * alpha * (1 - e);       // the model learns, but not where something is moving
       TRK.bytes[i] = (e * 255) | 0;
       prev[i] = cur[i];
     }
     TRK.bgMean += (mean - TRK.bgMean) * alpha;
+    TRK.sum = sum;
+    if (sum > 8) { TRK.cxm = sx / sum / (w - 1); TRK.cym = sy / sum / (TRK.h - 1); }
     TRK.level = sum / n;
     TRK.dirty = true;
     if (TRK.calib) {
@@ -3782,6 +3894,8 @@ Esc                close the panel</div>
     { k: 'edge',  label: 'Outline',                          min: 0,   max: 1,   step: 0.01 },
     { k: 'learn', label: 'Stillness becomes background after, seconds', min: 3, max: 60, step: 1 },
     { k: 'floor', label: 'Noise floor',                      min: 0,   max: 0.3, step: 0.005 },
+    { k: 'influence', label: 'Movement adds colour and zoom',  min: 0,   max: 1,   step: 0.01 },
+    { k: 'xy',        label: 'Camera position dynamics, where it moves steers the effect', min: 0, max: 1, step: 0.01 },
   ];
   const motSliderEls = [];
   (function buildMotUI() {
@@ -3813,6 +3927,7 @@ Esc                close the panel</div>
     const dd = motPrevData.data;
     for (let i = 0; i < TRK.n; i++) { const b = TRK.bytes[i]; dd[i * 4] = b; dd[i * 4 + 1] = b; dd[i * 4 + 2] = b; dd[i * 4 + 3] = 255; }
     cx.putImageData(motPrevData, 0, 0);
+    if (TRK.sum > 8) { cx.strokeStyle = '#ff3cac'; cx.lineWidth = 2; cx.beginPath(); cx.arc(TRK.cxm * TRK.w, TRK.cym * TRK.h, 6, 0, Math.PI * 2); cx.stroke(); }
     setText($('mot-readout'), 'Moving: ' + Math.round(TRK.level * 100) + '% of the frame · typical change ' + TRK.noise.toFixed(3) + ' · threshold ' + TRK.thr.toFixed(3));
   }
 
@@ -3950,6 +4065,73 @@ Esc                close the panel</div>
     });
   }
   buildDeckUI();
+
+  /* ── Panel ergonomics ──
+     The tab you were on, which sections you folded and which notes you opened are
+     remembered, so the panel comes back the way you left it. */
+  const UI_KEY = 'mpf_vizfx_ui';
+  const UI = { tab: 'show', closed: {}, notes: {} };
+  try { Object.assign(UI, JSON.parse(localStorage.getItem(UI_KEY) || '{}')); } catch (e) {}
+  const saveUI = () => { try { localStorage.setItem(UI_KEY, JSON.stringify(UI)); } catch (e) {} };
+  const TABS = ['show', 'camera', 'stage', 'sound', 'help'];
+
+  function showTab(name) {
+    if (!TABS.includes(name)) name = 'show';
+    UI.tab = name;
+    panel.dataset.tab = name;
+    document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+    panel.querySelector('.panel-body').scrollTop = 0;
+    saveUI();
+  }
+  document.querySelectorAll('#tabs .tab').forEach(b => { b.onclick = () => { showTab(b.dataset.tab); b.blur(); }; });
+
+  // Each section folds on a click of its title, and has an info button for its notes.
+  document.querySelectorAll('#panel .sect').forEach(sec => {
+    const title = sec.querySelector(':scope > .sect-title');
+    if (!title) return;
+    const name = title.textContent.trim();
+    if (UI.closed[name]) sec.classList.add('collapsed');
+    if (UI.notes[name]) sec.classList.add('notes-on');
+    title.onclick = () => {
+      sec.classList.toggle('collapsed');
+      if (sec.classList.contains('collapsed')) UI.closed[name] = true; else delete UI.closed[name];
+      saveUI();
+    };
+    if (sec.querySelector('.note:not(.keep)')) {
+      const info = document.createElement('button');
+      info.className = 'info'; info.textContent = 'ⓘ'; info.title = 'Show or hide the notes for this section';
+      info.onclick = e => {
+        e.stopPropagation();
+        sec.classList.toggle('notes-on');
+        if (sec.classList.contains('notes-on')) UI.notes[name] = true; else delete UI.notes[name];
+        saveUI(); info.blur();
+      };
+      title.appendChild(info);
+    }
+  });
+
+  // Double-click a slider to put it back to its default.
+  function resettable(el, getDef) {
+    if (!el) return;
+    el.title = 'Double-click to reset';
+    el.addEventListener('dblclick', () => { el.value = getDef(); el.dispatchEvent(new Event('input', { bubbles: true })); });
+  }
+  [['gain', () => DEFAULTS.gain], ['smooth', () => DEFAULTS.smoothing], ['idle', () => DEFAULTS.idle], ['beat', () => DEFAULTS.beat],
+   ['pulse', () => DEFAULTS.pulse], ['feel', () => DEFAULTS.feel], ['rumble', () => DEFAULTS.rumble], ['motion', () => DEFAULTS.motion],
+   ['autoAfter', () => DEFAULTS.autoAfter], ['glitch', () => DEFAULTS.glitch], ['xf', () => 0.5], ['trails', () => 1],
+   ['cam-mix', () => DEFAULTS.cam.mix], ['ch-req', () => DEFAULTS.channels]].forEach(([id, d]) => resettable($(id), d));
+  fxSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.fx[s.k]));
+  camSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.cam.adj[s.k]));
+  motSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.cam.motion[s.k]));
+  deckEls.forEach(r => {
+    resettable(r.hue, () => 0); resettable(r.speed, () => 1); resettable(r.intensity, () => 1);
+  });
+
+  // The pinned live strip: the controls that matter mid-show, which the panel would otherwise cover.
+  $('lv-aud').onclick  = e => { toggleAudience(); e.currentTarget.blur(); };
+  $('lv-frza').onclick = e => { toggleFreeze(0); e.currentTarget.blur(); };
+  $('lv-frzb').onclick = e => { toggleFreeze(1); e.currentTarget.blur(); };
+  showTab(UI.tab);
 
   const setText = (el, txt) => { if (el && el.textContent !== txt) el.textContent = txt; };
 
@@ -4313,6 +4495,12 @@ Esc                close the panel</div>
     const label = 'Audience control · ' + (stage.audience ? 'ON' : 'off');
     if (pill.textContent !== label) pill.textContent = label;
     $('proj-btn').classList.toggle('active', stage.on);
+    const lva = $('lv-aud');
+    lva.classList.toggle('on', stage.audience);
+    const lvt = 'Audience · ' + (stage.audience ? 'ON' : 'off');
+    if (lva.textContent !== lvt) lva.textContent = lvt;
+    $('lv-frza').classList.toggle('on', decks[0].frozen);
+    $('lv-frzb').classList.toggle('on', decks[1].frozen);
     let cls = 'off', txt = 'Not projecting.';
     if (stage.note) { cls = 'err'; txt = stage.note; }
     else if (stage.asking) { txt = 'Waiting for the browser to allow screen access…'; }
@@ -4350,6 +4538,7 @@ Esc                close the panel</div>
   let meterTick = 0, lastTs = performance.now();
 
   function tick(dtOverride) {
+    strobeGuard();
     const now = performance.now();
     const dt  = dtOverride !== undefined ? dtOverride : Math.min(now - lastTs, 50);
     lastTs = now;
@@ -4390,6 +4579,28 @@ Esc                close the panel</div>
     if (cam.on && ax) camLevel = Math.max(0, Math.min(1, camLevel + ax * (0.4 + 0.6 * Math.abs(ax)) * 0.9 * dt / 1000));
     camMix += ((cam.on ? camLevel : 0) - camMix) * 0.4;
     trackMotion(now);
+    // Movement in the camera's picture is a temporary influence: it lends the picture a
+    // little colour and a little zoom while it lasts, comes up in about a seventh of a
+    // second and goes back over about a second once everything is still, so nothing
+    // stays changed. Movement dimmed by the tracker's own threshold counts for nothing.
+    const mv = Math.min(1, TRK.level * 5);
+    MOVE.env += (mv - MOVE.env) * (1 - Math.exp(-dt / (mv > MOVE.env ? 150 : 900)));
+    // And where it is moving, as a position on the screen from -1 to 1: the camera's
+    // centroid taken through the same mirror and crop the shader applies. It follows
+    // the movement over about a quarter of a second and, with nothing moving, relaxes
+    // to the centre, so a position never stays set.
+    if (MOVE.env > 0.05 && TRK.sum > 8) {
+      const ao = canvas.width / canvas.height, av = cam.video && cam.video.videoWidth ? cam.video.videoWidth / cam.video.videoHeight : ao;
+      const fx = Math.min(1, ao / av), fy = Math.min(1, av / ao);
+      const ux = Math.max(0, Math.min(1, ((CONFIG.cam.mirror ? 1 - TRK.cxm : TRK.cxm) - 0.5) / fx + 0.5));
+      const uy = Math.max(0, Math.min(1, (TRK.cym - 0.5) / fy + 0.5));
+      const k = 1 - Math.exp(-dt / 250);
+      MOVE.x += (2 * (ux - 0.5) - MOVE.x) * k;
+      MOVE.y += (2 * (0.5 - uy) - MOVE.y) * k;
+    } else {
+      const k = Math.exp(-dt / 600);
+      MOVE.x *= k; MOVE.y *= k;
+    }
 
     // Nothing playing it: a new effect now and then, on the clock, since there
     // is no beat to count.
@@ -4448,7 +4659,7 @@ Esc                close the panel</div>
     get activity() { return activity; },
     poke,
     link: LINK, step: () => tick(16),
-    strobeRun, TRK, trackMotion, learnBackground, autoTune, GLI, startGlitch, AUTO, applyAutopilot, PAD, MOTION, HAP, hapticTick, onHidReport, applyMotion, testRumble, pixelAt, autoBalance, stage, STROBE, fxTrans, hudNote, toggleAudience, setAudience, toggleProjector, stepFx, setAllowed, allowedList,
+    camMod, MOVE, strobeRun, TRK, trackMotion, learnBackground, autoTune, GLI, startGlitch, AUTO, applyAutopilot, PAD, MOTION, HAP, hapticTick, onHidReport, applyMotion, testRumble, pixelAt, autoBalance, stage, STROBE, fxTrans, hudNote, toggleAudience, setAudience, toggleProjector, stepFx, setAllowed, allowedList,
     satNow: () => saturation(),
     get camLevel() { return camLevel; },
     fakeProjecting(on) {

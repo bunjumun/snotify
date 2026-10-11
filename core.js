@@ -1032,7 +1032,7 @@ const BAND_TOOLS = {
     { id: 'dazzle', label: '▨  Dazzle camouflage generator',
       hint: 'Panels, stripe angles, seed — save as SVG or PNG' },
     { href: 'tools/visualizer.html', label: '◉  Visualizer',
-      hint: 'Live audio-reactive visuals, gamepad or MIDI driven' },
+      hint: 'Two decks, crossfade, audio reactive, gamepad, keyboard or MIDI driven' },
     { href: 'tools/moire-maker.html', label: '◎  Moiré pattern toy',
       hint: 'Two line fields, live interference' },
     { href: 'tools/moire-zip.html', label: '⧉  Moiré colour separation',
@@ -1041,8 +1041,6 @@ const BAND_TOOLS = {
       hint: 'Redraw a photograph as displaced lines' },
     { href: 'tools/pen-separator.html', label: '✎  Highlighter plotter separator',
       hint: 'Mk2 — split artwork into pen layers for a plotter' },
-    { href: 'tools/vj-mixer.html', label: '◐  VJ mixer',
-      hint: 'Two live generators, crossfade, mic reactive, gamepad or MIDI' },
   ],
 };
 

@@ -310,6 +310,22 @@
     .fxgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 14px; }
     .fxgrid .btn { text-align: left; padding: 8px 10px; font-size: 0.66rem; }
     .fxgrid kbd { opacity: 0.45; margin-right: 7px; font-family: inherit; }
+    .fxgrid:empty { display: none; }
+    .fxgrid .btn.preset { border-style: dashed; }
+    .pre-save { display: flex; gap: 8px; margin: 10px 0 8px; }
+    .pre-row { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; }
+    .pre-save input[type=text], .pre-row input[type=text], .pre-login input[type=password] {
+      flex: 1; min-width: 0;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); color: #fff;
+      border-radius: 6px; padding: 7px 9px; font-family: inherit; font-size: 0.76rem;
+    }
+    .pre-save input:focus, .pre-row input:focus, .pre-login input:focus { outline: none; border-color: rgba(255,141,208,0.6); }
+    .btn.ico { padding: 4px 8px; min-width: 28px; }
+    .pre-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.25); flex: none; }
+    .pre-dot.ok { background: #4fffb0; }
+    .pre-status { font-size: 0.68rem; color: rgba(255,255,255,0.55); margin: 8px 0; line-height: 1.5; }
+    .pre-login { display: flex; gap: 8px; margin: 6px 0 10px; }
+    .pre-login[hidden] { display: none; }
 
     .note {
       font-size: 0.66rem; color: rgba(255,255,255,0.35);
@@ -482,7 +498,7 @@
 
 <!-- Shared tool chrome: the bar across the top and one look for every control -->
 <link rel="stylesheet" href="tool.css?v=3" />
-<script src="tool.js?v=3" defer></script>
+<script src="tool.js?v=4" defer></script>
 </head>
 <body class="tool-fullbleed">
 
@@ -575,7 +591,38 @@
     <div class="sect" data-tab="show">
       <div class="sect-title">Effects</div>
       <div class="fxgrid" id="fx-grid"></div>
+      <div class="fxgrid" id="pre-grid"></div>
       <div id="fx-sliders"></div>
+      <details class="grp" open id="pre-grp">
+        <summary>Saved presets</summary>
+        <div class="note" style="margin-top:0">
+          Save the look that is showing, with its sliders, scenes and colours, and it joins the
+          effects above as 9, 10 and so on. Swap with the number keys (9 and 0 reach the first two),
+          the stick clicks, or the buttons. The effects 1 to 8 change only the effect; a saved
+          preset brings everything it was saved with.
+        </div>
+        <div class="pre-save">
+          <input type="text" id="pre-name" maxlength="40" placeholder="Name this look" autocomplete="off" />
+          <button class="btn sm" id="pre-save" title="Save the effect, sliders, scenes, hues, crossfade, trails, colour, pulse and glitch as they are now">Save</button>
+        </div>
+        <div class="btn-row" style="margin-top:0;margin-bottom:10px">
+          <button class="btn ghost sm" id="pre-routes" title="Also keep how the sound drives the picture, so swapping to it changes the reaction too">Include sound routing</button>
+        </div>
+        <div id="pre-list"></div>
+        <div class="btn-row">
+          <button class="btn ghost sm" id="pre-down" title="Download every saved preset as one file you can keep, share, or upload on the Snalbum page">⤓ Download all</button>
+          <button class="btn ghost sm" id="pre-up" title="Add presets from a file you downloaded, here or from an offline copy">⤒ Upload…</button>
+          <input type="file" id="pre-file" accept=".json,application/json" multiple hidden />
+        </div>
+        <div class="pre-status" id="pre-status"></div>
+        <div class="pre-login" id="pre-login" hidden>
+          <input type="password" id="pre-pass" placeholder="Site admin password" autocomplete="off" />
+          <button class="btn ghost sm" id="pre-signin" title="Check the password and save your presets to Snalbum">Sign in</button>
+        </div>
+        <div class="btn-row" style="margin-top:0">
+          <button class="btn ghost sm" id="pre-refresh" title="Load the presets saved on Snalbum and send anything made here">Sync with Snalbum</button>
+        </div>
+      </details>
       <details class="grp" open>
         <summary>Colour, glitch and cycling</summary>
         <label class="fld">
@@ -613,6 +660,7 @@
       <details class="grp">
         <summary>Limit what the controller can reach</summary>
         <div class="fxgrid" id="fx-allow"></div>
+        <div class="fxgrid" id="pre-allow"></div>
         <div class="btn-row" style="margin-top:0;margin-bottom:12px">
           <button class="btn ghost sm" id="fx-allow-all">All</button>
           <button class="btn ghost sm" id="fx-allow-cur">Only the one showing</button>
@@ -620,8 +668,8 @@
         <div class="note" style="margin-top:0">
           The controller steps effects with the stick clicks (R3, L3), and the auto-cycle
           only moves between ticked ones. Tick a single effect to hold the show on it: the
-          buttons then simply do nothing, with no message. Picking an effect above, or with the
-          number keys, always works for you.
+          buttons then simply do nothing, with no message. Saved presets are ticked the same way.
+          Picking an effect or a preset above, or with the number keys, always works for you.
         </div>
       </details>
       <div class="note keep" id="fx-note">
@@ -1153,6 +1201,7 @@ Esc                close the panel</div>
     autoAfter: 10,                 // seconds without the controller before automated mode; 0 is off
     cycle: 16, colorMode: 'auto', colorEvery: 8,
     fxAllowed: [0, 1, 2, 3, 4, 5, 6, 7],   // which effects the controller and the auto-cycle may reach
+    presetsOff: [],                        // ids of saved presets the controller and the auto-cycle may not reach
     fx:  { fxAmount: 0.55, fxScale: 0.35, fxAngle: 0.5, fxShift: 0.2, fxWarp: 0.1, fxThresh: 0.5, fxColor: 0 },
     cam: { deviceId: '', mirror: true, blend: 'mix', mix: 0.5,
            adj: { bright: 0, contrast: 1, gamma: 1, black: 0, white: 1, sat: 1, temp: 0, tint: 0 },
@@ -1483,13 +1532,18 @@ Esc                close the panel</div>
      with the controller should find that button does very little rather than
      being told it is switched off, so there is no message and no sound. */
   const allowedList = () => (CONFIG.fxAllowed || []).filter(i => i >= 0 && i < FX.length);
+  // The effects, then the saved presets, are one ring: stepping goes round all of
+  // them, landing only on the ticked ones, and a saved preset ticks the same way.
   function stepFx(dir, auto, skipRaw) {
-    const list = allowedList();
-    for (let k = 1; k <= FX.length; k++) {
-      const i = ((fxMode + dir * k) % FX.length + FX.length) % FX.length;
-      if (i === fxMode || !list.includes(i)) continue;
-      if (skipRaw && i === RAW) continue;
-      setFx(i, auto);
+    const all = FX.map((_, i) => ({ k: 'fx', i })).concat(PRE.list.map(p => ({ k: 'pre', id: p.id })));
+    const okFx = allowedList(), off = CONFIG.presetsOff || [];
+    const ok = s => s.k === 'fx' ? okFx.includes(s.i) && !(skipRaw && s.i === RAW) : !off.includes(s.id);
+    let cur = PRE.active ? all.findIndex(s => s.k === 'pre' && s.id === PRE.active) : fxMode;
+    if (cur < 0) cur = fxMode;
+    for (let k = 1; k < all.length; k++) {
+      const s = all[((cur + dir * k) % all.length + all.length) % all.length];
+      if (!ok(s)) continue;
+      if (s.k === 'fx') pickBuiltin(s.i, auto); else pickPreset(s.id, auto);
       return;
     }
   }
@@ -1497,13 +1551,380 @@ Esc                close the panel</div>
     CONFIG.fxAllowed = list.slice().sort((a, b) => a - b);
     save();
     // If what is showing has just been ruled out, move to the first that is left.
-    if (CONFIG.fxAllowed.length && !CONFIG.fxAllowed.includes(fxMode)) setFx(CONFIG.fxAllowed[0], true);
+    if (!PRE.active && CONFIG.fxAllowed.length && !CONFIG.fxAllowed.includes(fxMode)) setFx(CONFIG.fxAllowed[0], true);
     showHud(); syncUI();
   }
   function toggleCycle() {
     if (cycleActive()) cycleHeld = true;
     else { cycleHeld = false; if (!CONFIG.cycle) { CONFIG.cycle = 16; save(); } }
     showHud(); syncUI();
+  }
+
+  /* ══════════════════════════════════════════
+     PRESETS
+
+     The effect list is the preset list. 1 to 7 are the effects (8 is the picture
+     itself) and a saved preset is one more entry after them: pick it with its
+     number (9 and 0 reach the first two), the stick clicks step through all of
+     them in order, and "Limit what the controller can reach" ticks both kinds.
+     The built-in effects change only the effect. A saved one also brings the
+     sliders, scenes, hues, crossfade, trails, colour behaviour, pulse and glitch
+     it was saved with, and the sound routing if it was saved with that. They come
+     in on a smoothstep over about a second, under the same dissolve and colour lift
+     as any effect change, so a swap is never a cut. Choosing a built-in effect after
+     a saved one puts the sliders back as they were before the saved one was
+     chosen, instead of leaving its values behind.
+
+     Where they live. This browser always (PRESET_KEY). On the Snalbum site they
+     also go into the site's own key-value table, the one that already keeps the
+     tools menu order and its admin password: one row per preset, viz.fx.p.<id>,
+     plus viz.fx.order for the sequence. That table caps a value at 2000 characters,
+     which is why a preset is one row and not one big list, and why a look is kept
+     compact. Reading is public; writing needs the site admin password, which is
+     looked for in this tab's session (so signing in on the Snalbum menu page
+     counts) or typed into the box in the panel. A save, rename, delete, reorder or
+     upload is sent as soon as there is a password, and held on this device until
+     there is. An offline copy never talks to the site: it carries the presets it was
+     saved with and moves them in and out as a JSON file, which is how a look made
+     offline gets onto the site later (upload it on the Snalbum page).
+  ══════════════════════════════════════════ */
+  const PRESET_KEY = 'mpf_vizfx_presets';
+  const PRESET_MAX = 100;
+  const PRE = { list: [], gone: [], orderDirty: false, active: null, base: null, tween: null, status: '' };
+  const OFFLINE = window.MPF_OFFLINE || null;
+  // Tools do not load core.js, so the site's address and its publishable key are repeated here.
+  const SUPA_URL = 'https://twgukeyoayfqldnojrkg.supabase.co';
+  const SUPA_KEY = 'sb_publishable_zIiAxxA5Zk1yRNzignANXA_rEp3vKdG';
+  const ADMIN_KEY = 'mp_admin_v1';                      // the site's own session key for the admin password
+  const REMOTE_P = 'viz.fx.p.', REMOTE_ORDER = 'viz.fx.order';
+  const onlineMode = () => !OFFLINE && /^https?:$/.test(location.protocol);
+  const adminPass = () => { try { return sessionStorage.getItem(ADMIN_KEY) || ''; } catch (e) { return ''; } };
+
+  const pr3 = v => Math.round(v * 1000) / 1000;
+  const pnum = (v, lo, hi, d) => (typeof v === 'number' && isFinite(v)) ? Math.max(lo, Math.min(hi, v)) : d;
+  const phas = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  const cleanName = s => String(s == null ? '' : s).replace(/[\u0000-\u001f]/g, '').trim().slice(0, 40);
+  const presetById = id => PRE.list.find(p => p.id === id);
+  const idOk = id => typeof id === 'string' && /^[a-z0-9]{3,12}$/i.test(id);
+  const presetLabel = () => { const p = PRE.active && presetById(PRE.active); return p ? p.name.toUpperCase() : FX[fxMode].name; };
+
+  // What a look is: the effect, its sliders, the two decks, the crossfade, trails,
+  // colour behaviour, pulse and glitch, and optionally the sound routing.
+  function captureLook(withRoutes) {
+    const L = {
+      fx: fxMode, s: {},
+      d: decks.map(D => [D.scene, ((Math.round(D.hue) % 360) + 360) % 360]),
+      xf: pr3(xfade), tr: trailIdx,
+      c: { pulse: pr3(CONFIG.pulse), glitch: pr3(CONFIG.glitch), mode: CONFIG.colorMode, every: CONFIG.colorEvery },
+    };
+    for (const k in DEFAULTS.fx) L.s[k] = pr3(CONFIG.fx[k]);
+    if (withRoutes) L.r = CONFIG.routes.map(r => [r.ch, r.band, r.target, pr3(r.depth)]);
+    return L;
+  }
+  // Anything that comes from outside (a file, the site) is rebuilt from known keys and
+  // clamped to the sliders' own ranges, so a hand-edited or damaged file cannot push a
+  // value the controls could never reach. Missing keys are fine: a partial look applies
+  // only what it has.
+  function cleanLook(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const L = {};
+    if (Number.isInteger(raw.fx) && raw.fx >= 0 && raw.fx < FX.length) L.fx = raw.fx;
+    if (raw.s && typeof raw.s === 'object') {
+      L.s = {};
+      FX_SLIDERS.forEach(sl => { if (typeof raw.s[sl.k] === 'number' && isFinite(raw.s[sl.k])) L.s[sl.k] = pr3(pnum(raw.s[sl.k], sl.min, sl.max, 0)); });
+    }
+    if (Array.isArray(raw.d)) {
+      L.d = decks.map((_, i) => {
+        const e = raw.d[i];
+        return (Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < SCENES.length && typeof e[1] === 'number' && isFinite(e[1]))
+          ? [e[0], ((Math.round(e[1]) % 360) + 360) % 360] : null;
+      });
+    }
+    if (typeof raw.xf === 'number') L.xf = pr3(pnum(raw.xf, 0, 1, 0.5));
+    if (Number.isInteger(raw.tr) && raw.tr >= 0 && raw.tr < TRAIL_P.length) L.tr = raw.tr;
+    if (raw.c && typeof raw.c === 'object') {
+      L.c = {};
+      if (typeof raw.c.pulse === 'number') L.c.pulse = pr3(pnum(raw.c.pulse, 0, 1.5, 0.5));
+      if (typeof raw.c.glitch === 'number') L.c.glitch = pr3(pnum(raw.c.glitch, 0, 1, 0.5));
+      if (['auto', 'mono', 'full'].includes(raw.c.mode)) L.c.mode = raw.c.mode;
+      if ([0, 8, 4, 2, -1].includes(raw.c.every)) L.c.every = raw.c.every;
+    }
+    if (Array.isArray(raw.r)) {
+      const rr = raw.r.slice(0, 32)
+        .filter(e => Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= -1 && e[0] < 16 && typeof e[1] === 'string' && phas(BANDS, e[1])
+                     && typeof e[2] === 'string' && phas(TARGETS, e[2]) && typeof e[3] === 'number' && isFinite(e[3]))
+        .map(e => [e[0], e[1], e[2], pr3(pnum(e[3], -1, 1, 0))]);
+      if (rr.length) L.r = rr;
+    }
+    return Object.keys(L).length ? L : null;
+  }
+
+  // The parts that cannot be blended (which scene, trails, colour mode, routing) are
+  // set at once; the rest is a tween, started from wherever the values are now so a
+  // second swap mid-way carries on smoothly instead of snapping.
+  function applyDiscrete(L) {
+    if (L.d) L.d.forEach((e, i) => { if (e && decks[i] && decks[i].scene !== e[0]) setScene(i, e[0]); });
+    if (L.tr !== undefined) trailIdx = L.tr;
+    if (L.c) {
+      if (L.c.mode) CONFIG.colorMode = L.c.mode;
+      if (L.c.every !== undefined) CONFIG.colorEvery = L.c.every;
+    }
+    if (L.r) { CONFIG.routes = L.r.map(e => ({ ch: e[0], band: e[1], target: e[2], depth: e[3] })); renderRoutes(); }
+  }
+  function startTween(L) {
+    PRE.tween = {
+      t0: performance.now(), dur: 1200, last: 0,
+      from: { s: Object.assign({}, CONFIG.fx), xf: xfade, h: decks.map(D => D.hue), pulse: CONFIG.pulse, glitch: CONFIG.glitch },
+      to:   { s: L.s || {}, xf: L.xf, h: (L.d || []).map(e => e ? e[1] : null), pulse: L.c && L.c.pulse, glitch: L.c && L.c.glitch },
+    };
+  }
+  function presetTween(now) {
+    const T = PRE.tween;
+    if (!T) return;
+    const p = Math.min(1, (now - T.t0) / T.dur), e = p * p * (3 - 2 * p);
+    const mix = (a, b) => a + (b - a) * e;
+    for (const k in T.to.s) CONFIG.fx[k] = mix(T.from.s[k], T.to.s[k]);
+    if (typeof T.to.xf === 'number') xfade = mix(T.from.xf, T.to.xf);
+    T.to.h.forEach((h, i) => {
+      if (h === null || h === undefined || !decks[i]) return;
+      const d = ((h - T.from.h[i] + 540) % 360) - 180;          // the short way round the colour wheel
+      decks[i].hue = (T.from.h[i] + d * e + 360) % 360;
+    });
+    if (typeof T.to.pulse === 'number') CONFIG.pulse = mix(T.from.pulse, T.to.pulse);
+    if (typeof T.to.glitch === 'number') CONFIG.glitch = mix(T.from.glitch, T.to.glitch);
+    if (p >= 1) { PRE.tween = null; save(); }
+    if (p >= 1 || now - T.last > 120) { T.last = now; syncUI(); }
+  }
+
+  function pickBuiltin(i, auto) {
+    if (PRE.active) leavePreset();
+    setFx(i, auto);
+  }
+  function leavePreset() {
+    const base = PRE.base;
+    PRE.active = null; PRE.base = null;
+    if (base) { applyDiscrete(base); startTween(base); }
+  }
+  function pickPreset(id, auto) {
+    const p = presetById(id);
+    if (!p) return;
+    const L = p.look;
+    if (!PRE.active) PRE.base = captureLook(!!L.r);
+    else if (L.r && PRE.base && !PRE.base.r) PRE.base.r = captureLook(true).r;   // routing is still the original here
+    PRE.active = id;
+    if (L.fx !== undefined) setFx(L.fx, auto); else { if (!auto) cycleHeld = true; showHud(); }
+    applyDiscrete(L); startTween(L);
+    save(); hudNote(p.name, 1800); syncUI();
+  }
+  // 1 to 8 are the effects, 9 and 0 the first two saved presets.
+  function pickSlot(n) {
+    if (n < FX.length) pickBuiltin(n, false);
+    else { const p = PRE.list[n - FX.length]; if (p) pickPreset(p.id, false); }
+  }
+
+  function preStore() {
+    try { localStorage.setItem(PRESET_KEY, JSON.stringify({ v: 1, list: PRE.list, gone: PRE.gone, orderDirty: PRE.orderDirty })); } catch (e) {}
+  }
+  function prePersist() {
+    preStore(); PRE.status = '';
+    renderPresets(); syncPresetUI(); schedulePush();
+  }
+  function loadLocal() {
+    try {
+      const s = JSON.parse(localStorage.getItem(PRESET_KEY) || 'null');
+      if (!s || !Array.isArray(s.list)) return;
+      PRE.list = s.list.filter(p => p && idOk(p.id)).slice(0, PRESET_MAX).map(p => {
+        const look = cleanLook(p.look), name = cleanName(p.name);
+        return look && name ? { id: p.id, name, ts: +p.ts || 0, look, synced: !!p.synced, remote: !!p.remote } : null;
+      }).filter(Boolean);
+      PRE.gone = Array.isArray(s.gone) ? s.gone.filter(idOk) : [];
+      PRE.orderDirty = !!s.orderDirty;
+    } catch (e) {}
+  }
+  function newId() {
+    let id;
+    do { id = Math.random().toString(36).slice(2, 8); } while (id.length < 3 || presetById(id) || PRE.gone.includes(id));
+    return id;
+  }
+  const touch = p => { p.ts = Date.now(); p.synced = false; };
+
+  function savePreset(name, withRoutes) {
+    if (PRE.list.length >= PRESET_MAX) { hudNote('That is the limit: ' + PRESET_MAX + ' presets'); return null; }
+    const p = { id: newId(), name: cleanName(name) || 'Preset ' + (PRE.list.length + 1), ts: Date.now(), look: captureLook(!!withRoutes), synced: false, remote: false };
+    PRE.list.push(p);
+    PRE.active = p.id; PRE.base = null;               // what is showing is this look now
+    prePersist(); showHud(); syncUI();
+    return p;
+  }
+  function renamePreset(id, name) {
+    const p = presetById(id), n = cleanName(name);
+    if (!p || !n || n === p.name) return;
+    p.name = n; touch(p); prePersist(); hudRefresh();
+  }
+  function updatePreset(id) {
+    const p = presetById(id);
+    if (!p) return;
+    p.look = captureLook(!!p.look.r); touch(p);
+    prePersist(); hudNote('Updated ' + p.name);
+  }
+  function deletePreset(id) {
+    const i = PRE.list.findIndex(p => p.id === id);
+    if (i < 0) return;
+    const p = PRE.list[i];
+    PRE.list.splice(i, 1);
+    // Remembered if the site has it (so the site's copy is removed too) and always in an
+    // offline copy, so the presets it was saved with do not come back on the next load.
+    if (p.remote || OFFLINE) PRE.gone.push(id);
+    if (PRE.active === id) { PRE.active = null; PRE.base = null; }
+    prePersist(); showHud(); syncUI();
+  }
+  function movePreset(id, dir) {
+    const i = PRE.list.findIndex(p => p.id === id), j = i + dir;
+    if (i < 0 || j < 0 || j >= PRE.list.length) return;
+    [PRE.list[i], PRE.list[j]] = [PRE.list[j], PRE.list[i]];
+    PRE.orderDirty = true;
+    prePersist(); showHud(); syncUI();
+  }
+
+  /* ── Files ── */
+  const exportItem = p => ({ id: p.id, name: p.name, ts: p.ts, look: p.look });
+  const exportDoc = list => ({ app: 'mpf-vizfx-presets', v: 1, saved: new Date().toISOString().slice(0, 10), presets: list.map(exportItem) });
+  function downloadText(name, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+  // seed: the presets baked into an offline copy. It only adds what is missing and never
+  // brings back one that was deleted; a real upload may update a preset (newer wins) and
+  // may bring a deleted one back, because that is what uploading it means.
+  function importDoc(doc, seed) {
+    if (!doc || doc.app !== 'mpf-vizfx-presets' || !Array.isArray(doc.presets)) throw new Error('That is not a preset file from Visualizer FX.');
+    const n = { added: 0, updated: 0, skipped: 0, bad: 0 };
+    doc.presets.slice(0, PRESET_MAX).forEach(e => {
+      const look = cleanLook(e && e.look), name = cleanName(e && e.name);
+      if (!look || !name) { n.bad++; return; }
+      const id = idOk(e.id) ? e.id : newId(), ts = (typeof e.ts === 'number' && isFinite(e.ts)) ? e.ts : Date.now();
+      const have = presetById(id);
+      if (have) {
+        if (!seed && ts > have.ts) { have.name = name; have.look = look; have.ts = ts; have.synced = false; n.updated++; } else n.skipped++;
+        return;
+      }
+      if (seed && PRE.gone.includes(id)) { n.skipped++; return; }
+      if (PRE.list.length >= PRESET_MAX) { n.skipped++; return; }
+      PRE.gone = PRE.gone.filter(g => g !== id);
+      PRE.list.push({ id, name, ts, look, synced: false, remote: false });
+      n.added++;
+    });
+    return n;
+  }
+
+  /* ── The site ── */
+  async function supaRpc(fn, args) {
+    const r = await fetch(SUPA_URL + '/rest/v1/rpc/' + fn, {
+      method: 'POST',
+      headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(args || {}) });
+    if (!r.ok) {
+      let m = 'Supabase ' + r.status;
+      try { const j = await r.json(); m = j.message || m; } catch (e) {}
+      const err = new Error(m); err.status = r.status; throw err;
+    }
+    return r.status === 204 ? null : r.json().catch(() => null);
+  }
+  const remoteVal = p => JSON.stringify({ n: p.name, t: p.ts, l: p.look });
+  const pending = () => PRE.list.some(p => !p.synced) || PRE.gone.length > 0 || PRE.orderDirty;
+
+  function mergeRemote(remote, order) {
+    const local = new Map(PRE.list.map(p => [p.id, p]));
+    let ids = order.filter(id => remote[id]).concat(Object.keys(remote).filter(id => !order.includes(id)).sort((a, b) => remote[a].ts - remote[b].ts));
+    if (PRE.orderDirty) {                               // a reorder made here and not sent yet wins
+      const mine = PRE.list.map(p => p.id).filter(id => remote[id]);
+      ids = mine.concat(ids.filter(id => !mine.includes(id)));
+    }
+    const out = [];
+    ids.forEach(id => {
+      if (PRE.gone.includes(id)) return;                // deleted here, waiting to be deleted there
+      const r = remote[id], l = local.get(id);
+      if (l && !l.synced && l.ts > r.ts) { l.remote = true; out.push(l); }       // edited here since, and newer
+      else out.push({ id, name: r.name, ts: r.ts, look: r.look, synced: true, remote: true });
+    });
+    local.forEach(l => {
+      if (ids.includes(l.id)) return;
+      if (l.remote) return;                             // it was on the site once and has been deleted from it
+      out.push(l);                                      // made here, not on the site yet
+    });
+    PRE.list = out;
+    if (PRE.active && !presetById(PRE.active)) { PRE.active = null; PRE.base = null; }
+  }
+  async function pullPresets() {
+    if (!onlineMode()) return;
+    PRE.status = 'Checking Snalbum…'; syncPresetUI();
+    try {
+      const all = (await supaRpc('get_site_text', {})) || {};
+      const remote = {};
+      Object.keys(all).forEach(k => {
+        if (k.indexOf(REMOTE_P) !== 0) return;
+        const id = k.slice(REMOTE_P.length);
+        if (!idOk(id)) return;
+        try {
+          const v = JSON.parse(all[k]), look = cleanLook(v.l), name = cleanName(v.n);
+          if (look && name) remote[id] = { name, ts: +v.t || 0, look };
+        } catch (e) {}
+      });
+      let order = [];
+      try { order = JSON.parse(all[REMOTE_ORDER] || '[]'); } catch (e) {}
+      if (!Array.isArray(order)) order = [];
+      mergeRemote(remote, order);
+      preStore(); PRE.status = ''; renderPresets(); syncPresetUI();
+      schedulePush();                                   // anything made here that the site has not seen
+    } catch (err) {
+      PRE.status = 'Could not reach Snalbum (' + err.message + '). The presets on this device still work.';
+      syncPresetUI();
+    }
+  }
+
+  let pushTimer = 0, pushing = false;
+  function schedulePush() { clearTimeout(pushTimer); pushTimer = setTimeout(pushPresets, 700); }
+  async function pushPresets() {
+    if (!onlineMode() || !pending()) return;
+    const pass = adminPass();
+    if (!pass) { PRE.status = 'Saved on this device. Sign in below to save it to Snalbum too.'; syncPresetUI(); return; }
+    if (pushing) { schedulePush(); return; }
+    pushing = true; PRE.status = 'Saving to Snalbum…'; syncPresetUI();
+    const entries = {}, sent = [], tooBig = [];
+    PRE.list.forEach(p => {
+      if (p.synced) return;
+      const v = remoteVal(p);
+      if (v.length > 2000) { tooBig.push(p); return; }
+      entries[REMOTE_P + p.id] = v; sent.push(p);
+    });
+    const goneSent = PRE.gone.slice();
+    goneSent.forEach(id => { entries[REMOTE_P + id] = null; });
+    const orderIds = PRE.list.filter(p => p.synced || sent.includes(p)).map(p => p.id);
+    entries[REMOTE_ORDER] = orderIds.length ? JSON.stringify(orderIds) : null;
+    try {
+      await supaRpc('set_site_text', { admin_password: pass, entries });
+      sent.forEach(p => { p.synced = true; p.remote = true; });
+      PRE.gone = PRE.gone.filter(id => !goneSent.includes(id));
+      PRE.orderDirty = tooBig.length > 0 ? PRE.orderDirty : false;
+      PRE.status = tooBig.length ? '"' + tooBig[0].name + '" is too big for the site. Save it again without the sound routing.' : 'Saved to Snalbum.';
+    } catch (err) {
+      if (err.status === 401 || err.status === 403 || /password/i.test(err.message)) {
+        try { sessionStorage.removeItem(ADMIN_KEY); } catch (e) {}
+        PRE.status = 'Snalbum did not accept the admin password. Sign in again.';
+      } else PRE.status = 'Could not save to Snalbum (' + err.message + '). It is kept on this device.';
+    }
+    pushing = false; preStore(); renderPresets(); syncPresetUI();
+  }
+  async function signIn(pass) {
+    try {
+      const ok = await supaRpc('admin_login', { password: pass });
+      if (!ok) { PRE.status = 'That is not the admin password.'; syncPresetUI(); return; }
+      try { sessionStorage.setItem(ADMIN_KEY, pass); } catch (e) {}
+      await pullPresets();
+      pushPresets();
+    } catch (err) { PRE.status = 'Could not check the password (' + err.message + ').'; syncPresetUI(); }
   }
 
   /* ══════════════════════════════════════════
@@ -1970,7 +2391,7 @@ Esc                close the panel</div>
       const b = VPAD.buttons[BTN_KEYS[e.code]];
       b.pressed = true; b.value = 1; activateVirtual(); return;
     }
-    if (/^Digit[1-8]$/.test(e.code)) { setFx(+e.code.slice(5) - 1); return; }
+    if (/^Digit[0-9]$/.test(e.code)) { pickSlot(e.code === 'Digit0' ? 9 : +e.code.slice(5) - 1); return; }
     switch (e.code) {
       case 'BracketLeft':  cycleScene(0, -1); break;
       case 'BracketRight': cycleScene(0, 1);  break;
@@ -2052,7 +2473,10 @@ Esc                close the panel</div>
     if (cam.on) bits.push('camera' + (camMix > 0.02 ? ' ' + Math.round(camMix * 100) + '%' : ''));
     if (cam.on && CONFIG.cam.motion.show !== 'picture') bits.push('tracking movement');
     if (stage.on) bits.push(stage.audience ? 'projector · audience control' : 'projector');
-    if (allowedList().length < FX.length) bits.push('effects limited to ' + allowedList().length);
+    {
+      const reach = allowedList().length + PRE.list.filter(p => !(CONFIG.presetsOff || []).includes(p.id)).length;
+      if (reach < FX.length + PRE.list.length) bits.push('effects limited to ' + reach);
+    }
     if (AUTO.amt > 0.1) bits.push('automated');
     if (tapBPM > 0) bits.push('tap ' + Math.round(tapBPM));
     if (cycleActive()) bits.push('auto fx');
@@ -2062,10 +2486,10 @@ Esc                close the panel</div>
     if (FLAGS.zoomPulse) bits.push('zoom pulse');
     if (decks[0].frozen) bits.push('A frozen');
     if (decks[1].frozen) bits.push('B frozen');
-    const sig = [fxMode, decks[0].scene, decks[1].scene, xfade.toFixed(2), bits.join('·')].join('|');
+    const sig = [fxMode, presetLabel(), decks[0].scene, decks[1].scene, xfade.toFixed(2), bits.join('·')].join('|');
     if (sig === hudSig) return;
     hudSig = sig;
-    $('hud-fx').textContent = FX[fxMode].name;
+    $('hud-fx').textContent = presetLabel();
     $('hud-a').textContent = SCENES[decks[0].scene].name;
     $('hud-b').textContent = SCENES[decks[1].scene].name;
     $('hud-xf').style.left = (xfade * 100) + '%';
@@ -3991,7 +4415,7 @@ Esc                close the panel</div>
       const b = document.createElement('button');
       b.className = 'btn ghost sm';
       b.innerHTML = `<kbd>${i + 1}</kbd>${f.name}`;
-      b.onclick = () => { setFx(i); b.blur(); };
+      b.onclick = () => { pickBuiltin(i); b.blur(); };
       grid.appendChild(b);
       fxBtns.push(b);
     });
@@ -4030,6 +4454,141 @@ Esc                close the panel</div>
     });
   }
   buildFxUI();
+
+  /* ── Presets: the panel side ── */
+  const preBtns = [];
+  let preRoutes = false;
+  function renderPresets() {
+    const grid = $('pre-grid'), list = $('pre-list'), allow = $('pre-allow');
+    if (!grid || !list || !allow) return;
+    grid.innerHTML = ''; list.innerHTML = ''; allow.innerHTML = ''; preBtns.length = 0;
+    const online = onlineMode();
+    PRE.list.forEach((p, n) => {
+      const slot = FX.length + n + 1;
+      const key = slot <= 9 ? String(slot) : slot === 10 ? '0' : '';
+      // Names are only ever set as text, never as markup: they come from files and from the site.
+      const b = document.createElement('button');
+      b.className = 'btn ghost sm preset';
+      const k = document.createElement('kbd'); k.textContent = slot; b.appendChild(k);
+      b.appendChild(document.createTextNode(p.name));
+      b.title = 'Swap to the saved preset "' + p.name + '"' + (key ? ' (key ' + key + ')' : '');
+      b.onclick = () => { pickPreset(p.id); b.blur(); };
+      grid.appendChild(b); preBtns.push({ b, id: p.id });
+
+      const a = document.createElement('button');
+      a.className = 'btn ghost sm';
+      a.textContent = p.name;
+      a.title = 'Let the controller and the auto-cycle use this preset';
+      a.classList.toggle('on', !(CONFIG.presetsOff || []).includes(p.id));
+      a.onclick = () => {
+        const off = CONFIG.presetsOff || [];
+        CONFIG.presetsOff = off.includes(p.id) ? off.filter(x => x !== p.id) : off.concat(p.id);
+        save(); renderPresets(); syncUI(); a.blur();
+      };
+      allow.appendChild(a);
+
+      const row = document.createElement('div'); row.className = 'pre-row';
+      const dot = document.createElement('span');
+      dot.className = 'pre-dot' + (p.synced ? ' ok' : '');
+      dot.title = !online ? 'Kept in this browser' : p.synced ? 'On Snalbum' : 'Only on this device so far';
+      if (!online) dot.style.visibility = 'hidden';
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.maxLength = 40; inp.value = p.name; inp.title = 'Rename (press Enter)';
+      inp.onkeydown = e => { if (e.key === 'Enter') inp.blur(); e.stopPropagation(); };
+      inp.onchange = () => renamePreset(p.id, inp.value);
+      const mk = (txt, tip, fn, disabled) => {
+        const x = document.createElement('button');
+        x.className = 'btn ghost sm ico'; x.textContent = txt; x.title = tip; x.disabled = !!disabled;
+        x.onclick = () => fn(x); return x;
+      };
+      const del = mk('✕', 'Delete this preset (press twice)', x => {
+        if (x.dataset.sure) { deletePreset(p.id); return; }
+        x.dataset.sure = '1'; x.textContent = 'Sure?';
+        setTimeout(() => { if (x.isConnected) { delete x.dataset.sure; x.textContent = '✕'; } }, 2500);
+      });
+      row.append(dot, inp,
+        mk('↑', 'Move earlier in the list', () => movePreset(p.id, -1), n === 0),
+        mk('↓', 'Move later in the list', () => movePreset(p.id, 1), n === PRE.list.length - 1),
+        mk('↻', 'Replace this preset with the look that is showing now', () => updatePreset(p.id)),
+        mk('⤓', 'Download this one preset as a file', () => downloadText('visualizer-fx-preset-' + (p.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || p.id) + '.json', JSON.stringify(exportDoc([p]), null, 1))),
+        del);
+      list.appendChild(row);
+    });
+    if (!PRE.list.length) {
+      const e = document.createElement('div'); e.className = 'empty-note';
+      e.textContent = 'Nothing saved yet. Set up a look you like and press Save.';
+      list.appendChild(e);
+    }
+    allow.style.display = PRE.list.length ? '' : 'none';
+    syncPresetUI();
+  }
+  function syncPresetUI() {
+    if (!$('pre-status')) return;
+    preBtns.forEach(({ b, id }) => b.classList.toggle('on', PRE.active === id));
+    const online = onlineMode(), admin = !!adminPass();
+    let msg = PRE.status;
+    if (!msg) {
+      msg = OFFLINE ? 'This is an offline copy: presets stay in this browser. Download them, then upload them on the Snalbum page to put them on the site.'
+        : !online ? 'Presets stay in this browser.'
+        : admin ? (pending() ? 'Waiting to save to Snalbum.' : 'Saved to Snalbum.')
+        : 'Presets are kept on this device. Sign in as site admin to save them to Snalbum too.';
+    }
+    if ($('pre-status').textContent !== msg) $('pre-status').textContent = msg;     // not setText: this runs once before that helper exists
+    $('pre-login').hidden = !(online && !admin);
+    $('pre-refresh').hidden = !online;
+    $('pre-routes').classList.toggle('on', preRoutes);
+  }
+  function initPresets() {
+    loadLocal();
+    // An offline copy brings the presets it was saved with, once each.
+    if (OFFLINE && window.MPF_OFFLINE_DATA && Array.isArray(window.MPF_OFFLINE_DATA.presets)) {
+      importDoc({ app: 'mpf-vizfx-presets', presets: window.MPF_OFFLINE_DATA.presets }, true);
+      preStore();
+    }
+    window.__mpfOfflineData = () => ({ presets: PRE.list.map(exportItem) });     // read by tool.js when it makes an offline copy
+    $('pre-name').onkeydown = e => { if (e.key === 'Enter') $('pre-save').click(); e.stopPropagation(); };
+    $('pre-save').onclick = e => {
+      const p = savePreset($('pre-name').value, preRoutes);
+      if (p) { $('pre-name').value = ''; hudNote('Saved ' + p.name); }
+      e.currentTarget.blur();
+    };
+    $('pre-routes').onclick = e => { preRoutes = !preRoutes; syncPresetUI(); e.currentTarget.blur(); };
+    $('pre-down').onclick = e => {
+      if (!PRE.list.length) { PRE.status = 'There is nothing to download yet.'; syncPresetUI(); }
+      else downloadText('visualizer-fx-presets.json', JSON.stringify(exportDoc(PRE.list), null, 1));
+      e.currentTarget.blur();
+    };
+    $('pre-up').onclick = () => $('pre-file').click();
+    $('pre-file').onchange = async e => {
+      const files = Array.from(e.target.files || []);
+      e.target.value = '';
+      const tot = { added: 0, updated: 0, skipped: 0, bad: 0 };
+      let failed = '';
+      for (const f of files) {
+        try {
+          if (f.size > 1024 * 1024) throw new Error(f.name + ' is over 1 MB.');
+          const n = importDoc(JSON.parse(await f.text()));
+          for (const k in tot) tot[k] += n[k];
+        } catch (err) { failed = err instanceof SyntaxError ? f.name + ' is not a preset file.' : err.message; }
+      }
+      prePersist();
+      PRE.status = ('Uploaded: ' + tot.added + ' added, ' + tot.updated + ' updated' + (tot.skipped ? ', ' + tot.skipped + ' already here' : '') + (tot.bad ? ', ' + tot.bad + ' could not be read' : '') + '.') + (failed ? ' ' + failed : '');
+      syncPresetUI();
+    };
+    $('pre-refresh').onclick = async e => { e.currentTarget.blur(); await pullPresets(); pushPresets(); };
+    $('pre-signin').onclick = async () => { const v = $('pre-pass').value; $('pre-pass').value = ''; if (v) await signIn(v); };
+    $('pre-pass').onkeydown = e => { if (e.key === 'Enter') $('pre-signin').click(); e.stopPropagation(); };
+    const lim = $('fx-allow-all'), cur = $('fx-allow-cur');
+    lim.onclick = e => { CONFIG.presetsOff = []; setAllowed(FX.map((_, i) => i)); renderPresets(); e.currentTarget.blur(); };
+    cur.onclick = e => {
+      if (PRE.active) { CONFIG.fxAllowed = []; CONFIG.presetsOff = PRE.list.filter(p => p.id !== PRE.active).map(p => p.id); save(); showHud(); syncUI(); }
+      else { CONFIG.presetsOff = PRE.list.map(p => p.id); setAllowed([fxMode]); }
+      renderPresets(); e.currentTarget.blur();
+    };
+    renderPresets();
+    if (onlineMode()) pullPresets();
+  }
+  initPresets();
 
   const deckEls = [];
   function buildDeckUI() {
@@ -4162,7 +4721,8 @@ Esc                close the panel</div>
     setVal($('feel'), CONFIG.feel);
     setText($('feel-val'), CONFIG.feel.toFixed(2));
 
-    fxBtns.forEach((b, i) => b.classList.toggle('on', i === fxMode));
+    fxBtns.forEach((b, i) => b.classList.toggle('on', !PRE.active && i === fxMode));
+    syncPresetUI();
     const okFx = allowedList();
     allowBtns.forEach((b, i) => b.classList.toggle('on', okFx.includes(i)));
     fxSliderEls.forEach(({ s, inp, out }) => {
@@ -4542,6 +5102,7 @@ Esc                close the panel</div>
     const now = performance.now();
     const dt  = dtOverride !== undefined ? dtOverride : Math.min(now - lastTs, 50);
     lastTs = now;
+    presetTween(now);
 
     pollGamepad();
     applyMotion(now);
@@ -4667,6 +5228,7 @@ Esc                close the panel</div>
       document.body.classList.toggle('projecting', stage.on); resize(); syncUI();
     },
     setScene, setXfade, setFx, colorHit,
+    PRE, pickPreset, pickBuiltin, pickSlot, savePreset, renamePreset, updatePreset, deletePreset, movePreset, captureLook, cleanLook, exportDoc, importDoc, pullPresets, pushPresets, presetTween, mergeRemote, signIn,
     setMode: m => setScene(0, m),
     axis(i, v) { VPAD.axes[i] = v; activateVirtual(); },
     button(i, v) { const b = VPAD.buttons[i]; b.pressed = !!v; b.value = v ? 1 : 0; activateVirtual(); },

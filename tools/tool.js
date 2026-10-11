@@ -14,7 +14,8 @@
 // references for the file's contents, and saves the result as one HTML file
 // that needs nothing else. That covers tool.css, tool.js and the two CDN
 // libraries the ZIP tools use. A copy flags itself with window.MPF_OFFLINE, so
-// its bar has no Offline button and its way back points at the live site.
+// its bar has no Offline button and its way back points at the live site. A tool
+// can also pass data into its copy (window.__mpfOfflineData); see buildOffline.
 (() => {
   const OFFLINE = window.MPF_OFFLINE || null;
   const band = new URLSearchParams(location.search).get('b') || '';
@@ -86,7 +87,12 @@
       html = html.replace(p.tag, () => inline);
     });
     const flag = '<script>window.MPF_OFFLINE=' + JSON.stringify({ index, from: pageUrl, saved: new Date().toISOString().slice(0, 10) }).replace(/</g, '\\u003c') + ';</script>';
-    html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, h => h + '\n' + flag) : flag + html;
+    // A tool can hand over data to carry in the copy (the FX tool's saved presets) by
+    // defining window.__mpfOfflineData; the copy reads it back from window.MPF_OFFLINE_DATA.
+    let extra = {};
+    try { extra = (typeof window.__mpfOfflineData === 'function' && window.__mpfOfflineData()) || {}; } catch (e) {}
+    const data = '<script>window.MPF_OFFLINE_DATA=' + JSON.stringify(extra).replace(/</g, '\\u003c') + ';</script>';
+    html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, h => h + '\n' + flag + '\n' + data) : flag + data + html;
     const note = '<!-- Offline copy of "' + name.replace(/-->/g, '') + '", saved from ' + location.origin + location.pathname + ' on ' + new Date().toISOString().slice(0, 10) + '. Everything it needs is in this file. -->\n';
     return html.replace(/<html/i, h => note + h);
   }

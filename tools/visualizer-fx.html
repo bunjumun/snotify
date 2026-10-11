@@ -18,6 +18,26 @@
     up and lets it drain away over a second or so, so a colour arrives as a
     payoff rather than as wallpaper. The pad's X button is the same hit by hand.
 
+    The camera is meant to be pointed at the band, on a stage the projector is
+    lighting, so it tracks movement rather than light: what moves is lifted and
+    outlined, what is still fades into the background, and the stage's own
+    brightening and flicker is divided out first. Auto balance tunes that to the
+    stage; every part of it has a control.
+
+    It also talks back: the audio rumbles the controller (bass in the big motor, highs
+    in the small one) and, on a PlayStation pad over USB, the controller's tilt sensors
+    add to the left stick.
+
+    On a kick, a few frames from a moment ago stutter back over the picture, some bands
+    jumping sideways, then it clears: a subtle glitch that only ever answers the bass.
+
+    Leave the controller alone for ten seconds and it plays itself: the same six
+    things drift on slow overlapping curves, and hand back the instant anyone
+    touches the controls.
+
+    The controller is deliberately small: six controls, each over its whole range
+    (rotate, scale, split, camera mix, push, warp), rather than a dozen at once.
+
     Left alone it is ambient: slow drift, a slow breathing in the effect's own
     parameters, a new effect every so often, no beat and no flash. It only
     wakes when something is played into it: a stick or button on the pad, a
@@ -26,9 +46,12 @@
     is all it takes for it to start dancing; the demo pulse in the settings is
     an optional stand-in for audio, to hear what the map does without any.
 
-    The camera is a layer, not a mode: hold the left trigger (or Q) to dissolve
-    to it, let go and it springs back. It is requested the first time you reach
-    for it, and the picture never leaves this page.
+    The camera is a layer: with it on, the right stick moves the mix between it
+    and the animations (it starts at half and half and stays where it is left),
+    and the effects work on the mix. It has
+    the picture controls of a photo editor (levels, gamma, contrast, colour
+    balance) and an Auto balance button, graded in the shader before the effects.
+    Only the performer can switch it on, and the picture never leaves this page.
   -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -411,7 +434,7 @@
   <button class="icon-btn" id="proj-btn"  title="Send the picture fullscreen to the projector, or bring it back (\). Settings stay on this screen.">📺</button>
   <button class="icon-btn" id="top-btn"   title="Float on top of other apps in its own small window (Chrome only)" hidden>📌</button>
   <button class="icon-btn" id="full-btn"  title="Fullscreen this window">⛶</button>
-  <button class="icon-btn" id="cam-btn"   title="Camera layer on / off (K). Hold LT or Q to blend it in.">📷</button>
+  <button class="icon-btn" id="cam-btn"   title="Camera on / off (K). On, the right stick moves the mix between camera and animations and it stays where you leave it. It starts half and half.">📷</button>
   <button class="icon-btn" id="audio-btn" title="Audio input on / off (M)">🎤</button>
   <button class="icon-btn" id="gear-btn"  title="Settings (`)">⚙</button>
 </div>
@@ -432,9 +455,10 @@
   It drifts quietly until you play it<br>
   <span style="font-size:0.7rem;opacity:0.8">
     R3 / L3 (click the sticks) step the effect · A / B change the scenes<br>
-    hold LT to blend the camera in<br>
+    camera on (K): right stick up and down mixes it in, and it stays where you leave it<br>
     X throws a colour hit · D-pad ◀ ▶ crossfades the decks<br>
-    sticks bend the picture · WASD · arrows · Q E · Z X C V on a keyboard<br>
+    left stick rotates the effect and sets its scale (it stays put) · right stick splits it · RT pushes · LT warps<br>
+    WASD · arrows · Q E · Z X C V on a keyboard<br>
     ⚙ for effects, camera, routing, MIDI and the full control map
   </span>
 </div>
@@ -509,6 +533,10 @@
         </select>
       </label>
       <label class="fld">
+        <span>Glitch on kicks <em id="glitch-val">0.50</em></span>
+        <input type="range" id="glitch" min="0" max="1" step="0.05" value="0.5" />
+      </label>
+      <label class="fld">
         <span>Auto-cycle effects (on the beat when audio is playing, every 45 seconds when nothing is)</span>
         <select id="cycle-sel">
           <option value="0">Off</option>
@@ -543,17 +571,107 @@
         </select>
       </label>
       <label class="fld">
-        <span>Resting mix <em id="cam-mix-val">0.00</em></span>
-        <input type="range" id="cam-mix" min="0" max="1" step="0.01" value="0" />
+        <span>Camera mix <em id="cam-mix-val">0.50</em></span>
+        <input type="range" id="cam-mix" min="0" max="1" step="0.01" value="0.5" />
       </label>
       <div class="btn-row">
         <button class="btn wide" id="cam-toggle">Enable camera</button>
         <button class="btn ghost" id="cam-mirror">Mirror</button>
+        <button class="btn ghost" id="cam-centre">50%</button>
       </div>
       <div class="note">
-        Hold <strong>LT</strong> (or <strong>Q</strong>) to dissolve to the camera; let go and it
-        springs back to the resting mix. The first pull asks for camera access.
-        The picture is processed on this page and never uploaded.
+        With the camera on, the <strong>right stick</strong> (the arrow keys on a keyboard) moves the
+        mix: up toward all camera, down toward all animations, faster the further you hold it. It
+        <strong>stays where you leave it</strong> when the stick goes back to centre. It comes on at
+        half and half, and the <strong>50%</strong> button puts it back there. The effects work on the
+        mix. The camera is only started from here, with <strong>K</strong>, or from the camera button,
+        never by the controller. The picture is processed on this page and never uploaded.
+      </div>
+      <div class="sect-title" style="margin-top:16px">Movement</div>
+      <label class="fld">
+        <span>Camera shows</span>
+        <select id="mot-show">
+          <option value="picture">The picture</option>
+          <option value="both">The picture, with what moves lifted</option>
+          <option value="bodies">Only what moves</option>
+        </select>
+      </label>
+      <div id="mot-sliders"></div>
+      <div class="toggles">
+        <button class="btn ghost sm" id="mot-flicker" title="Scale each frame to the stage's average brightness before looking for movement, so the show lighting the band is not mistaken for the band moving.">Ignore light changes</button>
+      </div>
+      <canvas id="motion-prev" width="128" height="72" style="width:100%;height:auto;border:1px solid rgba(255,255,255,0.12);border-radius:6px;background:#000;margin-top:10px"></canvas>
+      <div class="note" id="mot-readout" style="margin-top:4px">What the camera sees moving shows here.</div>
+      <div class="btn-row">
+        <button class="btn wide" id="mot-auto">Auto balance</button>
+        <button class="btn ghost" id="mot-learn">Learn background</button>
+      </div>
+      <div class="note">
+        The camera is aimed at a stage the projector is lighting, so it watches for
+        <strong>movement</strong> rather than light, and lifts the band out of the picture.
+        <strong>Auto balance</strong> takes the stage as it is lit now as the background and sets the
+        noise floor from two seconds of the show's own flicker; <strong>Learn background</strong> does
+        just the first part (use it when the stage is empty). A person who stands still melts into the
+        background after the learning time, and moving again lights them back up. Sensitivity and the
+        noise floor decide how big a change counts; Trail leaves a shape behind a moving body; Lift and
+        Stillness dimmed decide how hard the moving parts stand out; Outline draws the edge of the
+        moving shape. Movement is also a source for the routes below, so it can drive the effect.
+      </div>
+
+      <div class="sect-title" style="margin-top:16px">Camera picture</div>
+      <div id="cam-adj"></div>
+      <div class="btn-row">
+        <button class="btn wide" id="cam-auto">Auto levels</button>
+        <button class="btn ghost" id="cam-reset">Reset</button>
+      </div>
+      <div class="note" id="cam-adj-note">
+        Auto levels reads the camera's current frame and sets these: black and white points from
+        its darkest and brightest parts, colour balance so the average colour is neutral, and gamma
+        so the middle tones land where the effects work best. It suits a steady scene; on a stage lit
+        by the projector, use the movement controls above instead. Everything stays adjustable by hand.
+        Set the effect to RAW to see the camera on its own while you dial it in.
+      </div>
+    </div>
+
+    <div class="sect">
+      <div class="sect-title">Controller</div>
+      <div class="status off" id="pad-status">No controller yet: press a button on it.</div>
+      <label class="fld">
+        <span>Rumble from the audio <em id="rumble-val">0.50</em></span>
+        <input type="range" id="rumble" min="0" max="1" step="0.05" value="0.5" />
+      </label>
+      <div class="btn-row" style="margin-top:0;margin-bottom:14px">
+        <button class="btn ghost sm" id="rumble-test">Test rumble</button>
+      </div>
+      <label class="fld">
+        <span>Tilt amount <em id="motion-val">0.60</em></span>
+        <input type="range" id="motion" min="0" max="1" step="0.05" value="0.6" />
+      </label>
+      <div class="status off" id="motion-status">Tilt sensors not connected.</div>
+      <div class="btn-row">
+        <button class="btn wide" id="motion-connect">Connect tilt sensors</button>
+        <button class="btn ghost" id="motion-zero">Level</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn ghost sm" id="motion-flipx">Flip left / right</button>
+        <button class="btn ghost sm" id="motion-flipy">Flip forward / back</button>
+      </div>
+      <label class="fld" style="margin-top:14px">
+        <span>Automated mode after <em id="autoAfter-val">10 s</em> without the controller</span>
+        <input type="range" id="autoAfter" min="0" max="60" step="5" value="10" />
+      </label>
+      <div class="note">
+        <strong>Automated mode</strong>: with nobody on the controls for that long (a controller being
+        ignored counts as nobody), the rotate, scale, split, push and warp drift on their own, and the
+        camera mix wanders around the middle, until the controls are touched again. Set it to 0 to turn
+        it off.<br><br>
+        <strong>Rumble</strong>: the bass drives the big motor, the highs the small one, and a beat adds a
+        thump. Only while the controller is being listened to and the sound is playing, never in silence.
+        It needs Chrome and an Xbox, DualShock or DualSense pad. <strong>Tilt</strong> uses the motion
+        sensors in a DualShock 4 or DualSense, plugged in with a USB cable (Bluetooth carries no motion
+        data, and Xbox pads have none). Tilting left and right rotates the effect and tilting forward and
+        back rescales it, added to the left stick. Hold the controller the way it will be held and press
+        <strong>Level</strong>; if a direction feels backwards, flip it.
       </div>
     </div>
 
@@ -568,7 +686,7 @@
         <input type="range" id="trails" min="0" max="5" step="1" value="1" />
       </label>
       <div class="toggles">
-        <button class="btn ghost sm" data-fx="strobe" title="Strobe. Mash it and it takes two presses and comes up dimmer each time; five quiet seconds put it back to normal.">Strobe</button>
+        <button class="btn ghost sm" data-fx="strobe" title="Strobe. The longer it runs the quieter it gets, and it eases down to a tenth. Mash it and it takes two presses and comes up dimmer each time; five quiet seconds put it back to normal.">Strobe</button>
         <button class="btn ghost sm" data-fx="blackout">Blackout</button>
         <button class="btn ghost sm" data-fx="zoomPulse">Zoom pulse</button>
         <button class="btn ghost sm" data-fx="beatFlash">Beat flash</button>
@@ -659,6 +777,10 @@
         <input type="range" id="pulse" min="0" max="1.5" step="0.05" value="0.5" />
       </label>
       <label class="fld">
+        <span>Controller feel <em id="feel-val">0.50</em></span>
+        <input type="range" id="feel" min="0" max="1" step="0.05" value="0.5" />
+      </label>
+      <label class="fld">
         <span>Beat threshold <em id="beat-val">1.5</em></span>
         <input type="range" id="beat" min="0.6" max="4" step="0.1" value="1.5" />
       </label>
@@ -667,7 +789,8 @@
         <button class="btn ghost sm" data-cfg="auto">Auto level</button>
       </div>
       <div class="note">
-        <strong>Pulse</strong> is how hard the sound hits the picture: 0 ignores it, 1.5
+        <strong>Controller feel</strong> is how much the controller is smoothed: low is snappy, high is
+        flowing, like something with weight. <strong>Pulse</strong> is how hard the sound hits the picture: 0 ignores it, 1.5
         lets it throw everything about. <strong>Demo pulse</strong> is an optional
         stand-in for audio, so you can see what the map does with nothing connected; it
         is off by default and with nothing playing the tool is ambient. <strong>Auto level</strong> learns each band's own floor and peak,
@@ -698,21 +821,24 @@
     <div class="sect">
       <div class="sect-title">Controls</div>
       <div class="keys"><b>GAMEPAD</b>
-sticks             bend the picture: angle, scale, warp, shift
-RT                 push everything harder
-LT (hold)          blend the camera in
+left stick ← →     rotate the effect
+left stick ↑ ↓     the effect's scale, stays where you leave it
+right stick ← →    split it (RGB, CMYK separation)
+right stick ↑ ↓    the camera mix, stays where you leave it (camera on)
+RT                 push the effect harder
+LT                 warp
 D-pad ◀ ▶          crossfade deck A ↔ B
 D-pad ▲ ▼          more / fewer trails
 A / B              next scene on deck A / B
 R3 / L3            next / previous effect (click the sticks)
 X                  colour hit
 Y                  negative
-LB / RB            freeze deck A / B
-Back / Start       blackout / flash
+Start              flash
+(freeze and blackout are the laptop's: F, G, B, MIDI, the panel)
 
 <b>KEYBOARD</b>
 W A S D, arrows    left stick, right stick
-Q / E              LT (camera) / RT
+Q / E              LT / RT
 Z X C V            the A B X Y buttons (scenes A / B, colour hit, negative)
 1 – 8              pick an effect (8 is the raw picture)
 L                  auto-cycle effects on / off
@@ -870,7 +996,7 @@ Esc                close the panel</div>
     amplitude: 0, speed: 0, complexity: 0, colorSpeed: 0,
     glow: 0, zoom: 0, spin: 0, scatter: 0,
     fxAmount: 0, fxScale: 0, fxAngle: 0, fxShift: 0, fxWarp: 0, fxThresh: 0, fxColor: 0,
-    xShift: 0, yShift: 0, twist: 0, pitch: 0,
+    xShift: 0, yShift: 0, twist: 0, pitch: 0, camAxis: 0,
     ltrigger: 0, rtrigger: 0,
   };
   // What the sticks, triggers and audio routes added, without the rest and idle
@@ -926,16 +1052,22 @@ Esc                close the panel</div>
     { ch: -1, band: 'high', target: 'fxShift',   depth: 0.9 },
     { ch: -1, band: 'high', target: 'glow',      depth: 0.6 },
     { ch: -1, band: 'full', target: 'colorSpeed', depth: 0.4 },
+    { ch: -1, band: 'motion', target: 'fxAmount', depth: 0.5 },   // quiet until the camera is on and something moves
   ];
   const DEFAULTS = {
-    v: 2,                      // bumped when a saved value from an older build has to be discarded
+    v: 3,                      // bumped when a saved value from an older build has to be discarded
     deviceId: '', channels: 2,
     gain: 1.0, smoothing: 0.65, idle: 0.35, beat: 1.5,
-    auto: true, demo: false, pulse: 0.5,
+    auto: true, demo: false, pulse: 0.5, feel: 0.5,
+    rumble: 0.5, motion: 0.6, motionFlip: { x: false, y: false },
+    glitch: 0.5,                   // how strongly a kick stutters the recent picture back; 0 is off
+    autoAfter: 10,                 // seconds without the controller before automated mode; 0 is off
     cycle: 16, colorMode: 'auto', colorEvery: 8,
     fxAllowed: [0, 1, 2, 3, 4, 5, 6, 7],   // which effects the controller and the auto-cycle may reach
     fx:  { fxAmount: 0.55, fxScale: 0.35, fxAngle: 0.5, fxShift: 0.2, fxWarp: 0.1, fxThresh: 0.5, fxColor: 0 },
-    cam: { deviceId: '', mirror: true, blend: 'mix', mix: 0 },
+    cam: { deviceId: '', mirror: true, blend: 'mix', mix: 0.5,
+           adj: { bright: 0, contrast: 1, gamma: 1, black: 0, white: 1, sat: 1, temp: 0, tint: 0 },
+           motion: { show: 'picture', sens: 0.5, trail: 0.5, boost: 1.6, dim: 0.3, edge: 0.5, learn: 20, floor: 0.03, flicker: true } },
     routes: PARTY_ROUTES,
     midiOn: false, midi: { cc: {}, note: {} },
   };
@@ -950,9 +1082,13 @@ Esc                close the panel</div>
         const out = Object.assign(fresh, saved);
         out.fx  = Object.assign({}, DEFAULTS.fx,  saved.fx);
         out.cam = Object.assign({}, DEFAULTS.cam, saved.cam);
+        out.cam.adj = Object.assign({}, DEFAULTS.cam.adj, saved.cam && saved.cam.adj);
+        out.cam.motion = Object.assign({}, DEFAULTS.cam.motion, saved.cam && saved.cam.motion);
         // The first build left the demo pulse on, and any visit that changed a
         // setting saved that. It is off by default now, so do not carry it over.
-        if (saved.v !== DEFAULTS.v) { out.demo = false; out.v = DEFAULTS.v; }
+        // The camera used to start at 0 and only the trigger brought it in, which made a
+        // camera that was on look as if it were off; it now starts at half and half.
+        if (saved.v !== DEFAULTS.v) { out.demo = false; out.v = DEFAULTS.v; out.cam.mix = DEFAULTS.cam.mix; }
         return out;
       }
     } catch (e) {}
@@ -976,7 +1112,8 @@ Esc                close the panel</div>
     channels: 0, connected: false, error: '',
   };
 
-  const BANDS = { full: null, low: [20, 250], mid: [250, 2000], high: [2000, 9000] };
+  // 'motion' is not a band of sound: it is how much of the camera's picture is moving, offered as a route source alongside them.
+  const BANDS = { full: null, low: [20, 250], mid: [250, 2000], high: [2000, 9000], motion: null };
 
   async function connectAudio(deviceId, wantChannels) {
     disconnectAudio();
@@ -1154,6 +1291,7 @@ Esc                close the panel</div>
 
   // ch -1 is the loudest channel; a channel that is not there falls back to it.
   function channelValue(ch, band) {
+    if (band === 'motion') return Math.min(1, TRK.level * 4);
     const L = (ch >= 0 && LEV.ch[ch]) ? LEV.ch[ch] : LEV.mix;
     return L[band || 'full'] || 0;
   }
@@ -1339,10 +1477,12 @@ Esc                close the panel</div>
      100%, 75%, 50%, 25%, then a 20% floor. Five quiet seconds put it back to a
      single press at full brightness. The five seconds restart on every press, so
      mashing keeps the limit up; a strobe already running keeps the brightness it
-     started at until it is turned off. */
-  const STROBE = { last: 0, count: 0, armedAt: 0, level: 1 };
+     started at (less the fade below) until it is turned off. The five seconds also
+     run from the moment a strobe is turned off. */
+  const STROBE = { last: 0, count: 0, armedAt: 0, level: 1, onAt: 0 };
   function strobeRequest() {
-    if (FLAGS.strobe) { FLAGS.strobe = false; return; }
+    // Off is instant, and the cooldown runs from the end of a run, however long it was.
+    if (FLAGS.strobe) { FLAGS.strobe = false; STROBE.last = performance.now(); return; }
     const now = performance.now();
     if (now - STROBE.last > 5000) STROBE.count = 0;
     const limited = STROBE.count > 0;
@@ -1355,7 +1495,17 @@ Esc                close the panel</div>
     STROBE.armedAt = 0;
     STROBE.level = Math.max(0.2, 1 - 0.25 * STROBE.count);
     STROBE.count++;
+    STROBE.onAt = now;
     FLAGS.strobe = true;
+  }
+  // A strobe that has been running a while gets quieter rather than being cut off:
+  // full for four seconds, then eased down over the next four to a tenth, where it
+  // stays (going gently) until it is turned off. Multiplies the brightness above.
+  function strobeRun() {
+    const t = (performance.now() - STROBE.onAt) / 1000;
+    if (t <= 4) return 1;
+    const k = Math.min(1, (t - 4) / 4);
+    return 1 - 0.9 * k * k * (3 - 2 * k);
   }
   function toggle(flag) {
     if (flag === 'strobe') strobeRequest(); else FLAGS[flag] = !FLAGS[flag];
@@ -1378,7 +1528,8 @@ Esc                close the panel</div>
      button is pressed.
   ══════════════════════════════════════════ */
   const cam = { stream: null, video: null, on: false, starting: false, error: '' };
-  let camMix = 0;
+  let camMix = 0;     // what is being drawn this frame, eased
+  let camLevel = 0.5; // where the stick has left the mix; it stays put until the stick moves it again
   const BLEND = { mix: 'source-over', screen: 'screen', difference: 'difference', multiply: 'multiply' };
 
   async function startCamera() {
@@ -1400,6 +1551,7 @@ Esc                close the panel</div>
       v.srcObject = stream;
       await v.play();
       cam.stream = stream; cam.on = true;
+      camLevel = CONFIG.cam.mix;   // every time it comes on, it comes on at the starting mix (half and half)
       refreshCams();
     } catch (e) {
       cam.error = e && e.message ? e.message : String(e);
@@ -1428,6 +1580,8 @@ Esc                close the panel</div>
     ctx.save();
     ctx.globalAlpha = a;
     ctx.globalCompositeOperation = BLEND[CONFIG.cam.blend] || 'source-over';
+    // Only the no-WebGL fallback draws the camera this way; the sliders map onto what CSS filters offer.
+    if ('filter' in ctx) { const j = CONFIG.cam.adj; ctx.filter = `brightness(${1 + j.bright}) contrast(${j.contrast}) saturate(${j.sat})`; }
     if (CONFIG.cam.mirror) { ctx.translate(W, 0); ctx.scale(-1, 1); }
     ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
     ctx.restore();
@@ -1441,7 +1595,29 @@ Esc                close the panel</div>
     buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
     active: false,
   };
+  // The controller as it is held, before smoothing. P is what the picture reads.
+  const PAD = { xShift: 0, yShift: 0, twist: 0, pitch: 0, camAxis: 0, ltrigger: 0, rtrigger: 0 };
   const prevReal = new Array(20).fill(false);
+
+  // Haptics out, motion in. See the Controller section further down.
+  let hapticPad = null;                       // the physical pad being listened to this frame, if any
+  let padInfo = { id: '', rumble: false };    // what the last pad said it could do
+  const HAP = { last: 0, beat: false, was: false };
+  const MOTION = { dev: null, kind: '', on: false, last: 0, roll: 0, pitch: 0, zr: 0, zp: 0, needZero: false, tx: 0, ty: 0, note: '' };
+  const AUTO = { amt: 0, lastInput: performance.now(), scale: 0 };   // scale: automated mode's wander on the effect scale
+  let scaleMoved = false;
+  // Movement tracking: a 128 by 72 grey model of the stage as it usually looks (bg)
+  // and of what has just moved (E). See trackMotion.
+  // The glitch loops' history and state. Declared here, with the other state, because initGL() runs
+  // as soon as it is defined and builds the overlay's texture into it.
+  const GLI = { n: 10, ring: [], idx: 0, count: 0, frame: 0, hw: 0, hh: 0, tex: null,
+                on: false, t0: 0, dur: 0, back: 4, len: 3, seed: 0, last: 0 };
+  const TRK = { w: 128, h: 72, n: 128 * 72, bg: new Float32Array(128 * 72), E: new Float32Array(128 * 72),
+                d: new Float32Array(128 * 72), tmp: new Float32Array(128 * 72), cur: new Float32Array(128 * 72),
+                prev: new Float32Array(128 * 72), f: new Float32Array(128 * 72), fm: new Float32Array(128 * 72),
+                away: new Float32Array(128 * 72), fill: new Float32Array(128 * 72), lab: new Int32Array(128 * 72), mem: new Int32Array(128 * 72),
+                bytes: new Uint8Array(128 * 72), hist: new Uint16Array(241),
+                have: false, dirty: false, last: 0, level: 0, noise: 0, thr: 0, bgMean: 0, cv: null, cx: null, calib: null };   // automated mode: how far in it is, and when anyone last touched the controls
   const prevVirt = new Array(20).fill(false);
   let padConnected = false;
 
@@ -1472,8 +1648,25 @@ Esc                close the panel</div>
   const LINK = { padTs: -1, lastAdvance: 0, stale: false, state: 'none' };
 
   function decayInputs(k) {
-    P.xShift *= k; P.yShift *= k; P.twist *= k;
-    P.pitch  *= k; P.ltrigger *= k; P.rtrigger *= k;
+    PAD.xShift *= k; PAD.yShift *= k; PAD.twist *= k;
+    PAD.pitch  *= k; PAD.camAxis *= k; PAD.ltrigger *= k; PAD.rtrigger *= k;
+  }
+
+  /* ── Smoothing ──
+     What a person does with a stick is a series of jabs; what they mean is a
+     gesture. The controller is read into PAD as it is, and P follows it through a
+     low-pass: sticks ease over about a fifth of a second, and the triggers come on
+     in about a tenth and let go over about four tenths, like something with
+     weight. The sticks are also given a curve (see pollGamepad), so the first part
+     of the travel is fine and the last part is fast. Add the audio, which hits at
+     once and lets go over about a fifth of a second, and a person's hands and the
+     music read as one thing instead of two. Controller feel scales every time. */
+  function smoothPad(dt) {
+    const s = 0.3 + 1.4 * CONFIG.feel;
+    const f = tau => 1 - Math.exp(-dt / (tau * s));
+    for (const k of ['xShift', 'yShift', 'twist', 'pitch']) P[k] += (PAD[k] - P[k]) * f(180);
+    P.camAxis += (PAD.camAxis - P.camAxis) * f(90);
+    for (const k of ['ltrigger', 'rtrigger']) P[k] += (PAD[k] - P[k]) * f(PAD[k] > P[k] ? 120 : 420);
   }
 
   // Everything a button can do, whether it came from the pad or from the
@@ -1486,9 +1679,6 @@ Esc                close the panel</div>
       case 1:  cycleScene(1, 1); break;                                   // B
       case 2:  colorHit(1); break;                                        // X
       case 3:  toggle('negative'); break;                                 // Y
-      case 4:  toggleFreeze(0); break;                                    // LB
-      case 5:  toggleFreeze(1); break;                                    // RB
-      case 8:  toggle('blackout'); break;                                 // Back
       case 9:  flashOp = 1; break;                                        // Start
       case 10: stepFx(-1, false); break;                                  // L3: previous effect
       case 11: stepFx(1, false); break;                                   // R3: next effect
@@ -1496,7 +1686,9 @@ Esc                close the panel</div>
       case 13: stepTrails(-1); break;                                     // D-pad down
     }
   }
-  const PRESS_BUTTONS = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13];
+  // Not LB, RB or Back: freezing a deck and blacking the picture out belong to the
+  // person at the laptop (B, F, G, MIDI, the panel), not to whoever holds the controller.
+  const PRESS_BUTTONS = [0, 1, 2, 3, 9, 10, 11, 12, 13];
   function scan(buttons, prev) {
     for (const i of PRESS_BUTTONS) {
       const now = !!(buttons[i] && buttons[i].pressed);
@@ -1521,6 +1713,9 @@ Esc                close the panel</div>
       pad = null;
     }
 
+    hapticPad = pad;
+    if (pad) padInfo = { id: pad.id, rumble: !!pad.vibrationActuator };
+
     // The keyboard's Z X C V stay live beside a real pad.
     if (VPAD.active) scan(VPAD.buttons, prevVirt);
 
@@ -1542,12 +1737,19 @@ Esc                close the panel</div>
     }
     LINK.state = host.document.hasFocus() ? 'live' : 'bg';
 
-    P.xShift   = deadzone(src.axes[0] || 0);
-    P.yShift   = deadzone(src.axes[1] || 0);
-    P.twist    = deadzone(src.axes[2] || 0);
-    P.pitch    = deadzone(src.axes[3] || 0);
-    P.ltrigger = (src.buttons[6] && src.buttons[6].value) || 0;
-    P.rtrigger = (src.buttons[7] && src.buttons[7].value) || 0;
+    // A curve on the sticks: gentle near the centre, quick at the end of the travel.
+    const curve = v => Math.sign(v) * Math.pow(Math.abs(v), 1.6);
+    PAD.xShift = curve(deadzone(src.axes[0] || 0));
+    PAD.yShift = curve(deadzone(src.axes[1] || 0));
+    PAD.twist  = curve(deadzone(src.axes[2] || 0));
+    // Right stick, up and down: pitch, except with the camera on, when it is the
+    // camera mix instead (up is more camera). Pitch is held at zero then so the
+    // scenes do not warp while you mix.
+    const rsY = deadzone(src.axes[3] || 0);
+    PAD.camAxis  = -rsY;
+    PAD.pitch    = cam.on ? 0 : rsY;
+    PAD.ltrigger = (src.buttons[6] && src.buttons[6].value) || 0;
+    PAD.rtrigger = (src.buttons[7] && src.buttons[7].value) || 0;
 
     if (pad) {
       scan(pad.buttons, prevReal);
@@ -1557,25 +1759,31 @@ Esc                close the panel</div>
     }
   }
 
-  // Gamepad contribution to each modulation target. The left trigger is not in
-  // here at all: it belongs to the camera.
+  /* ── What the controller does ──
+     Six controls, and nothing else. It used to feed a dozen parameters at once,
+     most of them overlapping, which is how a pad turns into noise: every stick
+     moved everything a little. Each of these does one thing and does it over its
+     whole range, so a move is something you can see and name.
+
+       left stick  left / right   rotate the effect
+       left stick  up / down      the effect's scale (cell and line size); it
+                                  stays where it is left, like a fader
+       right stick left / right   split it (RGB and CMYK separation)
+       right stick up / down      the camera mix, when the camera is on (see the loop)
+       right trigger              push the effect harder, and swell the scenes
+       left trigger               warp
+
+     The scenes themselves no longer follow the sticks; they are moved by the
+     sound, and they idle. */
   function padMod() {
     return {
-      amplitude:  P.rtrigger * 2.6 + Math.abs(P.yShift) * 0.5,
-      speed:      Math.abs(P.yShift) * 2.6,
-      complexity: Math.abs(P.xShift) * 2.6,
-      colorSpeed: Math.abs(P.twist)  * 3.5,
-      glow:       P.rtrigger * 0.55,
-      zoom:       P.rtrigger * 0.85,
-      spin:       P.twist,
-      scatter:    Math.abs(P.pitch) * 0.6,
-      fxAmount:   P.rtrigger * 0.5,
-      fxScale:    P.pitch * 0.45,
-      fxAngle:    P.twist * 0.3,
-      fxShift:    Math.abs(P.yShift),
-      fxWarp:     Math.abs(P.xShift),
-      fxThresh:   0,
-      fxColor:    0,
+      fxAngle:   P.xShift * 0.35,
+      fxScale:   AUTO.scale,
+      fxShift:   Math.abs(P.twist) * 1.2,
+      fxAmount:  P.rtrigger * 0.8,
+      amplitude: P.rtrigger * 1.2,
+      glow:      P.rtrigger * 0.35,
+      fxWarp:    P.ltrigger * 1.2,
     };
   }
 
@@ -1613,13 +1821,16 @@ Esc                close the panel</div>
      third of their speed and the effect only breathes and, every so often,
      changes. */
   let activity = 0, lastCycleAt = performance.now();
-  function poke() { activity = 1; }
+  function poke() { activity = 1; AUTO.lastInput = performance.now(); }
   function updateActivity() {
-    const moved = Math.abs(P.xShift) + Math.abs(P.yShift) + Math.abs(P.twist) + Math.abs(P.pitch) + P.ltrigger + P.rtrigger > 0.06;
+    // The controller moving, as the person holds it: not P, which automated mode also moves.
+    const moved = performance.now() - AUTO.lastInput < 500;
     const audioIn = Audio.connected && LEV.mix.full > 0.12;
     const camIn = cam.on && camMix > 0.05;
     if (moved || audioIn || camIn || CONFIG.demo) activity = Math.min(1, activity + 0.1);
     else activity *= 0.996;
+    // Automated mode is a gentle kind of being played: the decks come up part of the way.
+    if (AUTO.amt > 0.05) activity = Math.max(activity, 0.35 * AUTO.amt);
     if (activity < 0.002) activity = 0;
   }
 
@@ -1735,11 +1946,13 @@ Esc                close the panel</div>
     else if (VPAD.active) bits.push('keyboard');
     if (midiCount) bits.push('midi');
     if (cam.on) bits.push('camera' + (camMix > 0.02 ? ' ' + Math.round(camMix * 100) + '%' : ''));
+    if (cam.on && CONFIG.cam.motion.show !== 'picture') bits.push('tracking movement');
     if (stage.on) bits.push(stage.audience ? 'projector · audience control' : 'projector');
     if (allowedList().length < FX.length) bits.push('effects limited to ' + allowedList().length);
+    if (AUTO.amt > 0.1) bits.push('automated');
     if (tapBPM > 0) bits.push('tap ' + Math.round(tapBPM));
     if (cycleActive()) bits.push('auto fx');
-    if (FLAGS.strobe)    bits.push('strobe' + (STROBE.level < 1 ? ' ' + Math.round(STROBE.level * 100) + '%' : ''));
+    if (FLAGS.strobe)    { const sl = STROBE.level * strobeRun(); bits.push('strobe' + (sl < 0.99 ? ' ' + Math.round(sl * 100) + '%' : '')); }
     if (FLAGS.blackout)  bits.push('blackout');
     if (FLAGS.negative)  bits.push('negative');
     if (FLAGS.zoomPulse) bits.push('zoom pulse');
@@ -2190,8 +2403,7 @@ Esc                close the panel</div>
     const ctx = D.cx, W = D.cv.width, H = D.cv.height;
     wipe(D, 1);
     ctx.save();
-    ctx.translate(W / 2 + P.xShift * 80, H / 2 + P.yShift * 80);
-    ctx.rotate(P.spin * Math.PI);
+    ctx.translate(W / 2, H / 2);
     const z = P.zoom / TARGETS.zoom.rest;      // 1 at rest, so an untouched scene is unscaled
     ctx.scale(z, z);
     ctx.translate(-W / 2, -H / 2);
@@ -2217,7 +2429,7 @@ Esc                close the panel</div>
 
     strobePh++;
     if (FLAGS.strobe && strobePh % 6 < 3) {
-      ctx.globalAlpha = 0.92 * STROBE.level; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 0.92 * STROBE.level * strobeRun(); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
       ctx.globalAlpha = 1;
       return;
     }
@@ -2232,9 +2444,11 @@ Esc                close the panel</div>
     // Equal-power crossfade, so the middle of the fader is not a dip in brightness.
     const gains = [Math.cos(xfade * Math.PI / 2), Math.sin(xfade * Math.PI / 2)];
     ctx.globalCompositeOperation = 'screen';
+    // All camera and nothing else showing: no point drawing what is covered.
+    const camCovers = glOk && cam.on && CONFIG.cam.blend === 'mix' && camMix >= 0.99;
     decks.forEach((D, i) => {
       const g = gains[i] * D.intensity;
-      if (g < 0.004) {
+      if (g < 0.004 || camCovers) {
         // Out of the mix: don't spend a frame on it, and don't leave a ghost
         // behind for when it comes back.
         D.cx.globalCompositeOperation = 'source-over'; D.cx.globalAlpha = 1;
@@ -2249,7 +2463,8 @@ Esc                close the panel</div>
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
 
-    if (camMix > 0.004) drawCamera(Math.min(1, camMix));
+    // With WebGL the camera is mixed in the shader, where its picture controls live.
+    if (!glOk && camMix > 0.004) drawCamera(Math.min(1, camMix));
 
     if (FLAGS.beatFlash && aud.flash > 0) {
       ctx.globalAlpha = aud.flash * 0.10;
@@ -2292,6 +2507,13 @@ Esc                close the panel</div>
     uniform vec2  uRes;
     uniform float uTime, uMode, uModeA, uXf, uAmt, uScale, uAngle, uShift, uWarp, uThresh;
     uniform float uNeg, uSat, uSeed, uRS;
+    uniform sampler2D uCam;
+    uniform vec2  uCamFit;
+    uniform float uCamMix, uCamBlend, uMirror;
+    uniform float uCamBright, uCamContrast, uCamGamma, uCamBlack, uCamWhite, uCamSat, uCamTemp, uCamTint;
+    uniform sampler2D uMot;
+    uniform vec2  uMotTexel;
+    uniform float uMotMode, uMotBoost, uMotDim, uMotEdge;
 
     const float TAU = 6.28318530718;
 
@@ -2313,7 +2535,53 @@ Esc                close the panel</div>
       px.y += sin(q.x * 14.0 - uTime * 1.7) * 10.0 * uWarp * uRS;
       return px;
     }
-    vec3 src(vec2 px) { return texture2D(uTex, warpPx(px) / uRes).rgb; }
+    // The camera picture controls, in the order a photo editor applies them: colour
+    // balance first (temperature and tint as channel gains, in stops, so the
+    // sliders reach far enough to undo a strong colour cast and the three gains
+    // always multiply to one), then levels, gamma, contrast about mid grey,
+    // brightness, saturation. Balance goes before levels because a black point
+    // that is right for the whole picture is wrong for any one channel of a
+    // cast one, and would crush it.
+    vec3 camGrade(vec3 c) {
+      c *= vec3(exp2(uCamTemp + 0.35 * uCamTint),
+                exp2(-0.7 * uCamTint),
+                exp2(-uCamTemp + 0.35 * uCamTint));
+      c = clamp((c - uCamBlack) / max(uCamWhite - uCamBlack, 0.02), 0.0, 1.0);
+      c = pow(clamp(c, 0.0, 1.0), vec3(1.0 / max(uCamGamma, 0.1)));
+      c = (c - 0.5) * uCamContrast + 0.5 + uCamBright;
+      float l = luma(c);
+      return clamp(mix(vec3(l), c, uCamSat), 0.0, 1.0);
+    }
+
+    // What every effect reads: the decks, with the camera mixed in when it is on.
+    // The warp applies to both, so the wobble moves the camera too.
+    vec3 src(vec2 px) {
+      vec2 uv = warpPx(px) / uRes;
+      vec3 d = texture2D(uTex, uv).rgb;
+      if (uCamMix < 0.002) return d;
+      vec2 cuv = uv;
+      if (uMirror > 0.5) cuv.x = 1.0 - cuv.x;
+      cuv = (cuv - 0.5) * uCamFit + 0.5;
+      vec3 c = camGrade(texture2D(uCam, cuv).rgb);
+      // Movement: what moved is lifted, what did not is dimmed (or, in the bodies-only
+      // view, dropped), and the edge of the moving shape is drawn in. The mask is
+      // sampled where the camera is, so the mirror and the crop apply to it too.
+      if (uMotMode > 0.5) {
+        float m = texture2D(uMot, cuv).r;
+        float lift = clamp(m * uMotBoost, 0.0, 1.0);
+        c *= mix(uMotMode < 1.5 ? 0.0 : uMotDim, 1.0, lift);
+        if (uMotEdge > 0.01) {
+          vec2 tx = uMotTexel * 1.5;
+          float e = abs(texture2D(uMot, cuv + vec2(tx.x, 0.0)).r - texture2D(uMot, cuv - vec2(tx.x, 0.0)).r)
+                  + abs(texture2D(uMot, cuv + vec2(0.0, tx.y)).r - texture2D(uMot, cuv - vec2(0.0, tx.y)).r);
+          c += vec3(e * uMotEdge * 2.0);
+        }
+      }
+      if (uCamBlend < 0.5) return mix(d, c, uCamMix);
+      if (uCamBlend < 1.5) return 1.0 - (1.0 - d) * (1.0 - c * uCamMix);
+      if (uCamBlend < 2.5) return mix(d, abs(d - c), uCamMix);
+      return mix(d, d * c, uCamMix);
+    }
 
     // LINE DISPLACE: horizontal lines, each pushed up by how bright the picture
     // is under it and thickened by the same, so the picture is drawn in relief.
@@ -2521,10 +2789,85 @@ Esc                close the panel</div>
     }
   `;
 
+  // The glitch overlay: a frame from a moment ago, drawn over the picture in
+  // horizontal bands, about half of which jump sideways, with a hairline of
+  // colour split on the ones that do. It is blended in at the strength it is
+  // given and is gone again within half a second.
+  const OV_FRAG = `
+    #ifdef GL_FRAGMENT_PRECISION_HIGH
+    precision highp float;
+    #else
+    precision mediump float;
+    #endif
+    uniform sampler2D uHist;
+    uniform vec2 uRes;
+    uniform float uAlpha, uSeed;
+    float h1(float x) { return fract(sin(x * 127.1) * 43758.5453); }
+    void main() {
+      vec2 uv = gl_FragCoord.xy / uRes;
+      float band = floor(uv.y * 16.0);
+      float live = step(0.45, h1(band * 3.7 + uSeed));
+      float jump = (h1(band * 9.1 + uSeed * 2.3) - 0.5) * 0.12 * live;
+      vec2 q = vec2(uv.x + jump, uv.y);
+      float s = 0.003 * live;
+      vec3 c = vec3(texture2D(uHist, q + vec2(s, 0.0)).r, texture2D(uHist, q).g, texture2D(uHist, q - vec2(s, 0.0)).b);
+      gl_FragColor = vec4(c, uAlpha * mix(0.3, 1.0, live));
+    }
+  `;
+
   const UNIFORMS = ['uTex', 'uRes', 'uTime', 'uMode', 'uModeA', 'uXf', 'uAmt', 'uScale', 'uAngle', 'uShift',
-                    'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS'];
-  let gl = null, glProg = null, glTex = null, glLoc = {}, glOk = false, fb2d = null;
+                    'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS',
+                    'uCam', 'uCamFit', 'uCamMix', 'uCamBlend', 'uMirror', 'uCamBright', 'uCamContrast',
+                    'uCamGamma', 'uCamBlack', 'uCamWhite', 'uCamSat', 'uCamTemp', 'uCamTint',
+                    'uMot', 'uMotTexel', 'uMotMode', 'uMotBoost', 'uMotDim', 'uMotEdge'];
+  let gl = null, glProg = null, glTex = null, glCamTex = null, glLoc = {}, glOk = false, fb2d = null;
+  let glOv = null, glOvLoc = {}, glMotTex = null;   // the glitch overlay's own small program
   let glNote = '';
+
+  function linkOverlay(g) {
+    const p = g.createProgram();
+    g.attachShader(p, compile(g, g.VERTEX_SHADER, VERT));
+    g.attachShader(p, compile(g, g.FRAGMENT_SHADER, OV_FRAG));
+    g.bindAttribLocation(p, 0, 'aPos');
+    g.linkProgram(p);
+    if (!g.getProgramParameter(p, g.LINK_STATUS)) throw new Error(g.getProgramInfoLog(p) || 'link failed');
+    return p;
+  }
+  // The movement mask, one grey byte per cell, on unit 3.
+  function makeMotTexture() {
+    gl.activeTexture(gl.TEXTURE3);
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.activeTexture(gl.TEXTURE0);
+    return t;
+  }
+  function makeHistTexture() {
+    gl.activeTexture(gl.TEXTURE2);
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.activeTexture(gl.TEXTURE0);
+    return t;
+  }
+  // Optional: if this fails the picture is fine, there is simply no glitch.
+  function buildOverlay() {
+    try {
+      glOv = linkOverlay(gl);
+      ['uHist', 'uRes', 'uAlpha', 'uSeed'].forEach(n => { glOvLoc[n] = gl.getUniformLocation(glOv, n); });
+      GLI.tex = makeHistTexture();
+    } catch (e) {
+      glOv = null;
+      glNote = glNote || ('the glitch overlay did not build: ' + e.message);
+      console.warn('Visualizer FX: glitch overlay unavailable.', e);
+    }
+  }
 
   function compile(g, type, source) {
     const s = g.createShader(type);
@@ -2541,6 +2884,20 @@ Esc                close the panel</div>
     g.linkProgram(p);
     if (!g.getProgramParameter(p, g.LINK_STATUS)) throw new Error(g.getProgramInfoLog(p) || 'link failed');
     return p;
+  }
+
+  // The camera's own texture, on unit 1. Its filtering must not need mipmaps, as a
+  // video frame is rarely a power of two.
+  function makeCamTexture() {
+    gl.activeTexture(gl.TEXTURE1);
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.activeTexture(gl.TEXTURE0);
+    return t;
   }
 
   function initGL() {
@@ -2574,6 +2931,9 @@ Esc                close the panel</div>
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    glCamTex = makeCamTexture();
+    glMotTex = makeMotTexture();
+    buildOverlay();
     glOk = true;
   }
   initGL();
@@ -2596,6 +2956,9 @@ Esc                close the panel</div>
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      glCamTex = makeCamTexture();
+      glMotTex = makeMotTexture();
+      buildOverlay();
       glOk = true;
     } catch (e) { glNote = e.message; }
   });
@@ -2622,6 +2985,7 @@ Esc                close the panel</div>
       mirrorFrame();
       return;
     }
+    gl.useProgram(glProg);
     gl.viewport(0, 0, W, H);
     if (FLAGS.blackout) { gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); mirrorFrame(); return; }
 
@@ -2629,6 +2993,41 @@ Esc                close the panel</div>
     gl.bindTexture(gl.TEXTURE_2D, glTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, comp);
     gl.uniform1i(glLoc.uTex, 0);
+
+    // The camera: its frame goes up each time it is being shown, and its grade
+    // and fit go with it. The fit crops it to cover the screen, as the page's
+    // 2D camera layer used to.
+    const camLive = cam.on && cam.video && cam.video.readyState >= 2 && cam.video.videoWidth > 0 && camMix > 0.004;
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, glCamTex);
+    if (camLive) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cam.video);
+    gl.uniform1i(glLoc.uCam, 1);
+    // The movement mask goes up when the tracker has a new one.
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, glMotTex);
+    if (TRK.dirty && TRK.have) { gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, TRK.w, TRK.h, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, TRK.bytes); TRK.dirty = false; }
+    gl.uniform1i(glLoc.uMot, 3);
+    gl.activeTexture(gl.TEXTURE0);
+    const mo = CONFIG.cam.motion;
+    gl.uniform1f(glLoc.uMotMode, camLive && TRK.have ? ({ picture: 0, bodies: 1, both: 2 }[mo.show] || 0) : 0);
+    gl.uniform1f(glLoc.uMotBoost, mo.boost);
+    gl.uniform1f(glLoc.uMotDim, mo.dim);
+    gl.uniform1f(glLoc.uMotEdge, mo.edge);
+    gl.uniform2f(glLoc.uMotTexel, 1 / TRK.w, 1 / TRK.h);
+    const adj = CONFIG.cam.adj;
+    const ao = W / H, av = camLive ? cam.video.videoWidth / cam.video.videoHeight : ao;
+    gl.uniform1f(glLoc.uCamMix, camLive ? Math.min(1, camMix) : 0);
+    gl.uniform1f(glLoc.uCamBlend, { mix: 0, screen: 1, difference: 2, multiply: 3 }[CONFIG.cam.blend] || 0);
+    gl.uniform1f(glLoc.uMirror, CONFIG.cam.mirror ? 1 : 0);
+    gl.uniform2f(glLoc.uCamFit, Math.min(1, ao / av), Math.min(1, av / ao));
+    gl.uniform1f(glLoc.uCamBright, adj.bright);
+    gl.uniform1f(glLoc.uCamContrast, adj.contrast);
+    gl.uniform1f(glLoc.uCamGamma, adj.gamma);
+    gl.uniform1f(glLoc.uCamBlack, adj.black);
+    gl.uniform1f(glLoc.uCamWhite, adj.white);
+    gl.uniform1f(glLoc.uCamSat, adj.sat);
+    gl.uniform1f(glLoc.uCamTemp, adj.temp);
+    gl.uniform1f(glLoc.uCamTint, adj.tint);
     gl.uniform2f(glLoc.uRes, W, H);
     gl.uniform1f(glLoc.uTime, now / 1000);
     // RAW is the last entry and shader mode 0, so the shader's modes sit one along.
@@ -2653,11 +3052,231 @@ Esc                close the panel</div>
     gl.uniform1f(glLoc.uSeed, fxSeed);
     gl.uniform1f(glLoc.uRS, rs);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    snapshotFrame();          // before the glitch goes on, so a glitch never repeats a glitch
+    glitchOverlay(now);
     mirrorFrame();
   }
 
   // Copied in the same frame as it is drawn, which is the only time a WebGL
   // canvas can still be read without keeping its buffer.
+  /* ── Movement tracking ──
+     The camera is pointed at a stage that the projector is lighting, so light
+     balance is the wrong thing to chase: the picture changes with the show, and
+     the stage lights come and go on top. What stays true is that the band move.
+     So the camera is watched for movement, and what moved is what gets lifted out.
+
+     A 128 by 72 grey copy of each frame (about thirty a second) is compared with a
+     slowly updating model of how the stage usually looks, and with the frame before
+     it; something counts as a person only if it differs from the stage and there has
+     been movement around it. Three things keep the
+     projector from being mistaken for a person: the frame is first scaled so its
+     average brightness matches the model's (so the whole picture brightening or
+     dimming with the show is not movement); the difference is blurred twice (a
+     halftone dot flickering on a shirt averages out, a body does not); and the
+     threshold is set from the frame's own typical change, its median, which is the
+     noise plus the flicker plus the light, since most of any frame is not a person.
+     What clears the threshold is kept as movement energy that fades at the Trail
+     rate, so a body leaves a shape behind it. The model learns slowly, and not where
+     something is moving, so a person who stands still melts into the stage over a
+     few seconds rather than staying lit. */
+  function boxBlur(src, dst, w, h) {
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - 1), y1 = Math.min(h - 1, y + 1);
+      for (let x = 0; x < w; x++) {
+        const x0 = Math.max(0, x - 1), x1 = Math.min(w - 1, x + 1);
+        let s = 0;
+        for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) s += src[yy * w + xx];
+        dst[y * w + x] = s / ((y1 - y0 + 1) * (x1 - x0 + 1));
+      }
+    }
+  }
+
+  function trackMotion(now) {
+    const v = cam.video, mo = CONFIG.cam.motion;
+    if (!cam.on || !v || v.readyState < 2 || !v.videoWidth) { TRK.level *= 0.9; return; }
+    if (now - TRK.last < 33) return;
+    const dtMs = TRK.last ? Math.min(200, now - TRK.last) : 33;
+    TRK.last = now;
+    if (!TRK.cv) {
+      TRK.cv = document.createElement('canvas'); TRK.cv.width = TRK.w; TRK.cv.height = TRK.h;
+      TRK.cx = TRK.cv.getContext('2d', { willReadFrequently: true });
+    }
+    TRK.cx.drawImage(v, 0, 0, TRK.w, TRK.h);
+    const px = TRK.cx.getImageData(0, 0, TRK.w, TRK.h).data;
+    const n = TRK.n, bg = TRK.bg, E = TRK.E, d = TRK.d, cur = TRK.cur, prev = TRK.prev, f = TRK.f, fm = TRK.fm, tmp = TRK.tmp;
+    let mean = 0;
+    for (let i = 0; i < n; i++) {
+      const l = (0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]) / 255;
+      cur[i] = l; mean += l;
+    }
+    mean /= n;
+    if (!TRK.have) { for (let i = 0; i < n; i++) { bg[i] = cur[i]; prev[i] = cur[i]; E[i] = 0; } TRK.bgMean = mean; TRK.have = true; }
+    const gain = mo.flicker ? Math.max(0.6, Math.min(1.6, TRK.bgMean / Math.max(mean, 0.01))) : 1;
+    // Two differences. d: how far each cell is from how the stage usually looks.
+    // f: how much it changed since the last frame, which is movement. A person who
+    // has stopped differs from the stage but is not changing, so d alone would keep
+    // them lit for ever; f alone would only catch the edges of a body.
+    for (let i = 0; i < n; i++) {
+      const c = cur[i] * gain;
+      cur[i] = c;
+      const base = bg[i] + 0.1;                         // relative, so dark and bright corners count alike
+      d[i] = Math.abs(c - bg[i]) / base;
+      f[i] = Math.abs(c - prev[i]) / base;
+    }
+    boxBlur(d, tmp, TRK.w, TRK.h); boxBlur(tmp, d, TRK.w, TRK.h);
+    boxBlur(f, tmp, TRK.w, TRK.h); boxBlur(tmp, f, TRK.w, TRK.h);
+    // The typical value of each, the median, is the noise and the flicker and the light
+    // (most of any frame is not a person); the threshold rides on top of it.
+    const medianOf = a => {
+      TRK.hist.fill(0);
+      for (let i = 0; i < n; i++) TRK.hist[Math.min(240, (a[i] * 200) | 0)]++;
+      let acc = 0;
+      for (let b = 0; b < 241; b++) { acc += TRK.hist[b]; if (acc >= n / 2) return b / 200; }
+      return 1.2;
+    };
+    const kmul = 7 - 5.2 * mo.sens;                     // 7 times the typical change at the lowest sensitivity, 1.8 at the highest
+    const med = medianOf(d), fmed = medianOf(f);
+    TRK.noise = med;
+    const thr = Math.max(mo.floor, med * kmul), fthr = Math.max(mo.floor * 0.7, fmed * kmul);
+    TRK.thr = thr;
+    // Where there is movement, spread it a little.
+    for (let i = 0; i < n; i++) fm[i] = Math.max(0, Math.min(1, (f[i] - fthr) / (fthr + 0.02)));
+    boxBlur(fm, tmp, TRK.w, TRK.h); boxBlur(tmp, fm, TRK.w, TRK.h);
+    // Group the cells that differ from the stage into objects (touching cells are one
+    // object) and keep an object whole if any part of it is moving. Frame to frame
+    // only the edges of a body change, since its middle is one colour, so without this
+    // a walking person would come out as an outline. An object covering most of the
+    // frame is not a person: it is the light changing, and is dropped.
+    const away = TRK.away, fill = TRK.fill, lab = TRK.lab, mem = TRK.mem, w = TRK.w;
+    lab.fill(0); fill.fill(0);
+    for (let i = 0; i < n; i++) away[i] = Math.max(0, Math.min(1, (d[i] - thr) / (thr + 0.02)));
+    let id = 0;
+    for (let s = 0; s < n; s++) {
+      if (lab[s] || away[s] < 0.35) continue;
+      id++;
+      let head = 0, tail = 0, maxMove = 0, j;
+      mem[tail++] = s; lab[s] = id;
+      while (head < tail) {
+        const i = mem[head++], x = i % w;
+        if (fm[i] > maxMove) maxMove = fm[i];
+        if (x > 0)         { j = i - 1; if (!lab[j] && away[j] >= 0.35) { lab[j] = id; mem[tail++] = j; } }
+        if (x < w - 1)     { j = i + 1; if (!lab[j] && away[j] >= 0.35) { lab[j] = id; mem[tail++] = j; } }
+        if (i >= w)        { j = i - w; if (!lab[j] && away[j] >= 0.35) { lab[j] = id; mem[tail++] = j; } }
+        if (i < n - w)     { j = i + w; if (!lab[j] && away[j] >= 0.35) { lab[j] = id; mem[tail++] = j; } }
+      }
+      if (tail >= 6 && tail < n * 0.45 && maxMove > 0.3) for (let k = 0; k < tail; k++) fill[mem[k]] = away[mem[k]];
+    }
+    const decay = 0.5 + 0.47 * mo.trail;
+    const alpha = 1 - Math.exp(-dtMs / (mo.learn * 1000));
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      const e = Math.max(fill[i], E[i] * decay);
+      E[i] = e; sum += e;
+      bg[i] += (cur[i] - bg[i]) * alpha * (1 - e);       // the model learns, but not where something is moving
+      TRK.bytes[i] = (e * 255) | 0;
+      prev[i] = cur[i];
+    }
+    TRK.bgMean += (mean - TRK.bgMean) * alpha;
+    TRK.level = sum / n;
+    TRK.dirty = true;
+    if (TRK.calib) {
+      TRK.calib.noises.push(Math.max(med, fmed));
+      if (now > TRK.calib.until) finishTune();
+    }
+  }
+
+  function learnBackground() { TRK.have = false; TRK.level = 0; }
+
+  /* ── Auto balance ──
+     For this tool that means tuning the tracker to the stage as it is lit right now.
+     It takes the stage as the background, watches the frame's own typical change for
+     two seconds with the show running, and sets the noise floor at two and a half
+     times the 90th percentile of that, so the projector's flicker sits under the
+     threshold rather than over it. The first time, it also turns the lift view on. */
+  function autoTune() {
+    if (!cam.on) { hudNote('Turn the camera on first'); return false; }
+    learnBackground();
+    TRK.calib = { until: performance.now() + 2000, noises: [] };
+    hudNote('Measuring the stage light for two seconds…', 2300);
+    return true;
+  }
+  function finishTune() {
+    const mo = CONFIG.cam.motion, ns = TRK.calib.noises.slice().sort((a, b) => a - b);
+    TRK.calib = null;
+    const p90 = ns.length ? ns[Math.min(ns.length - 1, Math.floor(ns.length * 0.9))] : 0;
+    mo.floor = Math.max(0.02, Math.min(0.3, Math.round(p90 * 2.5 * 200) / 200));
+    if (mo.show === 'picture') Object.assign(mo, { show: 'both', sens: 0.5, trail: 0.5, boost: 1.6, dim: 0.3, edge: 0.5 });
+    save(); syncUI();
+    hudNote('Tracking tuned to the stage light');
+  }
+
+  /* ── Glitch loops ──
+     A rolling history of what has just been on screen, effects and live video
+     included: about ten frames at half size, one every other frame, so roughly the
+     last third of a second. When a low-end hit lands (a beat from the audio, or a
+     tapped one), a few of those frames from a moment ago are stuttered back over the
+     picture in a short loop, some bands of them jumping sideways, and it fades
+     out under half a second later. It is subtle by design: the overlay is never
+     the whole picture, and the history is taken before the overlay goes on, so a
+     glitch never repeats a glitch. It only ever answers a beat, so with nothing
+     playing there is none. */
+
+  function snapshotFrame() {
+    if (!glOv || !(CONFIG.glitch > 0)) return;
+    if ((++GLI.frame & 1) === 1) return;
+    const hw = Math.min(960, canvas.width), hh = Math.max(1, Math.round(canvas.height * hw / canvas.width));
+    if (GLI.hw !== hw || GLI.hh !== hh) { GLI.ring = []; GLI.hw = hw; GLI.hh = hh; GLI.idx = 0; GLI.count = 0; }
+    let c = GLI.ring[GLI.idx];
+    if (!c) { c = GLI.ring[GLI.idx] = document.createElement('canvas'); c.width = hw; c.height = hh; c._cx = c.getContext('2d'); }
+    c._cx.drawImage(canvas, 0, 0, hw, hh);
+    GLI.idx = (GLI.idx + 1) % GLI.n;
+    GLI.count = Math.min(GLI.n, GLI.count + 1);
+  }
+
+  function startGlitch(now, force) {
+    if (!glOv || !(CONFIG.glitch > 0) || GLI.count < 8) return;
+    if (!force && now - GLI.last < 400) return;
+    GLI.last = now; GLI.on = true; GLI.t0 = now;
+    GLI.dur = 170 + 170 * CONFIG.glitch;
+    GLI.back = 3 + Math.floor(Math.random() * 4);
+    GLI.len = 2 + Math.floor(Math.random() * 3);
+    GLI.seed = Math.random() * 50;
+  }
+
+  function glitchOverlay(now) {
+    if (!GLI.on || !glOv) return;
+    const p = (now - GLI.t0) / GLI.dur;
+    if (p >= 1) { GLI.on = false; return; }
+    const env = p < 0.15 ? p / 0.15 : 1 - (p - 0.15) / 0.85;
+    const alpha = Math.min(0.9, (0.25 + 0.7 * CONFIG.glitch) * env);
+    const step = Math.floor((now - GLI.t0) / 33);                // the loop turns about thirty times a second
+    const ago = GLI.back - (step % GLI.len);                     // and stutters between a few frames from the past
+    const c = GLI.ring[(GLI.idx - 1 - ago + GLI.n * 2) % GLI.n];
+    if (!c) return;
+    gl.useProgram(glOv);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, GLI.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    gl.uniform1i(glOvLoc.uHist, 2);
+    gl.uniform2f(glOvLoc.uRes, canvas.width, canvas.height);
+    gl.uniform1f(glOvLoc.uAlpha, alpha);
+    gl.uniform1f(glOvLoc.uSeed, GLI.seed + step * 1.7);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.useProgram(glProg);
+  }
+
+  // For tests: one pixel of what has just been drawn, read in the same frame.
+  function pixelAt(x, y) {
+    if (!glOk) return null;
+    const px = new Uint8Array(4);
+    gl.readPixels(x, canvas.height - 1 - y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    return Array.from(px);
+  }
+
   function mirrorFrame() {
     if (stage.on) mctx.drawImage(canvas, 0, 0, mirror.width, mirror.height);
   }
@@ -2682,7 +3301,7 @@ Esc                close the panel</div>
     { id: 'beat',    label: 'Beat sensitivity', def: 76, set: v => { CONFIG.beat = Math.round((0.6 + (1 - v) * 3.4) * 10) / 10; } },
     { id: 'fx-amt',  label: 'FX amount',        def: 77, set: v => { CONFIG.fx.fxAmount = v * TARGETS.fxAmount.max; } },
     { id: 'fx-scl',  label: 'FX scale',         def: 78, set: v => { CONFIG.fx.fxScale  = v * TARGETS.fxScale.max; } },
-    { id: 'cam-mix', label: 'Camera mix',       def: 79, set: v => { CONFIG.cam.mix = v; } },
+    { id: 'cam-mix', label: 'Camera mix',       def: 79, set: v => { CONFIG.cam.mix = v; camLevel = v; } },
     { id: 'colour',  label: 'Colour (resting)', def: 80, set: v => { CONFIG.fx.fxColor = v; } },
   ];
   // Each NOTE param: { id, label, def (default note), note (live), fn() }
@@ -2924,8 +3543,8 @@ Esc                close the panel</div>
     const st = $('cam-status');
     if (cam.error)         { st.className = 'status err'; st.textContent = 'Could not open the camera: ' + cam.error; }
     else if (cam.starting) { st.className = 'status off'; st.textContent = 'Waiting for the browser to allow the camera…'; }
-    else if (cam.on)       { st.className = 'status ok';  st.textContent = 'Camera is live. Hold LT or Q to blend it in.'; }
-    else                   { st.className = 'status off'; st.textContent = 'Camera is off. Pulling LT will start it.'; }
+    else if (cam.on)       { st.className = 'status ok';  st.textContent = 'Camera is live. The right stick (arrow keys) moves the mix, and it stays where you leave it.'; }
+    else                   { st.className = 'status off'; st.textContent = 'Camera is off. Turn it on here, with the camera button, or with K.'; }
     $('cam-toggle').textContent = cam.on ? 'Disable camera' : 'Enable camera';
     syncUI();
   }
@@ -3044,6 +3663,11 @@ Esc                close the panel</div>
   bindSlider('idle',   'idle',      v => v.toFixed(2));
   bindSlider('beat',   'beat',      v => v.toFixed(1));
   bindSlider('pulse',  'pulse',     v => v.toFixed(2));
+  bindSlider('feel',   'feel',      v => v.toFixed(2));
+  bindSlider('rumble', 'rumble',    v => v.toFixed(2));
+  bindSlider('motion', 'motion',    v => v.toFixed(2));
+  bindSlider('autoAfter', 'autoAfter', v => v === 0 ? 'off' : v + ' s');
+  bindSlider('glitch', 'glitch', v => v.toFixed(2));
 
   $('ch-req').value = CONFIG.channels;
   $('ch-req-val').textContent = CONFIG.channels;
@@ -3056,7 +3680,7 @@ Esc                close the panel</div>
   $('reset-btn').onclick = () => {
     CONFIG = JSON.parse(JSON.stringify(DEFAULTS));
     save();
-    [['gain', 'gain'], ['smooth', 'smoothing'], ['idle', 'idle'], ['beat', 'beat'], ['pulse', 'pulse']].forEach(([id, key]) => {
+    [['gain', 'gain'], ['smooth', 'smoothing'], ['idle', 'idle'], ['beat', 'beat'], ['pulse', 'pulse'], ['feel', 'feel'], ['rumble', 'rumble'], ['motion', 'motion'], ['autoAfter', 'autoAfter'], ['glitch', 'glitch']].forEach(([id, key]) => {
       $(id).value = CONFIG[key];
     });
     $('gain-val').textContent   = CONFIG.gain.toFixed(1) + '×';
@@ -3064,6 +3688,11 @@ Esc                close the panel</div>
     $('idle-val').textContent   = CONFIG.idle.toFixed(2);
     $('beat-val').textContent   = CONFIG.beat.toFixed(1);
     $('pulse-val').textContent  = CONFIG.pulse.toFixed(2);
+    $('feel-val').textContent   = CONFIG.feel.toFixed(2);
+    $('rumble-val').textContent = CONFIG.rumble.toFixed(2);
+    $('motion-val').textContent = CONFIG.motion.toFixed(2);
+    $('autoAfter-val').textContent = CONFIG.autoAfter === 0 ? 'off' : CONFIG.autoAfter + ' s';
+    $('glitch-val').textContent = CONFIG.glitch.toFixed(2);
     $('ch-req').value = CONFIG.channels;
     $('ch-req-val').textContent = CONFIG.channels;
     learnTarget = null;
@@ -3080,6 +3709,11 @@ Esc                close the panel</div>
   document.querySelectorAll('[data-cfg]').forEach(b => {
     b.onclick = () => { CONFIG[b.dataset.cfg] = !CONFIG[b.dataset.cfg]; save(); b.blur(); renderStatus(); syncUI(); };
   });
+  $('rumble-test').onclick   = e => { testRumble(); e.currentTarget.blur(); };
+  $('motion-connect').onclick = e => { if (MOTION.on) disconnectMotion(); else connectMotion(); e.currentTarget.blur(); };
+  $('motion-zero').onclick   = e => { MOTION.needZero = true; hudNote('Level set'); e.currentTarget.blur(); };
+  $('motion-flipx').onclick  = e => { CONFIG.motionFlip.x = !CONFIG.motionFlip.x; save(); updateControllerUI(); e.currentTarget.blur(); };
+  $('motion-flipy').onclick  = e => { CONFIG.motionFlip.y = !CONFIG.motionFlip.y; save(); updateControllerUI(); e.currentTarget.blur(); };
   $('flash-btn').onclick  = e => { flashOp = 1; e.currentTarget.blur(); };
   $('hit-btn').onclick    = e => { colorHit(1); e.currentTarget.blur(); };
   $('tap-btn').onclick    = e => { tapTempo(); e.currentTarget.blur(); };
@@ -3092,7 +3726,9 @@ Esc                close the panel</div>
   $('cam-toggle').onclick = e => { toggleCamera(); e.currentTarget.blur(); };
   $('cam-mirror').onclick = e => { CONFIG.cam.mirror = !CONFIG.cam.mirror; save(); e.currentTarget.blur(); syncUI(); };
   $('cam-blend').onchange = () => { CONFIG.cam.blend = $('cam-blend').value; save(); $('cam-blend').blur(); };
-  $('cam-mix').oninput    = () => { CONFIG.cam.mix = +$('cam-mix').value; save(); syncUI(); };
+  // The slider sets the mix now and what the camera starts at next time.
+  $('cam-mix').oninput    = () => { CONFIG.cam.mix = +$('cam-mix').value; camLevel = CONFIG.cam.mix; save(); syncUI(); };
+  $('cam-centre').onclick = e => { CONFIG.cam.mix = 0.5; camLevel = 0.5; save(); syncUI(); e.currentTarget.blur(); };
   $('cam-sel').onchange   = () => {
     CONFIG.cam.deviceId = $('cam-sel').value; save();
     if (cam.on) { stopCamera(); startCamera(); }
@@ -3109,6 +3745,130 @@ Esc                close the panel</div>
     { k: 'fxColor',  label: 'Colour (resting)', min: 0, max: 1, step: 0.01 },
   ];
   const fxBtns = [], fxSliderEls = [], allowBtns = [];
+
+  // Camera picture controls
+  const CAM_SLIDERS = [
+    { k: 'bright',   label: 'Brightness',        min: -0.5, max: 0.5, step: 0.01 },
+    { k: 'contrast', label: 'Contrast',          min: 0.4,  max: 2.5, step: 0.01 },
+    { k: 'gamma',    label: 'Gamma',             min: 0.4,  max: 2.5, step: 0.01 },
+    { k: 'black',    label: 'Black point',       min: 0,    max: 0.5, step: 0.005 },
+    { k: 'white',    label: 'White point',       min: 0.5,  max: 1,   step: 0.005 },
+    { k: 'temp',     label: 'Colour temperature, cool to warm', min: -1, max: 1, step: 0.01 },
+    { k: 'tint',     label: 'Tint, green to magenta',           min: -1, max: 1, step: 0.01 },
+    { k: 'sat',      label: 'Saturation',        min: 0,    max: 2,   step: 0.01 },
+  ];
+  const camSliderEls = [];
+  function buildCamUI() {
+    const wrap = $('cam-adj');
+    wrap.innerHTML = '';
+    CAM_SLIDERS.forEach(s => {
+      const lab = document.createElement('label');
+      lab.className = 'fld';
+      lab.innerHTML = `<span>${s.label} <em></em></span><input type="range" min="${s.min}" max="${s.max}" step="${s.step}" />`;
+      const inp = lab.querySelector('input'), out = lab.querySelector('em');
+      inp.oninput = () => { CONFIG.cam.adj[s.k] = +inp.value; save(); syncUI(); };
+      wrap.appendChild(lab);
+      camSliderEls.push({ s, inp, out });
+    });
+  }
+  buildCamUI();
+
+  // Movement tracking controls
+  const MOT_SLIDERS = [
+    { k: 'sens',  label: 'Sensitivity',                      min: 0,   max: 1,   step: 0.01 },
+    { k: 'trail', label: 'Trail, how long a movement lingers', min: 0, max: 1,   step: 0.01 },
+    { k: 'boost', label: 'Lift, how hard movement is brightened', min: 0.5, max: 4, step: 0.05 },
+    { k: 'dim',   label: 'Stillness dimmed to',              min: 0,   max: 1,   step: 0.01 },
+    { k: 'edge',  label: 'Outline',                          min: 0,   max: 1,   step: 0.01 },
+    { k: 'learn', label: 'Stillness becomes background after, seconds', min: 3, max: 60, step: 1 },
+    { k: 'floor', label: 'Noise floor',                      min: 0,   max: 0.3, step: 0.005 },
+  ];
+  const motSliderEls = [];
+  (function buildMotUI() {
+    const wrap = $('mot-sliders');
+    wrap.innerHTML = '';
+    MOT_SLIDERS.forEach(s => {
+      const lab = document.createElement('label');
+      lab.className = 'fld';
+      lab.innerHTML = `<span>${s.label} <em></em></span><input type="range" min="${s.min}" max="${s.max}" step="${s.step}" />`;
+      const inp = lab.querySelector('input'), out = lab.querySelector('em');
+      inp.oninput = () => { CONFIG.cam.motion[s.k] = +inp.value; save(); syncUI(); };
+      wrap.appendChild(lab);
+      motSliderEls.push({ s, inp, out });
+    });
+    $('mot-show').onchange = () => { CONFIG.cam.motion.show = $('mot-show').value; save(); $('mot-show').blur(); syncUI(); };
+    $('mot-flicker').onclick = e => { CONFIG.cam.motion.flicker = !CONFIG.cam.motion.flicker; save(); syncUI(); e.currentTarget.blur(); };
+    $('mot-learn').onclick = e => { learnBackground(); hudNote('Background learned'); e.currentTarget.blur(); };
+    $('mot-auto').onclick = e => { autoTune(); e.currentTarget.blur(); };
+  })();
+
+  let motPrevData = null;
+  function drawMotionPreview() {
+    const cv = $('motion-prev');
+    if (!cv) return;
+    cv.style.transform = CONFIG.cam.mirror ? 'scaleX(-1)' : '';
+    if (!cam.on || !TRK.have) { setText($('mot-readout'), cam.on ? 'Learning the stage…' : 'Turn the camera on to see what it tracks.'); return; }
+    const cx = cv.getContext('2d');
+    if (!motPrevData) motPrevData = cx.createImageData(TRK.w, TRK.h);
+    const dd = motPrevData.data;
+    for (let i = 0; i < TRK.n; i++) { const b = TRK.bytes[i]; dd[i * 4] = b; dd[i * 4 + 1] = b; dd[i * 4 + 2] = b; dd[i * 4 + 3] = 255; }
+    cx.putImageData(motPrevData, 0, 0);
+    setText($('mot-readout'), 'Moving: ' + Math.round(TRK.level * 100) + '% of the frame · typical change ' + TRK.noise.toFixed(3) + ' · threshold ' + TRK.thr.toFixed(3));
+  }
+
+  /* ── Auto balance ──
+     One press. Looks at the camera's current frame (a 64 by 36 copy) and sets the
+     picture controls to suit it: black and white points at the 2nd and 98th
+     percentile of brightness, which stretches a flat picture to the full range;
+     the colour balance that makes the average colour neutral (grey-world); then
+     the gamma that lands the middle brightness near 0.42, where the effects have
+     the most to work with. It only sets the sliders, so any of them can still be
+     moved by hand afterwards. */
+  const balCv = document.createElement('canvas');
+  balCv.width = 64; balCv.height = 36;
+  const balCx = balCv.getContext('2d', { willReadFrequently: true });
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const round2 = v => Math.round(v * 100) / 100;
+  function autoBalance() {
+    const v = cam.video;
+    if (!cam.on || !v || v.readyState < 2 || !v.videoWidth) { hudNote('Turn the camera on first'); return false; }
+    balCx.drawImage(v, 0, 0, 64, 36);
+    const d = balCx.getImageData(0, 0, 64, 36).data, n = 64 * 36;
+    const rs = new Float32Array(n), gs = new Float32Array(n), bs = new Float32Array(n);
+    let sr = 0, sg = 0, sb = 0, top = 0;
+    for (let i = 0; i < n; i++) {
+      rs[i] = d[i * 4] / 255; gs[i] = d[i * 4 + 1] / 255; bs[i] = d[i * 4 + 2] / 255;
+      sr += rs[i]; sg += gs[i]; sb += bs[i];
+      top = Math.max(top, rs[i], gs[i], bs[i]);
+    }
+    if (top < 0.04) { hudNote('The camera sees almost nothing: check the lens and the light'); return false; }
+    // Colour balance first: the gains that would make the average colour neutral
+    // (grey-world), normalised so they multiply to one, then turned into the
+    // temperature and tint the shader uses (see camGrade).
+    const ar = Math.max(sr / n, 0.02), ag = Math.max(sg / n, 0.02), ab = Math.max(sb / n, 0.02);
+    const grey = (ar + ag + ab) / 3;
+    let gr = grey / ar, gg = grey / ag, gb = grey / ab;
+    const g0 = Math.cbrt(gr * gg * gb);
+    gr /= g0; gg /= g0; gb /= g0;
+    const tint = clamp(-Math.log2(gg) / 0.7, -1, 1);
+    const temp = clamp((Math.log2(gr) - Math.log2(gb)) / 2, -1, 1);
+    const kr = Math.pow(2, temp + 0.35 * tint), kg = Math.pow(2, -0.7 * tint), kb = Math.pow(2, -temp + 0.35 * tint);
+    // Then levels and gamma, measured on the balanced picture rather than the raw one.
+    const lum = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      lum[i] = 0.299 * Math.min(1, rs[i] * kr) + 0.587 * Math.min(1, gs[i] * kg) + 0.114 * Math.min(1, bs[i] * kb);
+    }
+    const sorted = Array.from(lum).sort((a, b) => a - b);
+    const lo = sorted[Math.floor(n * 0.02)], hi = sorted[Math.floor(n * 0.98)], med = sorted[Math.floor(n * 0.5)];
+    const black = Math.min(0.4, lo), white = Math.max(black + 0.2, Math.max(0.3, hi));
+    const medN = clamp((med - black) / Math.max(white - black, 0.05), 0.03, 0.97);
+    const gamma = clamp(Math.log(medN) / Math.log(0.42), 0.5, 2.2);
+    Object.assign(CONFIG.cam.adj, { black: round2(black), white: round2(white), temp: round2(temp), tint: round2(tint), gamma: round2(gamma), contrast: 1.1, bright: 0 });
+    save(); syncUI(); hudNote('Camera balanced');
+    return true;
+  }
+  $('cam-auto').onclick  = e => { autoBalance(); e.currentTarget.blur(); };
+  $('cam-reset').onclick = e => { CONFIG.cam.adj = Object.assign({}, DEFAULTS.cam.adj); save(); syncUI(); e.currentTarget.blur(); };
   function buildFxUI() {
     const grid = $('fx-grid');
     grid.innerHTML = '';
@@ -3199,6 +3959,7 @@ Esc                close the panel</div>
   function syncUI() {
     hudRefresh();
     updateStageUI();
+    updateControllerUI();
     if (!panel.classList.contains('open')) return;
     const act = document.activeElement;
     const setVal = (el, v) => { if (el && el !== act && el.value !== String(v)) el.value = v; };
@@ -3216,6 +3977,8 @@ Esc                close the panel</div>
     setText($('beat-val'), CONFIG.beat.toFixed(1));
     setVal($('pulse'), CONFIG.pulse);
     setText($('pulse-val'), CONFIG.pulse.toFixed(2));
+    setVal($('feel'), CONFIG.feel);
+    setText($('feel-val'), CONFIG.feel.toFixed(2));
 
     fxBtns.forEach((b, i) => b.classList.toggle('on', i === fxMode));
     const okFx = allowedList();
@@ -3231,9 +3994,21 @@ Esc                close the panel</div>
       ? 'Each slider is the resting value; the thin bar under it is where the sound and the sticks have actually pushed it. Choosing an effect by hand pauses the auto-cycle until you turn it back on (L) or reload.'
       : 'The effects need WebGL and it is not running here (' + (glNote || 'unavailable') + '). The picture is showing without them.');
 
+    camSliderEls.forEach(({ s, inp, out }) => {
+      setVal(inp, CONFIG.cam.adj[s.k]);
+      setText(out, CONFIG.cam.adj[s.k].toFixed(2));
+    });
+    motSliderEls.forEach(({ s, inp, out }) => {
+      setVal(inp, CONFIG.cam.motion[s.k]);
+      setText(out, CONFIG.cam.motion[s.k].toFixed(s.k === 'learn' ? 0 : (s.k === 'floor' ? 3 : 2)));
+    });
+    setVal($('mot-show'), CONFIG.cam.motion.show);
+    $('mot-flicker').classList.toggle('on', CONFIG.cam.motion.flicker);
+    $('mot-auto').disabled = !cam.on;
     setVal($('cam-blend'), CONFIG.cam.blend);
-    setVal($('cam-mix'), CONFIG.cam.mix);
-    setText($('cam-mix-val'), CONFIG.cam.mix.toFixed(2));
+    setVal($('cam-mix'), cam.on ? camLevel : CONFIG.cam.mix);
+    setText($('cam-mix-val'), (cam.on ? camLevel : CONFIG.cam.mix).toFixed(2));
+    $('cam-auto').disabled = !cam.on;
     $('cam-mirror').classList.toggle('on', CONFIG.cam.mirror);
 
     deckEls.forEach(r => {
@@ -3252,6 +4027,7 @@ Esc                close the panel</div>
   // Live meters while the panel is open
   function updateMeters() {
     if (!panel.classList.contains('open')) return;
+    drawMotionPreview();
     fxSliderEls.forEach(({ s, meter }) => {
       meter.style.width = Math.min(100, P[s.k] / TARGETS[s.k].max * 100) + '%';
     });
@@ -3297,6 +4073,164 @@ Esc                close the panel</div>
     LINK.stale = false;
     showHud();
   });
+
+  /* ══════════════════════════════════════════
+     CONTROLLER: RUMBLE OUT, TILT IN
+
+     Rumble is the Gamepad API's own dual-rumble (Chrome, with Xbox, DualShock
+     and DualSense pads): the low end of whatever the audio is doing drives the
+     big motor, the highs the small one, and a beat adds a thump. It is sent
+     about twelve times a second as short overlapping effects, only while the pad
+     is being listened to, and never in silence, so an ambient show is a still
+     pad.
+
+     Tilt is not in the Gamepad API at all. The only way a web page can read a
+     controller's motion sensors is WebHID, which reads the raw reports, and the
+     only pads whose reports are laid out well enough to read here are the
+     PlayStation ones (DualShock 4, DualSense) over a USB cable: over Bluetooth
+     they send a short report with no motion in it. Xbox pads have no motion
+     sensors. The tilt is read as the direction of gravity, so it needs no
+     calibration beyond saying which way is level, and it goes into the same two
+     controls as the left stick (rotate, scale) rather than being new parameters.
+  ══════════════════════════════════════════ */
+  function hapticTick(now) {
+    const act = hapticPad && hapticPad.vibrationActuator;
+    if (aud.beat) HAP.beat = true;
+    const r = CONFIG.rumble;
+    let strong = Math.min(1, Math.pow(LEV.mix.low, 1.5) * 0.9) * r;
+    let weak = Math.min(1, LEV.mix.high * 0.5) * r;
+    if (HAP.beat) strong = Math.max(strong, 0.7 * r);
+    if (!act || !(r > 0) || FLAGS.blackout || (strong < 0.04 && weak < 0.04)) {
+      if (HAP.was && act && act.reset) act.reset().catch(() => {});
+      HAP.was = false; HAP.beat = false;
+      return;
+    }
+    if (now - HAP.last < 80) return;
+    HAP.last = now; HAP.beat = false; HAP.was = true;
+    act.playEffect('dual-rumble', { startDelay: 0, duration: 110, weakMagnitude: weak, strongMagnitude: strong }).catch(() => {});
+  }
+
+  function testRumble() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const pad = Array.from(pads).find(p => p && p.vibrationActuator);
+    if (!pad) { hudNote('No controller that can rumble: press a button on it first'); return; }
+    pad.vibrationActuator.playEffect('dual-rumble', { startDelay: 0, duration: 450, weakMagnitude: 0.5, strongMagnitude: 0.8 }).catch(() => {});
+  }
+
+  const PS_VENDOR = 0x054c;
+  const PS_PADS = { 0x05c4: 'ds4', 0x09cc: 'ds4', 0x0ce6: 'ds', 0x0df2: 'ds' };   // DualShock 4 (two revisions), DualSense, DualSense Edge
+
+  function startMotion(dev) {
+    MOTION.dev = dev; MOTION.kind = PS_PADS[dev.productId] || '';
+    MOTION.on = true; MOTION.note = ''; MOTION.needZero = true; MOTION.last = 0;
+    dev.addEventListener('inputreport', onHidReport);
+    updateControllerUI();
+  }
+  async function connectMotion() {
+    if (!navigator.hid) { MOTION.note = 'This browser cannot read controller motion. Chrome or Edge on a computer can.'; updateControllerUI(); return; }
+    try {
+      const picked = await navigator.hid.requestDevice({ filters: Object.keys(PS_PADS).map(id => ({ vendorId: PS_VENDOR, productId: +id })) });
+      const dev = picked[0];
+      if (!dev) return;
+      if (!dev.opened) await dev.open();
+      startMotion(dev);
+    } catch (e) {
+      MOTION.note = 'Could not open the controller for motion: ' + ((e && (e.message || e.name)) || 'unknown error');
+      updateControllerUI();
+    }
+  }
+  function disconnectMotion() {
+    if (MOTION.dev) { MOTION.dev.removeEventListener('inputreport', onHidReport); try { MOTION.dev.close(); } catch (e) {} }
+    MOTION.dev = null; MOTION.on = false; MOTION.tx = MOTION.ty = 0;
+    updateControllerUI();
+  }
+
+  // Accelerometer, little-endian int16 x, y, z: at byte 21 of the DualSense's USB
+  // report 0x01 and byte 18 of the DualShock 4's (the report id is not in the data).
+  // Anything shorter is the Bluetooth report, which has no motion in it.
+  function onHidReport(e) {
+    if (e.reportId !== 0x01) return;
+    const dv = e.data, off = MOTION.kind === 'ds' ? 21 : 18;
+    if (dv.byteLength < off + 6) {
+      if (!MOTION.note) { MOTION.note = 'This controller is on Bluetooth, which carries no motion data. Plug it in with a USB cable.'; }
+      return;
+    }
+    MOTION.note = '';
+    const ax = dv.getInt16(off, true), ay = dv.getInt16(off + 2, true), az = dv.getInt16(off + 4, true);
+    const roll = Math.atan2(ax, Math.hypot(ay, az)), pitch = Math.atan2(ay, Math.hypot(ax, az));
+    MOTION.roll = roll; MOTION.pitch = pitch;
+    if (MOTION.needZero) { MOTION.zr = roll; MOTION.zp = pitch; MOTION.needZero = false; }
+    const sx = CONFIG.motionFlip.x ? -1 : 1, sy = CONFIG.motionFlip.y ? -1 : 1;
+    MOTION.tx = deadzone(Math.max(-1, Math.min(1, (roll - MOTION.zr) / (Math.PI / 4))) * sx, 0.08);
+    MOTION.ty = deadzone(Math.max(-1, Math.min(1, (pitch - MOTION.zp) / (Math.PI / 4))) * sy, 0.08);
+    MOTION.last = performance.now();
+  }
+
+  // Tilt goes into the left stick's two controls, before smoothing, and is held
+  // to the same rule as the physical pad: not heard while the picture is on the
+  // projector and the audience has not been handed the controls.
+  function applyMotion(now) {
+    if (!MOTION.on || !(CONFIG.motion > 0) || now - MOTION.last > 1000) return;
+    if (stage.on && !stage.audience) return;
+    PAD.xShift = Math.max(-1, Math.min(1, PAD.xShift + MOTION.tx * CONFIG.motion));
+    PAD.yShift = Math.max(-1, Math.min(1, PAD.yShift + MOTION.ty * CONFIG.motion));
+  }
+
+  /* ── Automated mode ──
+     Ten seconds with nobody on the controls (a stick, trigger, button, key, MIDI
+     message or tilt; a controller that is being ignored counts as nobody) and the
+     six things the controller drives start to drift by themselves, each on its own
+     slow curve (three sines with periods that never line up, so it does not repeat
+     for minutes): the effect rotates, rescales and splits, swells and warps now and
+     then, and with the camera on its mix wanders around the middle. It goes in over
+     a few seconds and comes out in under one, the instant anyone touches anything,
+     and what it writes goes through the same smoothing as a hand does, so there is
+     no join to see. The camera mix is a held fader, so when the controls come back
+     it stays wherever the automation left it. */
+  function applyAutopilot(now, dt) {
+    const after = CONFIG.autoAfter * 1000;
+    const idle = after > 0 && now - AUTO.lastInput > after;
+    AUTO.amt += ((idle ? 1 : 0) - AUTO.amt) * (1 - Math.exp(-dt / (idle ? 3000 : 400)));
+    if (AUTO.amt < 0.003) { AUTO.amt = 0; AUTO.scale = 0; return; }
+    const a = AUTO.amt, t = now / 1000, TAU = Math.PI * 2;
+    const wob = (period, seed) => (Math.sin(t * TAU / period + seed)
+                                 + 0.6 * Math.sin(t * TAU / (period * 0.43) + seed * 2.1)
+                                 + 0.3 * Math.sin(t * TAU / (period * 0.19) + seed * 3.7)) / 1.9;
+    const swell = v => v > 0 ? v * v : 0;
+    PAD.xShift   = clamp(PAD.xShift + 0.7 * wob(41, 0.3) * a, -1, 1);
+    AUTO.scale   = 0.3 * wob(57, 1.7) * a;     // added on top of the held scale, never written into it
+    PAD.twist    = clamp(PAD.twist + 0.5 * wob(33, 2.9) * a, -1, 1);
+    PAD.rtrigger = clamp(PAD.rtrigger + 0.5 * swell(wob(47, 4.1)) * a, 0, 1);
+    PAD.ltrigger = clamp(PAD.ltrigger + 0.4 * swell(wob(29, 5.3)) * a, 0, 1);
+    if (cam.on) camLevel += (0.5 + 0.35 * wob(61, 0.9) - camLevel) * (1 - Math.exp(-dt / 2500)) * a;
+  }
+
+  function updateControllerUI() {
+    const ps = $('pad-status');
+    if (ps) {
+      let txt = 'No controller yet: press a button on it.', cls = 'off';
+      if (padInfo.id) { txt = padInfo.id.slice(0, 60) + (padInfo.rumble ? ' · rumble available' : ' · no rumble through this browser'); cls = 'ok'; }
+      if (ps.textContent !== txt) ps.textContent = txt;
+      ps.className = 'status ' + cls;
+    }
+    const ms = $('motion-status');
+    if (ms) {
+      let txt = 'Tilt sensors not connected.', cls = 'off';
+      if (MOTION.note) { txt = MOTION.note; cls = 'err'; }
+      else if (MOTION.on) {
+        const live = performance.now() - MOTION.last < 1000;
+        txt = (MOTION.kind === 'ds' ? 'DualSense' : 'DualShock 4') + (live ? ' tilt is live.' : ': connected, waiting for motion data.');
+        cls = live ? 'ok' : 'off';
+      }
+      if (ms.textContent !== txt) ms.textContent = txt;
+      ms.className = 'status ' + cls;
+    }
+    const cb = $('motion-connect');
+    if (cb) cb.textContent = MOTION.on ? 'Disconnect tilt sensors' : 'Connect tilt sensors';
+    const fx = $('motion-flipx'), fy = $('motion-flipy');
+    if (fx) fx.classList.toggle('on', CONFIG.motionFlip.x);
+    if (fy) fy.classList.toggle('on', CONFIG.motionFlip.y);
+  }
 
   /* ══════════════════════════════════════════
      PROJECTOR
@@ -3401,6 +4335,15 @@ Esc                close the panel</div>
   $('stage-start').onclick = e => { toggleProjector(); e.currentTarget.blur(); };
   $('stage-aud').onclick   = e => { toggleAudience(); e.currentTarget.blur(); };
 
+  // A controller the page was already given access to comes back by itself.
+  if (navigator.hid) {
+    navigator.hid.getDevices().then(list => {
+      const dev = list.find(d => d.vendorId === PS_VENDOR && PS_PADS[d.productId]);
+      if (dev) dev.open().then(() => startMotion(dev)).catch(() => {});
+    }).catch(() => {});
+    navigator.hid.addEventListener('disconnect', e => { if (e.device === MOTION.dev) disconnectMotion(); });
+  }
+
   /* ══════════════════════════════════════════
      MAIN LOOP
   ══════════════════════════════════════════ */
@@ -3412,20 +4355,41 @@ Esc                close the panel</div>
     lastTs = now;
 
     pollGamepad();
+    applyMotion(now);
+    // Anyone on the controls? Judged on the controller alone, before automated mode adds to it.
+    if (Math.abs(PAD.xShift) + Math.abs(PAD.yShift) + Math.abs(PAD.twist) + Math.abs(PAD.camAxis) + PAD.ltrigger + PAD.rtrigger > 0.06) AUTO.lastInput = now;
+    applyAutopilot(now, dt);
+    smoothPad(dt);
+    // The left stick's up and down moves the effect's scale like a fader: up is
+    // larger, down smaller, faster the further it is held, and it stays locked at
+    // whatever it was left at until the stick moves it again. It writes the setting
+    // itself, so the slider shows it, and is saved when the stick lets go.
+    const sy = -PAD.yShift;           // the stick as held, not the smoothed one, so it locks the moment the stick lets go
+    if (Math.abs(sy) > 0.03) { CONFIG.fx.fxScale = clamp(CONFIG.fx.fxScale + sy * 0.9 * dt / 1000, 0, 1.5); scaleMoved = true; }
+    else if (scaleMoved) { scaleMoved = false; save(); }
     updateLinkPill();
     readAudio();
     updateLevels(now);
     updateAud(now);
+    hapticTick(now);
+    if (aud.beat && LEV.raw.low > 0.5) startGlitch(now);
     resolveParams(now);
     updateActivity();
 
     colorEnv *= 0.955;                 // under a second to drain: a pop, not a wash
     if (colorEnv < 0.003) colorEnv = 0;
 
-    // The camera mix is the larger of the resting slider and the left trigger,
-    // eased so a twitch of the trigger does not strobe the picture.
-    camMix += (Math.max(CONFIG.cam.mix, P.ltrigger) - camMix) * 0.4;
-    if (camMix > 0.03 && !cam.on && !cam.starting && !cam.error) startCamera();
+    // Eased, so a twitch of the stick does not strobe the picture.
+    // With the camera on, the right stick moves the mix, like a fader being pushed:
+    // up toward all camera, down toward all animations, faster the further it is
+    // held, and it stays exactly where it is left when the stick goes back to
+    // centre. The mix starts at half and half whenever the camera comes on. The
+    // camera is only ever started by the performer: a trigger pull from the
+    // audience cannot switch it on.
+    const ax = P.camAxis;
+    if (cam.on && ax) camLevel = Math.max(0, Math.min(1, camLevel + ax * (0.4 + 0.6 * Math.abs(ax)) * 0.9 * dt / 1000));
+    camMix += ((cam.on ? camLevel : 0) - camMix) * 0.4;
+    trackMotion(now);
 
     // Nothing playing it: a new effect now and then, on the clock, since there
     // is no beat to count.
@@ -3436,6 +4400,7 @@ Esc                close the panel</div>
 
     for (const D of decks) {
       Object.assign(D.q, P);
+      D.q.xShift = D.q.yShift = D.q.twist = D.q.pitch = 0;   // the sticks belong to the effect, not the scenes
       // The Visualizer scenes apply Speed twice (once in the clock below, once in
       // their own formulas), so the deck's speed enters as a square root to keep
       // that slider linear. The mixer scenes use D.speed directly.
@@ -3483,8 +4448,9 @@ Esc                close the panel</div>
     get activity() { return activity; },
     poke,
     link: LINK, step: () => tick(16),
-    stage, STROBE, fxTrans, hudNote, toggleAudience, setAudience, toggleProjector, stepFx, setAllowed, allowedList,
+    strobeRun, TRK, trackMotion, learnBackground, autoTune, GLI, startGlitch, AUTO, applyAutopilot, PAD, MOTION, HAP, hapticTick, onHidReport, applyMotion, testRumble, pixelAt, autoBalance, stage, STROBE, fxTrans, hudNote, toggleAudience, setAudience, toggleProjector, stepFx, setAllowed, allowedList,
     satNow: () => saturation(),
+    get camLevel() { return camLevel; },
     fakeProjecting(on) {
       stage.on = !!on; stage.screen = on ? { width: 1920, height: 1080 } : null;
       document.body.classList.toggle('projecting', stage.on); resize(); syncUI();

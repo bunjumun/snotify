@@ -97,6 +97,44 @@
        above everything here, so the buttons and the settings panel start below it. */
     :root { --bar: 56px; }
 
+    /* ── Projector output ──
+       Presenter-view style: only the picture goes fullscreen on the second
+       screen, and everything else stays in this window. While the picture is
+       away a mirror of it fills this window, so the settings still sit over it. */
+    canvas:fullscreen { width: 100vw; height: 100vh; object-fit: contain; background: #000; }
+    #mirror {
+      display: none; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
+      object-fit: contain; background: #000; z-index: 0; pointer-events: none;
+    }
+    body.projecting #mirror { display: block; }
+    .stage-pill {
+      height: 40px; padding: 0 16px; border-radius: 20px;
+      background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.25);
+      color: rgba(255,255,255,0.7); font-family: inherit; font-size: 0.7rem; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap;
+      cursor: pointer; backdrop-filter: blur(8px); transition: all 0.2s;
+    }
+    .stage-pill:hover { border-color: #ff3cac; color: #ff3cac; background: rgba(0,0,0,0.5); }
+    .stage-pill.active {
+      border-color: #4fffb0; color: #4fffb0; background: rgba(79,255,176,0.15);
+      box-shadow: 0 0 16px rgba(79,255,176,0.35);
+    }
+
+    /* ── Floating hints ──
+       The browser's own title tooltip takes a second to appear, is tiny, and on
+       a dark full-screen picture is easy to miss. This one is immediate, sits
+       beside the thing it names, and says what the key is. */
+    #tip {
+      position: fixed; left: 0; top: 0; z-index: 700;
+      max-width: 270px; padding: 8px 12px;
+      background: rgba(10,0,16,0.97);
+      border: 1px solid rgba(255,60,172,0.65); border-radius: 8px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.65);
+      color: #fff; font: 700 0.68rem/1.55 'Courier New', monospace; letter-spacing: 0.05em;
+      pointer-events: none; opacity: 0; transition: opacity 0.12s;
+    }
+    #tip.show { opacity: 1; }
+
     /* ── Top-right buttons ── */
     .top-btns {
       position: fixed; top: calc(var(--bar) + 14px); right: 20px;
@@ -369,11 +407,13 @@
 <body class="tool-fullbleed">
 
 <div class="top-btns">
-  <button class="icon-btn" id="top-btn"   title="Float on top of other apps (always visible)" hidden>📌</button>
-  <button class="icon-btn" id="full-btn"  title="Fullscreen">⛶</button>
-  <button class="icon-btn" id="cam-btn"   title="Camera layer (hold LT or Q to blend it in)">📷</button>
-  <button class="icon-btn" id="audio-btn" title="Toggle audio reactivity">🎤</button>
-  <button class="icon-btn" id="gear-btn"  title="Settings">⚙</button>
+  <button class="stage-pill" id="aud-btn" title="Audience control (J). Lets the controller plugged into this laptop drive the projector. Off, the controller is ignored; this screen, the keyboard and MIDI keep working.">Audience control · off</button>
+  <button class="icon-btn" id="proj-btn"  title="Send the picture fullscreen to the projector, or bring it back (\). Settings stay on this screen.">📺</button>
+  <button class="icon-btn" id="top-btn"   title="Float on top of other apps in its own small window (Chrome only)" hidden>📌</button>
+  <button class="icon-btn" id="full-btn"  title="Fullscreen this window">⛶</button>
+  <button class="icon-btn" id="cam-btn"   title="Camera layer on / off (K). Hold LT or Q to blend it in.">📷</button>
+  <button class="icon-btn" id="audio-btn" title="Audio input on / off (M)">🎤</button>
+  <button class="icon-btn" id="gear-btn"  title="Settings (`)">⚙</button>
 </div>
 
 <div id="hud">
@@ -391,7 +431,8 @@
   <div style="font-size:2rem;margin-bottom:8px;">🎛</div>
   It drifts quietly until you play it<br>
   <span style="font-size:0.7rem;opacity:0.8">
-    A / B change the effect · hold LT to blend the camera in<br>
+    R3 / L3 (click the sticks) step the effect · A / B change the scenes<br>
+    hold LT to blend the camera in<br>
     X throws a colour hit · D-pad ◀ ▶ crossfades the decks<br>
     sticks bend the picture · WASD · arrows · Q E · Z X C V on a keyboard<br>
     ⚙ for effects, camera, routing, MIDI and the full control map
@@ -399,18 +440,55 @@
 </div>
 
 <canvas id="c"></canvas>
+<canvas id="mirror"></canvas>
+<div id="tip" role="tooltip"></div>
 
 <!-- ══ SETTINGS ══ -->
 <div id="panel">
   <div class="panel-head">
     <h2>Visualizer FX Settings</h2>
-    <button class="panel-close" id="panel-close">×</button>
+    <button class="panel-close" id="panel-close" title="Close settings (Esc)">×</button>
   </div>
   <div class="panel-body">
 
     <div class="sect">
+      <div class="sect-title">Projector</div>
+      <div class="status off" id="stage-status">Not projecting.</div>
+      <label class="fld" id="stage-screen-wrap" style="display:none">
+        <span>Send to screen</span>
+        <select id="stage-screen"></select>
+      </label>
+      <button class="btn wide" id="stage-start">Send to projector</button>
+      <div class="btn-row">
+        <button class="btn ghost wide" id="stage-aud">Audience control: off</button>
+      </div>
+      <div class="note">
+        Only the picture goes to the projector, fullscreen. This panel, the readout and
+        the buttons stay on this screen, and this screen shows a mirror of what the
+        audience sees. Set the projector to <strong>Extend</strong>, not Mirror, in System
+        Settings, Displays. The first time, Chrome asks to manage windows on your displays.
+        The audience's controller plugs into this laptop. <strong>Audience control</strong> (J,
+        or the button top right, or MIDI) decides whether it is heard: off, the controller is
+        ignored while you play from the keyboard or MIDI; on, it drives the projector.
+        Escape on the projector, or the 📺 button, brings the picture back.
+      </div>
+    </div>
+
+    <div class="sect">
       <div class="sect-title">Effects</div>
       <div class="fxgrid" id="fx-grid"></div>
+      <div class="sect-title" style="margin-top:4px">The controller can reach</div>
+      <div class="fxgrid" id="fx-allow"></div>
+      <div class="btn-row" style="margin-top:0;margin-bottom:12px">
+        <button class="btn ghost sm" id="fx-allow-all">All</button>
+        <button class="btn ghost sm" id="fx-allow-cur">Only the one showing</button>
+      </div>
+      <div class="note" style="margin-top:0;margin-bottom:14px">
+        The controller steps effects with the stick clicks (R3, L3), and the auto-cycle
+        only moves between ticked ones. Tick a single effect to hold the show on it: the
+        buttons then simply do nothing, with no message. Picking an effect above, or with the
+        number keys, always works for you.
+      </div>
       <div id="fx-sliders"></div>
       <label class="fld">
         <span>Colour</span>
@@ -490,7 +568,7 @@
         <input type="range" id="trails" min="0" max="5" step="1" value="1" />
       </label>
       <div class="toggles">
-        <button class="btn ghost sm" data-fx="strobe">Strobe</button>
+        <button class="btn ghost sm" data-fx="strobe" title="Strobe. Mash it and it takes two presses and comes up dimmer each time; five quiet seconds put it back to normal.">Strobe</button>
         <button class="btn ghost sm" data-fx="blackout">Blackout</button>
         <button class="btn ghost sm" data-fx="zoomPulse">Zoom pulse</button>
         <button class="btn ghost sm" data-fx="beatFlash">Beat flash</button>
@@ -625,20 +703,22 @@ RT                 push everything harder
 LT (hold)          blend the camera in
 D-pad ◀ ▶          crossfade deck A ↔ B
 D-pad ▲ ▼          more / fewer trails
-A / B              next / previous effect
+A / B              next scene on deck A / B
+R3 / L3            next / previous effect (click the sticks)
 X                  colour hit
 Y                  negative
 LB / RB            freeze deck A / B
-L3 / R3            camera on-off / audio on-off
 Back / Start       blackout / flash
 
 <b>KEYBOARD</b>
 W A S D, arrows    left stick, right stick
 Q / E              LT (camera) / RT
-Z X C V            the A B X Y buttons
+Z X C V            the A B X Y buttons (scenes A / B, colour hit, negative)
 1 – 8              pick an effect (8 is the raw picture)
 L                  auto-cycle effects on / off
 K                  camera on / off
+\                  picture to the projector / back
+J                  audience control on / off
 [ ]   ; '          deck A / deck B scene back, forward
 , .                crossfade
 F G                freeze deck A / B
@@ -664,6 +744,54 @@ Esc                close the panel</div>
 </div>
 
 <script>
+/* Floating hints: any element with a data-tip, or a title (which is moved over
+   to data-tip the moment the pointer reaches it, so the browser's own slow
+   tooltip never appears), gets one. */
+(function () {
+  const tip = document.getElementById('tip');
+  let timer = null, current = null;
+  const tipOf = el => {
+    let t = el.getAttribute('data-tip');
+    if (!t && el.hasAttribute('title')) {
+      t = el.getAttribute('title');
+      el.setAttribute('data-tip', t); el.setAttribute('aria-label', t); el.removeAttribute('title');
+    }
+    return t;
+  };
+  function show(el) {
+    const t = tipOf(el);
+    if (!t) return;
+    tip.textContent = t;
+    tip.style.left = '0px'; tip.style.top = '0px';
+    const r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = r.left + r.width / 2 - w / 2;
+    x = Math.max(8, Math.min(innerWidth - w - 8, x));
+    let y = r.bottom + 10;
+    if (y + h > innerHeight - 8) y = r.top - h - 10;
+    tip.style.left = x + 'px'; tip.style.top = Math.max(8, y) + 'px';
+    tip.classList.add('show');
+  }
+  function hide() { clearTimeout(timer); current = null; tip.classList.remove('show'); }
+  const near = e => (e.target && e.target.closest) ? e.target.closest('[data-tip], [title]') : null;
+  document.addEventListener('pointerover', e => {
+    const el = near(e);
+    if (!el || el === current) return;
+    hide(); current = el; tipOf(el);
+    timer = setTimeout(() => show(el), 100);
+  }, true);
+  document.addEventListener('pointerout', e => {
+    const el = near(e);
+    if (el && !el.contains(e.relatedTarget)) hide();
+  }, true);
+  document.addEventListener('pointerdown', hide, true);
+  addEventListener('scroll', hide, true);
+  addEventListener('blur', hide);
+  document.addEventListener('focusin', e => { const el = near(e); if (el && e.target.matches(':focus-visible')) show(el); });
+  document.addEventListener('focusout', hide);
+})();
+</script>
+
+<script>
 (function () {
   'use strict';
 
@@ -687,10 +815,24 @@ Esc                close the panel</div>
   // by the compositor (rAF, size) and the focus-gated Gamepad API has to come
   // from whichever window is actually on screen, or it stalls.
   let host = window;
+  // The projector. `on` is true while the picture alone is fullscreen on the
+  // other screen; `audience` is whether the physical controller is being listened to.
+  const stage = { on: false, screen: null, details: null, audience: false, note: '', asking: false };
+  const mirror = $('mirror'), mctx = mirror.getContext('2d', { alpha: false });
   function resize() {
-    const w = Math.max(1, host.innerWidth), h = Math.max(1, host.innerHeight);
+    let w, h;
+    if (stage.on && stage.screen) {
+      // Sized to the projector rather than to this window, so the picture is not
+      // stretched, and capped near 1080p: the effects are per-pixel work.
+      const k = Math.min(1, 1920 / Math.max(stage.screen.width, stage.screen.height));
+      w = Math.round(stage.screen.width * k); h = Math.round(stage.screen.height * k);
+    } else {
+      w = Math.max(1, host.innerWidth); h = Math.max(1, host.innerHeight);
+    }
     canvas.width = comp.width = w;
     canvas.height = comp.height = h;
+    mirror.width = Math.min(w, 960);
+    mirror.height = Math.max(1, Math.round(h * mirror.width / w));
     for (const D of decks) { D.cv.width = w; D.cv.height = h; }
   }
   addEventListener('resize', resize);
@@ -757,6 +899,11 @@ Esc                close the panel</div>
   ];
   const RAW = FX.length - 1;
   let fxMode = 2;
+  // Effects dissolve into each other instead of cutting. While they do, the
+  // colour is lifted a little on a smooth hump that comes back down to where it
+  // was, so a change reads as an event without leaving the picture changed.
+  const FX_TRANS_MS = 1300, FX_TRANS_LIFT = 0.28;
+  const fxTrans = { active: false, from: 2, t0: 0, boost: 0 };
   let colorEnv = 0;                 // the colour payoff: thrown up on a hit, drains away
   let beatCount = 0, fxSeed = 0;
 
@@ -786,6 +933,7 @@ Esc                close the panel</div>
     gain: 1.0, smoothing: 0.65, idle: 0.35, beat: 1.5,
     auto: true, demo: false, pulse: 0.5,
     cycle: 16, colorMode: 'auto', colorEvery: 8,
+    fxAllowed: [0, 1, 2, 3, 4, 5, 6, 7],   // which effects the controller and the auto-cycle may reach
     fx:  { fxAmount: 0.55, fxScale: 0.35, fxAngle: 0.5, fxShift: 0.2, fxWarp: 0.1, fxThresh: 0.5, fxColor: 0 },
     cam: { deviceId: '', mirror: true, blend: 'mix', mix: 0 },
     routes: PARTY_ROUTES,
@@ -1076,7 +1224,7 @@ Esc                close the panel</div>
     } else if (e < 0 && LEV.raw.low > 0.9) {
       colorHit(1);
     }
-    if (cycleActive() && beatCount % CONFIG.cycle === 0) setFx((fxMode + 1) % RAW, true);
+    if (cycleActive() && beatCount % CONFIG.cycle === 0) stepFx(1, true, true);
   }
 
   // A hand on the controls pauses the auto-cycle, or it would take the effect
@@ -1086,9 +1234,43 @@ Esc                close the panel</div>
   const cycleActive = () => CONFIG.cycle > 0 && !cycleHeld;
 
   function setFx(i, auto) {
-    fxMode = (i % FX.length + FX.length) % FX.length;
+    const next = (i % FX.length + FX.length) % FX.length;
+    const now = performance.now();
+    if (next !== fxMode) {
+      // Changed again mid-dissolve, it carries on from whichever look is the more
+      // visible, so a quick second press never snaps back.
+      const p = fxTrans.active ? Math.min(1, (now - fxTrans.t0) / FX_TRANS_MS) : 1;
+      fxTrans.from = (fxTrans.active && p < 0.5) ? fxTrans.from : fxMode;
+      fxTrans.t0 = now; fxTrans.active = true;
+    }
+    fxMode = next;
     if (!auto) cycleHeld = true;
-    lastCycleAt = performance.now();
+    lastCycleAt = now;
+    showHud(); syncUI();
+  }
+  /* ── Which effects can be reached ──
+     The controller and the auto-cycle only land on the ticked effects (Effects,
+     in the settings). The performer is not held to it: picking an effect in the
+     panel or with the number keys always works. Stepping onto nothing is
+     silent on purpose. When the choice is narrowed to one effect, the person
+     with the controller should find that button does very little rather than
+     being told it is switched off, so there is no message and no sound. */
+  const allowedList = () => (CONFIG.fxAllowed || []).filter(i => i >= 0 && i < FX.length);
+  function stepFx(dir, auto, skipRaw) {
+    const list = allowedList();
+    for (let k = 1; k <= FX.length; k++) {
+      const i = ((fxMode + dir * k) % FX.length + FX.length) % FX.length;
+      if (i === fxMode || !list.includes(i)) continue;
+      if (skipRaw && i === RAW) continue;
+      setFx(i, auto);
+      return;
+    }
+  }
+  function setAllowed(list) {
+    CONFIG.fxAllowed = list.slice().sort((a, b) => a - b);
+    save();
+    // If what is showing has just been ruled out, move to the first that is left.
+    if (CONFIG.fxAllowed.length && !CONFIG.fxAllowed.includes(fxMode)) setFx(CONFIG.fxAllowed[0], true);
     showHud(); syncUI();
   }
   function toggleCycle() {
@@ -1150,7 +1332,35 @@ Esc                close the panel</div>
   }
   const nudgeXfade = d => setXfade(xfade + d);
 
-  function toggle(flag) { FLAGS[flag] = !FLAGS[flag]; showHud(); syncUI(); }
+  /* ── Strobe limiter ──
+     Mashing the strobe is how a show ends in a headache. Turning it off is
+     always instant. Turning it on again within five seconds of the last press
+     takes two presses (the first only arms it) and comes up dimmer each time:
+     100%, 75%, 50%, 25%, then a 20% floor. Five quiet seconds put it back to a
+     single press at full brightness. The five seconds restart on every press, so
+     mashing keeps the limit up; a strobe already running keeps the brightness it
+     started at until it is turned off. */
+  const STROBE = { last: 0, count: 0, armedAt: 0, level: 1 };
+  function strobeRequest() {
+    if (FLAGS.strobe) { FLAGS.strobe = false; return; }
+    const now = performance.now();
+    if (now - STROBE.last > 5000) STROBE.count = 0;
+    const limited = STROBE.count > 0;
+    STROBE.last = now;
+    if (limited && (!STROBE.armedAt || now - STROBE.armedAt > 1500)) {
+      STROBE.armedAt = now;
+      hudNote('Strobe is cooling down: press again to fire it');
+      return;
+    }
+    STROBE.armedAt = 0;
+    STROBE.level = Math.max(0.2, 1 - 0.25 * STROBE.count);
+    STROBE.count++;
+    FLAGS.strobe = true;
+  }
+  function toggle(flag) {
+    if (flag === 'strobe') strobeRequest(); else FLAGS[flag] = !FLAGS[flag];
+    showHud(); syncUI();
+  }
   function stepTrails(dir, wrap) {
     const n = TRAIL_P.length;
     trailIdx = wrap ? (trailIdx + dir + n) % n : Math.max(0, Math.min(n - 1, trailIdx + dir));
@@ -1272,16 +1482,16 @@ Esc                close the panel</div>
   function onButton(i) {
     poke();
     switch (i) {
-      case 0:  setFx(fxMode + 1); break;                                  // A
-      case 1:  setFx(fxMode - 1); break;                                  // B
+      case 0:  cycleScene(0, 1); break;                                   // A
+      case 1:  cycleScene(1, 1); break;                                   // B
       case 2:  colorHit(1); break;                                        // X
       case 3:  toggle('negative'); break;                                 // Y
       case 4:  toggleFreeze(0); break;                                    // LB
       case 5:  toggleFreeze(1); break;                                    // RB
       case 8:  toggle('blackout'); break;                                 // Back
       case 9:  flashOp = 1; break;                                        // Start
-      case 10: toggleCamera(); break;                                     // L3
-      case 11: toggleMic(); break;                                        // R3
+      case 10: stepFx(-1, false); break;                                  // L3: previous effect
+      case 11: stepFx(1, false); break;                                   // R3: next effect
       case 12: stepTrails(1); break;                                      // D-pad up
       case 13: stepTrails(-1); break;                                     // D-pad down
     }
@@ -1301,6 +1511,15 @@ Esc                close the panel</div>
     const pads = nav.getGamepads ? nav.getGamepads() : [];
     let pad = null;
     for (const p of pads) { if (p) { pad = p; break; } }
+
+    // While the picture is on the projector the controller is the audience's,
+    // and only once the performer hands it over. Until then it is read just
+    // enough to keep its button state current, so a button already held when
+    // control is handed over does not fire.
+    if (pad && stage.on && !stage.audience) {
+      for (const i of PRESS_BUTTONS) prevReal[i] = !!(pad.buttons[i] && pad.buttons[i].pressed);
+      pad = null;
+    }
 
     // The keyboard's Z X C V stay live beside a real pad.
     if (VPAD.active) scan(VPAD.buttons, prevVirt);
@@ -1455,6 +1674,8 @@ Esc                close the panel</div>
       case 'KeyP': setBeat(CONFIG.beat + 0.1); break;
       case 'KeyT': stepTrails(1, true); break;
       case 'KeyU': toggle('zoomPulse'); break;
+      case 'Backslash': toggleProjector(); break;
+      case 'KeyJ': toggleAudience(); break;
       case 'KeyI': toggle('negative'); break;
       case 'KeyH': toggleHudPin(); break;
       case 'Tab':
@@ -1489,6 +1710,10 @@ Esc                close the panel</div>
 
   /* ── HUD ── */
   let hudTimer = null, hudPinned = false;
+  // A line of text on the readout for a moment, for things that did not happen
+  // (a strobe press that was only an arming press, say).
+  let noteText = '', noteUntil = 0;
+  function hudNote(text, ms = 2200) { noteText = text; noteUntil = performance.now() + ms; showHud(); hudSig = ''; }
   function showHud() {
     hud.classList.remove('hidden');
     clearTimeout(hudTimer);
@@ -1502,6 +1727,7 @@ Esc                close the panel</div>
   let hudSig = '';
   function hudRefresh() {
     const bits = [];
+    if (performance.now() < noteUntil) bits.push(noteText);
     if (Audio.connected) bits.push(Audio.channels + 'ch audio');
     else if (CONFIG.demo) bits.push('demo pulse');
     if (activity < 0.05) bits.push('ambient');
@@ -1509,9 +1735,11 @@ Esc                close the panel</div>
     else if (VPAD.active) bits.push('keyboard');
     if (midiCount) bits.push('midi');
     if (cam.on) bits.push('camera' + (camMix > 0.02 ? ' ' + Math.round(camMix * 100) + '%' : ''));
+    if (stage.on) bits.push(stage.audience ? 'projector · audience control' : 'projector');
+    if (allowedList().length < FX.length) bits.push('effects limited to ' + allowedList().length);
     if (tapBPM > 0) bits.push('tap ' + Math.round(tapBPM));
     if (cycleActive()) bits.push('auto fx');
-    if (FLAGS.strobe)    bits.push('strobe');
+    if (FLAGS.strobe)    bits.push('strobe' + (STROBE.level < 1 ? ' ' + Math.round(STROBE.level * 100) + '%' : ''));
     if (FLAGS.blackout)  bits.push('blackout');
     if (FLAGS.negative)  bits.push('negative');
     if (FLAGS.zoomPulse) bits.push('zoom pulse');
@@ -1989,7 +2217,7 @@ Esc                close the panel</div>
 
     strobePh++;
     if (FLAGS.strobe && strobePh % 6 < 3) {
-      ctx.globalAlpha = 0.92; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 0.92 * STROBE.level; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
       ctx.globalAlpha = 1;
       return;
     }
@@ -2062,7 +2290,7 @@ Esc                close the panel</div>
     #endif
     uniform sampler2D uTex;
     uniform vec2  uRes;
-    uniform float uTime, uMode, uAmt, uScale, uAngle, uShift, uWarp, uThresh;
+    uniform float uTime, uMode, uModeA, uXf, uAmt, uScale, uAngle, uShift, uWarp, uThresh;
     uniform float uNeg, uSat, uSeed, uRS;
 
     const float TAU = 6.28318530718;
@@ -2258,33 +2486,42 @@ Esc                close the panel</div>
       return vec3(st) * hueOf(s0);
     }
 
+    vec3 effect(float mode, vec2 px) {
+      if (mode < 0.5)      return src(px);
+      else if (mode < 1.5) return fxLines(px);
+      else if (mode < 2.5) return fxStipple(px);
+      else if (mode < 3.5) return fxHalftone(px);
+      else if (mode < 4.5) return fxRGB(px);
+      else if (mode < 5.5) return fxCMYK(px);
+      else if (mode < 6.5) return fxBW(px);
+      return fxDazzle(px);
+    }
+
+    // Saturation: black and white until a hit lifts it. RGB goes by the brightest
+    // channel too: the three displaced copies then fade to white ghosts of each
+    // other instead of averaging into grey mud. CMYK is the exception, being
+    // already a printed grey when it is not coloured.
+    vec3 grade(vec3 col, float mode) {
+      float byValue = max(max(col.r, col.g), col.b);
+      bool inkStyle = (mode > 0.5 && mode < 4.5) || mode > 5.5;
+      float mono = inkStyle ? byValue : luma(col);
+      return mix(vec3(mono), col, uSat);
+    }
+
     void main() {
       vec2 px = gl_FragCoord.xy;
-      vec3 col;
-      if (uMode < 0.5)      col = src(px);
-      else if (uMode < 1.5) col = fxLines(px);
-      else if (uMode < 2.5) col = fxStipple(px);
-      else if (uMode < 3.5) col = fxHalftone(px);
-      else if (uMode < 4.5) col = fxRGB(px);
-      else if (uMode < 5.5) col = fxCMYK(px);
-      else if (uMode < 6.5) col = fxBW(px);
-      else                  col = fxDazzle(px);
-
-      // Saturation: black and white until a hit lifts it.
-      float byValue = max(max(col.r, col.g), col.b);
-      // RGB goes by the brightest channel too: the three displaced copies then
-      // fade to white ghosts of each other instead of averaging into grey mud.
-      // CMYK is the exception, being already a printed grey when it is not coloured.
-      bool inkStyle = (uMode > 0.5 && uMode < 4.5) || uMode > 5.5;
-      float mono = inkStyle ? byValue : luma(col);
-      col = mix(vec3(mono), col, uSat);
-
+      vec3 col = grade(effect(uMode, px), uMode);
+      // Mid-dissolve: the look being left, blended out as the new one comes in.
+      if (uXf < 0.999) {
+        vec3 prevCol = grade(effect(uModeA, px), uModeA);
+        col = mix(prevCol, col, uXf);
+      }
       col = mix(col, 1.0 - col, uNeg);
       gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
     }
   `;
 
-  const UNIFORMS = ['uTex', 'uRes', 'uTime', 'uMode', 'uAmt', 'uScale', 'uAngle', 'uShift',
+  const UNIFORMS = ['uTex', 'uRes', 'uTime', 'uMode', 'uModeA', 'uXf', 'uAmt', 'uScale', 'uAngle', 'uShift',
                     'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS'];
   let gl = null, glProg = null, glTex = null, glLoc = {}, glOk = false, fb2d = null;
   let glNote = '';
@@ -2368,7 +2605,7 @@ Esc                close the panel</div>
   function saturation() {
     if (CONFIG.colorMode === 'mono') return 0;
     if (CONFIG.colorMode === 'full') return 1;
-    return Math.max(0, Math.min(1, P.fxColor + colorEnv));
+    return Math.max(0, Math.min(1, P.fxColor + colorEnv + fxTrans.boost));
   }
 
   function present(now) {
@@ -2382,10 +2619,11 @@ Esc                close the panel</div>
         fb2d.fillStyle = '#fff'; fb2d.fillRect(0, 0, W, H);
         fb2d.globalCompositeOperation = 'source-over';
       }
+      mirrorFrame();
       return;
     }
     gl.viewport(0, 0, W, H);
-    if (FLAGS.blackout) { gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); return; }
+    if (FLAGS.blackout) { gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); mirrorFrame(); return; }
 
     const rs = Math.min(W, H) / 800;
     gl.bindTexture(gl.TEXTURE_2D, glTex);
@@ -2393,7 +2631,17 @@ Esc                close the panel</div>
     gl.uniform1i(glLoc.uTex, 0);
     gl.uniform2f(glLoc.uRes, W, H);
     gl.uniform1f(glLoc.uTime, now / 1000);
-    gl.uniform1f(glLoc.uMode, (fxMode + 1) % FX.length);   // RAW is the last entry and shader mode 0
+    // RAW is the last entry and shader mode 0, so the shader's modes sit one along.
+    let xf = 1;
+    if (fxTrans.active) {
+      const p = Math.min(1, (now - fxTrans.t0) / FX_TRANS_MS);
+      xf = p * p * (3 - 2 * p);
+      fxTrans.boost = FX_TRANS_LIFT * Math.sin(Math.PI * p);
+      if (p >= 1) { fxTrans.active = false; fxTrans.boost = 0; xf = 1; }
+    }
+    gl.uniform1f(glLoc.uMode, (fxMode + 1) % FX.length);
+    gl.uniform1f(glLoc.uModeA, (fxTrans.from + 1) % FX.length);
+    gl.uniform1f(glLoc.uXf, xf);
     gl.uniform1f(glLoc.uAmt, P.fxAmount);
     gl.uniform1f(glLoc.uScale, (5 + Math.min(1.5, P.fxScale) * 26) * rs);
     gl.uniform1f(glLoc.uAngle, (P.fxAngle - 0.5) * Math.PI * 2);
@@ -2405,6 +2653,13 @@ Esc                close the panel</div>
     gl.uniform1f(glLoc.uSeed, fxSeed);
     gl.uniform1f(glLoc.uRS, rs);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    mirrorFrame();
+  }
+
+  // Copied in the same frame as it is drawn, which is the only time a WebGL
+  // canvas can still be read without keeping its buffer.
+  function mirrorFrame() {
+    if (stage.on) mctx.drawImage(canvas, 0, 0, mirror.width, mirror.height);
   }
 
   /* ══════════════════════════════════════════
@@ -2443,11 +2698,12 @@ Esc                close the panel</div>
     { id: 'mic',      label: 'Audio on / off',    def: 62, fn: () => toggleMic() },
     { id: 'negative', label: 'Negative',          def: 64, fn: () => toggle('negative') },
     { id: 'zoom',     label: 'Zoom pulse',        def: 65, fn: () => toggle('zoomPulse') },
-    { id: 'fx-next',  label: 'Next effect',       def: 66, fn: () => setFx(fxMode + 1) },
-    { id: 'fx-prev',  label: 'Previous effect',   def: 67, fn: () => setFx(fxMode - 1) },
+    { id: 'fx-next',  label: 'Next effect',       def: 66, fn: () => stepFx(1, false) },
+    { id: 'fx-prev',  label: 'Previous effect',   def: 67, fn: () => stepFx(-1, false) },
     { id: 'camera',   label: 'Camera on / off',   def: 68, fn: () => toggleCamera() },
     { id: 'hit',      label: 'Colour hit',        def: 69, fn: () => colorHit(1) },
     { id: 'cycle',    label: 'Auto-cycle on / off', def: 70, fn: () => toggleCycle() },
+    { id: 'audience', label: 'Audience control on / off', def: 71, fn: () => toggleAudience() },
   ];
 
   let CC_MAP = {}, NOTE_MAP = {};
@@ -2574,8 +2830,13 @@ Esc                close the panel</div>
     else document.documentElement.requestFullscreen().catch(() => {});
   };
   addEventListener('fullscreenchange', () => {
-    fullBtn.classList.toggle('active', !!document.fullscreenElement);
+    const fs = document.fullscreenElement;
+    fullBtn.classList.toggle('active', fs === document.documentElement);
+    // The picture on its own, fullscreen: that is the projector.
+    stage.on = fs === canvas;
+    document.body.classList.toggle('projecting', stage.on);
     resize();
+    showHud(); syncUI();
   });
 
   /* ── Float on top ──
@@ -2847,7 +3108,7 @@ Esc                close the panel</div>
     { k: 'fxThresh', label: 'Threshold', min: 0, max: 1,   step: 0.01 },
     { k: 'fxColor',  label: 'Colour (resting)', min: 0, max: 1, step: 0.01 },
   ];
-  const fxBtns = [], fxSliderEls = [];
+  const fxBtns = [], fxSliderEls = [], allowBtns = [];
   function buildFxUI() {
     const grid = $('fx-grid');
     grid.innerHTML = '';
@@ -2859,6 +3120,26 @@ Esc                close the panel</div>
       grid.appendChild(b);
       fxBtns.push(b);
     });
+    const allow = $('fx-allow');
+    allow.innerHTML = '';
+    FX.forEach((f, i) => {
+      const b = document.createElement('button');
+      b.className = 'btn ghost sm';
+      b.textContent = f.name;
+      b.title = 'Let the controller and the auto-cycle use this effect';
+      b.onclick = () => {
+        const list = allowedList();
+        const next = list.includes(i) ? list.filter(x => x !== i) : list.concat(i);
+        if (!next.length) return;          // never none at all
+        setAllowed(next);
+        b.blur();
+      };
+      allow.appendChild(b);
+      allowBtns.push(b);
+    });
+    $('fx-allow-all').onclick = e => { setAllowed(FX.map((_, i) => i)); e.currentTarget.blur(); };
+    $('fx-allow-cur').onclick = e => { setAllowed([fxMode]); e.currentTarget.blur(); };
+
     const wrap = $('fx-sliders');
     wrap.innerHTML = '';
     FX_SLIDERS.forEach(s => {
@@ -2917,6 +3198,7 @@ Esc                close the panel</div>
   // a control being dragged is left alone and every other one just follows.
   function syncUI() {
     hudRefresh();
+    updateStageUI();
     if (!panel.classList.contains('open')) return;
     const act = document.activeElement;
     const setVal = (el, v) => { if (el && el !== act && el.value !== String(v)) el.value = v; };
@@ -2936,6 +3218,8 @@ Esc                close the panel</div>
     setText($('pulse-val'), CONFIG.pulse.toFixed(2));
 
     fxBtns.forEach((b, i) => b.classList.toggle('on', i === fxMode));
+    const okFx = allowedList();
+    allowBtns.forEach((b, i) => b.classList.toggle('on', okFx.includes(i)));
     fxSliderEls.forEach(({ s, inp, out }) => {
       setVal(inp, CONFIG.fx[s.k]);
       setText(out, s.fmt ? s.fmt(CONFIG.fx[s.k]) : CONFIG.fx[s.k].toFixed(2));
@@ -3015,6 +3299,109 @@ Esc                close the panel</div>
   });
 
   /* ══════════════════════════════════════════
+     PROJECTOR
+
+     Done the way presenter views are: one page, and only the picture goes
+     fullscreen on the second screen, using Chrome's Window Management API
+     (getScreenDetails, and requestFullscreen with a screen). Everything that is
+     controls stays in this window and never reaches the projector, and nothing
+     has to be kept in step between two windows because there is only one. The
+     page keeps the keyboard, the MIDI port, the audio and the controller, so
+     they all keep working with the picture elsewhere.
+  ══════════════════════════════════════════ */
+  function fillScreenSelect() {
+    const sel = $('stage-screen'), d = stage.details;
+    if (!d) return;
+    const keep = sel.value;
+    sel.innerHTML = '';
+    d.screens.forEach((s, i) => {
+      const o = document.createElement('option');
+      o.value = i;
+      o.textContent = (s.label || (s.isPrimary ? 'Main screen' : 'Screen ' + (i + 1))) + ' · ' + s.width + '×' + s.height + (s === d.currentScreen ? ' (this window)' : '');
+      sel.appendChild(o);
+    });
+    const other = d.screens.findIndex(s => s !== d.currentScreen);
+    sel.value = (keep !== '' && d.screens[+keep]) ? keep : String(other >= 0 ? other : 0);
+    $('stage-screen-wrap').style.display = d.screens.length > 2 ? '' : 'none';
+  }
+
+  async function startProjector() {
+    if (stage.asking) return;
+    stage.note = '';
+    if (!canvas.requestFullscreen) { stage.note = 'This browser cannot put the picture fullscreen.'; syncUI(); return; }
+    if (!window.getScreenDetails) {
+      stage.note = 'This browser cannot choose a screen. Use Chrome or Edge, or drag this window onto the projector and use the fullscreen button.';
+      syncUI(); return;
+    }
+    let target = null;
+    stage.asking = true; syncUI();
+    try {
+      stage.details = await window.getScreenDetails();
+      fillScreenSelect();
+      const screens = stage.details.screens;
+      target = screens.length > 2 ? screens[+$('stage-screen').value]
+                                  : screens.find(s => s !== stage.details.currentScreen);
+    } catch (e) {
+      stage.note = 'Screen access was blocked. Allow window management for this site in the address bar, then try again.';
+    }
+    stage.asking = false;
+    if (!stage.note && (!target || target === stage.details.currentScreen)) {
+      stage.note = 'Only one screen found. Plug the projector in and set it to Extend rather than Mirror (System Settings, Displays).';
+    }
+    if (stage.note) { syncUI(); return; }
+    stage.screen = target;
+    try {
+      await canvas.requestFullscreen({ screen: target });
+    } catch (e) {
+      stage.screen = null;
+      stage.note = /gesture|activation/i.test(e && e.message)
+        ? 'Chrome wanted a fresh click after the permission prompt. Press Send to projector once more.'
+        : 'Could not go fullscreen on that screen: ' + ((e && (e.message || e.name)) || 'unknown error');
+    }
+    syncUI();
+  }
+
+  function stopProjector() {
+    if (document.fullscreenElement === canvas) document.exitFullscreen().catch(() => {});
+  }
+  function toggleProjector() { if (stage.on) stopProjector(); else startProjector(); }
+
+  function setAudience(on) {
+    stage.audience = !!on;
+    showHud(); syncUI();
+    hudNote(stage.audience ? 'Audience has the controller' : 'Controller switched off for the audience', 1800);
+  }
+  function toggleAudience() { setAudience(!stage.audience); }
+
+  function updateStageUI() {
+    const pill = $('aud-btn');
+    pill.classList.toggle('active', stage.audience);
+    const label = 'Audience control · ' + (stage.audience ? 'ON' : 'off');
+    if (pill.textContent !== label) pill.textContent = label;
+    $('proj-btn').classList.toggle('active', stage.on);
+    let cls = 'off', txt = 'Not projecting.';
+    if (stage.note) { cls = 'err'; txt = stage.note; }
+    else if (stage.asking) { txt = 'Waiting for the browser to allow screen access…'; }
+    else if (stage.on) {
+      cls = 'ok';
+      txt = 'On the projector' + (stage.screen ? ' (' + stage.screen.width + '×' + stage.screen.height + ')' : '') + '. '
+          + (stage.audience ? 'The audience has the controller.' : 'The controller is switched off for the audience.');
+    }
+    const st = $('stage-status');
+    st.className = 'status ' + cls;
+    if (st.textContent !== txt) st.textContent = txt;
+    const start = $('stage-start'), sl = stage.on ? 'Bring the picture back' : 'Send to projector';
+    if (start.textContent !== sl) start.textContent = sl;
+    const ab = $('stage-aud'), al = 'Audience control: ' + (stage.audience ? 'ON' : 'off');
+    if (ab.textContent !== al) ab.textContent = al;
+    ab.classList.toggle('on', stage.audience);
+  }
+  $('proj-btn').onclick   = () => { toggleProjector(); $('proj-btn').blur(); };
+  $('aud-btn').onclick    = () => { toggleAudience(); $('aud-btn').blur(); };
+  $('stage-start').onclick = e => { toggleProjector(); e.currentTarget.blur(); };
+  $('stage-aud').onclick   = e => { toggleAudience(); e.currentTarget.blur(); };
+
+  /* ══════════════════════════════════════════
      MAIN LOOP
   ══════════════════════════════════════════ */
   let meterTick = 0, lastTs = performance.now();
@@ -3042,7 +3429,7 @@ Esc                close the panel</div>
 
     // Nothing playing it: a new effect now and then, on the clock, since there
     // is no beat to count.
-    if (cycleActive() && activity < 0.05 && now - lastCycleAt > 45000) setFx((fxMode + 1) % RAW, true);
+    if (cycleActive() && activity < 0.05 && now - lastCycleAt > 45000) { stepFx(1, true, true); lastCycleAt = now; }
 
     // At rest the decks run slow; playing it brings them up to speed.
     const amb = 0.3 + 0.7 * activity;
@@ -3096,6 +3483,12 @@ Esc                close the panel</div>
     get activity() { return activity; },
     poke,
     link: LINK, step: () => tick(16),
+    stage, STROBE, fxTrans, hudNote, toggleAudience, setAudience, toggleProjector, stepFx, setAllowed, allowedList,
+    satNow: () => saturation(),
+    fakeProjecting(on) {
+      stage.on = !!on; stage.screen = on ? { width: 1920, height: 1080 } : null;
+      document.body.classList.toggle('projecting', stage.on); resize(); syncUI();
+    },
     setScene, setXfade, setFx, colorHit,
     setMode: m => setScene(0, m),
     axis(i, v) { VPAD.axes[i] = v; activateVirtual(); },

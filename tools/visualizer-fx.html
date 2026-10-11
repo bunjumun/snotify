@@ -46,7 +46,7 @@
     is all it takes for it to start dancing; the demo pulse in the settings is
     an optional stand-in for audio, to hear what the map does without any.
 
-    The camera is a layer: with it on, the right stick moves the mix between it
+    The camera is a layer: with it on, the D-pad's up and down move the mix between it
     and the animations (it starts at half and half and stays where it is left),
     and the effects work on the mix. It has
     the picture controls of a photo editor (levels, gamma, contrast, colour
@@ -507,7 +507,7 @@
   <button class="icon-btn" id="proj-btn"  title="Send the picture fullscreen to the projector, or bring it back (\). Settings stay on this screen.">📺</button>
   <button class="icon-btn" id="top-btn"   title="Float on top of other apps in its own small window (Chrome only)" hidden>📌</button>
   <button class="icon-btn" id="full-btn"  title="Fullscreen this window">⛶</button>
-  <button class="icon-btn" id="cam-btn"   title="Camera on / off (K). On, the right stick moves the mix between camera and animations and it stays where you leave it. It starts half and half.">📷</button>
+  <button class="icon-btn" id="cam-btn"   title="Camera on / off (K). On, the D-pad up and down move the mix between camera and animations and it stays where you leave it. It starts half and half.">📷</button>
   <button class="icon-btn" id="audio-btn" title="Audio input on / off (M)">🎤</button>
   <button class="icon-btn" id="gear-btn"  title="Settings (`)">⚙</button>
 </div>
@@ -527,11 +527,11 @@
   <div style="font-size:2rem;margin-bottom:8px;">🎛</div>
   It drifts quietly until you play it<br>
   <span style="font-size:0.7rem;opacity:0.8">
-    R3 / L3 (click the sticks) step the effect · A / B change the scenes<br>
-    camera on (K): right stick up and down mixes it in, and it stays where you leave it<br>
-    X throws a colour hit · D-pad ◀ ▶ crossfades the decks<br>
-    left stick rotates the effect and sets its scale (it stays put) · right stick splits it · RT pushes · LT warps<br>
-    WASD · arrows · Q E · Z X C V on a keyboard<br>
+    D-pad ◀ ▶ crossfades deck A to B · ▲ ▼ mixes the camera in (camera on, K) · both stay where you leave them<br>
+    R3 / L3 (click the sticks) step the effect · A / B (✕ / ○) change the scenes · L1 / R1 change the trails<br>
+    X (□) throws a colour hit<br>
+    left stick rotates the effect and sets its scale (it stays put) · right stick splits it · R2 pushes · L2 warps<br>
+    WASD · arrows · Q E · Z X C V · , . - = on a keyboard<br>
     ⚙ for effects, camera, routing, MIDI and the full control map
   </span>
 </div>
@@ -692,9 +692,10 @@
         <input type="range" id="cam-mix" min="0" max="1" step="0.01" value="0.5" />
       </label>
       <div class="note">
-        With the camera on, the <strong>right stick</strong> (the arrow keys on a keyboard) moves the
-        mix: up toward all camera, down toward all animations, faster the further you hold it. It
-        <strong>stays where you leave it</strong> when the stick goes back to centre. It comes on at
+        With the camera on, the <strong>D-pad</strong> up and down (<strong>=</strong> and <strong>-</strong>
+        on a keyboard) move the mix: up toward all camera, down toward all animations, gliding for as long as
+        you hold it. It <strong>stays where you leave it</strong> when you let go. The D-pad left and right
+        are the other crossfade, deck A to deck B, so both mixers are in one place. It comes on at
         half and half, and the <strong>50%</strong> button puts it back there. The effects work on the
         mix. The camera is only started from here, with <strong>K</strong>, or from the camera button,
         never by the controller. The picture is processed on this page and never uploaded.
@@ -961,22 +962,24 @@
 left stick ← →     rotate the effect
 left stick ↑ ↓     the effect's scale, stays where you leave it
 right stick ← →    split it (RGB, CMYK separation)
-right stick ↑ ↓    the camera mix, stays where you leave it (camera on)
-RT                 push the effect harder
-LT                 warp
-D-pad ◀ ▶          crossfade deck A ↔ B
-D-pad ▲ ▼          more / fewer trails
-A / B              next scene on deck A / B
+RT (R2)            push the effect harder
+LT (L2)            warp
+D-pad ◀ ▶          crossfade deck A ↔ B (glides while held, stays where you leave it)
+D-pad ▲ ▼          more / less camera, when the camera is on (same)
+LB / RB (L1 / R1)  fewer / more trails
+A / B (✕ / ○)      next scene on deck A / B
 R3 / L3            next / previous effect (click the sticks)
-X                  colour hit
-Y                  negative
-Start              flash
+X (□)              colour hit
+Y (△)              negative
+Start (Options)    flash
 (freeze and blackout are the laptop's: F, G, B, MIDI, the panel)
 
 <b>KEYBOARD</b>
 W A S D, arrows    left stick, right stick
 Q / E              LT / RT
 Z X C V            the A B X Y buttons (scenes A / B, colour hit, negative)
+, .                D-pad left / right: crossfade deck A ↔ B (hold)
+- =                D-pad down / up: less / more camera (hold)
 1 – 8              pick an effect (8 is the raw picture)
 L                  auto-cycle effects on / off
 K                  camera on / off
@@ -2197,13 +2200,14 @@ Esc                close the panel</div>
       case 9:  flashOp = 1; break;                                        // Start
       case 10: stepFx(-1, false); break;                                  // L3: previous effect
       case 11: stepFx(1, false); break;                                   // R3: next effect
-      case 12: stepTrails(1); break;                                      // D-pad up
-      case 13: stepTrails(-1); break;                                     // D-pad down
+      case 4:  stepTrails(-1); break;                                     // L1 / LB: fewer trails
+      case 5:  stepTrails(1); break;                                      // R1 / RB: more trails
     }
   }
-  // Not LB, RB or Back: freezing a deck and blacking the picture out belong to the
+  // Nothing on the pad freezes a deck or blacks the picture out: those belong to the
   // person at the laptop (B, F, G, MIDI, the panel), not to whoever holds the controller.
-  const PRESS_BUTTONS = [0, 1, 2, 3, 9, 10, 11, 12, 13];
+  // The D-pad is not here either: it is held, not pressed (see pollGamepad).
+  const PRESS_BUTTONS = [0, 1, 2, 3, 4, 5, 9, 10, 11];
   function scan(buttons, prev) {
     for (const i of PRESS_BUTTONS) {
       const now = !!(buttons[i] && buttons[i].pressed);
@@ -2257,22 +2261,29 @@ Esc                close the panel</div>
     PAD.xShift = curve(deadzone(src.axes[0] || 0));
     PAD.yShift = curve(deadzone(src.axes[1] || 0));
     PAD.twist  = curve(deadzone(src.axes[2] || 0));
-    // Right stick, up and down: pitch, except with the camera on, when it is the
-    // camera mix instead (up is more camera). Pitch is held at zero then so the
-    // scenes do not warp while you mix.
-    const rsY = deadzone(src.axes[3] || 0);
-    PAD.camAxis  = -rsY;
-    PAD.pitch    = cam.on ? 0 : rsY;
+    // Right stick, up and down, does nothing: the scenes ignore pitch (the sticks
+    // belong to the effect) and the camera mix moved to the D-pad, so that both
+    // crossfades live in one place.
+    PAD.pitch    = 0;
     PAD.ltrigger = (src.buttons[6] && src.buttons[6].value) || 0;
     PAD.rtrigger = (src.buttons[7] && src.buttons[7].value) || 0;
 
-    if (pad) {
-      scan(pad.buttons, prevReal);
-      // D-pad left/right slide the crossfader for as long as they are held.
-      if (pad.buttons[14] && pad.buttons[14].pressed) nudgeXfade(-0.015);
-      if (pad.buttons[15] && pad.buttons[15].pressed) nudgeXfade(0.015);
-    }
+    if (pad) scan(pad.buttons, prevReal);
+
+    // The mixer: both crossfades are on the D-pad, which is also how they work from the
+    // keyboard (, . and - =). Left and right slide deck A to deck B, up and down slide the
+    // picture toward the camera or back toward the animations. Held, each glides at 0.9 of
+    // its range a second, counted on the clock so a 120 Hz screen is no faster; let go and it
+    // stays exactly where it is, like a fader. Up and down only count with the camera on
+    // (the loop reads camAxis).
+    const held = i => !!(src.buttons[i] && src.buttons[i].pressed);
+    const dtm = mixT ? Math.min(50, nowMs - mixT) : 16;
+    mixT = nowMs;
+    const mx = (held(15) ? 1 : 0) - (held(14) ? 1 : 0);
+    if (mx) { nudgeXfade(mx * 0.9 * dtm / 1000); AUTO.lastInput = nowMs; poke(); }
+    PAD.camAxis = (held(12) ? 1 : 0) - (held(13) ? 1 : 0);
   }
+  let mixT = 0;
 
   /* ── What the controller does ──
      Six controls, and nothing else. It used to feed a dozen parameters at once,
@@ -2284,9 +2295,13 @@ Esc                close the panel</div>
        left stick  up / down      the effect's scale (cell and line size); it
                                   stays where it is left, like a fader
        right stick left / right   split it (RGB and CMYK separation)
-       right stick up / down      the camera mix, when the camera is on (see the loop)
        right trigger              push the effect harder, and swell the scenes
        left trigger               warp
+
+     and the mixer, which is the D-pad and nothing else:
+
+       D-pad left / right         crossfade deck A to deck B
+       D-pad up / down            more / less camera, when the camera is on (see the loop)
 
      The scenes themselves no longer follow the sticks; they are moved by the
      sound, and they idle. */
@@ -2364,7 +2379,8 @@ Esc                close the panel</div>
     KeyA: [0, -1], KeyD: [0, 1], KeyW: [1, -1], KeyS: [1, 1],
     ArrowLeft: [2, -1], ArrowRight: [2, 1], ArrowUp: [3, -1], ArrowDown: [3, 1],
   };
-  const BTN_KEYS = { KeyZ: 0, KeyX: 1, KeyC: 2, KeyV: 3, KeyQ: 6, KeyE: 7 };
+  const BTN_KEYS = { KeyZ: 0, KeyX: 1, KeyC: 2, KeyV: 3, KeyQ: 6, KeyE: 7,
+                     Equal: 12, Minus: 13, Comma: 14, Period: 15 };      // the last four are the D-pad
 
   function activateVirtual() {
     if (VPAD.active) return;
@@ -2379,9 +2395,6 @@ Esc                close the panel</div>
     poke();
 
     // The crossfader is the one discrete key worth letting auto-repeat.
-    if (e.code === 'Comma')  { nudgeXfade(-0.05); return; }
-    if (e.code === 'Period') { nudgeXfade(0.05);  return; }
-
     if (e.repeat) return;
     if (AXIS_KEYS[e.code]) {
       const [ax, dir] = AXIS_KEYS[e.code];
@@ -4079,7 +4092,7 @@ Esc                close the panel</div>
     const st = $('cam-status');
     if (cam.error)         { st.className = 'status err'; st.textContent = 'Could not open the camera: ' + cam.error; }
     else if (cam.starting) { st.className = 'status off'; st.textContent = 'Waiting for the browser to allow the camera…'; }
-    else if (cam.on)       { st.className = 'status ok';  st.textContent = 'Camera is live. The right stick (arrow keys) moves the mix, and it stays where you leave it.'; }
+    else if (cam.on)       { st.className = 'status ok';  st.textContent = 'Camera is live. The D-pad up and down (- and = on a keyboard) move the mix, and it stays where you leave it.'; }
     else                   { st.className = 'status off'; st.textContent = 'Camera is off. Turn it on here, with the camera button, or with K.'; }
     $('cam-toggle').textContent = cam.on ? 'Disable camera' : 'Enable camera';
     syncUI();
@@ -5130,10 +5143,9 @@ Esc                close the panel</div>
     if (colorEnv < 0.003) colorEnv = 0;
 
     // Eased, so a twitch of the stick does not strobe the picture.
-    // With the camera on, the right stick moves the mix, like a fader being pushed:
-    // up toward all camera, down toward all animations, faster the further it is
-    // held, and it stays exactly where it is left when the stick goes back to
-    // centre. The mix starts at half and half whenever the camera comes on. The
+    // With the camera on, the D-pad's up and down move the mix, like a fader being pushed:
+    // up toward all camera, down toward all animations, and it stays exactly where it is
+    // left when the button is let go. The mix starts at half and half whenever the camera comes on. The
     // camera is only ever started by the performer: a trigger pull from the
     // audience cannot switch it on.
     const ax = P.camAxis;

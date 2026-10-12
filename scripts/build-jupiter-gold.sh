@@ -22,7 +22,7 @@ dirty=""; [ -n "$(git -C "$SRC" status --porcelain)" ] && dirty=" (uncommitted c
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 # Keys unset on purpose: the build inlines GOOGLE_MAPS_API_KEY / CESIUM_ION_TOKEN
 # into the bundle if they are in the environment, and this goes on a public site.
-(cd "$SRC" && env -u GOOGLE_MAPS_API_KEY -u CESIUM_ION_TOKEN -u MAPILLARY_CLIENT_TOKEN \
+(cd "$SRC" && env -u GOOGLE_MAPS_API_KEY -u CESIUM_ION_TOKEN -u MAPILLARY_CLIENT_TOKEN VITE_JG_PUBLIC=1 \
   npx vite build --base ./ --outDir "$tmp/out" --emptyOutDir >"$tmp/build.log" 2>&1) \
   || { tail -30 "$tmp/build.log" >&2; echo "Build failed" >&2; exit 1; }
 

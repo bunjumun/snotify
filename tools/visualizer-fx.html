@@ -504,7 +504,7 @@
 
 <div class="top-btns">
   <button class="stage-pill" id="aud-btn" title="Audience control (J). Lets the controller plugged into this laptop drive the projector. Off, the controller is ignored; this screen, the keyboard and MIDI keep working.">Audience control · off</button>
-  <button class="icon-btn" id="proj-btn"  title="Send the picture fullscreen to the projector, or bring it back (\). Settings stay on this screen.">📺</button>
+  <button class="icon-btn" id="proj-btn"  title="Send the picture to the projector in a window of its own (click it once there to fill the screen), or bring it back (\). Settings stay on this screen.">📺</button>
   <button class="icon-btn" id="top-btn"   title="Float on top of other apps in its own small window (Chrome only)" hidden>📌</button>
   <button class="icon-btn" id="full-btn"  title="Fullscreen this window">⛶</button>
   <button class="icon-btn" id="cam-btn"   title="Camera on / off (K). On, the D-pad up and down move the mix between camera and animations and it stays where you leave it. It starts half and half.">📷</button>
@@ -577,14 +577,17 @@
         <button class="btn ghost wide" id="stage-aud">Audience control: off</button>
       </div>
       <div class="note">
-        Only the picture goes to the projector, fullscreen. This panel, the readout and
-        the buttons stay on this screen, and this screen shows a mirror of what the
-        audience sees. Set the projector to <strong>Extend</strong>, not Mirror, in System
-        Settings, Displays. The first time, Chrome asks to manage windows on your displays.
+        The picture opens in a window of its own on the projector, and this window
+        stays where it is: this panel, the readout and the buttons stay on this screen, and this
+        screen shows a mirror of what the audience sees. Click the picture window once
+        (<strong>Click to fill this screen</strong>) and it goes fullscreen; double-click or Enter
+        takes it out again. Set the projector to <strong>Extend</strong>, not Mirror, in System
+        Settings, Displays. The first time, Chrome asks to manage windows on your displays, and
+        may ask you to allow pop-ups for this site.
         The audience's controller plugs into this laptop. <strong>Audience control</strong> (J,
         or the button top right, or MIDI) decides whether it is heard: off, the controller is
         ignored while you play from the keyboard or MIDI; on, it drives the projector.
-        Escape on the projector, or the 📺 button, brings the picture back.
+        The 📺 button, or closing the picture window, brings the picture back.
       </div>
     </div>
 
@@ -1087,9 +1090,13 @@ Esc                close the panel</div>
   const mirror = $('mirror'), mctx = mirror.getContext('2d', { alpha: false });
   function resize() {
     let w, h;
-    if (stage.on && stage.screen) {
-      // Sized to the projector rather than to this window, so the picture is not
-      // stretched, and capped near 1080p: the effects are per-pixel work.
+    if (stage.on && host !== window) {
+      // The picture has its own window on the projector. Sized to that window, capped
+      // near 1080p: the effects are per-pixel work.
+      const k = Math.min(1, 1920 / Math.max(host.innerWidth, host.innerHeight, 1));
+      w = Math.max(1, Math.round(host.innerWidth * k)); h = Math.max(1, Math.round(host.innerHeight * k));
+    } else if (stage.on && stage.screen) {
+      // (the test hook, which pretends to project without a second window)
       const k = Math.min(1, 1920 / Math.max(stage.screen.width, stage.screen.height));
       w = Math.round(stage.screen.width * k); h = Math.round(stage.screen.height * k);
     } else {
@@ -2218,7 +2225,11 @@ Esc                close the panel</div>
 
   function pollGamepad() {
     const nowMs = performance.now();
-    const nav = host.navigator;
+    // Chrome only gives the pad to a window that has the focus. With the picture on the
+    // projector there are two windows, and the performer is usually in this one, so read
+    // through whichever of the two is focused (the picture's, if neither is).
+    const padWin = (host !== window && !host.document.hasFocus() && document.hasFocus()) ? window : host;
+    const nav = padWin.navigator;
     const pads = nav.getGamepads ? nav.getGamepads() : [];
     let pad = null;
     for (const p of pads) { if (p) { pad = p; break; } }
@@ -2254,7 +2265,7 @@ Esc                close the panel</div>
       LINK.stale = nowMs - LINK.lastAdvance > 700;
       if (LINK.stale) { LINK.state = 'stale'; return; }
     }
-    LINK.state = host.document.hasFocus() ? 'live' : 'bg';
+    LINK.state = padWin.document.hasFocus() ? 'live' : 'bg';
 
     // A curve on the sticks: gentle near the centre, quick at the end of the travel.
     const curve = v => Math.sign(v) * Math.pow(Math.abs(v), 1.6);
@@ -4000,10 +4011,6 @@ Esc                close the panel</div>
   addEventListener('fullscreenchange', () => {
     const fs = document.fullscreenElement;
     fullBtn.classList.toggle('active', fs === document.documentElement);
-    // The picture on its own, fullscreen: that is the projector.
-    stage.on = fs === canvas;
-    document.body.classList.toggle('projecting', stage.on);
-    resize();
     showHud(); syncUI();
   });
 
@@ -4019,6 +4026,7 @@ Esc                close the panel</div>
     topBtn.hidden = false;
     topBtn.onclick = async () => {
       if (window.documentPictureInPicture.window) { window.documentPictureInPicture.window.close(); return; }
+      if (stage.on) endProjector();            // the picture is in one window at a time
       let pip;
       try {
         pip = await window.documentPictureInPicture.requestWindow({ width: 640, height: 360 });
@@ -4038,6 +4046,7 @@ Esc                close the panel</div>
       restartLoop();
 
       pip.addEventListener('pagehide', () => {
+        if (canvas.ownerDocument !== pip.document) { topBtn.classList.remove('active'); return; }   // the projector has the picture now
         document.body.prepend(canvas);
         host = window;
         resize();
@@ -4990,13 +4999,23 @@ Esc                close the panel</div>
   /* ══════════════════════════════════════════
      PROJECTOR
 
-     Done the way presenter views are: one page, and only the picture goes
-     fullscreen on the second screen, using Chrome's Window Management API
-     (getScreenDetails, and requestFullscreen with a screen). Everything that is
-     controls stays in this window and never reaches the projector, and nothing
-     has to be kept in step between two windows because there is only one. The
-     page keeps the keyboard, the MIDI port, the audio and the controller, so
-     they all keep working with the picture elsewhere.
+     The picture gets a window of its own, placed on the projector, and this window
+     stays exactly where it is with everything that is controls. The first build
+     fullscreened the canvas on the other screen with requestFullscreen({screen}),
+     and Chrome takes the whole window along when it does that, so the controls went
+     to the projector with the picture and the laptop was left with nothing. A
+     separate window cannot do that. The page is still one page: the canvas element
+     moves into the picture window (the way the pin-on-top window works), so the
+     compositor, the keyboard, MIDI, audio and the controller all stay here, and
+     this window shows a mirror of what the audience sees.
+
+     Chrome will not fullscreen a window that has not been clicked, and a window
+     opened from here has not been, so the picture window shows "Click to fill this
+     screen" until it is (double-click, or Enter, takes it out again). It tries on its
+     own first, and the prompt only stays if Chrome refuses. The window is opened
+     inside the click, before anything is awaited: one opened after the screen
+     permission prompt is blocked as a pop-up. It is then moved onto the projector,
+     which needs the window-management permission this asks for anyway.
   ══════════════════════════════════════════ */
   function fillScreenSelect() {
     const sel = $('stage-screen'), d = stage.details;
@@ -5014,46 +5033,106 @@ Esc                close the panel</div>
     $('stage-screen-wrap').style.display = d.screens.length > 2 ? '' : 'none';
   }
 
+  let proj = null;               // the picture window, while it is open
+
   async function startProjector() {
-    if (stage.asking) return;
+    if (stage.asking || stage.on) return;
     stage.note = '';
-    if (!canvas.requestFullscreen) { stage.note = 'This browser cannot put the picture fullscreen.'; syncUI(); return; }
-    if (!window.getScreenDetails) {
-      stage.note = 'This browser cannot choose a screen. Use Chrome or Edge, or drag this window onto the projector and use the fullscreen button.';
+    if ('isExtended' in screen && !screen.isExtended) {
+      stage.note = 'Only one screen found. Plug the projector in and set it to Extend rather than Mirror (System Settings, Displays).';
+      syncUI(); return;
+    }
+    const win = window.open('', 'vizfx-picture', 'popup=yes,width=960,height=540');
+    if (!win) {
+      stage.note = 'Chrome blocked the picture window. Allow pop-ups for this site (the icon in the address bar), then press Send to projector again.';
       syncUI(); return;
     }
     let target = null;
     stage.asking = true; syncUI();
-    try {
-      stage.details = await window.getScreenDetails();
-      fillScreenSelect();
-      const screens = stage.details.screens;
-      target = screens.length > 2 ? screens[+$('stage-screen').value]
-                                  : screens.find(s => s !== stage.details.currentScreen);
-    } catch (e) {
-      stage.note = 'Screen access was blocked. Allow window management for this site in the address bar, then try again.';
+    if (window.getScreenDetails) {
+      try {
+        stage.details = await window.getScreenDetails();
+        fillScreenSelect();
+        const screens = stage.details.screens;
+        target = screens.length > 2 ? screens[+$('stage-screen').value]
+                                    : screens.find(s => s !== stage.details.currentScreen);
+      } catch (e) {
+        stage.note = 'Screen access was blocked. Allow window management for this site in the address bar, then try again.';
+      }
     }
     stage.asking = false;
-    if (!stage.note && (!target || target === stage.details.currentScreen)) {
+    if (!stage.note && window.getScreenDetails && (!target || target === stage.details.currentScreen)) {
       stage.note = 'Only one screen found. Plug the projector in and set it to Extend rather than Mirror (System Settings, Displays).';
     }
-    if (stage.note) { syncUI(); return; }
-    stage.screen = target;
-    try {
-      await canvas.requestFullscreen({ screen: target });
-    } catch (e) {
-      stage.screen = null;
-      stage.note = /gesture|activation/i.test(e && e.message)
-        ? 'Chrome wanted a fresh click after the permission prompt. Press Send to projector once more.'
-        : 'Could not go fullscreen on that screen: ' + ((e && (e.message || e.name)) || 'unknown error');
+    if (stage.note) { try { win.close(); } catch (e) {} syncUI(); return; }
+    if (target) { try { win.moveTo(target.left, target.top); win.resizeTo(target.width, target.height); } catch (e) {} }
+
+    // The picture window's own page: black, the canvas, and one prompt.
+    const d = win.document;
+    d.open();
+    d.write('<!doctype html><html><head><meta charset="utf-8"><title>Visualizer FX · picture</title><style>'
+      + 'html,body{margin:0;height:100%;background:#000;overflow:hidden}'
+      + 'canvas{display:block;width:100vw;height:100vh;object-fit:contain;background:#000}'
+      + 'canvas:fullscreen{width:100vw;height:100vh;object-fit:contain}'
+      + '#go{position:fixed;left:50%;bottom:8%;transform:translateX(-50%);padding:12px 22px;border-radius:24px;'
+      + 'border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.6);color:#fff;font:600 14px system-ui,sans-serif;'
+      + 'letter-spacing:.06em;cursor:pointer;user-select:none}'
+      + '</style></head><body><div id="go">Click to fill this screen</div></body></html>');
+    d.close();
+    d.body.appendChild(canvas);
+    const go = d.getElementById('go');
+    const toggleFs = () => {
+      if (d.fullscreenElement) d.exitFullscreen().catch(() => {});
+      else canvas.requestFullscreen().catch(() => {});
+    };
+    go.onclick = toggleFs;
+    d.addEventListener('dblclick', toggleFs);
+    d.addEventListener('fullscreenchange', () => {
+      const on = !!d.fullscreenElement;
+      go.style.display = on ? 'none' : '';
+      d.body.style.cursor = on ? 'none' : '';
+      resize();
+    });
+    // The performer may click the picture window to fill it and then reach for a key:
+    // pass them on to this window's handlers, except Enter, which is this window's own.
+    for (const type of ['keydown', 'keyup']) {
+      d.addEventListener(type, e => {
+        if (e.code === 'Enter') { if (type === 'keydown' && !e.repeat) toggleFs(); return; }
+        window.dispatchEvent(new KeyboardEvent(type, { code: e.code, key: e.key, repeat: e.repeat, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey: e.altKey, metaKey: e.metaKey, bubbles: true, cancelable: true }));
+      });
     }
-    syncUI();
+    win.addEventListener('resize', resize);
+    win.addEventListener('pagehide', endProjector);
+
+    proj = win;
+    stage.screen = target;
+    stage.on = true;
+    host = win;
+    document.body.classList.add('projecting');
+    resize(); restartLoop();
+    try { win.focus(); } catch (e) {}
+    // Chrome may allow it without a click; if it does not, the prompt stays.
+    try { canvas.requestFullscreen(target ? { screen: target } : undefined).catch(() => {}); } catch (e) {}
+    showHud(); syncUI();
   }
 
-  function stopProjector() {
-    if (document.fullscreenElement === canvas) document.exitFullscreen().catch(() => {});
+  // Back to one window: the canvas comes home and the picture window is closed.
+  // Safe to call twice, because closing the window calls it again.
+  function endProjector() {
+    if (!stage.on) return;
+    const win = proj;
+    proj = null;
+    stage.on = false; stage.screen = null;
+    document.body.prepend(canvas);
+    host = window;
+    document.body.classList.remove('projecting');
+    resize(); restartLoop();
+    try { if (win && !win.closed) win.close(); } catch (e) {}
+    showHud(); syncUI();
   }
+  function stopProjector() { endProjector(); }
   function toggleProjector() { if (stage.on) stopProjector(); else startProjector(); }
+  addEventListener('pagehide', () => { try { if (proj && !proj.closed) proj.close(); } catch (e) {} });
 
   function setAudience(on) {
     stage.audience = !!on;

@@ -20,6 +20,7 @@ Whatever the session is about, **read the change requests notebook at the start 
 | Path | What |
 |---|---|
 | `interactive-music-players/` | **Hub page** (the album page's "Interactive music players" door) plus the players under it. `game/` is now only a redirect stub to the swimulator, so old shared links still land. |
+| `interactive-music-players/jupiter-gold/` | **Static build of the Jupiter Gold interactive music video**, a Cesium map app that lives in `AV TOOLS/climate-video`. Generated, never hand-edited: refresh with `scripts/build-jupiter-gold.sh` (it records the source commit in `BUILD.txt`). No `/api` backend on Pages, so live-data layers are empty; the song and the story run. |
 | `interactive-music-players/lakehorse-swimulator/` | **Lakehorse Swimulator, and where active work happens.** Moved here from `game/` on 2026-10-11; it is V2, which had taken the path over from V1. What is *deployed* at that path may be the older shape; see the caveat below. |
 | `interactive-music-players/lakehorse-swimulator/PROGRESS.md` | Pillars, budgets, what phase we are in, what landed, what is next. |
 | `docs/session-brief.md` | Orientation for a cold session: read order, the two directories, and what is deployed versus what is only on a branch. |

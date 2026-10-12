@@ -16,8 +16,8 @@
        names a glyph this list is missing, because a missing glyph does not draw
        a box — the ligature never forms and the element renders the literal word. -->
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0&icon_names=adjust,arrow_drop_down,arrow_forward,arrow_left,arrow_right,bolt,chevron_left,chevron_right,close,close_fullscreen,dark_mode,draw,east,flare,flight,forest,layers_clear,light_mode,local_fire_department,my_location,navigation,normal,on,open_in_full,public,radar,radio,right_panel_close,right_panel_open,rocket_launch,skip_next,skip_previous,view_in_ar" rel="stylesheet" />
-  <script type="module" crossorigin src="./assets/index-l8wQZvnR.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-FnA1WT2R.css">
+  <script type="module" crossorigin src="./assets/index-6FbTGnm6.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-7DXlj5RD.css">
 </head>
 <body>
   <div id="cesiumContainer"></div>
@@ -86,6 +86,24 @@
        soundtrack and the end-of-track card. See src/data/jupiterGold.js. -->
   <canvas id="jupiter-gold-canvas" aria-hidden="true"></canvas>
   <audio id="jupiter-gold-track" src="./audio/jupiter-gold.m4a" preload="none"></audio>
+  <!-- Big start button: centred on a fresh page until the story has been started once. -->
+  <button id="jupiter-gold-start" class="jupiter-gold-start" type="button" aria-label="Play Jupiter Gold" hidden>
+    <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M26 19.5v25l21-12.5z" fill="currentColor"/></svg>
+    <span>Play Jupiter Gold</span>
+  </button>
+  <!-- Track window: opens on the right while the Jupiter Gold layer is on. -->
+  <aside id="jupiter-gold-info" class="panel-inner" aria-label="Jupiter Gold track" hidden>
+    <div class="panel-header">
+      <span class="panel-title">Jupiter Gold</span>
+      <div class="panel-divider"></div>
+      <button id="jupiter-gold-info-toggle" class="jupiter-gold-info-toggle" type="button" aria-expanded="true" aria-controls="jupiter-gold-info-body" aria-label="Collapse Jupiter Gold track panel">−</button>
+    </div>
+    <div id="jupiter-gold-info-body" class="jupiter-gold-info-body">
+      <p class="jupiter-gold-info-note">Lakehorse &mdash; Jupiter Gold</p>
+      <a id="jupiter-gold-download" class="jupiter-gold-info-link" href="audio/jupiter-gold.m4a" download="Lakehorse - Jupiter Gold.m4a">Download the audio <small>M4A · 9.5 MB</small></a>
+      <a id="jupiter-gold-bandcamp" class="jupiter-gold-info-link" href="https://lakehorse.bandcamp.com" target="_blank" rel="noopener noreferrer">lakehorse.bandcamp.com <small>opens in a new tab</small></a>
+    </div>
+  </aside>
   <div id="jupiter-gold-outro" class="panel-inner" hidden>
     <div class="panel-header">
       <span class="panel-title">Jupiter Gold</span>

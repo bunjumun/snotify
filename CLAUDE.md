@@ -8,7 +8,7 @@ Pages are peers, each with a door on the album page (`index.html`): music, art, 
 
 You are reading step one. For game work, then read, in order:
 
-1. **`game/PROGRESS.md`** — the continuity document. Pillars, budgets, which of the eight phases we are in, what landed and what is next. Anything decided that is not written there did not happen.
+1. **`interactive-music-players/lakehorse-swimulator/PROGRESS.md`** — the continuity document. Pillars, budgets, which of the eight phases we are in, what landed and what is next. Anything decided that is not written there did not happen.
 2. **`docs/session-brief.md`** — the tree and the deploy state. It carries a date because that part goes stale faster than anything else here.
 
 Whatever the session is about, **read the change requests notebook at the start of it** and again whenever a task finishes. See the section below.
@@ -19,8 +19,9 @@ Whatever the session is about, **read the change requests notebook at the start 
 
 | Path | What |
 |---|---|
-| `game/` | **Lakehorse Swimulator, and where active work happens.** On this branch it is V2, which took the path over from V1 so every link anyone has shared still lands on a game. What is *deployed* at that path may be the older shape; see the caveat below. |
-| `game/PROGRESS.md` | Pillars, budgets, what phase we are in, what landed, what is next. |
+| `interactive-music-players/` | **Hub page** (the album page's "Interactive music players" door) plus the players under it. `game/` is now only a redirect stub to the swimulator, so old shared links still land. |
+| `interactive-music-players/lakehorse-swimulator/` | **Lakehorse Swimulator, and where active work happens.** Moved here from `game/` on 2026-10-11; it is V2, which had taken the path over from V1. What is *deployed* at that path may be the older shape; see the caveat below. |
+| `interactive-music-players/lakehorse-swimulator/PROGRESS.md` | Pillars, budgets, what phase we are in, what landed, what is next. |
 | `docs/session-brief.md` | Orientation for a cold session: read order, the two directories, and what is deployed versus what is only on a branch. |
 | `vendor/` | Three.js, at the repo root and owned by neither build. Both import maps point here. |
 | `archive/game-v1/` | **V1. Frozen and off the site**, with no door. Still runs if you serve it. |
@@ -185,7 +186,7 @@ in the note is the order of work, so reordering lines there reorders the work.
 At an idle point, do not wait to be asked. Pick the next item and start it, saying
 which one and why first, so a reply can redirect it before much is spent. Order:
 anything tagged `[next]`, then `BUGS`, then `QUEUE` top to bottom. If the notebook
-has nothing open, fall back to the next step in `game/PROGRESS.md`.
+has nothing open, fall back to the next step in `interactive-music-players/lakehorse-swimulator/PROGRESS.md`.
 
 **The default is to act, not to ask.** For an item in `QUEUE`, settle the
 ambiguities on the most plausible reading, write that reading into the ledger so
@@ -237,7 +238,7 @@ leaving the next session to hit the same wall.
 
 ## Things that will bite you
 
-- **Three.js lives at `vendor/` in the repo root**, 740K of a 1.18 MB payload, and both import maps reach it by relative path: `../vendor/` from `game/`, `../../vendor/` from `archive/game-v1/`. It used to sit inside `game/`, which made a folder that was about to be frozen load-bearing for the live page. Moving anything containing an import map means fixing that depth.
+- **Three.js lives at `vendor/` in the repo root**, 740K of a 1.18 MB payload, and both import maps reach it by relative path: `../../vendor/` from `interactive-music-players/lakehorse-swimulator/`, `../../vendor/` from `archive/game-v1/`. It used to sit inside the game's folder, which made a folder that was about to be frozen load-bearing for the live page. Moving anything containing an import map means fixing that depth.
 - **`lakehorse.v2.*` is a historical accident, not a version.** The prefix was minted when two builds were live and had to stop overwriting each other's saves. Only one build is live now, but renaming the key would wipe everyone's progress, so it stays. Keys go in `game/src/core/Keys.js`, never as literals at the use site; `index.html`'s door tally reads them directly. Older V1 dives are still parked under `lakehorse.*` and are deliberately left alone.
 - **Unreal cannot ship this.** Epic dropped HTML5 export at 4.24 and UE5's only browser path is Pixel Streaming, a GPU server per player. Unreal is usable offline for lookdev or baked assets, never as the runtime.
 - **The lore the game speaks is the draft marked LIVE in Band assets**, fetched over the wire. Not the newest draft, and not the RTF sitting in `../games/lakehorse sim/`, which is old enough to mislead. The tables compiled into the game are an offline fallback that drifts silently.

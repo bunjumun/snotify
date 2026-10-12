@@ -147,7 +147,7 @@ export class RewardScreen {
       // No manifest, or it loaded nothing playable. Don't leave a dead button on
       // the last screen of the game — send them where the music actually is.
       this.status.innerHTML = 'The record lives on the '
-        + '<a href="../music.html?b=lakehorse" style="color:var(--weed)">music page</a>.';
+        + '<a href="../../music.html?b=lakehorse" style="color:var(--weed)">music page</a>.';
       return;
     }
     // Keep the real extension. The library holds mp3s as well as m4as, and a

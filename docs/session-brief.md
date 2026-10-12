@@ -52,6 +52,8 @@ Verified on 2026-08-14 against the live site rather than inferred from git: `/ga
 
 The takeover is a takeover rather than a redirect on purpose: `/game/` is the address people already have, and a redirect is a hop that can rot.
 
+**Superseded 2026-10-11:** the game moved to `/interactive-music-players/lakehorse-swimulator/` under a new `interactive-music-players/` hub, and `/game/` is now a redirect stub (query and hash kept). He asked for the move; the stub is the cheaper failure than 404s on shared links.
+
 Save keys stay separated even though only one build is live: V2 writes `lakehorse.v2.*`, and older V1 dives are parked under `lakehorse.*` and left alone. The album page's `gameTally()` reads them directly.
 
 ### Branch topology
@@ -88,7 +90,7 @@ These are not preferences. Breaking any of them costs a player something.
 python3 -m http.server 8899 --directory /Users/bunj/claude/music-player
 ```
 
-Serve from the **repo root**, not from `game/`, so relative paths resolve the way they do in production. Then open `http://localhost:8899/game/`.
+Serve from the **repo root**, not from the game's folder, so relative paths resolve the way they do in production. Then open `http://localhost:8899/interactive-music-players/lakehorse-swimulator/`.
 
 Two `launch.json` files can start that server, and they are not equivalent:
 

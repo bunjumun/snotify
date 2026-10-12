@@ -21,7 +21,7 @@ doc calls itself complete.
   - **Art page** — `art.html`.
   - **Band assets page** — `assets.html`.
   - **Release Builder page** — `release-builder.html`.
-  - **the Game** — Lakehorse Swimulator, `game/`.
+  - **the Game** — Lakehorse Swimulator, `interactive-music-players/lakehorse-swimulator/` (was `game/`).
 
 - **Sub-page** — a page reached only from another page, never from the Pages
   menu. Today there is one: the **Image tools page** (`art-tools.html`)

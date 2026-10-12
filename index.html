@@ -96,7 +96,7 @@
       <div id="navMenu">
         <a class="navitem" id="musicBtn" href="music.html">🎵 Music</a>
         <a class="navitem" id="artBtn" href="art.html">🎨 Art</a>
-        <a class="navitem" id="gameBtn" href="game/">🐴 Game</a>
+        <a class="navitem" id="gameBtn" href="interactive-music-players/">🎮 Players</a>
         <a class="navitem" id="assetsBtn" href="assets.html">📖 Assets</a>
         <a class="navitem" id="releaseBtn" href="release-builder.html">🚀 Release</a>
       </div>
@@ -126,19 +126,17 @@
         <div class="tally" id="tallyArt">&nbsp;</div>
       </a>
 
-      <!-- One door again. The rebuild used to sit beside the original so both
-           could stay up; it has now replaced it AT the original's path, so every
-           link anyone has ever shared still lands on a game, and lands on the
-           better one. The keys stay door.game.* on purpose: the band has their
-           own wording stored against that key, and renaming it would have thrown
-           their copy away to no benefit. -->
-      <a class="door game" id="doorGame" href="game/">
-        <div class="glyph">🐴</div>
-        <h2 data-txt="door.game.title">Lakehorse Swimulator</h2>
-        <p data-txt="door.game.blurb">Ride the kelpie through the wreck of the Starship Enias. You're only the
-           diver holding on. Tap for a tail beat, hold to boost, and every beat costs you air.
-           The record plays while you swim.</p>
-        <div class="tally" id="tallyGame">&nbsp;</div>
+      <!-- The game now lives under this door, in interactive-music-players/, with
+           room for other ways to play a record beside it. The old /game/ address
+           is a redirect stub, so shared links still land. Gated like the game
+           always was (has-game), and the id stays doorGame so the CSS above
+           keeps working. The hub page owns the swimulator's own tally. -->
+      <a class="door game" id="doorGame" href="interactive-music-players/">
+        <div class="glyph">🎮</div>
+        <h2 data-txt="door.players.title">Interactive music players</h2>
+        <p data-txt="door.players.blurb">Play the record instead of just hearing it. Starting with the
+           Lakehorse Swimulator.</p>
+        <div class="tally" id="tallyGame">1 player</div>
       </a>
 
       <a class="door assets" id="doorAssets" href="assets.html">
@@ -236,7 +234,6 @@ async function init(){
         : 'Nothing written yet';
     } catch { $('tallyAssets').textContent = 'Not set up yet'; }
   }
-  if (bandHas('game')) gameTally('lakehorse.v2.progress', 'tallyGame');
 
   document.title = curBandTitle + " · Sn'Album";
   $('bandLine').innerHTML = `Signed in as <b>${esc(curBandTitle)}</b>.`;
@@ -250,30 +247,6 @@ async function init(){
 }
 function tally(id, n, one, many){
   $(id).textContent = n ? `${n} ${n === 1 ? one : many}` : 'Nothing here yet';
-}
-
-// The game keeps its own progress in localStorage on this origin, so the door
-// can report it without the game or the database being involved at all.
-//
-// The key is lakehorse.v2.*, which now reads as a historical accident rather
-// than a version: the prefix was minted when two builds were up at once and
-// needed to stop overwriting each other's dives. Only one build is live now, but
-// renaming the key would wipe the progress of everyone who has played it, so it
-// stays. Anyone's older dives are still parked under lakehorse.* and are
-// deliberately left alone; adopting them is a one-time migration that belongs
-// with save versioning, not with a folder move.
-function gameTally(key, into){
-  let d;
-  try { d = JSON.parse(localStorage.getItem(key) || 'null'); } catch { d = null; }
-  if (!d || !d.runs){ $(into).textContent = 'Not dived yet'; return; }
-  const bits = [];
-  if (d.chestFound && d.bestTime != null){
-    const s = Math.round(d.bestTime);
-    bits.push(`Chest found in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
-  }
-  if (d.logPages && d.logPages.length) bits.push(`${d.logPages.length}/7 of the log`);
-  if (!bits.length) bits.push(`${d.runs} dive${d.runs === 1 ? '' : 's'}`);
-  $(into).textContent = bits.join(' · ');
 }
 
 init();

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Interactive Music Players · Sn'Album</title>
+<meta name="description" content="Ways to play a record instead of just hearing it." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>" />
+<link rel="stylesheet" href="../core.css?v=35" />
+<link rel="stylesheet" href="../theme-dazzle.css?v=31" />
+<style>
+  .doors { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-top: 8px; }
+  .door {
+    display: block; text-decoration: none; color: inherit; position: relative;
+    background: var(--bg-row); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 30px 26px 26px; transition: border-color .14s, background .14s, transform .14s;
+  }
+  .door:hover { background: var(--bg-hover); border-color: var(--accent); transform: translateY(-2px); }
+  .door .glyph {
+    width: 62px; height: 62px; border-radius: 16px; display: grid; place-items: center;
+    font-size: 30px; margin-bottom: 18px;
+    background: linear-gradient(135deg, #12706b, #7de08a); box-shadow: 0 8px 24px rgba(18,112,107,.34);
+  }
+  .door h2 { margin: 0; font-size: 21px; letter-spacing: -.2px; }
+  .door p { margin: 6px 0 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.5; }
+  .door .tally { margin-top: 14px; color: var(--text-mute); font-size: 12.5px; font-weight: 600; }
+  .back { margin-left: auto; color: var(--text-dim); font-size: 13px; text-decoration: none; }
+  .back:hover { color: var(--text); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="app">
+      <div class="logo">🎮</div>
+      <div>
+        <h1>Interactive Music Players</h1>
+        <p>Ways to play a record instead of just hearing it</p>
+      </div>
+      <a class="back" id="backLink" href="../">← Sn'Album</a>
+    </header>
+
+    <div class="doors">
+      <a class="door" href="lakehorse-swimulator/">
+        <div class="glyph">🐴</div>
+        <h2>Lakehorse Swimulator</h2>
+        <p>Ride the kelpie through the wreck of the Starship Enias. You're only the
+           diver holding on. Tap for a tail beat, hold to boost, and every beat costs you air.
+           The record plays while you swim.</p>
+        <div class="tally" id="tallyGame">&nbsp;</div>
+      </a>
+    </div>
+  </div>
+
+<script src="../core.js?v=42"></script>
+<script>
+// Public page, like the game: no gate. core.js is here only so the band's
+// theme and the dazzle paint carry over from the page you came from.
+const band = lastBand();
+if (band) applyTheme(band);
+
+// The game keeps its progress in localStorage on this origin, so the door
+// reports it without the game or the database being involved. The key is
+// lakehorse.v2.*, a historical accident rather than a version; renaming it
+// would wipe everyone's progress (see CLAUDE.md).
+(function(){
+  let d; try { d = JSON.parse(localStorage.getItem('lakehorse.v2.progress') || 'null'); } catch { d = null; }
+  const el = document.getElementById('tallyGame');
+  if (!d || !d.runs){ el.textContent = 'Not dived yet'; return; }
+  const bits = [];
+  if (d.chestFound && d.bestTime != null){
+    const s = Math.round(d.bestTime);
+    bits.push(`Chest found in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
+  }
+  if (d.logPages && d.logPages.length) bits.push(`${d.logPages.length}/7 of the log`);
+  if (!bits.length) bits.push(`${d.runs} dive${d.runs === 1 ? '' : 's'}`);
+  el.textContent = bits.join(' · ');
+})();
+</script>
+</body>
+</html>

@@ -1373,7 +1373,7 @@
       </ol>
       <div class="actions">
         <button class="btn ghost" id="cmkClose">Close</button>
-        <button class="btn primary" id="cmkGo">Download marker WAV</button>
+        <button class="btn primary" id="cmkGo">Download marker WAV + comments .txt</button>
       </div>
     </div>
   </div>
@@ -4945,18 +4945,22 @@ function commentsText(song, list){
   });
   return out.join('\n') + '\n';
 }
-function downloadComments(){
-  if (!activeSong) return;
-  const list = rootsFor(activeSong.id);
-  if (!list.length) return;
+// Shared by the drawer's ↓ .txt and the marker WAV dialog (CR-137): a WAV can
+// carry markers but not a note Logic will show, so the text rides alongside it.
+// Returns false when there was nothing to write.
+function saveCommentsTxt(song){
+  const list = rootsFor(song.id);
+  if (!list.length) return false;
   const url = URL.createObjectURL(
-    new Blob([commentsText(activeSong, list)], { type: 'text/plain;charset=utf-8' }));
+    new Blob([commentsText(song, list)], { type: 'text/plain;charset=utf-8' }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = activeSong.title.replace(/[\/\\:*?"<>|]/g, '-') + ' comments.txt';
+  a.download = song.title.replace(/[\/\\:*?"<>|]/g, '-') + ' comments.txt';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
 }
+function downloadComments(){ if (activeSong) saveCommentsTxt(activeSong); }
 $('cdlBtn').onclick = downloadComments;
 
 // ---------- CR-128: the same comments, as Logic markers ----------
@@ -5052,7 +5056,10 @@ function downloadMarkers(){
   a.href = url; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
-  cmkSetStatus(`Downloaded ${name} (${sel.length} marker${sel.length === 1 ? '' : 's'} plus the start, ${(wav.length / 1048576).toFixed(1)} MB).`, 'ok');
+  // The comments .txt goes with it. Chrome asks once whether this site may
+  // download multiple files; that has to be allowed for the second file to land.
+  const withTxt = saveCommentsTxt(cmk.song);
+  cmkSetStatus(`Downloaded ${name} (${sel.length} marker${sel.length === 1 ? '' : 's'} plus the start, ${(wav.length / 1048576).toFixed(1)} MB)${withTxt ? ' and the comments .txt' : ''}.`, 'ok');
 }
 for (let i = 1; i <= 16; i++){
   const op = document.createElement('option');

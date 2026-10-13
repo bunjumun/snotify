@@ -116,6 +116,18 @@
   .vu-body { flex: 1 1 auto; min-width: 0; color: var(--text-dim); }
   .vu-verb { color: var(--text-mute); font-weight: 600; }
   .vu-at { flex: none; color: var(--text-mute); font-size: 11px; white-space: nowrap; }
+  /* CR-138: comments in the song log, and the Show more row */
+  .vlog-cmt::before { background: transparent; border-color: var(--text-mute); }
+  .vlog-chead { display: flex; align-items: baseline; gap: 6px; }
+  .vlog-chead .vlog-name { font-size: 13px; }
+  .vlog-ctext { margin: 3px 0 0; color: var(--text-dim); font-size: 13px; overflow-wrap: anywhere; }
+  .vlog-cmt.resolved .vlog-ctext { text-decoration: line-through; opacity: .65; }
+  .vlog-more-row { padding: 6px 4px 4px 12px; }
+  .vlog-more { background: none; border: 1px solid var(--line); color: var(--text-dim); border-radius: 6px;
+    padding: 4px 12px; font-size: 12px; cursor: pointer; }
+  .vlog-more:hover { color: var(--accent); border-color: var(--accent); }
+  .vlog-entry:has(+ .vlog-more-row) { border-left-color: transparent; }
+  .vlog-upd:has(+ .vlog-more-row) { border-bottom: none; }
   .vlog-none { margin: 5px 0 0; color: var(--text-mute); font-size: 12px; font-style: italic; }
 
   /* Inline changelog line in now-playing */
@@ -1676,7 +1688,7 @@
   <div class="dock">
     <div class="drawer" id="vlogDrawer">
       <div class="pad">
-        <h3 id="vlogTitle">Version history <span id="vlogHint" style="text-transform:none;font-weight:400"></span></h3>
+        <h3 id="vlogTitle">Song log <span id="vlogHint" style="text-transform:none;font-weight:400"></span></h3>
         <div class="vlog-list" id="vlogList"></div>
       </div>
     </div>
@@ -4469,7 +4481,9 @@ async function loadComments(){
     commentCache = {};
     (rows || []).forEach(r => (commentCache[r.song_id] ||= []).push(mapRow(r)));
   } catch { return; }   // offline / stale password — leave what we have
-  if (activeSong){ refreshListBadges(); renderComments(); renderMarkers(); }
+  if (activeSong){ refreshListBadges(); renderComments(); renderMarkers();
+    // Comments land after the log was first drawn; redraw it if it is open.
+    if ($('vlogDrawer').classList.contains('open')) renderVlog(); }
   else if (songs.length) refreshListBadges();
   // The notes are part of every bar now, and this call lands after the bars
   // were first drawn — so they are wrong until it does. Redraw them here or a
@@ -6838,13 +6852,35 @@ const UPDATE_KIND = {
 // no version history to show — is where his "5 most recent band-wide
 // updates" ask landed, at his later word to reuse this button rather than
 // build a second one. See schema-v35.sql for which sources count and why.
+// CR-138. Both states of the log show VLOG_PAGE entries, then a "Show more"
+// that reveals that many again, so an old update is reachable rather than gone.
+// The band-wide feed asks the server for a bigger `lim` each time (the RPC
+// already takes one); the song view slices a list it already holds. The count
+// resets when the song changes or the drawer is reopened, so a long scroll
+// through one song's history does not follow him to the next.
+const VLOG_PAGE = 10;
+let vlogShown = VLOG_PAGE, vlogKey = null;
+const vlogMoreRow = (older) =>
+  `<div class="vlog-more-row"><button class="vlog-more" type="button">Show more${older ? ` (${older} older)` : ''}</button></div>`;
+$('vlogList').addEventListener('click', (e) => {
+  if (!e.target.closest('.vlog-more')) return;
+  vlogShown += VLOG_PAGE; renderVlog();
+});
+
 async function renderVlog(){
+  const key = activeSong ? activeSong.id : '';
+  if (key !== vlogKey){ vlogKey = key; vlogShown = VLOG_PAGE; }
   $('vlogHint').textContent = activeSong ? `of “${activeSong.title}”` : '';
-  $('vlogTitle').firstChild.textContent = activeSong ? 'Version history ' : 'What’s new ';
+  $('vlogTitle').firstChild.textContent = activeSong ? 'Song log ' : 'What’s new ';
   if (!activeSong){
-    $('vlogList').innerHTML = `<div class="cempty">Loading recent updates…</div>`;
+    // Only blank the list on the first load; on "Show more" the rows already
+    // there stay put, so the scroll position does not jump back to the top.
+    if (!$('vlogList').querySelector('.vlog-upd'))
+      $('vlogList').innerHTML = `<div class="cempty">Loading recent updates…</div>`;
+    const want = vlogShown;
     let updates = [];
-    try { updates = await libRpc('recent_updates', { lim: 5 }); } catch {}
+    try { updates = await libRpc('recent_updates', { lim: want }); } catch {}
+    if (activeSong) return;   // a song started while this was in flight; its own render wins
     $('vlogList').innerHTML = updates.length
       ? updates.map(u => {
           const meta = UPDATE_KIND[u.kind] || { icon: '•', verb: 'Update' };
@@ -6853,11 +6889,32 @@ async function renderVlog(){
             <span class="vu-body"><span class="vu-verb">${esc(meta.verb)}</span> ${esc(u.label)}</span>
             <span class="vu-at">${esc(timeago(new Date(u.at).getTime()))}</span>
           </div>`;
-        }).join('')
+        }).join('') + (updates.length >= want ? vlogMoreRow() : '')
       : `<div class="cempty">Nothing yet. Play a song to see its version history instead.</div>`;
     return;
   }
-  $('vlogList').innerHTML = activeSong.versions.map((ver, vi) => {
+  // One timeline, newest first: each mix (with its changelog) and each comment
+  // or reply on the song, ordered by when it was made. A mix with no stored
+  // date sinks to the bottom rather than being guessed into the middle.
+  const when = (iso) => { const t = Date.parse(iso); return isNaN(t) ? -Infinity : t; };
+  const items = activeSong.versions.map((ver, vi) => ({ ver, vi, t: when(ver.created_at) }));
+  commentsFor(activeSong.id).forEach(c => items.push({ c, t: isNaN(c.at) ? -Infinity : c.at }));
+  items.sort((x, y) => y.t - x.t);
+  const shown = items.slice(0, vlogShown);
+  $('vlogList').innerHTML = shown.map(it => {
+    if (it.c){
+      const c = it.c;
+      return `
+    <div class="vlog-entry vlog-cmt ${c.resolved ? 'resolved' : ''}">
+      <div class="vlog-chead">
+        <span class="vu-icon">💬</span>
+        <span class="vlog-name">${esc(c.name || 'Someone')}</span>
+        <span class="vlog-date">${c.parentId ? 'replied' : `at ${fmt(c.time)}`}${Number.isFinite(c.at) ? ` · ${esc(timeago(c.at))}` : ''}</span>
+      </div>
+      <div class="vlog-ctext">${esc(c.text)}</div>
+    </div>`;
+    }
+    const { ver, vi } = it;
     const bullets = verBullets(ver);
     return `
     <div class="vlog-entry ${vi===activeVer?'current':''}" data-vi="${vi}">
@@ -6871,8 +6928,8 @@ async function renderVlog(){
         ? `<ul class="vlog-bullets">${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>`
         : `<div class="vlog-none">No changelog for this version.</div>`}
     </div>`;
-  }).join('');
-  $('vlogList').querySelectorAll('.vlog-entry').forEach(el => {
+  }).join('') + (items.length > shown.length ? vlogMoreRow(items.length - shown.length) : '');
+  $('vlogList').querySelectorAll('.vlog-entry[data-vi]').forEach(el => {
     el.querySelector('.vlog-head').addEventListener('click', () => switchVersion(Number(el.dataset.vi)));
     el.querySelector('.vlog-copy').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -6886,7 +6943,7 @@ function openVlog(open){
   if (open){ $('drawer').classList.remove('open'); $('cToggle').classList.remove('active'); }
   if (open){ $('lyricDrawer').classList.remove('open'); $('lyricToggle').classList.remove('active'); }
   $('vlogDrawer').classList.toggle('open', open); $('vlogToggle').classList.toggle('active', open);
-  if (open) renderVlog();
+  if (open){ vlogShown = VLOG_PAGE; renderVlog(); }
 }
 $('vlogToggle').onclick = () => openVlog(!$('vlogDrawer').classList.contains('open'));
 $('nowLog').onclick = () => openVlog(true);

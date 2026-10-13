@@ -4923,32 +4923,26 @@ $('clist').addEventListener('keydown', (e) => {
 });
 
 // Mix notes are most useful next to the DAW, not in a browser tab — so the
-// drawer can spill the open song's comments into a plain-text list, grouped by
-// mix and ordered by position in the song.
+// drawer can spill the open song's comments into a plain-text list. One flat
+// list, unresolved only, in song order across every mix: it is a to-do list for
+// the DAW, so there is no per-mix grouping and nothing already fixed. The mix
+// name rides on each line instead of a heading.
 function commentsText(song, list){
-  const out = [`${song.title} — comments`,
-               `Exported ${new Date().toLocaleString()}`];
-  const groups = new Map(song.versions.map(v => [v.name, []]));
-  list.forEach(c => {
-    const k = c.version || '';
-    if (!groups.has(k)) groups.set(k, []);   // comment on a since-renamed mix
-    groups.get(k).push(c);
-  });
-  for (const [name, cs] of groups){
-    if (!cs.length) continue;
-    out.push('', `[${name || 'unknown mix'}]`);
-    cs.sort((a, b) => a.time - b.time).forEach(c => {
-      const who = [c.name, c.at ? new Date(c.at).toLocaleDateString() : '']
-                    .filter(Boolean).join(', ');
-      out.push(`  ${c.resolved ? '[x]' : '[ ]'} ${fmt(c.time)}  ${c.text}${who ? `  — ${who}` : ''}`);
-      // replies sit under their thread, indented, so the export reads like the drawer
-      repliesFor(song.id, c.id).forEach(r => {
-        const rwho = [r.name, r.at ? new Date(r.at).toLocaleDateString() : '']
-                       .filter(Boolean).join(', ');
-        out.push(`         ↳ ${r.text}${rwho ? `  — ${rwho}` : ''}`);
-      });
+  const open = list.filter(c => !c.resolved).sort((a, b) => a.time - b.time);
+  const out = [`${song.title} — unresolved comments`,
+               `Exported ${new Date().toLocaleString()}`, ''];
+  if (!open.length) out.push('No unresolved comments.');
+  open.forEach(c => {
+    const who = [c.name, c.at ? new Date(c.at).toLocaleDateString() : '', c.version]
+                  .filter(Boolean).join(', ');
+    out.push(`${fmt(c.time)}  ${c.text}${who ? `  — ${who}` : ''}`);
+    // replies sit under their thread, indented, so the export reads like the drawer
+    repliesFor(song.id, c.id).forEach(r => {
+      const rwho = [r.name, r.at ? new Date(r.at).toLocaleDateString() : '']
+                     .filter(Boolean).join(', ');
+      out.push(`      ↳ ${r.text}${rwho ? `  — ${rwho}` : ''}`);
     });
-  }
+  });
   return out.join('\n') + '\n';
 }
 function downloadComments(){
@@ -5031,8 +5025,8 @@ function openMarkers(){
   if (!activeSong) return;
   const roots = rootsFor(activeSong.id);
   if (!roots.length) return;
-  // Grouped by mix in the song's own mix order, like the .txt; a comment on a
-  // since-renamed mix still lands in a group of its own rather than vanishing.
+  // Grouped by mix in the song's own mix order (the .txt is one flat list now);
+  // a comment on a since-renamed mix still lands in a group of its own rather than vanishing.
   const order = activeSong.versions.map(v => v.name);
   const rank = (c) => { const k = order.indexOf(c.version); return k < 0 ? order.length : k; };
   cmk.song = activeSong;

@@ -3,7 +3,7 @@
 Frozen, but back on the Snalbum tools menu as **V.1** (the VJ mixer, 10 Aug
 11:08) and **V.2** (the visualizer, 10 Aug 12:33), in order of the commit that
 first put each on the site. **V.3** is the unified `tools/visualizer.html` and
-**V.4** is `tools/visualizer-fx.html`. Both originals were replaced by one unified
+**V.4** was `tools/visualizer-fx.html`, which is now labelled **V.5** (19 Oct 2026). Both originals were replaced by one unified
 `tools/visualizer.html` (two decks, a crossfader, all eleven scenes, gamepad,
 keyboard and MIDI).
 

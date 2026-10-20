@@ -130,6 +130,35 @@
       object-fit: contain; background: #000; z-index: 0; pointer-events: none;
     }
     body.projecting #mirror { display: block; }
+
+    /* ── Control screen ──
+       While the picture is on the projector this window is the admin screen and
+       nothing else: the settings are pinned open on the right (the gear and the close
+       button are gone, because closing them would leave nothing to control with), the
+       mirror sits letterboxed in what is left, and a slim banner says where the output
+       is. On a phone-width window the panel just covers the mirror, as before. */
+    #ctl-banner { display: none; }
+    @media (min-width: 761px) {
+      body.projecting { --panel-w: min(460px, 100vw); }
+      body.projecting #mirror {
+        left: 0; top: calc(var(--bar) + 52px);
+        width: calc(100vw - var(--panel-w)); height: calc(100vh - var(--bar) - 52px);
+      }
+      body.projecting #ctl-banner {
+        display: flex; flex-direction: column; justify-content: center; gap: 4px;
+        position: fixed; left: 0; top: var(--bar); height: 52px; width: calc(100vw - var(--panel-w));
+        padding: 0 16px; box-sizing: border-box; z-index: 20; pointer-events: none;
+        background: rgba(10,0,16,0.9); border-bottom: 1px solid rgba(255,255,255,0.1);
+        font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.55);
+        white-space: nowrap; overflow: hidden;
+      }
+      #ctl-banner b { color: #4fffb0; margin-right: 8px; }
+      #ctl-banner .fs { color: #ffcc4f; }
+      #ctl-banner .fs.on { color: #4fffb0; }
+      body.projecting .top-btns { right: calc(var(--panel-w) + 16px); top: calc(var(--bar) + 6px); }
+      body.projecting #gear-btn, body.projecting #panel-close { display: none; }
+      body.projecting #hud, body.projecting #pad-hint { left: calc((100vw - var(--panel-w)) / 2); }
+    }
     .stage-pill {
       height: 40px; padding: 0 16px; border-radius: 20px;
       background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.25);
@@ -538,6 +567,7 @@
 
 <canvas id="c"></canvas>
 <canvas id="mirror"></canvas>
+<div id="ctl-banner"><div><b>Control screen</b>output is on the projector</div><div class="fs" id="ctl-fs"></div></div>
 <div id="tip" role="tooltip"></div>
 
 <!-- ══ SETTINGS ══ -->
@@ -547,6 +577,7 @@
     <button class="panel-close" id="panel-close" title="Close settings (Esc)">×</button>
   </div>
   <div class="live" id="live">
+    <button class="btn ghost sm lv" id="lv-fill" style="display:none" title="Fill the projector window (Shift+\). Chrome only lets a window go fullscreen from a click inside that window, so if it will not do it from here the window is moved onto the projector and its prompt flashes: click once in it.">Fill projector</button>
     <button class="btn ghost sm lv" id="lv-aud" title="Audience control (J). Lets the controller plugged into this laptop drive the projector. Off, the controller is ignored; this screen, the keyboard and MIDI keep working.">Audience · off</button>
     <button class="btn ghost sm lv" data-fx="blackout" title="Blackout (B)">Blackout</button>
     <button class="btn ghost sm lv" data-fx="strobe" title="Strobe (R). It fades itself out and switches off within five seconds, and each time it fires it is 10% dimmer than the last, until five seconds go by with no strobe.">Strobe</button>
@@ -573,15 +604,19 @@
         <select id="stage-screen"></select>
       </label>
       <button class="btn wide" id="stage-start">Send to projector</button>
+      <button class="btn wide" id="stage-fill" style="display:none">Fill projector window</button>
       <div class="btn-row">
         <button class="btn ghost wide" id="stage-aud">Audience control: off</button>
       </div>
       <div class="note">
         The picture opens in a window of its own on the projector, and this window
         stays where it is: this panel, the readout and the buttons stay on this screen, and this
-        screen shows a mirror of what the audience sees. Click the picture window once
-        (<strong>Click to fill this screen</strong>) and it goes fullscreen; double-click or Enter
-        takes it out again. Set the projector to <strong>Extend</strong>, not Mirror, in System
+        screen shows a mirror of what the audience sees. While the picture is out, this panel stays
+        open on the right and this window is the control screen. <strong>Fill projector window</strong>
+        (Shift+\ too) asks the picture window to go fullscreen; Chrome usually insists on one click
+        inside that window, so it also puts the window exactly on the projector and flashes its prompt.
+        Click anywhere in the picture window (or press a key there) once and it fills the screen;
+        double-click or Enter takes it out again. Set the projector to <strong>Extend</strong>, not Mirror, in System
         Settings, Displays. The first time, Chrome asks to manage windows on your displays, and
         may ask you to allow pop-ups for this site.
         The audience's controller plugs into this laptop. <strong>Audience control</strong> (J,
@@ -987,6 +1022,7 @@ Z X C V            the A B X Y buttons (scenes A / B, colour hit, negative)
 L                  auto-cycle effects on / off
 K                  camera on / off
 \                  picture to the projector / back
+Shift \            fill the projector window (control screen)
 J                  audience control on / off
 [ ]   ; '          deck A / deck B scene back, forward
 , .                crossfade
@@ -1086,7 +1122,7 @@ Esc                close the panel</div>
   let host = window;
   // The projector. `on` is true while the picture alone is fullscreen on the
   // other screen; `audience` is whether the physical controller is being listened to.
-  const stage = { on: false, screen: null, details: null, audience: false, note: '', asking: false };
+  const stage = { on: false, screen: null, details: null, audience: false, note: '', asking: false, filled: false, fillNote: '' };
   const mirror = $('mirror'), mctx = mirror.getContext('2d', { alpha: false });
   function resize() {
     let w, h;
@@ -2434,7 +2470,7 @@ Esc                close the panel</div>
       case 'KeyP': setBeat(CONFIG.beat + 0.1); break;
       case 'KeyT': stepTrails(1, true); break;
       case 'KeyU': toggle('zoomPulse'); break;
-      case 'Backslash': toggleProjector(); break;
+      case 'Backslash': if (e.shiftKey) fillProjector(); else toggleProjector(); break;
       case 'KeyJ': toggleAudience(); break;
       case 'KeyI': toggle('negative'); break;
       case 'KeyH': toggleHudPin(); break;
@@ -3997,7 +4033,19 @@ Esc                close the panel</div>
   const panel = $('panel');
 
   function openPanel()  { panel.classList.add('open'); refreshDevices(); refreshCams(); renderPanel(); syncUI(); }
-  function closePanel() { panel.classList.remove('open'); learnTarget = null; }
+  // While the picture is on the projector this window is the control screen and the
+  // panel stays open (wide windows only; on a phone-width window it can still be closed).
+  const adminWide = () => stage.on && matchMedia('(min-width: 761px)').matches;
+  let panelWasOpen = false;
+  function closePanel() { if (adminWide()) return; panel.classList.remove('open'); learnTarget = null; }
+  function enterAdmin() {
+    panelWasOpen = panel.classList.contains('open');
+    if (!panelWasOpen) openPanel();
+  }
+  function leaveAdmin() {
+    if (!panelWasOpen) closePanel();
+    panelWasOpen = false;
+  }
 
   $('gear-btn').onclick    = () => panel.classList.contains('open') ? closePanel() : openPanel();
   $('panel-close').onclick = closePanel;
@@ -5034,6 +5082,7 @@ Esc                close the panel</div>
   }
 
   let proj = null;               // the picture window, while it is open
+  let projNudge = null;          // flashes that window's prompt
 
   async function startProjector() {
     if (stage.asking || stage.on) return;
@@ -5074,30 +5123,51 @@ Esc                close the panel</div>
       + 'html,body{margin:0;height:100%;background:#000;overflow:hidden}'
       + 'canvas{display:block;width:100vw;height:100vh;object-fit:contain;background:#000}'
       + 'canvas:fullscreen{width:100vw;height:100vh;object-fit:contain}'
-      + '#go{position:fixed;left:50%;bottom:8%;transform:translateX(-50%);padding:12px 22px;border-radius:24px;'
-      + 'border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.6);color:#fff;font:600 14px system-ui,sans-serif;'
-      + 'letter-spacing:.06em;cursor:pointer;user-select:none}'
-      + '</style></head><body><div id="go">Click to fill this screen</div></body></html>');
+      + '#go{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);padding:26px 44px;border-radius:44px;'
+      + 'border:2px solid rgba(255,255,255,.55);background:rgba(0,0,0,.72);color:#fff;font:700 28px/1.25 system-ui,sans-serif;'
+      + 'letter-spacing:.04em;text-align:center;cursor:pointer;user-select:none}'
+      + '#go small{display:block;margin-top:8px;font:500 15px system-ui,sans-serif;opacity:.7;letter-spacing:.02em}'
+      + '#go.flash{animation:nudge .6s ease-in-out 3}'
+      + '@keyframes nudge{0%,100%{box-shadow:0 0 0 rgba(79,255,176,0)}50%{box-shadow:0 0 60px rgba(79,255,176,.9);border-color:#4fffb0}}'
+      + '</style></head><body><div id="go">Click anywhere to fill this screen<small>or press any key · double-click or Enter to leave</small></div></body></html>');
     d.close();
     d.body.appendChild(canvas);
     const go = d.getElementById('go');
+    // The whole window is the button the first time: a click or a key anywhere fills it.
+    // After it has been filled once, only the prompt (or Enter) brings it back, so a stray
+    // click while performing cannot flip it.
+    let armed = true, enteredAt = 0;
+    const enterFs = () => {
+      if (d.fullscreenElement) return Promise.resolve();
+      const el = d.documentElement;
+      return el.requestFullscreen(stage.screen ? { screen: stage.screen } : undefined)
+        .catch(() => el.requestFullscreen()).catch(() => {});
+    };
     const toggleFs = () => {
       if (d.fullscreenElement) d.exitFullscreen().catch(() => {});
-      else canvas.requestFullscreen().catch(() => {});
+      else enterFs();
     };
-    go.onclick = toggleFs;
-    d.addEventListener('dblclick', toggleFs);
+    d.addEventListener('click', e => { if (!d.fullscreenElement && (armed || e.target === go || go.contains(e.target))) enterFs(); });
+    d.addEventListener('dblclick', () => { if (d.fullscreenElement && performance.now() - enteredAt > 900) d.exitFullscreen().catch(() => {}); });
     d.addEventListener('fullscreenchange', () => {
       const on = !!d.fullscreenElement;
+      if (on) { armed = false; enteredAt = performance.now(); }
       go.style.display = on ? 'none' : '';
       d.body.style.cursor = on ? 'none' : '';
-      resize();
+      stage.filled = on; if (on) stage.fillNote = '';
+      resize(); syncUI();
     });
+    projNudge = () => {
+      if (d.fullscreenElement) return;
+      go.classList.remove('flash'); void go.offsetWidth; go.classList.add('flash');
+      setTimeout(() => go.classList.remove('flash'), 2000);
+    };
     // The performer may click the picture window to fill it and then reach for a key:
     // pass them on to this window's handlers, except Enter, which is this window's own.
     for (const type of ['keydown', 'keyup']) {
       d.addEventListener(type, e => {
         if (e.code === 'Enter') { if (type === 'keydown' && !e.repeat) toggleFs(); return; }
+        if (type === 'keydown' && armed && !d.fullscreenElement) enterFs();
         window.dispatchEvent(new KeyboardEvent(type, { code: e.code, key: e.key, repeat: e.repeat, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey: e.altKey, metaKey: e.metaKey, bubbles: true, cancelable: true }));
       });
     }
@@ -5109,10 +5179,11 @@ Esc                close the panel</div>
     stage.on = true;
     host = win;
     document.body.classList.add('projecting');
+    enterAdmin();
     resize(); restartLoop();
     try { win.focus(); } catch (e) {}
     // Chrome may allow it without a click; if it does not, the prompt stays.
-    try { canvas.requestFullscreen(target ? { screen: target } : undefined).catch(() => {}); } catch (e) {}
+    try { d.documentElement.requestFullscreen(target ? { screen: target } : undefined).catch(() => {}); } catch (e) {}
     showHud(); syncUI();
   }
 
@@ -5122,15 +5193,36 @@ Esc                close the panel</div>
     if (!stage.on) return;
     const win = proj;
     proj = null;
-    stage.on = false; stage.screen = null;
+    stage.on = false; stage.screen = null; stage.filled = false; stage.fillNote = ''; projNudge = null;
     document.body.prepend(canvas);
     host = window;
     document.body.classList.remove('projecting');
+    leaveAdmin();
     resize(); restartLoop();
     try { if (win && !win.closed) win.close(); } catch (e) {}
     showHud(); syncUI();
   }
   function stopProjector() { endProjector(); }
+
+  // Fill (or leave) fullscreen on the projector's picture window. Chrome wants a click
+  // inside THAT window for this, so a click here usually cannot do it: try anyway, and if
+  // it is refused, put the window exactly on the projector, focus it and flash its prompt.
+  // What the status line then says comes from the window's own fullscreenchange, never
+  // from this attempt having been made.
+  async function fillProjector() {
+    if (!stage.on || !proj || proj.closed) { hudNote('Send the picture to the projector first (\\)', 2000); return; }
+    const win = proj, d = win.document, t = stage.screen;
+    if (d.fullscreenElement) { try { await d.exitFullscreen(); } catch (e) {} syncUI(); return; }
+    try { await d.documentElement.requestFullscreen(t && t.left !== undefined ? { screen: t } : undefined); } catch (e) {}
+    if (d.fullscreenElement) { stage.filled = true; stage.fillNote = ''; syncUI(); return; }
+    try {
+      if (t && t.width) { win.moveTo(t.left || 0, t.top || 0); win.resizeTo(t.width, t.height); }
+      win.focus();
+    } catch (e) {}
+    if (projNudge) projNudge();
+    stage.fillNote = 'Chrome did not allow it from here. Click once in the projector window (it is flashing) and it fills the screen.';
+    syncUI();
+  }
   function toggleProjector() { if (stage.on) stopProjector(); else startProjector(); }
   addEventListener('pagehide', () => { try { if (proj && !proj.closed) proj.close(); } catch (e) {} });
 
@@ -5158,7 +5250,8 @@ Esc                close the panel</div>
     else if (stage.asking) { txt = 'Waiting for the browser to allow screen access…'; }
     else if (stage.on) {
       cls = 'ok';
-      txt = 'On the projector' + (stage.screen ? ' (' + stage.screen.width + '×' + stage.screen.height + ')' : '') + '. '
+      txt = 'On the projector' + (stage.screen ? ' (' + stage.screen.width + '×' + stage.screen.height + ')' : '')
+          + (stage.filled ? ', fullscreen. ' : '. ' + (stage.fillNote || 'Not fullscreen yet: click once in the projector window.') + ' ')
           + (stage.audience ? 'The audience has the controller.' : 'The controller is switched off for the audience.');
     }
     const st = $('stage-status');
@@ -5166,6 +5259,16 @@ Esc                close the panel</div>
     if (st.textContent !== txt) st.textContent = txt;
     const start = $('stage-start'), sl = stage.on ? 'Bring the picture back' : 'Send to projector';
     if (start.textContent !== sl) start.textContent = sl;
+    const fl = stage.filled ? 'Leave projector fullscreen' : 'Fill projector window';
+    for (const [id, lab] of [['stage-fill', fl], ['lv-fill', stage.filled ? 'Leave fullscreen' : 'Fill projector']]) {
+      const b = $(id), vis = stage.on ? '' : 'none';
+      if (b.style.display !== vis) b.style.display = vis;
+      if (b.textContent !== lab) b.textContent = lab;
+      b.classList.toggle('on', stage.on && stage.filled);
+    }
+    const cfs = $('ctl-fs'), cft = !stage.on ? '' : (stage.filled ? 'projector fullscreen' : 'projector not fullscreen: click it once');
+    if (cfs.textContent !== cft) cfs.textContent = cft;
+    cfs.classList.toggle('on', stage.filled);
     const ab = $('stage-aud'), al = 'Audience control: ' + (stage.audience ? 'ON' : 'off');
     if (ab.textContent !== al) ab.textContent = al;
     ab.classList.toggle('on', stage.audience);
@@ -5173,6 +5276,8 @@ Esc                close the panel</div>
   $('proj-btn').onclick   = () => { toggleProjector(); $('proj-btn').blur(); };
   $('aud-btn').onclick    = () => { toggleAudience(); $('aud-btn').blur(); };
   $('stage-start').onclick = e => { toggleProjector(); e.currentTarget.blur(); };
+  $('stage-fill').onclick  = e => { fillProjector(); e.currentTarget.blur(); };
+  $('lv-fill').onclick     = e => { fillProjector(); e.currentTarget.blur(); };
   $('stage-aud').onclick   = e => { toggleAudience(); e.currentTarget.blur(); };
 
   // A controller the page was already given access to comes back by itself.
@@ -5311,12 +5416,14 @@ Esc                close the panel</div>
     get activity() { return activity; },
     poke,
     link: LINK, step: () => tick(16),
-    camMod, MOVE, strobeRun, TRK, trackMotion, learnBackground, autoTune, GLI, startGlitch, AUTO, applyAutopilot, PAD, MOTION, HAP, hapticTick, onHidReport, applyMotion, testRumble, pixelAt, autoBalance, stage, STROBE, fxTrans, hudNote, toggleAudience, setAudience, toggleProjector, stepFx, setAllowed, allowedList,
+    camMod, MOVE, strobeRun, TRK, trackMotion, learnBackground, autoTune, GLI, startGlitch, AUTO, applyAutopilot, PAD, MOTION, HAP, hapticTick, onHidReport, applyMotion, testRumble, pixelAt, autoBalance, stage, STROBE, fxTrans, hudNote, toggleAudience, setAudience, toggleProjector, fillProjector, stepFx, setAllowed, allowedList,
     satNow: () => saturation(),
     get camLevel() { return camLevel; },
     fakeProjecting(on) {
       stage.on = !!on; stage.screen = on ? { width: 1920, height: 1080 } : null;
-      document.body.classList.toggle('projecting', stage.on); resize(); syncUI();
+      document.body.classList.toggle('projecting', stage.on);
+      if (on) enterAdmin(); else leaveAdmin();
+      resize(); syncUI();
     },
     setScene, setXfade, setFx, colorHit,
     PRE, pickPreset, pickBuiltin, pickSlot, savePreset, renamePreset, updatePreset, deletePreset, movePreset, captureLook, cleanLook, exportDoc, importDoc, pullPresets, pushPresets, presetTween, mergeRemote, signIn,

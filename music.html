@@ -6844,6 +6844,7 @@ const UPDATE_KIND = {
   song:    { icon: '🎵', verb: 'New song' },
   mix:     { icon: '🎚️', verb: 'New mix' },
   comment: { icon: '💬', verb: 'New comment' },
+  resolved:{ icon: '✅', verb: 'Resolved' },
   log:     { icon: '📜', verb: 'Log updated' },
 };
 
@@ -6886,7 +6887,7 @@ async function renderVlog(){
           const meta = UPDATE_KIND[u.kind] || { icon: '•', verb: 'Update' };
           return `<div class="vlog-upd">
             <span class="vu-icon">${meta.icon}</span>
-            <span class="vu-body"><span class="vu-verb">${esc(meta.verb)}</span> ${esc(u.label)}</span>
+            <span class="vu-body"><span class="vu-verb">${esc(meta.verb)}</span> ${u.who ? esc(u.who) + ': ' : ''}${esc(u.label)}</span>
             <span class="vu-at">${esc(timeago(new Date(u.at).getTime()))}</span>
           </div>`;
         }).join('') + (updates.length >= want ? vlogMoreRow() : '')

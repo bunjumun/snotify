@@ -466,6 +466,12 @@
       border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.025);
       flex-shrink: 0;
     }
+    .lv-white {
+      flex: 1 1 100%; display: flex; align-items: center; gap: 10px;
+      font-size: 0.64rem; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.55);
+    }
+    .lv-white input { flex: 1; min-width: 0; }
+    .lv-white em { font-style: normal; color: #fff; min-width: 3.2em; text-align: right; }
     .live .lv { flex: 1 1 22%; min-width: 74px; padding: 9px 6px; font-size: 0.64rem; text-align: center; }
     .tabs { display: flex; padding: 0 10px; border-bottom: 1px solid rgba(255,255,255,0.1); flex-shrink: 0; }
     .tabs .tab {
@@ -586,6 +592,9 @@
     <button class="btn ghost sm lv" data-fx="negative" title="Negative (I, or Y on the pad)">Negative</button>
     <button class="btn ghost sm lv" id="hit-btn" title="Colour hit (X on the pad)">Colour</button>
     <button class="btn ghost sm lv" id="flash-btn" title="Flash (Space, or Start on the pad)">Flash</button>
+    <label class="lv-white" title="White level: the most the whites may brighten on the output, strobe and flash included. A venue setting, kept out of the presets. Double-click to reset.">
+      <span>White</span><input type="range" id="lv-white" min="0.1" max="1" step="0.01" value="1" /><em id="lv-white-val">100%</em>
+    </label>
   </div>
   <div class="tabs" id="tabs" role="tablist">
     <button class="tab" data-tab="show">Show</button>
@@ -607,6 +616,16 @@
       <button class="btn wide" id="stage-fill" style="display:none">Fill projector window</button>
       <div class="btn-row">
         <button class="btn ghost wide" id="stage-aud">Audience control: off</button>
+      </div>
+      <label class="fld">
+        <span>White level <em id="white-val">100%</em></span>
+        <input type="range" id="white" min="0.1" max="1" step="0.01" value="1" />
+      </label>
+      <div class="note">
+        White level caps how bright the output gets, so a dim room or a stage with the projector
+        close to it does not get blinded. It scales the whole picture, the strobe and the flash
+        included, and it belongs to this venue: saved presets do not carry it. The same slider sits
+        at the top of the panel.
       </div>
       <div class="note">
         The picture opens in a window of its own on the projector, and this window
@@ -1245,6 +1264,7 @@ Esc                close the panel</div>
     rumble: 0.5, motion: 0.6, motionFlip: { x: false, y: false },
     glitch: 0.5,                   // how strongly a kick stutters the recent picture back; 0 is off
     autoAfter: 10,                 // seconds without the controller before automated mode; 0 is off
+    white: 1,                      // 0.1 to 1: the most the output may brighten; a venue setting, so not in the presets
     cycle: 16, colorMode: 'auto', colorEvery: 8,
     fxAllowed: [0, 1, 2, 3, 4, 5, 6, 7],   // which effects the controller and the auto-cycle may reach
     presetsOff: [],                        // ids of saved presets the controller and the auto-cycle may not reach
@@ -1273,6 +1293,7 @@ Esc                close the panel</div>
         // The camera used to start at 0 and only the trigger brought it in, which made a
         // camera that was on look as if it were off; it now starts at half and half.
         if (saved.v !== DEFAULTS.v) { out.demo = false; out.v = DEFAULTS.v; out.cam.mix = DEFAULTS.cam.mix; }
+        out.white = Math.max(0.1, Math.min(1, +out.white || 1));
         return out;
       }
     } catch (e) {}
@@ -3096,7 +3117,7 @@ Esc                close the panel</div>
     uniform sampler2D uTex;
     uniform vec2  uRes;
     uniform float uTime, uMode, uModeA, uXf, uAmt, uScale, uAngle, uShift, uWarp, uThresh;
-    uniform float uNeg, uSat, uSeed, uRS, uZoom;
+    uniform float uNeg, uSat, uSeed, uRS, uZoom, uWhite;
     uniform vec2 uZoomC;
     uniform sampler2D uCam;
     uniform vec2  uCamFit;
@@ -3377,6 +3398,10 @@ Esc                close the panel</div>
         col = mix(prevCol, col, uXf);
       }
       col = mix(col, 1.0 - col, uNeg);
+      // The white level is the last thing to touch the picture, so it caps the strobe and
+      // the flash (painted before this) and the negative as well. The glitch overlay needs
+      // no copy of it: its frames are snapshots of this output, already scaled.
+      col *= uWhite;
       gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
     }
   `;
@@ -3408,7 +3433,7 @@ Esc                close the panel</div>
   `;
 
   const UNIFORMS = ['uTex', 'uRes', 'uTime', 'uMode', 'uModeA', 'uXf', 'uAmt', 'uScale', 'uAngle', 'uShift',
-                    'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS',
+                    'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS', 'uWhite',
                     'uCam', 'uCamFit', 'uCamMix', 'uCamBlend', 'uMirror', 'uCamBright', 'uCamContrast',
                     'uCamGamma', 'uCamBlack', 'uCamWhite', 'uCamSat', 'uCamTemp', 'uCamTint',
                     'uMot', 'uMotTexel', 'uMotMode', 'uMotBoost', 'uMotDim', 'uMotEdge', 'uZoom', 'uZoomC'];
@@ -3574,6 +3599,7 @@ Esc                close the panel</div>
         fb2d.fillStyle = '#fff'; fb2d.fillRect(0, 0, W, H);
         fb2d.globalCompositeOperation = 'source-over';
       }
+      if (CONFIG.white < 1) { fb2d.fillStyle = 'rgba(0,0,0,' + (1 - CONFIG.white) + ')'; fb2d.fillRect(0, 0, W, H); }
       mirrorFrame();
       return;
     }
@@ -3643,6 +3669,7 @@ Esc                close the panel</div>
     gl.uniform1f(glLoc.uSat, saturation());
     gl.uniform1f(glLoc.uSeed, fxSeed);
     gl.uniform1f(glLoc.uRS, rs);
+    gl.uniform1f(glLoc.uWhite, CONFIG.white);
     gl.uniform1f(glLoc.uZoom, 1 + 0.08 * MOVE.env * CONFIG.cam.motion.influence);
     gl.uniform2f(glLoc.uZoomC, 0.5 + 0.5 * MOVE.x * CONFIG.cam.motion.xy, 0.5 + 0.5 * MOVE.y * CONFIG.cam.motion.xy);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -4274,6 +4301,16 @@ Esc                close the panel</div>
   bindSlider('motion', 'motion',    v => v.toFixed(2));
   bindSlider('autoAfter', 'autoAfter', v => v === 0 ? 'off' : v + ' s');
   bindSlider('glitch', 'glitch', v => v.toFixed(2));
+  // White level has two sliders (Stage tab and the live strip) that follow each other.
+  const WHITE_IDS = [['white', 'white-val'], ['lv-white', 'lv-white-val']];
+  function syncWhite() {
+    for (const [i, o] of WHITE_IDS) {
+      const el = $(i); if (+el.value !== CONFIG.white) el.value = CONFIG.white;
+      $(o).textContent = Math.round(CONFIG.white * 100) + '%';
+    }
+  }
+  for (const [i] of WHITE_IDS) $(i).oninput = e => { CONFIG.white = Math.max(0.1, Math.min(1, +e.target.value)); save(); syncWhite(); };
+  syncWhite();
 
   $('ch-req').value = CONFIG.channels;
   $('ch-req-val').textContent = CONFIG.channels;
@@ -4299,6 +4336,7 @@ Esc                close the panel</div>
     $('motion-val').textContent = CONFIG.motion.toFixed(2);
     $('autoAfter-val').textContent = CONFIG.autoAfter === 0 ? 'off' : CONFIG.autoAfter + ' s';
     $('glitch-val').textContent = CONFIG.glitch.toFixed(2);
+    syncWhite();
     $('ch-req').value = CONFIG.channels;
     $('ch-req-val').textContent = CONFIG.channels;
     learnTarget = null;
@@ -4747,7 +4785,7 @@ Esc                close the panel</div>
   }
   [['gain', () => DEFAULTS.gain], ['smooth', () => DEFAULTS.smoothing], ['idle', () => DEFAULTS.idle], ['beat', () => DEFAULTS.beat],
    ['pulse', () => DEFAULTS.pulse], ['feel', () => DEFAULTS.feel], ['rumble', () => DEFAULTS.rumble], ['motion', () => DEFAULTS.motion],
-   ['autoAfter', () => DEFAULTS.autoAfter], ['glitch', () => DEFAULTS.glitch], ['xf', () => 0.5], ['trails', () => 1],
+   ['autoAfter', () => DEFAULTS.autoAfter], ['glitch', () => DEFAULTS.glitch], ['white', () => DEFAULTS.white], ['lv-white', () => DEFAULTS.white], ['xf', () => 0.5], ['trails', () => 1],
    ['cam-mix', () => DEFAULTS.cam.mix], ['ch-req', () => DEFAULTS.channels]].forEach(([id, d]) => resettable($(id), d));
   fxSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.fx[s.k]));
   camSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.cam.adj[s.k]));

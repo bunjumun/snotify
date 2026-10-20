@@ -6,7 +6,7 @@
 <title>Art Concepts</title>
 <meta name="description" content="Art Concepts — concept boards for the band’s art direction: notes, images, links and draw-over-image sketches." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💡</text></svg>" />
-<link rel="stylesheet" href="core.css?v=35" />
+<link rel="stylesheet" href="core.css?v=36" />
 <link rel="stylesheet" href="theme-dazzle.css?v=31" />
 <style>
   /* Concept-only surface. Everything shared lives in core.css. This page is the
@@ -20,11 +20,6 @@
   @media (max-width: 860px) { .doclayout { grid-template-columns: 1fr; } }
 
   .stack { background: var(--bg-row); border-radius: 10px; padding: 8px; }
-  .stack .backlink {
-    display: inline-block; color: var(--text-mute); text-decoration: none;
-    font-size: 12.5px; padding: 2px 8px 6px;
-  }
-  .stack .backlink:hover { color: var(--text); }
   .stack .shead {
     display: flex; align-items: center; gap: 8px; padding: 2px 8px 10px;
     color: var(--text-mute); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
@@ -206,10 +201,14 @@
   .addblock { display: flex; gap: 8px; flex-wrap: wrap; }
   .pastehint { color: var(--text-mute); font-size: 12px; }
 
-  #musicBtn, #homeBtn, #artBtn, #releaseBtn { display: none; }
-  body.authed #musicBtn, body.authed #homeBtn, body.authed #artBtn, body.authed #releaseBtn { display: inline-flex; }
+  #musicBtn, #homeBtn, #releaseBtn, #backArt { display: none; }
+  body.authed #musicBtn, body.authed #homeBtn, body.authed #releaseBtn, body.authed #backArt { display: inline-flex; }
   #gameBtn { display: none; }
   body.has-game #gameBtn { display: inline-flex; }
+  /* CR-147: the CR-104 gate every other page has. Without it a band with no
+     assets shelf was offered an Assets link here that led to an empty page. */
+  #assetsBtn { display: none; }
+  body.authed.has-assets #assetsBtn { display: inline-flex; }
 </style>
 </head>
 <body class="locked">
@@ -251,10 +250,13 @@
         <p>Art direction, in drafts · notes, images, links and sketches</p>
       </div>
       <div class="count" id="conceptCount"></div>
+      <!-- CR-147: in the header, where Image tools keeps its own, rather than
+           at the top of the Boards column, which drops below the editor on a
+           phone. Art leaves the Pages menu for the same reason it does there. -->
+      <a class="addbtn" id="backArt" href="art.html" title="Back to artwork">← Art</a>
       <button class="addbtn" id="navBtn" title="Other pages">☰ Pages ▾</button>
       <div id="navMenu">
         <a class="navitem" id="musicBtn" href="music.html">🎵 Music</a>
-        <a class="navitem" id="artBtn" href="art.html">🎨 Art</a>
         <a class="navitem" id="gameBtn" href="interactive-music-players/">🎮 Players</a>
         <a class="navitem" id="assetsBtn" href="assets.html">📖 Assets</a>
         <a class="navitem" id="releaseBtn" href="release-builder.html">🚀 Release</a>
@@ -267,7 +269,6 @@
     <div id="doc" style="display:none">
       <div class="doclayout">
         <div class="stack" id="stack">
-          <a class="backlink" id="backArt" href="art.html">← Art</a>
           <div class="shead">Boards <span id="stackCount"></span>
             <span class="grow"></span>
             <button class="btn ghost sm" id="newBtn" title="Start a new board">+ New</button>
@@ -309,7 +310,7 @@
     </div>
   </div>
 
-<script src="core.js?v=44"></script>
+<script src="core.js?v=45"></script>
 <script type="module">
 import { createSketchPad, paintStrokes } from './paint-tool.js?v=2';
 
@@ -342,7 +343,6 @@ async function init(){
 
   const b = encodeURIComponent(curBand);
   $('musicBtn').href  = 'music.html?b=' + b;
-  $('artBtn').href    = 'art.html?b=' + b;
   $('assetsBtn').href = 'assets.html?b=' + b;
   $('releaseBtn').href = 'release-builder.html?b=' + b;
   $('homeBtn').href   = 'index.html?b=' + b;

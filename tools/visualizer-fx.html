@@ -46,6 +46,11 @@
     is all it takes for it to start dancing; the demo pulse in the settings is
     an optional stand-in for audio, to hear what the map does without any.
 
+    Between songs it goes further than ambient: when the sound has stayed under a
+    threshold, and nobody is on the controls, it settles into an idle scene (the
+    water, by default) and an idle effect, and the sound stops moving the picture
+    until the music is back or anything is touched (Sound tab, "Idle").
+
     The camera is a layer: with it on, the D-pad's up and down move the mix between it
     and the animations (it starts at half and half and stays where it is left),
     and the effects work on the mix. It has
@@ -420,6 +425,10 @@
     .route-depth span { font-size: 0.62rem; color: rgba(255,255,255,0.4); width: 46px; }
     .route-meter { height: 4px; border-radius: 3px; background: rgba(255,255,255,0.07); overflow: hidden; margin-top: 7px; }
     .route-meter > div { height: 100%; width: 0%; background: #ff3cac; transition: width 0.05s linear; }
+    .idle-meter { position: relative; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.07); margin: 6px 0 12px; }
+    .idle-meter > div { height: 100%; width: 0%; border-radius: 4px; background: #ff3cac; }
+    .idle-meter.idle > div { background: #7dffc8; }
+    .idle-meter > i { position: absolute; top: -3px; bottom: -3px; left: 10%; width: 2px; background: #fff; border-radius: 1px; }
 
     .empty-note {
       font-size: 0.68rem; color: rgba(255,255,255,0.3);
@@ -996,6 +1005,42 @@
       </div>
     </div>
 
+    <div class="sect" id="idle-sect" data-tab="sound">
+      <div class="sect-title">Idle (between songs)</div>
+      <div class="status off" id="idle-status">Idle is off.</div>
+      <div class="idle-meter" id="idle-meter" title="The level the idle check reads. The white mark is the threshold."><div id="idle-fill"></div><i id="idle-mark"></i></div>
+      <label class="fld">
+        <span>Quiet below <em id="idleThresh-val">2.0%</em></span>
+        <input type="range" id="idleThresh" min="0.005" max="0.2" step="0.005" value="0.02" />
+      </label>
+      <label class="fld">
+        <span>Go idle after <em id="idleDelay-val">4 s</em> of quiet</span>
+        <input type="range" id="idleDelay" min="1" max="30" step="1" value="4" />
+      </label>
+      <label class="fld">
+        <span>Idle scene</span>
+        <select id="idle-scene"></select>
+      </label>
+      <label class="fld">
+        <span>Idle effect</span>
+        <select id="idle-fx"></select>
+      </label>
+      <div class="toggles">
+        <button class="btn ghost sm" data-cfg="idleOn">Idle on</button>
+        <button class="btn ghost sm" id="idle-preview">Preview idle</button>
+      </div>
+      <div class="note">
+        With nothing played into it, and then nobody on the controls, it settles into the
+        <strong>idle scene</strong> and <strong>idle effect</strong> and the sound stops moving the
+        picture. Play a song and watch the bar: set the white mark just under the quietest the music
+        gets, then check the gap between songs sits to the left of it. This reads the raw level of the
+        loudest channel, not the auto level, which lifts a quiet room back up. With no audio connected
+        it goes idle once nobody has touched the controls. Any key, button or stick, or sound back above
+        the mark, brings it back at once; clicking in this panel does not, so you can tune it while it
+        shows. It stays off while the demo pulse is on or the camera is in the picture.
+      </div>
+    </div>
+
     <div class="sect" id="midi-sect" data-tab="sound">
       <div class="sect-title">MIDI</div>
       <div class="status off" id="midi-status">MIDI is off.</div>
@@ -1273,6 +1318,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     glitch: 0.5,                   // how strongly a kick stutters the recent picture back; 0 is off
     autoAfter: 10,                 // seconds without the controller before automated mode; 0 is off
     white: 1,                      // 0.1 to 1: the most the output may brighten; a venue setting, so not in the presets
+    idleOn: true,                  // go to the idle scene between songs; a venue setting, so not in the presets
+    idleThresh: 0.02,              // raw level (RMS of the loudest channel, before the auto level) under which the room counts as quiet
+    idleDelay: 4,                  // seconds of quiet, with nobody on the controls, before it goes idle
+    idleScene: 'WATER',            // by name, so reordering the scenes never moves it
+    idleFx: 'keep',                // 'keep', 'fx:<index>' or 'pre:<saved preset id>'
     cycle: 16, colorMode: 'auto', colorEvery: 8,
     fxAllowed: [0, 1, 2, 3, 4, 5, 6, 7],   // which effects the controller and the auto-cycle may reach
     presetsOff: [],                        // ids of saved presets the controller and the auto-cycle may not reach
@@ -1302,6 +1352,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         // camera that was on look as if it were off; it now starts at half and half.
         if (saved.v !== DEFAULTS.v) { out.demo = false; out.v = DEFAULTS.v; out.cam.mix = DEFAULTS.cam.mix; }
         out.white = Math.max(0.1, Math.min(1, +out.white || 1));
+        out.idleOn = out.idleOn !== false;
+        out.idleThresh = Math.max(0.005, Math.min(0.2, +out.idleThresh || DEFAULTS.idleThresh));
+        out.idleDelay = Math.max(1, Math.min(30, Math.round(+out.idleDelay || DEFAULTS.idleDelay)));
+        if (typeof out.idleScene !== 'string') out.idleScene = DEFAULTS.idleScene;   // the name is checked against SCENES where it is used
+        if (typeof out.idleFx !== 'string') out.idleFx = DEFAULTS.idleFx;
         return out;
       }
     } catch (e) {}
@@ -1540,7 +1595,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     // Pulse is how hard the sound is allowed to hit the picture. It scales what
     // the mixer scenes see and, below, every route; beats are still found on the
     // unscaled signal so turning it down never makes the tool deaf.
-    const p = CONFIG.pulse, m = LEV.mix;
+    const p = CONFIG.pulse * (1 - IDLE.e), m = LEV.mix;
     aud.bass = m.low * p; aud.mid = m.mid * p; aud.high = m.high * p;
     aud.level = aud.bass * 0.55 + aud.mid * 0.3 + aud.high * 0.15;
 
@@ -1558,12 +1613,14 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       const beatMs = 60000 / tapBPM;
       if ((now % beatMs) / beatMs < 0.04 && now - lastBeatAt > 150) beat = true;
     }
+    // Between songs the auto level can find a "beat" in the room; idle ignores them.
+    if (IDLE.e > 0.5) beat = false;
     if (beat) { aud.beat = true; aud.flash = p; lastBeatAt = now; onBeat(); }
   }
 
   // The payoff. Colour is thrown up on the bar line, a smaller flicker on the
   // half bar, or only on a big bass hit, depending on the setting.
-  function colorHit(v) { colorEnv = Math.max(colorEnv, v); }
+  function colorHit(v) { colorEnv = Math.max(colorEnv, v * (1 - IDLE.e)); }
 
   function onBeat() {
     beatCount++;
@@ -1582,7 +1639,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   // away again a few bars later. The pause is for this visit only: the setting
   // itself is not touched, so the next load still opens in party mode.
   let cycleHeld = false;
-  const cycleActive = () => CONFIG.cycle > 0 && !cycleHeld;
+  const cycleActive = () => CONFIG.cycle > 0 && !cycleHeld && !IDLE.on && !IDLE.want;   // idle holds the effect it chose
 
   function setFx(i, auto) {
     const next = (i % FX.length + FX.length) % FX.length;
@@ -2200,7 +2257,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   let padInfo = { id: '', rumble: false };    // what the last pad said it could do
   const HAP = { last: 0, beat: false, was: false };
   const MOTION = { dev: null, kind: '', on: false, last: 0, roll: 0, pitch: 0, zr: 0, zp: 0, needZero: false, tx: 0, ty: 0, note: '' };
-  const AUTO = { amt: 0, lastInput: performance.now(), scale: 0 };   // scale: automated mode's wander on the effect scale
+  const AUTO = { amt: 0, lastInput: performance.now(), scale: 0, add: { xShift: 0, twist: 0, rtrigger: 0, ltrigger: 0 } };   // scale: automated mode's wander on the effect scale
   let scaleMoved = false;
   // Movement tracking: a 128 by 72 grey model of the stage as it usually looks (bg)
   // and of what has just moved (E). See trackMotion.
@@ -2326,6 +2383,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const src = pad || (VPAD.active ? VPAD : null);
     if (!src) {
       LINK.state = 'none';
+      padHands = 0;
       // Glide to centre over ~1s. A hard zero reads as a crash on the wall when
       // a wireless pad drops a single frame.
       decayInputs(0.93);
@@ -2367,8 +2425,14 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const mx = (held(15) ? 1 : 0) - (held(14) ? 1 : 0);
     if (mx) { nudgeXfade(mx * 0.9 * dtm / 1000); AUTO.lastInput = nowMs; poke(); }
     PAD.camAxis = (held(12) ? 1 : 0) - (held(13) ? 1 : 0);
+    padHands = Math.abs(PAD.xShift) + Math.abs(PAD.yShift) + Math.abs(PAD.twist) + Math.abs(PAD.camAxis) + PAD.ltrigger + PAD.rtrigger;
   }
   let mixT = 0;
+  // How far the person is holding the controls, as read from the controller itself (and the tilt). PAD is not
+  // that: automated mode adds its drift to PAD, and with no controller to overwrite it each
+  // frame the drift lingered there and was taken for a hand on the sticks, which cancelled
+  // automated mode ten seconds in, and would have woken idle with it.
+  let padHands = 0, tiltHands = 0;     // tilt is added to PAD too (applyMotion), and counts as a hand
 
   /* ── What the controller does ──
      Six controls, and nothing else. It used to feed a dozen parameters at once,
@@ -2417,7 +2481,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     for (const r of CONFIG.routes) {
       const tgt = TARGETS[r.target];
       if (!tgt) continue;
-      m[r.target] = (m[r.target] || 0) + channelValue(r.ch, r.band) * r.depth * tgt.max * CONFIG.pulse;
+      m[r.target] = (m[r.target] || 0) + channelValue(r.ch, r.band) * r.depth * tgt.max * CONFIG.pulse * (1 - IDLE.e);
     }
     return m;
   }
@@ -2446,11 +2510,12 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
      third of their speed and the effect only breathes and, every so often,
      changes. */
   let activity = 0, lastCycleAt = performance.now();
-  function poke() { activity = 1; AUTO.lastInput = performance.now(); }
+  function poke() { activity = 1; AUTO.lastInput = performance.now(); if (IDLE.want || IDLE.on) idleWake(); }
   function updateActivity() {
     // The controller moving, as the person holds it: not P, which automated mode also moves.
     const moved = performance.now() - AUTO.lastInput < 500;
-    const audioIn = Audio.connected && LEV.mix.full > 0.12;
+    // The raw level against the idle threshold, not the auto level: that one lifts a quiet room back up.
+    const audioIn = Audio.connected && rawLevel() > CONFIG.idleThresh;
     const camIn = cam.on && camMix > 0.05;
     if (moved || audioIn || camIn || CONFIG.demo) activity = Math.min(1, activity + 0.1);
     else activity *= 0.996;
@@ -2458,6 +2523,129 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     if (AUTO.amt > 0.05) activity = Math.max(activity, 0.35 * AUTO.amt);
     if (activity < 0.002) activity = 0;
   }
+
+  /* ── Idle ──
+     Between songs the room is quiet but not silent, and the auto level lifts
+     that back up until it reads as a signal, so the tool never noticed the gap.
+     Idle judges the raw level instead (the loudest channel's RMS, before any auto
+     level) against a threshold set by eye on the meter in the Sound tab.
+
+     It is entered when the level has stayed under the threshold, and nobody has
+     touched the controls, for the delay. With no audio connected there is no
+     level to wait on, so input silence alone is enough: a fresh load with nothing
+     playing settles onto the water. It is left at once on any key, button, stick
+     or MIDI message (poke), on the level staying over 1.3 times the threshold for
+     a third of a second (the gap stops a level hovering on the line from
+     flickering in and out), or when the camera comes into the picture. The demo
+     pulse stands in for sound, so it never idles under it. Clicks in the panel
+     count toward entering but never leave, so the settings can be tuned while the
+     scene shows.
+
+     `amt` ramps in over two seconds and out over under half of one; `e` is its
+     eased copy, and everything the sound drives (routes, Pulse, beats, colour
+     hits, flashes) is scaled by 1 - e. The scenes are swapped behind a short dip
+     of both decks (`g`), because setScene clears the deck and would otherwise cut.
+     What was showing is put back on the way out, but only where nobody has
+     changed it since. */
+  const IDLE = {
+    want: false, on: false,            // want: it should be idle; on: the scenes have been swapped
+    amt: 0, e: 0, g: 1,                // linear ramp, its eased copy, and the decks' gain around the swap
+    level: 0, blocked: '',             // the raw level the meter shows; why it cannot idle right now
+    belowSince: -1, aboveSince: -1,    // when the level went under the threshold / over 1.3 times it (-1: not now)
+    touch: 0, preview: false,
+    saved: null, put: null,
+  };
+  const IDLE_IN_MS = 2000, IDLE_OUT_MS = 400, IDLE_OFF_HOLD_MS = 300, IDLE_HYST = 1.3;
+
+  function rawLevel() {
+    if (!Audio.connected) return 0;
+    let m = 0;
+    for (let i = 0; i < Audio.levels.length; i++) if (Audio.levels[i] > m) m = Audio.levels[i];
+    return m;
+  }
+  function idleSceneIndex() {
+    const i = sceneAt(CONFIG.idleScene);
+    return i >= 0 ? i : sceneAt('WATER');
+  }
+  function idleFxPick() {
+    const v = String(CONFIG.idleFx || 'keep');
+    if (v.startsWith('fx:')) {
+      const i = +v.slice(3);
+      if (Number.isInteger(i) && i >= 0 && i < FX.length) return { k: 'fx', i };
+    } else if (v.startsWith('pre:')) {
+      const id = v.slice(4);
+      if (presetById(id)) return { k: 'pre', id };
+    }
+    return { k: 'keep' };
+  }
+
+  function idleEnter() {
+    const f = idleFxPick();
+    IDLE.on = true;
+    IDLE.saved = { scenes: decks.map(D => D.scene), fx: fxMode, pre: PRE.active };
+    // The effect first: a saved look carries scenes of its own, which the idle scene then replaces.
+    if (f.k === 'fx') pickBuiltin(f.i, true); else if (f.k === 'pre') pickPreset(f.id, true);
+    const sc = idleSceneIndex();
+    decks.forEach((D, i) => { if (D.scene !== sc) setScene(i, sc); });
+    IDLE.put = { k: f.k, fx: fxMode, pre: PRE.active, scene: sc };
+  }
+  function idleLeave() {
+    const s = IDLE.saved, put = IDLE.put;
+    IDLE.on = false; IDLE.g = 0; IDLE.saved = IDLE.put = null;
+    if (!s || !put) return;
+    // Put back only what idle itself put there: if the effect or a deck has been changed
+    // since (from the panel, which does not wake it), that choice stands.
+    if (put.k !== 'keep' && fxMode === put.fx && PRE.active === put.pre) {
+      if (s.pre && presetById(s.pre)) pickPreset(s.pre, true); else pickBuiltin(s.fx, true);
+    }
+    decks.forEach((D, i) => { if (D.scene === put.scene && s.scenes[i] !== put.scene) setScene(i, s.scenes[i]); });
+  }
+  function idleWake() {
+    IDLE.preview = false; IDLE.want = false; IDLE.aboveSince = -1;
+    if (IDLE.on) idleLeave();
+  }
+  // The scene or effect was changed in the settings while idle is showing: show the new choice.
+  function idleRefresh() {
+    if (!IDLE.on) return;
+    idleLeave(); idleEnter();
+  }
+
+  function updateIdle(now, dt) {
+    const lvl = rawLevel(), thr = CONFIG.idleThresh, wait = CONFIG.idleDelay * 1000;
+    IDLE.level = lvl;
+    if (Audio.connected) {
+      if (lvl < thr) { if (IDLE.belowSince < 0) IDLE.belowSince = now; } else IDLE.belowSince = -1;
+      if (lvl > thr * IDLE_HYST) { if (IDLE.aboveSince < 0) IDLE.aboveSince = now; } else IDLE.aboveSince = -1;
+    } else { IDLE.belowSince = IDLE.aboveSince = -1; }
+
+    IDLE.blocked = !CONFIG.idleOn ? 'off' : CONFIG.demo ? 'demo' : (cam.on && camMix > 0.05) ? 'camera' : '';
+    let want = IDLE.want;
+    if (IDLE.preview) want = true;
+    else if (IDLE.blocked) want = false;
+    else if (!want) {
+      const soundQuiet = !Audio.connected || (IDLE.belowSince >= 0 && now - IDLE.belowSince >= wait);
+      want = soundQuiet && now - Math.max(AUTO.lastInput, IDLE.touch) >= wait;
+    } else if (IDLE.aboveSince >= 0 && now - IDLE.aboveSince >= IDLE_OFF_HOLD_MS) {
+      want = false;
+    }
+    if (want !== IDLE.want) { IDLE.want = want; IDLE.aboveSince = -1; }
+
+    const step = dt / (IDLE.want ? IDLE_IN_MS : IDLE_OUT_MS);
+    IDLE.amt = IDLE.want ? Math.min(1, IDLE.amt + step) : Math.max(0, IDLE.amt - step);
+    IDLE.e = IDLE.amt * IDLE.amt * (3 - 2 * IDLE.amt);
+
+    if (IDLE.want && !IDLE.on) {                      // dip both decks, swap, then bring the idle scene up
+      IDLE.g = Math.max(0, IDLE.g - dt / 600);
+      if (IDLE.g <= 0.02) idleEnter();
+    } else if (IDLE.want) {
+      IDLE.g = Math.min(1, IDLE.g + dt / 900);
+    } else {
+      if (IDLE.on) idleLeave();
+      IDLE.g = Math.min(1, IDLE.g + dt / 450);
+    }
+  }
+  // Clicks in the panel keep it from going idle under the person's hands, but never wake it.
+  document.addEventListener('pointerdown', () => { IDLE.touch = performance.now(); }, true);
 
   /* ── Keyboard → virtual pad ── */
   const AXIS_KEYS = {
@@ -2564,7 +2752,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     if (performance.now() < noteUntil) bits.push(noteText);
     if (Audio.connected) bits.push(Audio.channels + 'ch audio');
     else if (CONFIG.demo) bits.push('demo pulse');
-    if (activity < 0.05) bits.push('ambient');
+    if (IDLE.on) bits.push('idle');
+    else if (activity < 0.05) bits.push('ambient');
     if (padConnected) bits.push('gamepad');
     else if (VPAD.active) bits.push('keyboard');
     if (midiCount) bits.push('midi');
@@ -2737,6 +2926,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     return {
       w, h, a: new Float32Array(w * h), b: new Float32Array(w * h), cv, cx, img,
       ms, acc: 0, next: 900, beats: beatCount, mv: 0, lutHue: -1, lut: new Uint8ClampedArray(256 * 3),
+      pk: 0.05,                          // the brightest the surface has recently been before gain, for idle's exposure
       seed: Math.random() * 6.28,
     };
   }
@@ -2763,8 +2953,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       // Disturbances
       S.next -= dms;
       if (S.next <= 0) {
-        S.next = (4000 + Math.random() * 3000) / (0.6 + Math.min(q.complexity, 2) * 1.5);
-        waterDrop(S, 0.5 + 0.34 * Math.sin(D.ms * 0.00017 + S.seed), 0.5 + 0.3 * Math.sin(D.ms * 0.00023 + S.seed * 1.7), 0.5 * amp, 3 + Math.random() * 2);
+        // While idle it is the whole picture, so the drops come about twice as often and bigger.
+        S.next = (4000 + Math.random() * 3000) / (0.6 + Math.min(q.complexity, 2) * 1.5) / (1 + IDLE.e);
+        waterDrop(S, 0.5 + 0.34 * Math.sin(D.ms * 0.00017 + S.seed), 0.5 + 0.3 * Math.sin(D.ms * 0.00023 + S.seed * 1.7), 0.5 * amp * (1 + IDLE.e), 3 + Math.random() * 2 + IDLE.e * 3);
       }
       if (beatCount !== S.beats) {
         S.beats = beatCount;
@@ -2795,7 +2986,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         let a = S.a, b = S.b;
         // the swell: a slow sine along the left edge that rolls across the pool
         const ph = D.ms * 0.0011;
-        for (let y = 1; y < h - 1; y++) a[y * w + 1] += 0.012 * Math.sin(ph + y * 0.07 + S.seed);
+        for (let y = 1; y < h - 1; y++) a[y * w + 1] += 0.012 * (1 + IDLE.e * 2) * Math.sin(ph + y * 0.07 + S.seed);
         for (let y = 1; y < h - 1; y++) {
           let i = y * w + 1;
           for (let x = 1; x < w - 1; x++, i++) b[i] = ((a[i - 1] + a[i + 1] + a[i - w] + a[i + w]) * 0.5 - b[i]) * WATER_DAMP;
@@ -2815,16 +3006,26 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     }
     // Light on the slopes that face the light, plus a faint glow where the surface is raised
     const a = S.a, d = S.img.data, w = S.w, h = S.h, lut = S.lut;
-    const gain = 2.5 + q.glow * 6, lx = WATER_LIGHT[0] * gain, ly = WATER_LIGHT[1] * gain, sky = 0.18 * gain;
+    // Idle is this scene on its own with nothing playing, where a lone drop's rings are so faint
+    // that an effect like halftone shows nothing at all. So while idle the gain follows the water:
+    // up to eight times higher, aimed at the brightest ripple of the last few seconds landing at the
+    // top of the ramp, so there is always something to see. Playing, it is
+    // the fixed gain it always was.
+    let gain = 2.5 + q.glow * 6;
+    if (IDLE.e > 0.01) gain *= 1 + IDLE.e * (Math.min(8, Math.max(1, 1.1 / (S.pk * gain))) - 1);
+    const lx = WATER_LIGHT[0] * gain, ly = WATER_LIGHT[1] * gain, sky = 0.18 * gain;
+    let top = 0;
     for (let y = 1; y < h - 1; y++) {
       let i = y * w + 1, p = i * 4;
       for (let x = 1; x < w - 1; x++, i++, p += 4) {
         let v = -((a[i + 1] - a[i - 1]) * lx + (a[i + w] - a[i - w]) * ly) + Math.abs(a[i]) * sky;
+        if (v > top) top = v;
         v = v < 0 ? 0 : v > 1 ? 1 : v;
         const k = ((v * 255) | 0) * 3;
         d[p] = lut[k]; d[p + 1] = lut[k + 1]; d[p + 2] = lut[k + 2];
       }
     }
+    S.pk = Math.max(top / gain, S.pk * Math.exp(-dms / 3000), 0.004);
     S.cx.putImageData(S.img, 0, 0);
 
     // Trails: the previous frame is let through in proportion
@@ -3134,7 +3335,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     // All camera and nothing else showing: no point drawing what is covered.
     const camCovers = glOk && cam.on && CONFIG.cam.blend === 'mix' && camMix >= 0.99;
     decks.forEach((D, i) => {
-      const g = gains[i] * D.intensity;
+      const g = gains[i] * D.intensity * IDLE.g;
       if (g < 0.004 || camCovers) {
         // Out of the mix: don't spend a frame on it, and don't leave a ghost
         // behind for when it comes back.
@@ -4377,6 +4578,16 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   bindSlider('motion', 'motion',    v => v.toFixed(2));
   bindSlider('autoAfter', 'autoAfter', v => v === 0 ? 'off' : v + ' s');
   bindSlider('glitch', 'glitch', v => v.toFixed(2));
+  bindSlider('idleThresh', 'idleThresh', v => (v * 100).toFixed(1) + '%');
+  bindSlider('idleDelay', 'idleDelay', v => v + ' s');
+  // The idle scene and effect lists. The effect list also carries the saved presets, so it is
+  // rebuilt whenever they change (renderPresets).
+  SCENES.forEach(sc => { const o = document.createElement('option'); o.value = sc.name; o.textContent = sc.name; $('idle-scene').appendChild(o); });
+  $('idle-scene').value = idleSceneIndex() >= 0 ? SCENES[idleSceneIndex()].name : 'WATER';
+  $('idle-scene').onchange = e => { CONFIG.idleScene = e.target.value; save(); e.target.blur(); idleRefresh(); };
+  $('idle-fx').onchange    = e => { CONFIG.idleFx = e.target.value; save(); e.target.blur(); idleRefresh(); };
+  $('idle-preview').onclick = e => { IDLE.preview = !IDLE.preview; IDLE.belowSince = IDLE.aboveSince = -1; syncUI(); e.currentTarget.blur(); };
+  renderIdleFx();
   // White level has two sliders (Stage tab and the live strip) that follow each other.
   const WHITE_IDS = [['white', 'white-val'], ['lv-white', 'lv-white-val']];
   function syncWhite() {
@@ -4399,7 +4610,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   $('reset-btn').onclick = () => {
     CONFIG = JSON.parse(JSON.stringify(DEFAULTS));
     save();
-    [['gain', 'gain'], ['smooth', 'smoothing'], ['idle', 'idle'], ['beat', 'beat'], ['pulse', 'pulse'], ['feel', 'feel'], ['rumble', 'rumble'], ['motion', 'motion'], ['autoAfter', 'autoAfter'], ['glitch', 'glitch']].forEach(([id, key]) => {
+    [['gain', 'gain'], ['smooth', 'smoothing'], ['idle', 'idle'], ['beat', 'beat'], ['pulse', 'pulse'], ['feel', 'feel'], ['rumble', 'rumble'], ['motion', 'motion'], ['autoAfter', 'autoAfter'], ['glitch', 'glitch'], ['idleThresh', 'idleThresh'], ['idleDelay', 'idleDelay']].forEach(([id, key]) => {
       $(id).value = CONFIG[key];
     });
     $('gain-val').textContent   = CONFIG.gain.toFixed(1) + '×';
@@ -4413,6 +4624,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     $('autoAfter-val').textContent = CONFIG.autoAfter === 0 ? 'off' : CONFIG.autoAfter + ' s';
     $('glitch-val').textContent = CONFIG.glitch.toFixed(2);
     syncWhite();
+    renderIdleFx();
     $('ch-req').value = CONFIG.channels;
     $('ch-req-val').textContent = CONFIG.channels;
     learnTarget = null;
@@ -4704,6 +4916,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       list.appendChild(e);
     }
     allow.style.display = PRE.list.length ? '' : 'none';
+    renderIdleFx();
     syncPresetUI();
   }
   function syncPresetUI() {
@@ -4913,6 +5126,14 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       setVal(inp, CONFIG.fx[s.k]);
       setText(out, s.fmt ? s.fmt(CONFIG.fx[s.k]) : CONFIG.fx[s.k].toFixed(2));
     });
+    setVal($('idleThresh'), CONFIG.idleThresh);
+    setText($('idleThresh-val'), (CONFIG.idleThresh * 100).toFixed(1) + '%');
+    setVal($('idleDelay'), CONFIG.idleDelay);
+    setText($('idleDelay-val'), CONFIG.idleDelay + ' s');
+    setVal($('idle-scene'), SCENES[idleSceneIndex()].name);
+    setVal($('idle-fx'), idleFxPick().k === 'keep' ? 'keep' : CONFIG.idleFx);
+    $('idle-preview').classList.toggle('on', IDLE.preview);
+    setText($('idle-preview'), IDLE.preview ? 'Stop preview' : 'Preview idle');
     setVal($('color-sel'), CONFIG.colorMode);
     setVal($('color-every'), CONFIG.colorEvery);
     setVal($('cycle-sel'), CONFIG.cycle);
@@ -4951,9 +5172,42 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   }
 
   // Live meters while the panel is open
+  function renderIdleFx() {
+    const sel = $('idle-fx');
+    if (!sel) return;
+    sel.textContent = '';
+    const add = (v, t) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); };
+    add('keep', 'Keep the current effect');
+    FX.forEach((f, i) => add('fx:' + i, f.name));
+    PRE.list.forEach(p => add('pre:' + p.id, 'Preset: ' + p.name));
+    sel.value = idleFxPick().k === 'keep' ? 'keep' : CONFIG.idleFx;   // a deleted preset reads as Keep
+  }
+  function idleStatusText(now) {
+    if (IDLE.preview) return 'Previewing idle. Press a key, or Preview idle again, to stop.';
+    if (IDLE.on) return 'Idle: ' + SCENES[idleSceneIndex()].name.toLowerCase() + '. Any key, button or stick, or sound above the mark, brings it back.';
+    if (IDLE.want) return 'Going idle…';
+    if (IDLE.blocked === 'off') return 'Idle is off.';
+    if (IDLE.blocked === 'demo') return 'Held off while the demo pulse is on.';
+    if (IDLE.blocked === 'camera') return 'Held off while the camera is in the picture.';
+    const wait = CONFIG.idleDelay * 1000;
+    let rem = wait - (now - Math.max(AUTO.lastInput, IDLE.touch));
+    if (Audio.connected) rem = Math.max(rem, IDLE.belowSince < 0 ? Infinity : wait - (now - IDLE.belowSince));
+    if (rem === Infinity) return 'Listening: the sound is above the mark.';
+    return rem > 0 ? 'Quiet: idle in ' + Math.ceil(rem / 1000) + ' s.' : 'Quiet.';
+  }
+  function updateIdleUI() {
+    const now = performance.now();
+    const pct = v => Math.min(100, v / 0.2 * 100);
+    $('idle-fill').style.width = pct(IDLE.level) + '%';
+    $('idle-mark').style.left = pct(CONFIG.idleThresh) + '%';
+    $('idle-meter').classList.toggle('idle', IDLE.on);
+    setText($('idle-status'), idleStatusText(now));
+    $('idle-status').className = 'status ' + (IDLE.on || IDLE.want ? 'ok' : 'off');
+  }
   function updateMeters() {
     if (!panel.classList.contains('open')) return;
     drawMotionPreview();
+    updateIdleUI();
     fxSliderEls.forEach(({ s, meter }) => {
       meter.style.width = Math.min(100, P[s.k] / TARGETS[s.k].max * 100) + '%';
     });
@@ -5096,10 +5350,12 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   // to the same rule as the physical pad: not heard while the picture is on the
   // projector and the audience has not been handed the controls.
   function applyMotion(now) {
+    tiltHands = 0;
     if (!MOTION.on || !(CONFIG.motion > 0) || now - MOTION.last > 1000) return;
     if (stage.on && !stage.audience) return;
     PAD.xShift = Math.max(-1, Math.min(1, PAD.xShift + MOTION.tx * CONFIG.motion));
     PAD.yShift = Math.max(-1, Math.min(1, PAD.yShift + MOTION.ty * CONFIG.motion));
+    tiltHands = Math.abs(MOTION.tx * CONFIG.motion) + Math.abs(MOTION.ty * CONFIG.motion);
   }
 
   /* ── Automated mode ──
@@ -5113,6 +5369,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
      and what it writes goes through the same smoothing as a hand does, so there is
      no join to see. The camera mix is a held fader, so when the controls come back
      it stays wherever the automation left it. */
+  function undoAutopilot() {
+    const d = AUTO.add;
+    PAD.xShift -= d.xShift; PAD.twist -= d.twist; PAD.rtrigger -= d.rtrigger; PAD.ltrigger -= d.ltrigger;
+    d.xShift = d.twist = d.rtrigger = d.ltrigger = 0;
+  }
   function applyAutopilot(now, dt) {
     const after = CONFIG.autoAfter * 1000;
     const idle = after > 0 && now - AUTO.lastInput > after;
@@ -5123,11 +5384,15 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
                                  + 0.6 * Math.sin(t * TAU / (period * 0.43) + seed * 2.1)
                                  + 0.3 * Math.sin(t * TAU / (period * 0.19) + seed * 3.7)) / 1.9;
     const swell = v => v > 0 ? v * v : 0;
-    PAD.xShift   = clamp(PAD.xShift + 0.7 * wob(41, 0.3) * a, -1, 1);
+    // What is added is remembered, and taken out again before the controller is next read: with a
+    // pad connected that read overwrites PAD anyway, but with none PAD only decays, and the drift
+    // piled up on itself until the triggers sat at their stops.
+    const drift = (k, d, lo, hi) => { const before = PAD[k]; PAD[k] = clamp(before + d, lo, hi); AUTO.add[k] += PAD[k] - before; };
+    drift('xShift', 0.7 * wob(41, 0.3) * a, -1, 1);
     AUTO.scale   = 0.3 * wob(57, 1.7) * a;     // added on top of the held scale, never written into it
-    PAD.twist    = clamp(PAD.twist + 0.5 * wob(33, 2.9) * a, -1, 1);
-    PAD.rtrigger = clamp(PAD.rtrigger + 0.5 * swell(wob(47, 4.1)) * a, 0, 1);
-    PAD.ltrigger = clamp(PAD.ltrigger + 0.4 * swell(wob(29, 5.3)) * a, 0, 1);
+    drift('twist', 0.5 * wob(33, 2.9) * a, -1, 1);
+    drift('rtrigger', 0.5 * swell(wob(47, 4.1)) * a, 0, 1);
+    drift('ltrigger', 0.4 * swell(wob(29, 5.3)) * a, 0, 1);
     if (cam.on) camLevel += (0.5 + 0.35 * wob(61, 0.9) - camLevel) * (1 - Math.exp(-dt / 2500)) * a;
   }
 
@@ -5415,10 +5680,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     lastTs = now;
     presetTween(now);
 
+    undoAutopilot();
     pollGamepad();
     applyMotion(now);
     // Anyone on the controls? Judged on the controller alone, before automated mode adds to it.
-    if (Math.abs(PAD.xShift) + Math.abs(PAD.yShift) + Math.abs(PAD.twist) + Math.abs(PAD.camAxis) + PAD.ltrigger + PAD.rtrigger > 0.06) AUTO.lastInput = now;
+    if (padHands + tiltHands > 0.06) { AUTO.lastInput = now; if (IDLE.want || IDLE.on) idleWake(); }
     applyAutopilot(now, dt);
     smoothPad(dt);
     // The left stick's up and down moves the effect's scale like a fader: up is
@@ -5436,6 +5702,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     if (aud.beat && LEV.raw.low > 0.5) startGlitch(now);
     resolveParams(now);
     updateActivity();
+    updateIdle(now, dt);
 
     colorEnv *= 0.955;                 // under a second to drain: a pop, not a wash
     if (colorEnv < 0.003) colorEnv = 0;
@@ -5530,7 +5797,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     get activity() { return activity; },
     poke,
     link: LINK, step: () => tick(16),
-    camMod, MOVE, strobeRun, TRK, trackMotion, learnBackground, autoTune, GLI, startGlitch, AUTO, applyAutopilot, PAD, MOTION, HAP, hapticTick, onHidReport, applyMotion, testRumble, pixelAt, autoBalance, stage, STROBE, fxTrans, hudNote, toggleAudience, setAudience, toggleProjector, fillProjector, stepFx, setAllowed, allowedList,
+    camMod, MOVE, strobeRun, TRK, trackMotion, learnBackground, autoTune, GLI, startGlitch, AUTO, applyAutopilot, PAD, MOTION, HAP, hapticTick, onHidReport, applyMotion, testRumble, pixelAt, autoBalance, stage, STROBE, fxTrans, hudNote, toggleAudience, setAudience, toggleProjector, fillProjector, stepFx, setAllowed, allowedList, IDLE, updateIdle, idleWake, rawLevel,
     satNow: () => saturation(),
     get camLevel() { return camLevel; },
     fakeProjecting(on) {

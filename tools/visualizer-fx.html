@@ -160,7 +160,8 @@
       #ctl-banner b { color: #4fffb0; margin-right: 8px; }
       #ctl-banner .fs { color: #ffcc4f; }
       #ctl-banner .fs.on { color: #4fffb0; }
-      body.projecting .top-btns { right: calc(var(--panel-w) + 16px); top: calc(var(--bar) + 6px); }
+      /* Below the banner, not beside it: with the Auto pill the row is wide enough to run over the banner's text. */
+      body.projecting .top-btns { right: calc(var(--panel-w) + 16px); top: calc(var(--bar) + 52px + 8px); max-width: calc(100vw - var(--panel-w) - 32px); }
       body.projecting #gear-btn, body.projecting #panel-close { display: none; }
       body.projecting #hud, body.projecting #pad-hint { left: calc((100vw - var(--panel-w)) / 2); }
     }
@@ -195,7 +196,7 @@
     /* ── Top-right buttons ── */
     .top-btns {
       position: fixed; top: calc(var(--bar) + 14px); right: 20px;
-      display: flex; gap: 10px; z-index: 30;
+      display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; z-index: 30; max-width: calc(100vw - 40px);
     }
     .icon-btn {
       background: rgba(0,0,0,0.5);
@@ -548,6 +549,7 @@
 
 <div class="top-btns">
   <button class="stage-pill" id="aud-btn" title="Audience control (J). Lets the controller plugged into this laptop drive the projector. Off, the controller is ignored; this screen, the keyboard and MIDI keep working.">Audience control · off</button>
+  <button class="stage-pill" id="auto-btn" title="Auto (Y). The effect auto-cycle and automated mode, which changes things by itself when nobody is on the controller. Off, nothing moves unless a hand or the sound moves it.">Auto · ON</button>
   <button class="icon-btn" id="proj-btn"  title="Send the picture to the projector in a window of its own (click it once there to fill the screen), or bring it back (\). Settings stay on this screen.">📺</button>
   <button class="icon-btn" id="top-btn"   title="Float on top of other apps in its own small window (Chrome only)" hidden>📌</button>
   <button class="icon-btn" id="full-btn"  title="Fullscreen this window">⛶</button>
@@ -593,6 +595,7 @@
   </div>
   <div class="live" id="live">
     <button class="btn ghost sm lv" id="lv-fill" style="display:none" title="Fill the projector window (Shift+\). Chrome only lets a window go fullscreen from a click inside that window, so if it will not do it from here the window is moved onto the projector and its prompt flashes: click once in it.">Fill projector</button>
+    <button class="btn ghost sm lv" id="lv-auto" title="Auto (Y). The effect auto-cycle and automated mode, which changes things by itself when nobody is on the controller. Off, nothing moves unless a hand or the sound moves it.">Auto · ON</button>
     <button class="btn ghost sm lv" id="lv-aud" title="Audience control (J). Lets the controller plugged into this laptop drive the projector. Off, the controller is ignored; this screen, the keyboard and MIDI keep working.">Audience · off</button>
     <button class="btn ghost sm lv" data-fx="blackout" title="Blackout (B)">Blackout</button>
     <button class="btn ghost sm lv" data-fx="strobe" title="Strobe (R). It fades itself out and switches off within five seconds, and each time it fires it is 10% dimmer than the last, until five seconds go by with no strobe.">Strobe</button>
@@ -732,10 +735,25 @@
           <button class="btn ghost sm" id="fx-allow-cur">Only the one showing</button>
         </div>
         <div class="note" style="margin-top:0">
-          The controller steps effects with the stick clicks (R3, L3), and the auto-cycle
-          only moves between ticked ones. Tick a single effect to hold the show on it: the
+          The controller steps effects with the stick clicks (R3, L3) and lands only
+          on ticked ones; auto has its own list, below. Tick a single effect to hold the show on it: the
           buttons then simply do nothing, with no message. Saved presets are ticked the same way.
           Picking an effect or a preset above, or with the number keys, always works for you.
+        </div>
+      </details>
+      <details class="grp">
+        <summary>Limit what auto can use</summary>
+        <div class="fxgrid" id="auto-allow-fx"></div>
+        <div class="fxgrid" id="auto-allow-pre"></div>
+        <div class="btn-row" style="margin-top:0;margin-bottom:12px">
+          <button class="btn ghost sm" id="auto-allow-all">All</button>
+          <button class="btn ghost sm" id="auto-allow-cur">Only the one showing</button>
+        </div>
+        <div class="note" style="margin-top:0">
+          The auto-cycle (Auto-cycle effects, above) only moves between the ticked effects and
+          presets here, and never touches the controller's own list. Auto starts with every
+          effect except the raw picture. Auto off (Y, or the pill at the top) stops both the
+          cycle and automated mode.
         </div>
       </details>
       <div class="note keep" id="fx-note">
@@ -852,6 +870,10 @@
       <label class="fld">
         <span>Automated mode after <em id="autoAfter-val">10 s</em> without the controller</span>
         <input type="range" id="autoAfter" min="0" max="60" step="5" value="10" />
+      </label>
+      <label class="fld">
+        <span>Auto speed <em id="autoSpeed-val">1.00×</em></span>
+        <input type="range" id="autoSpeed" min="0.25" max="3" step="0.05" value="1" />
       </label>
       <details class="grp">
         <summary>Tilt sensors</summary>
@@ -1088,6 +1110,7 @@ K                  camera on / off
 \                  picture to the projector / back
 Shift \            fill the projector window (control screen)
 J                  audience control on / off
+Y                  auto on / off (the effect auto-cycle and automated mode)
 [ ]   ; '          deck A / deck B scene back, forward
 , .                crossfade
 F G                freeze deck A / B
@@ -1324,8 +1347,12 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     idleScene: 'WATER',            // by name, so reordering the scenes never moves it
     idleFx: 'keep',                // 'keep', 'fx:<index>' or 'pre:<saved preset id>'
     cycle: 16, colorMode: 'auto', colorEvery: 8,
-    fxAllowed: [0, 1, 2, 3, 4, 5, 6, 7],   // which effects the controller and the auto-cycle may reach
-    presetsOff: [],                        // ids of saved presets the controller and the auto-cycle may not reach
+    fxAllowed: [0, 1, 2, 3, 4, 5, 6, 7],   // which effects the controller may reach
+    presetsOff: [],                        // ids of saved presets the controller may not reach
+    autoOn: true,                  // Auto: the effect auto-cycle and automated mode; a venue setting, so not in the presets
+    autoFx: [0, 1, 2, 3, 4, 5, 6],         // effects auto may land on: all but the raw picture (the last one, RAW)
+    autoPresetsOff: [],                    // ids of saved presets auto may not use
+    autoSpeed: 1,                  // 0.25 to 3: scales the automated-mode wobble and how often the auto-cycle steps
     fx:  { fxAmount: 0.55, fxScale: 0.35, fxAngle: 0.5, fxShift: 0.2, fxWarp: 0.1, fxThresh: 0.5, fxColor: 0 },
     cam: { deviceId: '', mirror: true, blend: 'mix', mix: 0.5,
            adj: { bright: 0, contrast: 1, gamma: 1, black: 0, white: 1, sat: 1, temp: 0, tint: 0 },
@@ -1357,6 +1384,15 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         out.idleDelay = Math.max(1, Math.min(30, Math.round(+out.idleDelay || DEFAULTS.idleDelay)));
         if (typeof out.idleScene !== 'string') out.idleScene = DEFAULTS.idleScene;   // the name is checked against SCENES where it is used
         if (typeof out.idleFx !== 'string') out.idleFx = DEFAULTS.idleFx;
+        out.autoOn = out.autoOn !== false;
+        out.autoSpeed = Math.max(0.25, Math.min(3, +out.autoSpeed || DEFAULTS.autoSpeed));
+        // Saved before auto had lists of its own: it keeps the limits it was running under, so the
+        // auto-cycle does not widen overnight. The raw picture was never one auto landed on.
+        if (!Array.isArray(saved.autoFx)) {
+          out.autoFx = (Array.isArray(saved.fxAllowed) ? saved.fxAllowed : DEFAULTS.autoFx).filter(i => i !== RAW);
+          out.autoPresetsOff = Array.isArray(saved.presetsOff) ? saved.presetsOff.slice() : [];
+        }
+        if (!Array.isArray(out.autoPresetsOff)) out.autoPresetsOff = [];
         return out;
       }
     } catch (e) {}
@@ -1632,14 +1668,19 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     } else if (e < 0 && LEV.raw.low > 0.9) {
       colorHit(1);
     }
-    if (cycleActive() && beatCount % CONFIG.cycle === 0) stepFx(1, true, true);
+    if (cycleActive() && beatCount % cycleBeats() === 0) stepFx(1, true);
   }
 
   // A hand on the controls pauses the auto-cycle, or it would take the effect
   // away again a few bars later. The pause is for this visit only: the setting
   // itself is not touched, so the next load still opens in party mode.
   let cycleHeld = false;
-  const cycleActive = () => CONFIG.cycle > 0 && !cycleHeld && !IDLE.on && !IDLE.want;   // idle holds the effect it chose
+  const cycleActive = () => CONFIG.autoOn && CONFIG.cycle > 0 && !cycleHeld && !IDLE.on && !IDLE.want;   // idle holds the effect it chose
+  // Auto speed: 1 is the pace it always had. At 2 the effect steps twice as often (every cycle/2
+  // beats, never faster than every beat) and the 45 s no-audio clock runs in 22 s. The wobble of
+  // automated mode has its own clock, in applyAutopilot.
+  const autoSpeed = () => Math.max(0.25, Math.min(3, +CONFIG.autoSpeed || 1));
+  const cycleBeats = () => Math.max(1, Math.round(CONFIG.cycle / autoSpeed()));
 
   function setFx(i, auto) {
     const next = (i % FX.length + FX.length) % FX.length;
@@ -1664,12 +1705,14 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
      with the controller should find that button does very little rather than
      being told it is switched off, so there is no message and no sound. */
   const allowedList = () => (CONFIG.fxAllowed || []).filter(i => i >= 0 && i < FX.length);
+  const autoFxList = () => (CONFIG.autoFx || []).filter(i => i >= 0 && i < FX.length);
   // The effects, then the saved presets, are one ring: stepping goes round all of
   // them, landing only on the ticked ones, and a saved preset ticks the same way.
-  function stepFx(dir, auto, skipRaw) {
+  // Auto reads its own ticks (autoFx, autoPresetsOff), a hand on the controller the controller's.
+  function stepFx(dir, auto) {
     const all = FX.map((_, i) => ({ k: 'fx', i })).concat(PRE.list.map(p => ({ k: 'pre', id: p.id })));
-    const okFx = allowedList(), off = CONFIG.presetsOff || [];
-    const ok = s => s.k === 'fx' ? okFx.includes(s.i) && !(skipRaw && s.i === RAW) : !off.includes(s.id);
+    const okFx = auto ? autoFxList() : allowedList(), off = (auto ? CONFIG.autoPresetsOff : CONFIG.presetsOff) || [];
+    const ok = s => s.k === 'fx' ? okFx.includes(s.i) : !off.includes(s.id);
     let cur = PRE.active ? all.findIndex(s => s.k === 'pre' && s.id === PRE.active) : fxMode;
     if (cur < 0) cur = fxMode;
     for (let k = 1; k < all.length; k++) {
@@ -1686,7 +1729,26 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     if (!PRE.active && CONFIG.fxAllowed.length && !CONFIG.fxAllowed.includes(fxMode)) setFx(CONFIG.fxAllowed[0], true);
     showHud(); syncUI();
   }
+  // Auto, the master switch for the auto-cycle and automated mode. Switching it on takes the
+  // cycle's hold off as well, since asking for auto is asking for it to run.
+  function setAuto(on) {
+    CONFIG.autoOn = !!on;
+    if (CONFIG.autoOn) cycleHeld = false;
+    save();
+    showHud(); syncUI();
+    hudNote(CONFIG.autoOn ? 'Auto on' : 'Auto off: nothing changes by itself', 1800);
+  }
+  function toggleAuto() { setAuto(!CONFIG.autoOn); }
+  // The auto lists: never left with nothing at all to land on (effects and presets together).
+  const autoPresetsOn = () => PRE.list.filter(p => !(CONFIG.autoPresetsOff || []).includes(p.id)).length;
+  function setAutoFx(list, presetsOff) {
+    if (presetsOff) CONFIG.autoPresetsOff = presetsOff.slice();
+    CONFIG.autoFx = list.slice().sort((a, b) => a - b);
+    save();
+    showHud(); syncUI();
+  }
   function toggleCycle() {
+    if (!CONFIG.autoOn) { hudNote('Auto is off: Y turns it on'); return; }
     if (cycleActive()) cycleHeld = true;
     else { cycleHeld = false; if (!CONFIG.cycle) { CONFIG.cycle = 16; save(); } }
     showHud(); syncUI();
@@ -2257,7 +2319,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   let padInfo = { id: '', rumble: false };    // what the last pad said it could do
   const HAP = { last: 0, beat: false, was: false };
   const MOTION = { dev: null, kind: '', on: false, last: 0, roll: 0, pitch: 0, zr: 0, zp: 0, needZero: false, tx: 0, ty: 0, note: '' };
-  const AUTO = { amt: 0, lastInput: performance.now(), scale: 0, add: { xShift: 0, twist: 0, rtrigger: 0, ltrigger: 0 } };   // scale: automated mode's wander on the effect scale
+  const AUTO = { amt: 0, lastInput: performance.now(), clock: performance.now() / 1000, scale: 0, add: { xShift: 0, twist: 0, rtrigger: 0, ltrigger: 0 } };   // scale: automated mode's wander on the effect scale
   let scaleMoved = false;
   // Movement tracking: a 128 by 72 grey model of the stage as it usually looks (bg)
   // and of what has just moved (E). See trackMotion.
@@ -2698,6 +2760,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       case 'KeyU': toggle('zoomPulse'); break;
       case 'Backslash': if (e.shiftKey) fillProjector(); else toggleProjector(); break;
       case 'KeyJ': toggleAudience(); break;
+      case 'KeyY': toggleAuto(); break;
       case 'KeyI': toggle('negative'); break;
       case 'KeyH': toggleHudPin(); break;
       case 'Tab':
@@ -2767,6 +2830,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     if (AUTO.amt > 0.1) bits.push('automated');
     if (tapBPM > 0) bits.push('tap ' + Math.round(tapBPM));
     if (cycleActive()) bits.push('auto fx');
+    if (!CONFIG.autoOn) bits.push('auto off');
     if (FLAGS.strobe)    { const sl = STROBE.level * strobeRun(); bits.push('strobe' + (sl < 0.99 ? ' ' + Math.round(sl * 100) + '%' : '')); }
     if (FLAGS.blackout)  bits.push('blackout');
     if (FLAGS.negative)  bits.push('negative');
@@ -4223,6 +4287,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     { id: 'hit',      label: 'Colour hit',        def: 69, fn: () => colorHit(1) },
     { id: 'cycle',    label: 'Auto-cycle on / off', def: 70, fn: () => toggleCycle() },
     { id: 'audience', label: 'Audience control on / off', def: 71, fn: () => toggleAudience() },
+    { id: 'auto',     label: 'Auto on / off',     def: 72, fn: () => toggleAuto() },
   ];
 
   let CC_MAP = {}, NOTE_MAP = {};
@@ -4577,6 +4642,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   bindSlider('rumble', 'rumble',    v => v.toFixed(2));
   bindSlider('motion', 'motion',    v => v.toFixed(2));
   bindSlider('autoAfter', 'autoAfter', v => v === 0 ? 'off' : v + ' s');
+  bindSlider('autoSpeed', 'autoSpeed', v => v.toFixed(2) + '×');
   bindSlider('glitch', 'glitch', v => v.toFixed(2));
   bindSlider('idleThresh', 'idleThresh', v => (v * 100).toFixed(1) + '%');
   bindSlider('idleDelay', 'idleDelay', v => v + ' s');
@@ -4610,7 +4676,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   $('reset-btn').onclick = () => {
     CONFIG = JSON.parse(JSON.stringify(DEFAULTS));
     save();
-    [['gain', 'gain'], ['smooth', 'smoothing'], ['idle', 'idle'], ['beat', 'beat'], ['pulse', 'pulse'], ['feel', 'feel'], ['rumble', 'rumble'], ['motion', 'motion'], ['autoAfter', 'autoAfter'], ['glitch', 'glitch'], ['idleThresh', 'idleThresh'], ['idleDelay', 'idleDelay']].forEach(([id, key]) => {
+    [['gain', 'gain'], ['smooth', 'smoothing'], ['idle', 'idle'], ['beat', 'beat'], ['pulse', 'pulse'], ['feel', 'feel'], ['rumble', 'rumble'], ['motion', 'motion'], ['autoAfter', 'autoAfter'], ['autoSpeed', 'autoSpeed'], ['glitch', 'glitch'], ['idleThresh', 'idleThresh'], ['idleDelay', 'idleDelay']].forEach(([id, key]) => {
       $(id).value = CONFIG[key];
     });
     $('gain-val').textContent   = CONFIG.gain.toFixed(1) + '×';
@@ -4622,6 +4688,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     $('rumble-val').textContent = CONFIG.rumble.toFixed(2);
     $('motion-val').textContent = CONFIG.motion.toFixed(2);
     $('autoAfter-val').textContent = CONFIG.autoAfter === 0 ? 'off' : CONFIG.autoAfter + ' s';
+    $('autoSpeed-val').textContent = CONFIG.autoSpeed.toFixed(2) + '×';
     $('glitch-val').textContent = CONFIG.glitch.toFixed(2);
     syncWhite();
     renderIdleFx();
@@ -4676,7 +4743,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     { k: 'fxThresh', label: 'Threshold', min: 0, max: 1,   step: 0.01 },
     { k: 'fxColor',  label: 'Colour (resting)', min: 0, max: 1, step: 0.01 },
   ];
-  const fxBtns = [], fxSliderEls = [], allowBtns = [];
+  const fxBtns = [], fxSliderEls = [], allowBtns = [], autoBtns = [], autoPreBtns = [];
 
   // Camera picture controls
   const CAM_SLIDERS = [
@@ -4821,7 +4888,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       const b = document.createElement('button');
       b.className = 'btn ghost sm';
       b.textContent = f.name;
-      b.title = 'Let the controller and the auto-cycle use this effect';
+      b.title = 'Let the controller use this effect';
       b.onclick = () => {
         const list = allowedList();
         const next = list.includes(i) ? list.filter(x => x !== i) : list.concat(i);
@@ -4834,6 +4901,31 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     });
     $('fx-allow-all').onclick = e => { setAllowed(FX.map((_, i) => i)); e.currentTarget.blur(); };
     $('fx-allow-cur').onclick = e => { setAllowed([fxMode]); e.currentTarget.blur(); };
+
+    // The same ticks again for auto, over its own list.
+    const aAllow = $('auto-allow-fx');
+    aAllow.innerHTML = '';
+    FX.forEach((f, i) => {
+      const b = document.createElement('button');
+      b.className = 'btn ghost sm';
+      b.textContent = f.name;
+      b.title = 'Let auto use this effect';
+      b.onclick = () => {
+        const list = autoFxList();
+        const next = list.includes(i) ? list.filter(x => x !== i) : list.concat(i);
+        if (!next.length && !autoPresetsOn()) return;      // never none at all
+        setAutoFx(next);
+        b.blur();
+      };
+      aAllow.appendChild(b);
+      autoBtns.push(b);
+    });
+    $('auto-allow-all').onclick = e => { setAutoFx(FX.map((_, i) => i), []); e.currentTarget.blur(); };
+    $('auto-allow-cur').onclick = e => {
+      if (PRE.active) setAutoFx([], PRE.list.filter(p => p.id !== PRE.active).map(p => p.id));
+      else setAutoFx([fxMode], PRE.list.map(p => p.id));
+      e.currentTarget.blur();
+    };
 
     const wrap = $('fx-sliders');
     wrap.innerHTML = '';
@@ -4855,9 +4947,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   const preBtns = [];
   let preRoutes = false;
   function renderPresets() {
-    const grid = $('pre-grid'), list = $('pre-list'), allow = $('pre-allow');
-    if (!grid || !list || !allow) return;
-    grid.innerHTML = ''; list.innerHTML = ''; allow.innerHTML = ''; preBtns.length = 0;
+    const grid = $('pre-grid'), list = $('pre-list'), allow = $('pre-allow'), autoAllow = $('auto-allow-pre');
+    if (!grid || !list || !allow || !autoAllow) return;
+    grid.innerHTML = ''; list.innerHTML = ''; allow.innerHTML = ''; autoAllow.innerHTML = ''; preBtns.length = 0; autoPreBtns.length = 0;
     const online = onlineMode();
     PRE.list.forEach((p, n) => {
       const slot = FX.length + n + 1;
@@ -4874,7 +4966,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       const a = document.createElement('button');
       a.className = 'btn ghost sm';
       a.textContent = p.name;
-      a.title = 'Let the controller and the auto-cycle use this preset';
+      a.title = 'Let the controller use this preset';
       a.classList.toggle('on', !(CONFIG.presetsOff || []).includes(p.id));
       a.onclick = () => {
         const off = CONFIG.presetsOff || [];
@@ -4882,6 +4974,20 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         save(); renderPresets(); syncUI(); a.blur();
       };
       allow.appendChild(a);
+
+      const ab = document.createElement('button');
+      ab.className = 'btn ghost sm';
+      ab.textContent = p.name;
+      ab.title = 'Let auto use this preset';
+      ab.onclick = () => {
+        const off = CONFIG.autoPresetsOff || [];
+        const next = off.includes(p.id) ? off.filter(x => x !== p.id) : off.concat(p.id);
+        if (!autoFxList().length && next.length >= PRE.list.length) return;      // never none at all
+        setAutoFx(autoFxList(), next);
+        ab.blur();
+      };
+      autoAllow.appendChild(ab);
+      autoPreBtns.push({ b: ab, id: p.id });
 
       const row = document.createElement('div'); row.className = 'pre-row';
       const dot = document.createElement('span');
@@ -5074,7 +5180,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   }
   [['gain', () => DEFAULTS.gain], ['smooth', () => DEFAULTS.smoothing], ['idle', () => DEFAULTS.idle], ['beat', () => DEFAULTS.beat],
    ['pulse', () => DEFAULTS.pulse], ['feel', () => DEFAULTS.feel], ['rumble', () => DEFAULTS.rumble], ['motion', () => DEFAULTS.motion],
-   ['autoAfter', () => DEFAULTS.autoAfter], ['glitch', () => DEFAULTS.glitch], ['white', () => DEFAULTS.white], ['lv-white', () => DEFAULTS.white], ['xf', () => 0.5], ['trails', () => 1],
+   ['autoAfter', () => DEFAULTS.autoAfter], ['autoSpeed', () => DEFAULTS.autoSpeed], ['glitch', () => DEFAULTS.glitch], ['white', () => DEFAULTS.white], ['lv-white', () => DEFAULTS.white], ['xf', () => 0.5], ['trails', () => 1],
    ['cam-mix', () => DEFAULTS.cam.mix], ['ch-req', () => DEFAULTS.channels]].forEach(([id, d]) => resettable($(id), d));
   fxSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.fx[s.k]));
   camSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.cam.adj[s.k]));
@@ -5122,6 +5228,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     syncPresetUI();
     const okFx = allowedList();
     allowBtns.forEach((b, i) => b.classList.toggle('on', okFx.includes(i)));
+    const okAuto = autoFxList(), offAuto = CONFIG.autoPresetsOff || [];
+    autoBtns.forEach((b, i) => b.classList.toggle('on', okAuto.includes(i)));
+    autoPreBtns.forEach(({ b, id }) => b.classList.toggle('on', !offAuto.includes(id)));
+    setVal($('autoSpeed'), CONFIG.autoSpeed);
+    setText($('autoSpeed-val'), CONFIG.autoSpeed.toFixed(2) + '×');
     fxSliderEls.forEach(({ s, inp, out }) => {
       setVal(inp, CONFIG.fx[s.k]);
       setText(out, s.fmt ? s.fmt(CONFIG.fx[s.k]) : CONFIG.fx[s.k].toFixed(2));
@@ -5375,11 +5486,17 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     d.xShift = d.twist = d.rtrigger = d.ltrigger = 0;
   }
   function applyAutopilot(now, dt) {
+    // The wobble runs on a clock of its own that moves by dt * speed. Reading the wall clock
+    // through a speed factor would shift every curve's phase by (speed - 1) * seconds-so-far the
+    // moment the slider moved, a jump of its own; this way a change of speed only bends the pace.
+    const sp = autoSpeed();
+    AUTO.clock += dt / 1000 * sp;
+    // Auto off: no longer idle, so what it was adding eases out on the usual 0.4 s fall and it never starts.
     const after = CONFIG.autoAfter * 1000;
-    const idle = after > 0 && now - AUTO.lastInput > after;
+    const idle = CONFIG.autoOn && after > 0 && now - AUTO.lastInput > after;
     AUTO.amt += ((idle ? 1 : 0) - AUTO.amt) * (1 - Math.exp(-dt / (idle ? 3000 : 400)));
     if (AUTO.amt < 0.003) { AUTO.amt = 0; AUTO.scale = 0; return; }
-    const a = AUTO.amt, t = now / 1000, TAU = Math.PI * 2;
+    const a = AUTO.amt, t = AUTO.clock, TAU = Math.PI * 2;
     const wob = (period, seed) => (Math.sin(t * TAU / period + seed)
                                  + 0.6 * Math.sin(t * TAU / (period * 0.43) + seed * 2.1)
                                  + 0.3 * Math.sin(t * TAU / (period * 0.19) + seed * 3.7)) / 1.9;
@@ -5393,7 +5510,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     drift('twist', 0.5 * wob(33, 2.9) * a, -1, 1);
     drift('rtrigger', 0.5 * swell(wob(47, 4.1)) * a, 0, 1);
     drift('ltrigger', 0.4 * swell(wob(29, 5.3)) * a, 0, 1);
-    if (cam.on) camLevel += (0.5 + 0.35 * wob(61, 0.9) - camLevel) * (1 - Math.exp(-dt / 2500)) * a;
+    if (cam.on) camLevel += (0.5 + 0.35 * wob(61, 0.9) - camLevel) * (1 - Math.exp(-dt * sp / 2500)) * a;
   }
 
   function updateControllerUI() {
@@ -5617,6 +5734,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     pill.classList.toggle('active', stage.audience);
     const label = 'Audience control · ' + (stage.audience ? 'ON' : 'off');
     if (pill.textContent !== label) pill.textContent = label;
+    const apill = $('auto-btn'), alabel = 'Auto · ' + (CONFIG.autoOn ? 'ON' : 'off');
+    apill.classList.toggle('active', CONFIG.autoOn);
+    if (apill.textContent !== alabel) apill.textContent = alabel;
+    $('lv-auto').classList.toggle('on', CONFIG.autoOn);
+    if ($('lv-auto').textContent !== alabel) $('lv-auto').textContent = alabel;
     $('proj-btn').classList.toggle('active', stage.on);
     const lva = $('lv-aud');
     lva.classList.toggle('on', stage.audience);
@@ -5654,6 +5776,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   }
   $('proj-btn').onclick   = () => { toggleProjector(); $('proj-btn').blur(); };
   $('aud-btn').onclick    = () => { toggleAudience(); $('aud-btn').blur(); };
+  $('auto-btn').onclick   = () => { toggleAuto(); $('auto-btn').blur(); };
+  $('lv-auto').onclick    = e => { toggleAuto(); e.currentTarget.blur(); };
   $('stage-start').onclick = e => { toggleProjector(); e.currentTarget.blur(); };
   $('stage-fill').onclick  = e => { fillProjector(); e.currentTarget.blur(); };
   $('lv-fill').onclick     = e => { fillProjector(); e.currentTarget.blur(); };
@@ -5742,7 +5866,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
 
     // Nothing playing it: a new effect now and then, on the clock, since there
     // is no beat to count.
-    if (cycleActive() && activity < 0.05 && now - lastCycleAt > 45000) { stepFx(1, true, true); lastCycleAt = now; }
+    if (cycleActive() && activity < 0.05 && now - lastCycleAt > 45000 / autoSpeed()) { stepFx(1, true); lastCycleAt = now; }
 
     // At rest the decks run slow; playing it brings them up to speed.
     const amb = 0.3 + 0.7 * activity;
@@ -5797,7 +5921,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     get activity() { return activity; },
     poke,
     link: LINK, step: () => tick(16),
-    camMod, MOVE, strobeRun, TRK, trackMotion, learnBackground, autoTune, GLI, startGlitch, AUTO, applyAutopilot, PAD, MOTION, HAP, hapticTick, onHidReport, applyMotion, testRumble, pixelAt, autoBalance, stage, STROBE, fxTrans, hudNote, toggleAudience, setAudience, toggleProjector, fillProjector, stepFx, setAllowed, allowedList, IDLE, updateIdle, idleWake, rawLevel,
+    camMod, MOVE, strobeRun, TRK, trackMotion, learnBackground, autoTune, GLI, startGlitch, AUTO, applyAutopilot, PAD, MOTION, HAP, hapticTick, onHidReport, applyMotion, testRumble, pixelAt, autoBalance, stage, STROBE, fxTrans, hudNote, toggleAudience, setAudience, toggleProjector, fillProjector, stepFx, setAllowed, allowedList, toggleAuto, setAuto, cycleActive, cycleBeats, autoFxList, setAutoFx, IDLE, updateIdle, idleWake, rawLevel,
     satNow: () => saturation(),
     get camLevel() { return camLevel; },
     fakeProjecting(on) {

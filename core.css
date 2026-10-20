@@ -408,6 +408,10 @@ body.texting .dock { display: none; }
   text-decoration: none; font-size: 13px; font-weight: 600;
 }
 .navitem:hover { background: var(--bg-hover); }
+/* CR-147: a keyboard user tabbing down the menu could not see where they were. */
+.navitem:focus-visible {
+  background: var(--bg-hover); outline: 2px solid var(--accent); outline-offset: -2px;
+}
 
 /* ---------- Dazzle generator ---------- */
 .dz-preview {

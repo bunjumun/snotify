@@ -1402,10 +1402,30 @@ function navMenuOpen(open){
   }
   m.classList.toggle('open', open);
   b.classList.toggle('on', open);
+  b.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 on('navBtn', 'click', (e) => { e.stopPropagation(); navMenuOpen(!$('navMenu').classList.contains('open')); });
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#navMenu') && !e.target.closest('#navBtn')) navMenuOpen(false);
+});
+
+// CR-147: the Pages menu was mouse-only. Nothing told a screen reader that
+// ☰ Pages opens anything or whether it was open, and once open the only way to
+// shut it was a click somewhere else. So the button announces itself here,
+// once, rather than in eight pages' markup that would drift apart the way the
+// menus themselves did before CR-101, and Escape closes it. Focus goes back to
+// the button only if it was inside the menu, so an Escape meant for something
+// else (a modal, a text box) is not hijacked.
+{
+  const b = $('navBtn');
+  if (b){ b.setAttribute('aria-haspopup', 'true'); b.setAttribute('aria-expanded', 'false'); }
+}
+document.addEventListener('keydown', (e) => {
+  const m = $('navMenu');
+  if (e.key !== 'Escape' || !m || !m.classList.contains('open')) return;
+  const inside = m.contains(document.activeElement);
+  navMenuOpen(false);
+  if (inside) $('navBtn').focus();
 });
 
 // The other half of CR-118: carry the band across every internal link.

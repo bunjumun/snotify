@@ -573,7 +573,15 @@ function orderedVersions(){
 
 const groupOpen = new Map();   // idea root id -> true/false once the toggle has been clicked
 const stampOf = (d) => Date.parse(d.updated || d.created) || 0;
-/** Every version of one idea in a group, newest edit first; groups newest first. */
+const madeOf  = (d) => Date.parse(d.created) || 0;
+/** Every version of one idea in a group, newest edit first; groups by latest activity.
+ *  Inside a group the order is when each version was MADE, not when it was last
+ *  saved: a first draft that gets a note or a re-save after its edit was branched
+ *  carries a later `updated` than the edit, and sorting on that put the first draft
+ *  on top with the real latest edit hidden in the dropdown. A branch can only exist
+ *  after the version it came from, so creation order always puts the newest edit
+ *  first; depth settles two made in the same instant. The groups themselves still
+ *  rise on any save to any member, so an idea you just touched is at the top. */
 function ideaGroups(){
   const by = new Map();
   for (const d of drafts){
@@ -582,8 +590,12 @@ function ideaGroups(){
     by.get(r).push(d);
   }
   return [...by.entries()]
-    .map(([root, list]) => ({ root, list: list.sort((a, b) => stampOf(b) - stampOf(a)) }))
-    .sort((a, b) => stampOf(b.list[0]) - stampOf(a.list[0]));
+    .map(([root, list]) => ({
+      root,
+      list: list.sort((a, b) => madeOf(b) - madeOf(a) || depthOf(b.id) - depthOf(a.id)),
+      seen: Math.max(...list.map(stampOf)),
+    }))
+    .sort((a, b) => b.seen - a.seen);
 }
 
 function openDraft(d){

@@ -6,7 +6,7 @@
   <title>Visualizer FX V.5 — Midwest Psych Fest</title>
   <!--
     The Visualizer, put through a press. Everything the unified Visualizer does
-    (two decks, eleven scenes, a crossfader, gamepad / keyboard / MIDI, routed
+    (two decks, ten scenes, a crossfader, gamepad / keyboard / MIDI, routed
     audio) still happens, but what you see is no longer the decks themselves:
     they are mixed onto an offscreen canvas, optionally with a live camera on
     top, and that image is handed to a WebGL stage that redraws it as line
@@ -1675,12 +1675,18 @@ Esc                close the panel</div>
   const idOk = id => typeof id === 'string' && /^[a-z0-9]{3,12}$/i.test(id);
   const presetLabel = () => { const p = PRE.active && presetById(PRE.active); return p ? p.name.toUpperCase() : FX[fxMode].name; };
 
+  // V.5 dropped Particle Storm and Lissajous and added Water, so the scene numbers moved.
+  // A look carries `sv: 2` once it numbers the ten scenes; one without it was saved by V.4 and
+  // numbers the old eleven, and is translated here (Lissajous to Water, Particle Storm to Stars,
+  // the rest slide down). cleanLook stamps the result, so a look is translated once and only once.
+  const SCENE_SV = 2;
+  const OLD_SCENES = [0, 1, 6, 2, 3, 4, 5, 6, 7, 8, 9];
   // What a look is: the effect, its sliders, the two decks, the crossfade, trails,
   // colour behaviour, pulse and glitch, and optionally the sound routing.
   function captureLook(withRoutes) {
     const L = {
       fx: fxMode, s: {},
-      d: decks.map(D => [D.scene, ((Math.round(D.hue) % 360) + 360) % 360]),
+      d: decks.map(D => [D.scene, ((Math.round(D.hue) % 360) + 360) % 360]), sv: SCENE_SV,
       xf: pr3(xfade), tr: trailIdx,
       c: { pulse: pr3(CONFIG.pulse), glitch: pr3(CONFIG.glitch), mode: CONFIG.colorMode, every: CONFIG.colorEvery },
     };
@@ -1701,10 +1707,13 @@ Esc                close the panel</div>
       FX_SLIDERS.forEach(sl => { if (typeof raw.s[sl.k] === 'number' && isFinite(raw.s[sl.k])) L.s[sl.k] = pr3(pnum(raw.s[sl.k], sl.min, sl.max, 0)); });
     }
     if (Array.isArray(raw.d)) {
+      const old = raw.sv !== SCENE_SV;
+      L.sv = SCENE_SV;
       L.d = decks.map((_, i) => {
         const e = raw.d[i];
-        return (Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < SCENES.length && typeof e[1] === 'number' && isFinite(e[1]))
-          ? [e[0], ((Math.round(e[1]) % 360) + 360) % 360] : null;
+        if (!(Array.isArray(e) && Number.isInteger(e[0]) && typeof e[1] === 'number' && isFinite(e[1]))) return null;
+        const sc = old ? OLD_SCENES[e[0]] : e[0];
+        return (Number.isInteger(sc) && sc >= 0 && sc < SCENES.length) ? [sc, ((Math.round(e[1]) % 360) + 360) % 360] : null;
       });
     }
     if (typeof raw.xf === 'number') L.xf = pr3(pnum(raw.xf, 0, 1, 0.5));
@@ -2000,8 +2009,7 @@ Esc                close the panel</div>
   const SCENES = [
     { name: 'COSMIC WAVE',    viz: true,  draw: drawCosmicWave },
     { name: 'KALEIDOSCOPE',   viz: true,  draw: drawKaleidoscope },
-    { name: 'PARTICLE STORM', viz: true,  draw: drawParticleStorm },
-    { name: 'LISSAJOUS',      viz: true,  draw: drawLissajous },
+    { name: 'WATER',          viz: true,  draw: drawWater },
     { name: 'TUNNEL RUSH',    viz: true,  draw: drawTunnelRush },
     { name: 'TUNNEL',         viz: false, draw: drawTunnel },
     { name: 'PLASMA',         viz: false, draw: drawPlasma },
@@ -2020,11 +2028,12 @@ Esc                close the panel</div>
       scene, hue, speed: 1, intensity: 1, frozen: false,
       ms: 0,                            // clock for the mixer scenes, in milliseconds
       t: 0, drift: 0,                   // clock and colour drift for the Visualizer scenes
-      particles: [], stars: [],
+      stars: [],
     };
   }
   // Bold scenes to start: the effects need something with body to chew on.
-  decks.push(makeDeck(6, 0), makeDeck(4, 200));
+  const sceneAt = name => SCENES.findIndex(sc => sc.name === name);
+  decks.push(makeDeck(sceneAt('PLASMA'), 0), makeDeck(sceneAt('TUNNEL RUSH'), 200));
 
   function setScene(i, s) {
     const D = decks[i];
@@ -2034,7 +2043,7 @@ Esc                close the panel</div>
     D.cx.globalCompositeOperation = 'source-over'; D.cx.globalAlpha = 1;
     D.cx.fillStyle = '#000';
     D.cx.fillRect(0, 0, D.cv.width, D.cv.height);
-    D.particles.length = 0; D.stars.length = 0;
+    D.stars.length = 0; D.water = null;
     showHud(); syncUI();
   }
   function cycleScene(i, dir) { setScene(i, decks[i].scene + dir); }
@@ -2685,125 +2694,140 @@ Esc                close the panel</div>
     ctx.shadowBlur = 0;
   }
 
-  /* ── SCENE 2 — PARTICLE STORM ── */
-  const MAX_PARTICLES = 1400;
+  /* ── SCENE 2 — WATER ──
+     A shallow pool seen from above, in light on black. It is a real wave equation, not
+     an animation of one: a low-resolution height field (about 160 by 90 cells, two
+     Float32Arrays per deck) in which each cell is pulled toward the average of its
+     neighbours and carries on from where it was, so a drop makes a ring that travels,
+     reflects off the edges, crosses other rings and dies away (damping 0.985 a step).
+     The field steps on the deck's own clock at a fixed rate, never once per frame, so the
+     look does not change with the screen's refresh rate and a slow ambient deck is slow
+     water rather than a stuttering fast one.
 
-  // This mode used to set ctx.shadowBlur per particle, which costs a full
-  // gaussian pass *each* — up to 1400 of them a frame, plus two hsla() strings
-  // per particle for the GC to chew on. That is what made it stutter while the
-  // other modes stayed smooth. Instead: bake the glow into a small sprite atlas
-  // once, then additively blit it. Same bloom, one drawImage per particle.
-  const GLOW_HUES = 24;
-  const GLOW_SIZE = 64;
-  const glowSprites = [];
-  for (let i = 0; i < GLOW_HUES; i++) {
-    const s = document.createElement('canvas');
-    s.width = s.height = GLOW_SIZE;
-    const g = s.getContext('2d');
-    const r = GLOW_SIZE / 2;
-    const h = (i / GLOW_HUES) * 360;
-    const grad = g.createRadialGradient(r, r, 0, r, r, r);
-    grad.addColorStop(0,    `hsla(${h},100%,82%,0.85)`);
-    grad.addColorStop(0.22, `hsla(${h},100%,62%,0.42)`);
-    grad.addColorStop(1,    `hsla(${h},100%,55%,0)`);
-    g.fillStyle = grad;
-    g.fillRect(0, 0, GLOW_SIZE, GLOW_SIZE);
-    glowSprites.push(s);
+     What disturbs it: a slow drop every few seconds at a wandering point, and a faint
+     swell from the left edge, so it is never flat and never busy; the beat (a bigger drop
+     for a harder kick); the mids (a light rain), the highs (a fine shimmer); and the camera
+     (a drop wherever something moves, as often as it moves). The sticks are left to the
+     effect, as for every scene.
+
+     It is drawn as light only: the slope of the surface facing a light at the top left,
+     through a colour ramp that is mostly the deck's hue and goes white at the crest. Flat
+     water is black, so on the crossfader it adds ripples to the other deck or the camera
+     instead of covering them. The small image is scaled up with smoothing. */
+  const WATER_DAMP = 0.985;
+  const WATER_LIGHT = (() => { const x = -0.62, y = -0.78, n = Math.hypot(x, y); return [x / n, y / n]; })();
+  function hsl2rgb(h, s, l) {
+    h = (((h % 360) + 360) % 360) / 360;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => { const k = (n + h * 12) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+    return [f(0) * 255, f(8) * 255, f(4) * 255];
   }
-
-  function spawnParticle(D) {
-    const q = D.q, W = D.cv.width, H = D.cv.height;
-    const cx = W / 2 + q.xShift * W * 0.3;
-    const cy = H / 2 + q.yShift * H * 0.3;
-    const angle = Math.random() * Math.PI * 2;
-    const speed = (1 + Math.random() * 5) * (0.4 + q.amplitude);
-    D.particles.push({
-      x: cx + (Math.random() - 0.5) * 60,
-      y: cy + (Math.random() - 0.5) * 60,
-      vx: Math.cos(angle) * speed + q.twist * 5 + (Math.random() - 0.5) * q.scatter * 8,
-      vy: Math.sin(angle) * speed + q.pitch * 5 + (Math.random() - 0.5) * q.scatter * 8,
-      life: 1, decay: 0.004 + Math.random() * 0.008,
-      size: 1.5 + Math.random() * 5 * (0.4 + q.amplitude),
-      hue: D.hue + D.drift + Math.random() * 300,
-    });
+  function makeWater(w, h, ms) {
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const cx = cv.getContext('2d'), img = cx.createImageData(w, h);
+    for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+    return {
+      w, h, a: new Float32Array(w * h), b: new Float32Array(w * h), cv, cx, img,
+      ms, acc: 0, next: 900, beats: beatCount, mv: 0, lutHue: -1, lut: new Uint8ClampedArray(256 * 3),
+      seed: Math.random() * 6.28,
+    };
   }
-
-  function drawParticleStorm(D) {
-    const ctx = D.cx, q = D.q, W = D.cv.width, H = D.cv.height, particles = D.particles;
-    wipe(D, fade(q));
+  // A raised dome of radius `rad` cells at (fx, fy), each 0 to 1 across the picture.
+  function waterDrop(S, fx, fy, amp, rad) {
+    const w = S.w, h = S.h, r = Math.max(1, rad | 0);
+    const cx = Math.round(Math.max(0, Math.min(1, fx)) * (w - 1)), cy = Math.round(Math.max(0, Math.min(1, fy)) * (h - 1));
+    for (let y = Math.max(1, cy - r); y <= Math.min(h - 2, cy + r); y++) {
+      for (let x = Math.max(1, cx - r); x <= Math.min(w - 2, cx + r); x++) {
+        const d = Math.hypot(x - cx, y - cy) / r;
+        if (d < 1) S.a[y * w + x] += amp * 0.5 * (1 + Math.cos(Math.PI * d));
+      }
+    }
+  }
+  function drawWater(D) {
+    const ctx = D.cx, q = D.q, W = D.cv.width, H = D.cv.height;
+    const gw = 160, gh = Math.max(48, Math.min(108, Math.round(gw * H / W)));
+    let S = D.water;
+    if (!S || S.w !== gw || S.h !== gh) S = D.water = makeWater(gw, gh, D.ms);
+    const dms = Math.min(60, Math.max(0, D.ms - S.ms)); S.ms = D.ms;
+    const amp = 0.25 + 0.55 * Math.min(q.amplitude, 1.6);   // about 0.4 untouched, 1.1 flat out: a dome of height 1 already lights its whole ring
 
     if (!D.frozen) {
-      const spawn = Math.round(1 + q.complexity * 8 + q.amplitude * 2);
-      for (let i = 0; i < spawn && particles.length < MAX_PARTICLES; i++) spawnParticle(D);
+      // Disturbances
+      S.next -= dms;
+      if (S.next <= 0) {
+        S.next = (4000 + Math.random() * 3000) / (0.6 + Math.min(q.complexity, 2) * 1.5);
+        waterDrop(S, 0.5 + 0.34 * Math.sin(D.ms * 0.00017 + S.seed), 0.5 + 0.3 * Math.sin(D.ms * 0.00023 + S.seed * 1.7), 0.5 * amp, 3 + Math.random() * 2);
+      }
+      if (beatCount !== S.beats) {
+        S.beats = beatCount;
+        const lo = LEV.mix.low;
+        waterDrop(S, 0.5 + (Math.random() - 0.5) * 0.55, 0.5 + (Math.random() - 0.5) * 0.5, (0.35 + lo * 0.8) * amp, 3 + lo * 3);
+      }
+      const rain = Math.floor(LEV.mix.mid * 4 * amp);
+      for (let i = 0; i < rain; i++) waterDrop(S, Math.random(), Math.random(), (0.08 + Math.random() * 0.12) * amp, 1);
+      const sparkle = Math.floor(LEV.mix.high * 30);
+      for (let i = 0; i < sparkle; i++) {
+        const x = 1 + (Math.random() * (S.w - 2) | 0), y = 1 + (Math.random() * (S.h - 2) | 0);
+        S.a[y * S.w + x] += (Math.random() - 0.5) * 0.06;
+      }
+      if (MOVE.env > 0.04) {
+        S.mv = Math.min(3, S.mv + dms * MOVE.env / 110);
+        while (S.mv >= 1) {
+          S.mv -= 1;
+          waterDrop(S, 0.5 + 0.5 * MOVE.x, 0.5 - 0.5 * MOVE.y, (0.25 + MOVE.env * 0.4) * amp, 2 + (MOVE.env * 2 | 0));
+        }
+      }
+
+      // Fixed-rate steps on the deck clock
+      S.acc += dms * 0.001 * 40 * (0.6 + Math.min(q.speed, 2) * 1.2);
+      const steps = Math.min(4, S.acc | 0);
+      S.acc -= steps; if (S.acc > 4) S.acc = 0;
+      const w = S.w, h = S.h;
+      for (let s = 0; s < steps; s++) {
+        let a = S.a, b = S.b;
+        // the swell: a slow sine along the left edge that rolls across the pool
+        const ph = D.ms * 0.0011;
+        for (let y = 1; y < h - 1; y++) a[y * w + 1] += 0.012 * Math.sin(ph + y * 0.07 + S.seed);
+        for (let y = 1; y < h - 1; y++) {
+          let i = y * w + 1;
+          for (let x = 1; x < w - 1; x++, i++) b[i] = ((a[i - 1] + a[i + 1] + a[i - w] + a[i + w]) * 0.5 - b[i]) * WATER_DAMP;
+        }
+        S.a = b; S.b = a;
+      }
     }
 
-    ctx.globalCompositeOperation = 'lighter';
-    // Glow rides the same param the old shadowBlur did, so the right trigger
-    // still swells the bloom the way it always has.
-    const spread = 1.5 + q.glow * 1.5;
-    const hueShift = D.t * 30 * q.colorSpeed;
-
-    for (let i = particles.length - 1; i >= 0; i--) {
-      const p = particles[i];
-      if (!D.frozen) {
-        p.x += p.vx * q.speed; p.y += p.vy * q.speed;
-        p.vy += 0.04;
-        p.life -= p.decay;
+    // Colour ramp for this hue
+    const hue = Math.round(D.hue + D.drift);
+    if (S.lutHue !== hue) {
+      S.lutHue = hue;
+      for (let k = 0; k < 256; k++) {
+        const v = k / 255, c = hsl2rgb(hue + v * 35, 0.55 - 0.4 * v, 0.02 + 0.78 * Math.pow(v, 1.4));
+        S.lut[k * 3] = c[0]; S.lut[k * 3 + 1] = c[1]; S.lut[k * 3 + 2] = c[2];
       }
-      if (p.life <= 0 || p.x < -60 || p.x > W + 60 || p.y > H + 120) {
-        // Draw order doesn't matter here, so swap-pop rather than splice —
-        // splice memmoves the tail on every death, which at 1400 particles
-        // turned particle churn into its own hotspot.
-        particles[i] = particles[particles.length - 1];
-        particles.pop();
-        continue;
-      }
-      const r = Math.max(0.4, p.size * p.life) * spread;
-      let idx = ((p.hue + hueShift) / 360 * GLOW_HUES | 0) % GLOW_HUES;
-      if (idx < 0) idx += GLOW_HUES;
-      // Additive blending accumulates where the old source-over fills did not,
-      // so this rides far lower than the 0.35–0.95 the shadowBlur version used
-      // — overlapping particles supply the brightness instead of each one.
-      ctx.globalAlpha = p.life * (0.022 + q.glow * 0.045);
-      ctx.drawImage(glowSprites[idx], p.x - r, p.y - r, r * 2, r * 2);
     }
-    ctx.globalAlpha = 1;
+    // Light on the slopes that face the light, plus a faint glow where the surface is raised
+    const a = S.a, d = S.img.data, w = S.w, h = S.h, lut = S.lut;
+    const gain = 2.5 + q.glow * 6, lx = WATER_LIGHT[0] * gain, ly = WATER_LIGHT[1] * gain, sky = 0.18 * gain;
+    for (let y = 1; y < h - 1; y++) {
+      let i = y * w + 1, p = i * 4;
+      for (let x = 1; x < w - 1; x++, i++, p += 4) {
+        let v = -((a[i + 1] - a[i - 1]) * lx + (a[i + w] - a[i - w]) * ly) + Math.abs(a[i]) * sky;
+        v = v < 0 ? 0 : v > 1 ? 1 : v;
+        const k = ((v * 255) | 0) * 3;
+        d[p] = lut[k]; d[p + 1] = lut[k + 1]; d[p + 2] = lut[k + 2];
+      }
+    }
+    S.cx.putImageData(S.img, 0, 0);
+
+    // Trails: the previous frame is let through in proportion
+    ctx.save();
     ctx.globalCompositeOperation = 'source-over';
-  }
-
-  /* ── SCENE 3 — LISSAJOUS ── */
-  function drawLissajous(D) {
-    const ctx = D.cx, q = D.q, W = D.cv.width, H = D.cv.height;
-    const hue = D.hue + D.drift;
-    wipe(D, fade(q));
-
-    const a = 2 + Math.floor(q.complexity * 3 + Math.abs(q.xShift) * 3);
-    const b = 1 + Math.floor(q.complexity * 3 + Math.abs(q.yShift) * 3);
-    const d = D.t * q.speed * 0.4;
-    const scl = Math.min(W, H) * 0.42 * q.zoom;
-    const cx  = W / 2 + q.twist * W * 0.15;
-    const cy  = H / 2 + q.pitch * H * 0.15;
-    const amp = 0.35 + q.amplitude * 0.6;
-
-    const steps = 600;
-    let px = 0, py = 0;
-    for (let i = 0; i <= steps; i++) {
-      const th = (i / steps) * Math.PI * 2;
-      const x  = cx + Math.sin(a * th + d) * scl * amp;
-      const y  = cy + Math.sin(b * th) * scl * amp;
-      if (i) {
-        const h = hue + (i / steps) * 240 * q.colorSpeed;
-        ctx.beginPath();
-        ctx.moveTo(px, py); ctx.lineTo(x, y);
-        ctx.strokeStyle = hsla(h, 100, 65, Math.min(0.9, 0.3 + q.glow * 0.7));
-        ctx.lineWidth   = 1 + q.glow * 2.5;
-        ctx.shadowColor = hsla(h, 100, 75, 0.6);
-        ctx.shadowBlur  = blur(q);
-        ctx.stroke();
-      }
-      px = x; py = y;
-    }
-    ctx.shadowBlur = 0;
+    ctx.globalAlpha = Math.max(0.15, 1 - TRAIL_P[trailIdx] * 0.85);
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    const zs = Math.max(1, 0.6 + q.zoom * 0.73);
+    ctx.translate(W / 2, H / 2); ctx.scale(zs, zs);
+    ctx.drawImage(S.cv, -W / 2, -H / 2, W, H);
+    ctx.restore();
   }
 
   /* ── SCENE 4 — TUNNEL RUSH ── */
@@ -5463,7 +5487,7 @@ Esc                close the panel</div>
       if (on) enterAdmin(); else leaveAdmin();
       resize(); syncUI();
     },
-    setScene, setXfade, setFx, colorHit,
+    setScene, setXfade, setFx, colorHit, SCENES, OLD_SCENES,
     PRE, pickPreset, pickBuiltin, pickSlot, savePreset, renamePreset, updatePreset, deletePreset, movePreset, captureLook, cleanLook, exportDoc, importDoc, pullPresets, pushPresets, presetTween, mergeRemote, signIn,
     setMode: m => setScene(0, m),
     axis(i, v) { VPAD.axes[i] = v; activateVirtual(); },

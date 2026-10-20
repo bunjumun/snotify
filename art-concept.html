@@ -47,6 +47,13 @@
   .draft:hover .ddel { opacity: 1; }
   .draft .ddel:hover { color: #ff6b6b; }
   .draft.idea { font-weight: 600; }
+  .vtog {
+    background: none; border: 1px solid var(--line); color: var(--text-mute); cursor: pointer;
+    font-size: 11px; line-height: 1; padding: 3px 6px; border-radius: 6px; white-space: nowrap;
+  }
+  .vtog:hover { color: var(--text); border-color: var(--text-mute); }
+  .vkids { margin: 2px 0 4px 14px; padding-left: 8px; border-left: 2px solid var(--line); }
+  .vkids .draft { padding: 6px 8px; font-size: 13px; }
   .draft .vb {
     font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
     padding: 1px 5px; border-radius: 4px; white-space: nowrap;
@@ -394,30 +401,52 @@ function renderDrafts(){
     return;
   }
   box.innerHTML = '';
-  orderedVersions().forEach((d) => {
-    const m = meta(d.id);
-    const root = !parentOf(d.id);
-    const depth = Math.min(depthOf(d.id), 3);
-    const row = document.createElement('div');
-    row.className = 'draft' + (current && current.id === d.id ? ' on' : '') + (root ? ' idea' : '');
-    row.style.paddingLeft = (10 + depth * 12) + 'px';
-    const badge = root ? '<span class="vb idea">idea</span>'
-      : isMerged(d.id) ? '<span class="vb merged">adopted</span>'
-      : isMain(d.id) ? '<span class="vb main">main</span>'
-      : '<span class="vb sug">suggestion</span>';
-    const who = !root && m.author ? `<span class="vwho">${esc(m.author)}</span>` : '';
-    row.innerHTML =
-      `<span class="nm">${esc(d.name)}</span>
-       ${badge}${who}
-       ${m.target && m.target.kind ? `<span class="tgt">${esc(targetLabel(m.target))}</span>` : ''}
-       <span class="when">${timeago(d.updated || d.created)}</span>
-       <button class="ddel" title="Delete this version" data-del>🗑</button>`;
-    row.addEventListener('click', (e) => {
-      if (e.target.dataset.del !== undefined) return deleteDraft(d);
-      openDraft(d);
-    });
-    box.appendChild(row);
+  // One block per idea: its newest edit on top, the earlier ones nested under a
+  // toggle and still selectable, the way a song's older mixes sit under the
+  // newest. A group holding the open version starts expanded so what you are
+  // editing is never hidden; a click on the toggle overrides that either way.
+  ideaGroups().forEach((g) => {
+    const [top, ...earlier] = g.list;
+    const wrap = document.createElement('div');
+    const hasCurrent = !!current && earlier.some(x => x.id === current.id);
+    const open = groupOpen.has(g.root) ? groupOpen.get(g.root) : hasCurrent;
+    wrap.appendChild(draftRow(top, earlier.length ? {
+      count: earlier.length, open,
+      toggle: () => { groupOpen.set(g.root, !open); renderDrafts(); },
+    } : null));
+    if (earlier.length && open){
+      const kids = document.createElement('div');
+      kids.className = 'vkids';
+      earlier.forEach(d => kids.appendChild(draftRow(d, null)));
+      wrap.appendChild(kids);
+    }
+    box.appendChild(wrap);
   });
+}
+
+function draftRow(d, tog){
+  const m = meta(d.id);
+  const root = !parentOf(d.id);
+  const row = document.createElement('div');
+  row.className = 'draft' + (current && current.id === d.id ? ' on' : '') + (root ? ' idea' : '');
+  const badge = root ? '<span class="vb idea">idea</span>'
+    : isMerged(d.id) ? '<span class="vb merged">adopted</span>'
+    : isMain(d.id) ? '<span class="vb main">main</span>'
+    : '<span class="vb sug">suggestion</span>';
+  const who = !root && m.author ? `<span class="vwho">${esc(m.author)}</span>` : '';
+  row.innerHTML =
+    `${tog ? `<button class="vtog" data-tog title="${tog.open ? 'Hide' : 'Show'} ${tog.count} earlier edit${tog.count === 1 ? '' : 's'}">${tog.open ? '▾' : '▸'} ${tog.count}</button>` : ''}
+     <span class="nm">${esc(d.name)}</span>
+     ${badge}${who}
+     ${m.target && m.target.kind ? `<span class="tgt">${esc(targetLabel(m.target))}</span>` : ''}
+     <span class="when">${timeago(d.updated || d.created)}</span>
+     <button class="ddel" title="Delete this version" data-del>🗑</button>`;
+  row.addEventListener('click', (e) => {
+    if (e.target.closest('[data-tog]')){ e.stopPropagation(); return tog.toggle(); }
+    if (e.target.dataset.del !== undefined) return deleteDraft(d);
+    openDraft(d);
+  });
+  return row;
 }
 
 function esc(s){ return String(s == null ? '' : s).replace(/[<>&]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;' }[c])); }
@@ -540,6 +569,21 @@ function orderedVersions(){
   // Anything whose parent was deleted still has to appear somewhere.
   drafts.filter(d => !out.includes(d)).forEach(d => out.push(d));
   return out;
+}
+
+const groupOpen = new Map();   // idea root id -> true/false once the toggle has been clicked
+const stampOf = (d) => Date.parse(d.updated || d.created) || 0;
+/** Every version of one idea in a group, newest edit first; groups newest first. */
+function ideaGroups(){
+  const by = new Map();
+  for (const d of drafts){
+    const r = ideaRootOf(d.id);
+    if (!by.has(r)) by.set(r, []);
+    by.get(r).push(d);
+  }
+  return [...by.entries()]
+    .map(([root, list]) => ({ root, list: list.sort((a, b) => stampOf(b) - stampOf(a)) }))
+    .sort((a, b) => stampOf(b.list[0]) - stampOf(a.list[0]));
 }
 
 function openDraft(d){

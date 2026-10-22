@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizer FX V.11 — Midwest Psych Fest</title>
+  <title>Visualizer FX V.12 — Midwest Psych Fest</title>
   <!--
     The Visualizer, put through a press. Everything the unified Visualizer does
     (two decks, ten scenes, a crossfader, gamepad / keyboard / MIDI, routed
@@ -643,6 +643,9 @@
     <label class="lv-white" title="White level: the most the whites may brighten on the output, strobe and flash included. A venue setting, kept out of the presets. Double-click to reset.">
       <span>White</span><input type="range" id="lv-white" min="0.1" max="1" step="0.01" value="1" /><em id="lv-white-val">100%</em>
     </label>
+    <label class="lv-white" title="Black level: lifts black to a faint light, for when the stage needs a little light under the picture. Blackout stays black. A venue setting, kept out of the presets. Double-click to reset.">
+      <span>Black</span><input type="range" id="lv-black" min="0" max="0.3" step="0.005" value="0" /><em id="lv-black-val">0%</em>
+    </label>
   </div>
   <div class="water-big">
     <button class="water-on" id="water-big-on">🌊 Water scenes: off</button>
@@ -672,6 +675,10 @@
       <label class="fld">
         <span>White level <em id="white-val">100%</em></span>
         <input type="range" id="white" min="0.1" max="1" step="0.01" value="1" />
+      </label>
+      <label class="fld">
+        <span>Black level <em id="black-val">0%</em></span>
+        <input type="range" id="black" min="0" max="0.3" step="0.005" value="0" />
       </label>
       <div class="note">
         White level caps how bright the output gets, so a dim room or a stage with the projector
@@ -899,6 +906,21 @@
           </select>
         </label>
       </details>
+    </div>
+
+    <div class="sect" data-tab="stage" id="key-sect">
+      <div class="sect-title">Keystone</div>
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn wide" id="key-on">Keystone: off</button>
+        <button class="btn ghost" id="key-grid">Grid</button>
+        <button class="btn ghost" id="key-reset">Reset</button>
+      </div>
+      <canvas id="key-prev" width="320" height="180" style="width:100%;height:auto;border:1px solid rgba(255,255,255,0.12);border-radius:6px;background:#000;cursor:move;touch-action:none"></canvas>
+      <div class="note" style="margin-top:6px">
+        Drag the four corners until the picture sits square on the wall. Turn on <strong>Grid</strong> to
+        see a test grid on the projector while you line it up. Everything outside the corners stays black.
+        A venue setting: presets do not carry it.
+      </div>
     </div>
 
     <div class="sect" data-tab="stage" id="tgt-sect">
@@ -1447,6 +1469,10 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     autoAfter: 10,                 // seconds without the controller before automated mode; 0 is off
     lineWidth: 1,                  // 0.3 to 3: a multiplier on every line the scenes draw; a look, so it is in the presets
     white: 1,                      // 0.1 to 1: the most the output may brighten; a venue setting, so not in the presets
+    black: 0,                      // 0 to 0.3: a floor of faint light under the whole picture; a venue setting too
+    keyOn: false,                  // keystone: the output's four corners moved to meet a projector that is not square on
+    key: [[0, 0], [1, 0], [1, 1], [0, 1]],   // TL, TR, BR, BL, 0..1 from the top left of the output
+    keyGrid: false,                // a test grid on the output while lining the corners up
     sceneRoutes: true,             // the scene layer's routes are in the map (a map saved before V.10 gets them once)
     sceneOn: false,                // Scene layer (the underwater engine in tools/water/); a rig setting, so not in the presets
     sceneMode: 1,                  // which of its scenes, by the engine's own id (1 Caustics .. 5 Lines)
@@ -1494,6 +1520,10 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         if (saved.v !== DEFAULTS.v) { out.demo = false; out.v = DEFAULTS.v; out.cam.mix = DEFAULTS.cam.mix; }
         out.white = Math.max(0.1, Math.min(1, +out.white || 1));
         out.lineWidth = Math.max(0.3, Math.min(3, +out.lineWidth || 1));
+        out.black = Math.max(0, Math.min(0.3, +out.black || 0));
+        out.keyOn = !!out.keyOn; out.keyGrid = !!out.keyGrid;
+        out.key = (Array.isArray(saved.key) && saved.key.length === 4 ? saved.key : DEFAULTS.key)
+          .map(c => [Math.max(-0.5, Math.min(1.5, +c[0] || 0)), Math.max(-0.5, Math.min(1.5, +c[1] || 0))]);
         out.idleOn = out.idleOn !== false;
         out.targetsOn = !!out.targetsOn;
         out.sceneOn = !!out.sceneOn;
@@ -3801,7 +3831,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     uniform sampler2D uTex;
     uniform vec2  uRes;
     uniform float uTime, uMode, uModeA, uXf, uAmt, uScale, uAngle, uShift, uWarp, uThresh;
-    uniform float uNeg, uSat, uSeed, uRS, uZoom, uWhite, uVoid;
+    uniform float uNeg, uSat, uSeed, uRS, uZoom, uWhite, uVoid, uBlack, uKeyOn, uKeyGrid;
+    uniform mat3 uKey;
     uniform vec2 uZoomC;
     uniform sampler2D uCam;
     uniform vec2  uCamFit;
@@ -4109,6 +4140,20 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
 
     void main() {
       vec2 px = gl_FragCoord.xy;
+      // Keystone: this output pixel, taken back through the corners to where it sits in the
+      // picture. Everything below works on that point, so effects, camera and targets bend together.
+      if (uKeyOn > 0.5) {
+        vec2 o = vec2(px.x / uRes.x, 1.0 - px.y / uRes.y);
+        vec3 h = uKey * vec3(o, 1.0);
+        vec2 q = h.xy / h.z;
+        if (h.z <= 0.0 || q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+        if (uKeyGrid > 0.5) {
+          // Distance to the nearest grid line, roughly in output pixels (no derivatives in WebGL 1).
+          vec2 g = abs(fract(q * vec2(8.0, 6.0) + 0.5) - 0.5) / vec2(8.0, 6.0) * uRes;
+          if (min(g.x, g.y) < 1.5) { gl_FragColor = vec4(uWhite, uWhite, uWhite, 1.0); return; }
+        }
+        px = vec2(q.x, 1.0 - q.y) * uRes;
+      }
       // Stage targets: m is 1 inside a ring, easing to 0 outside it (1 everywhere with none set).
       float m = 1.0;
       if (uTgtN > 0.5) {
@@ -4139,7 +4184,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       // The white level is the last thing to touch the picture, so it caps the strobe and
       // the flash (painted before this) and the negative as well. The glitch overlay needs
       // no copy of it: its frames are snapshots of this output, already scaled.
-      col *= uWhite;
+      // The black level lifts the floor to a faint light; the picture is laid between it and white.
+      col = uBlack + clamp(col, 0.0, 1.0) * (uWhite - uBlack);
       gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
     }
   `;
@@ -4171,7 +4217,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   `;
 
   const UNIFORMS = ['uTex', 'uRes', 'uTime', 'uMode', 'uModeA', 'uXf', 'uAmt', 'uScale', 'uAngle', 'uShift',
-                    'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS', 'uWhite', 'uVoid',
+                    'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS', 'uWhite', 'uVoid', 'uBlack', 'uKeyOn', 'uKeyGrid', 'uKey',
                     'uCam', 'uCamFit', 'uCamMix', 'uCamBlend', 'uMirror', 'uCamBright', 'uCamContrast',
                     'uCamGamma', 'uCamBlack', 'uCamWhite', 'uCamSat', 'uCamTemp', 'uCamTint',
                     'uMot', 'uMotTexel', 'uMotMode', 'uMotBoost', 'uMotDim', 'uMotEdge', 'uZoom', 'uZoomC',
@@ -4345,6 +4391,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         fb2d.fillStyle = g; fb2d.fillRect(0, 0, W, H);
       } }
       if (CONFIG.white < 1) { fb2d.fillStyle = 'rgba(0,0,0,' + (1 - CONFIG.white) + ')'; fb2d.fillRect(0, 0, W, H); }
+      if (CONFIG.black > 0 && !FLAGS.blackout) { fb2d.globalCompositeOperation = 'lighten'; fb2d.fillStyle = 'rgba(255,255,255,' + Math.min(CONFIG.black, CONFIG.white) + ')'; fb2d.fillRect(0, 0, W, H); fb2d.globalCompositeOperation = 'source-over'; }
       mirrorFrame();
       return;
     }
@@ -4415,6 +4462,10 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     gl.uniform1f(glLoc.uSeed, fxSeed);
     gl.uniform1f(glLoc.uRS, rs);
     gl.uniform1f(glLoc.uWhite, CONFIG.white);
+    gl.uniform1f(glLoc.uBlack, FLAGS.blackout ? 0 : Math.min(CONFIG.black, CONFIG.white));
+    gl.uniform1f(glLoc.uKeyOn, CONFIG.keyOn ? 1 : 0);
+    gl.uniform1f(glLoc.uKeyGrid, CONFIG.keyOn && CONFIG.keyGrid ? 1 : 0);
+    if (CONFIG.keyOn) gl.uniformMatrix3fv(glLoc.uKey, false, keyInverse());
     gl.uniform1f(glLoc.uVoid, voidK());
     const tg = activeTargets(), tv = new Float32Array(32);
     tg.forEach((t, i) => { tv[i * 4] = t.x * W; tv[i * 4 + 1] = (1 - t.y) * H; tv[i * 4 + 2] = t.r * H; tv[i * 4 + 3] = 1; });
@@ -5081,6 +5132,86 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     }
   }
   for (const [i] of WHITE_IDS) $(i).oninput = e => { CONFIG.white = Math.max(0.1, Math.min(1, +e.target.value)); save(); syncWhite(); };
+  // Black level: two sliders as well, beside the white ones.
+  const BLACK_IDS = [['black', 'black-val'], ['lv-black', 'lv-black-val']];
+  function syncBlack() {
+    for (const [i, o] of BLACK_IDS) {
+      const el = $(i); if (+el.value !== CONFIG.black) el.value = CONFIG.black;
+      $(o).textContent = (Math.round(CONFIG.black * 1000) / 10) + '%';
+    }
+  }
+  for (const [i] of BLACK_IDS) $(i).oninput = e => { CONFIG.black = Math.max(0, Math.min(0.3, +e.target.value)); save(); syncBlack(); };
+  syncBlack();
+
+  // Keystone. The corners are where the picture's corners land on the output; the shader
+  // needs the other direction (output point to picture point), so it gets the inverse of the
+  // square-to-corners homography (Heckbert's), column-major as WebGL wants it.
+  function keyInverse() {
+    const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = CONFIG.key;
+    const dx1 = x1 - x2, dx2 = x3 - x2, dx3 = x0 - x1 + x2 - x3;
+    const dy1 = y1 - y2, dy2 = y3 - y2, dy3 = y0 - y1 + y2 - y3;
+    const det = dx1 * dy2 - dx2 * dy1;
+    let g = 0, h = 0;
+    if (Math.abs(det) > 1e-9) { g = (dx3 * dy2 - dx2 * dy3) / det; h = (dx1 * dy3 - dx3 * dy1) / det; }
+    const a = x1 - x0 + g * x1, b = x3 - x0 + h * x3, c = x0;
+    const d = y1 - y0 + g * y1, e = y3 - y0 + h * y3, f = y0;
+    // Forward rows: [a b c] [d e f] [g h 1]; invert by the adjugate.
+    const A = e - f * h, B = c * h - b, C = b * f - c * e;
+    const D = f * g - d, E = a - c * g, F = c * d - a * f;
+    const G = d * h - e * g, H = b * g - a * h, I = a * e - b * d;
+    return new Float32Array([A, D, G, B, E, H, C, F, I]);
+  }
+  const kprev = $('key-prev'), kctx = kprev.getContext('2d');
+  let keyDrag = -1;
+  const KEY_PAD = 0.12;   // room around the frame in the preview, so a corner can be pulled outwards
+  const keyToPrev = ([x, y]) => [(KEY_PAD + x * (1 - 2 * KEY_PAD)) * kprev.width, (KEY_PAD + y * (1 - 2 * KEY_PAD)) * kprev.height];
+  function keyFromEvent(e) {
+    const r = kprev.getBoundingClientRect();
+    const u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
+    return [Math.max(-0.5, Math.min(1.5, (u - KEY_PAD) / (1 - 2 * KEY_PAD))), Math.max(-0.5, Math.min(1.5, (v - KEY_PAD) / (1 - 2 * KEY_PAD)))];
+  }
+  function renderKeystone() {
+    $('key-on').textContent = 'Keystone: ' + (CONFIG.keyOn ? 'ON' : 'off');
+    $('key-on').classList.toggle('on', CONFIG.keyOn);
+    $('key-grid').classList.toggle('on', CONFIG.keyGrid);
+    const ph = Math.max(1, Math.round(kprev.width * canvas.height / Math.max(1, canvas.width)));
+    if (kprev.height !== ph) kprev.height = ph;
+    const W = kprev.width, H = kprev.height;
+    kctx.clearRect(0, 0, W, H);
+    // The output's own edge, then the picture's corners inside or around it.
+    const [ox, oy] = keyToPrev([0, 0]), [ox2, oy2] = keyToPrev([1, 1]);
+    kctx.strokeStyle = 'rgba(255,255,255,0.3)'; kctx.setLineDash([4, 4]); kctx.lineWidth = 1;
+    kctx.strokeRect(ox, oy, ox2 - ox, oy2 - oy); kctx.setLineDash([]);
+    const pts = CONFIG.key.map(keyToPrev);
+    kctx.beginPath(); pts.forEach(([x, y], i) => (i ? kctx.lineTo(x, y) : kctx.moveTo(x, y))); kctx.closePath();
+    kctx.fillStyle = CONFIG.keyOn ? 'rgba(92,200,255,0.12)' : 'rgba(255,255,255,0.05)'; kctx.fill();
+    kctx.strokeStyle = CONFIG.keyOn ? '#5cc8ff' : 'rgba(255,255,255,0.5)'; kctx.lineWidth = 2; kctx.stroke();
+    pts.forEach(([x, y], i) => {
+      kctx.beginPath(); kctx.arc(x, y, keyDrag === i ? 9 : 7, 0, Math.PI * 2);
+      kctx.fillStyle = keyDrag === i ? '#fff' : '#5cc8ff'; kctx.fill();
+    });
+  }
+  kprev.addEventListener('pointerdown', e => {
+    const r = kprev.getBoundingClientRect(), sx = kprev.width / r.width;
+    const px = (e.clientX - r.left) * sx, py = (e.clientY - r.top) * sx;
+    let best = -1, bd = 24 * sx;
+    CONFIG.key.forEach((c, i) => { const [x, y] = keyToPrev(c), d = Math.hypot(x - px, y - py); if (d < bd) { bd = d; best = i; } });
+    if (best < 0) return;
+    keyDrag = best; kprev.setPointerCapture(e.pointerId); e.preventDefault();
+    if (!CONFIG.keyOn) CONFIG.keyOn = true;   // dragging a corner means you want it
+    renderKeystone();
+  });
+  kprev.addEventListener('pointermove', e => {
+    if (keyDrag < 0) return;
+    CONFIG.key[keyDrag] = keyFromEvent(e); renderKeystone();
+  });
+  const keyEnd = () => { if (keyDrag >= 0) { keyDrag = -1; save(); renderKeystone(); } };
+  kprev.addEventListener('pointerup', keyEnd); kprev.addEventListener('pointercancel', keyEnd);
+  $('key-on').onclick = e => { CONFIG.keyOn = !CONFIG.keyOn; save(); renderKeystone(); e.currentTarget.blur(); };
+  $('key-grid').onclick = e => { CONFIG.keyGrid = !CONFIG.keyGrid; save(); renderKeystone(); e.currentTarget.blur(); };
+  $('key-reset').onclick = e => { CONFIG.key = JSON.parse(JSON.stringify(DEFAULTS.key)); save(); renderKeystone(); e.currentTarget.blur(); };
+  renderKeystone();
+
   // Stage targets: hot spots on the picture. The shader calms the effects outside them.
   const TGT_MAX = 8;
   const tprev = $('tgt-prev'), tctx = tprev.getContext('2d');
@@ -5710,7 +5841,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   }
   [['gain', () => DEFAULTS.gain], ['smooth', () => DEFAULTS.smoothing], ['idle', () => DEFAULTS.idle], ['beat', () => DEFAULTS.beat],
    ['pulse', () => DEFAULTS.pulse], ['feel', () => DEFAULTS.feel], ['rumble', () => DEFAULTS.rumble], ['motion', () => DEFAULTS.motion],
-   ['autoAfter', () => DEFAULTS.autoAfter], ['autoSpeed', () => DEFAULTS.autoSpeed], ['glitch', () => DEFAULTS.glitch], ['lineWidth', () => DEFAULTS.lineWidth], ['white', () => DEFAULTS.white], ['lv-white', () => DEFAULTS.white], ['xf', () => 0.5], ['trails', () => 1],
+   ['autoAfter', () => DEFAULTS.autoAfter], ['autoSpeed', () => DEFAULTS.autoSpeed], ['glitch', () => DEFAULTS.glitch], ['lineWidth', () => DEFAULTS.lineWidth], ['white', () => DEFAULTS.white], ['lv-white', () => DEFAULTS.white], ['black', () => DEFAULTS.black], ['lv-black', () => DEFAULTS.black], ['xf', () => 0.5], ['trails', () => 1],
    ['cam-mix', () => DEFAULTS.cam.mix], ['ch-req', () => DEFAULTS.channels]].forEach(([id, d]) => resettable($(id), d));
   fxSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.fx[s.k]));
   camSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.cam.adj[s.k]));
@@ -6463,7 +6594,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       if (on) enterAdmin(); else leaveAdmin();
       resize(); syncUI();
     },
-    setScene, setXfade, setFx, colorHit, SCENES, OLD_SCENES, WATER, setSceneLayer, setSceneMode, nextSceneLayer, sceneDrive,
+    setScene, setXfade, setFx, colorHit, SCENES, OLD_SCENES, WATER, setSceneLayer, setSceneMode, nextSceneLayer, sceneDrive, keyInverse, renderKeystone,
     PRE, pickPreset, pickBuiltin, pickSlot, savePreset, renamePreset, updatePreset, deletePreset, movePreset, captureLook, cleanLook, exportDoc, importDoc, pullPresets, pushPresets, presetTween, mergeRemote, signIn,
     setMode: m => setScene(0, m),
     axis(i, v) { VPAD.axes[i] = v; activateVirtual(); },

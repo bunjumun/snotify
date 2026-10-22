@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizer FX V.10 — Midwest Psych Fest</title>
+  <title>Visualizer FX V.11 — Midwest Psych Fest</title>
   <!--
     The Visualizer, put through a press. Everything the unified Visualizer does
     (two decks, ten scenes, a crossfader, gamepad / keyboard / MIDI, routed
@@ -192,6 +192,21 @@
       letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap;
       cursor: pointer; backdrop-filter: blur(8px); transition: all 0.2s;
     }
+    /* The water scenes' switch, at the top of the settings on every tab: big enough to hit mid-show. */
+    .water-big { padding: 10px 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.1); flex-shrink: 0; }
+    .water-big .water-on {
+      display: block; width: 100%; height: 56px; border-radius: 12px; cursor: pointer;
+      background: rgba(0,0,0,0.4); border: 2px solid rgba(120,200,255,0.45); color: #9fd8ff;
+      font-family: inherit; font-size: 1rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .water-big .water-on.on { background: rgba(60,170,255,0.25); border-color: #5cc8ff; color: #fff; box-shadow: 0 0 20px rgba(92,200,255,0.45); }
+    .water-big .water-scenes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
+    .water-big .water-scenes button {
+      height: 40px; border-radius: 8px; cursor: pointer; background: rgba(0,0,0,0.35);
+      border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.75); font-family: inherit; font-size: 0.72rem; font-weight: 700;
+    }
+    .water-big .water-scenes button.on { border-color: #5cc8ff; color: #fff; background: rgba(60,170,255,0.22); }
     .stage-pill:hover { border-color: #ff3cac; color: #ff3cac; background: rgba(0,0,0,0.5); }
     .stage-pill.active {
       border-color: #4fffb0; color: #4fffb0; background: rgba(79,255,176,0.15);
@@ -570,6 +585,7 @@
 <div class="top-btns">
   <button class="stage-pill" id="aud-btn" title="Audience control (J). Lets the controller plugged into this laptop drive the projector. Off, the controller is ignored; this screen, the keyboard and MIDI keep working.">Audience control · off</button>
   <button class="stage-pill" id="auto-btn" title="Auto (Y). The effect auto-cycle and automated mode, which changes things by itself when nobody is on the controller. Off, nothing moves unless a hand or the sound moves it.">Auto · ON</button>
+  <button class="stage-pill" id="water-btn" title="Water scenes on / off: the Scene layer, underwater light over the decks and through the effects. Pick the scene in ⚙ settings.">Water · off</button>
   <button class="icon-btn" id="proj-btn"  title="Send the picture to the projector in a window of its own (click it once there to fill the screen), or bring it back (\). Settings stay on this screen.">📺</button>
   <button class="icon-btn" id="top-btn"   title="Float on top of other apps in its own small window (Chrome only)" hidden>📌</button>
   <button class="icon-btn" id="full-btn"  title="Fullscreen this window">⛶</button>
@@ -627,6 +643,10 @@
     <label class="lv-white" title="White level: the most the whites may brighten on the output, strobe and flash included. A venue setting, kept out of the presets. Double-click to reset.">
       <span>White</span><input type="range" id="lv-white" min="0.1" max="1" step="0.01" value="1" /><em id="lv-white-val">100%</em>
     </label>
+  </div>
+  <div class="water-big">
+    <button class="water-on" id="water-big-on">🌊 Water scenes: off</button>
+    <div class="water-scenes" id="water-scenes"></div>
   </div>
   <div class="tabs" id="tabs" role="tablist">
     <button class="tab" data-tab="show">Show</button>
@@ -5118,7 +5138,19 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     save(); renderTargets();
   }, { passive: false });
   SCENE_LAYER.forEach(t => { const o = document.createElement('option'); o.value = t.id; o.textContent = t.name; $('scn-sel').appendChild(o); });
+  SCENE_LAYER.forEach(t => {
+    const b = document.createElement('button');
+    b.textContent = t.name; b.dataset.id = t.id; b.title = t.name + ' (turns the water scenes on)';
+    b.onclick = () => { setSceneMode(t.id); if (!CONFIG.sceneOn) setSceneLayer(true); b.blur(); };
+    $('water-scenes').appendChild(b);
+  });
   function renderSceneLayer() {
+    const on = CONFIG.sceneOn;
+    $('water-big-on').textContent = '🌊 Water scenes: ' + (on ? 'ON' : 'off');
+    $('water-big-on').classList.toggle('on', on);
+    $('water-btn').textContent = 'Water · ' + (on ? 'ON' : 'off');
+    $('water-btn').classList.toggle('active', on);
+    $('water-scenes').querySelectorAll('button').forEach(b => b.classList.toggle('on', on && +b.dataset.id === CONFIG.sceneMode));
     $('scn-on').textContent = 'Scene layer: ' + (CONFIG.sceneOn ? 'ON' : 'off');
     $('scn-on').classList.toggle('on', CONFIG.sceneOn);
     $('scn-sel').value = CONFIG.sceneMode;
@@ -5126,6 +5158,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     $('scn-mix-val').textContent = CONFIG.sceneMix.toFixed(2);
     if (WATER.error) $('scn-note').textContent = WATER.error;
   }
+  $('water-big-on').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
+  $('water-btn').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
   $('scn-on').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
   $('scn-sel').onchange = e => setSceneMode(+e.currentTarget.value);
   $('scn-mix').oninput = e => { CONFIG.sceneMix = +e.currentTarget.value; save(); renderSceneLayer(); };

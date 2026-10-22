@@ -10,6 +10,7 @@ keyboard and MIDI).
 - `visualizer.html`: single-scene, gamepad-played, per-channel audio routing.
 - `vj-mixer.html`: two generators with a crossfader, mic reactive, MIDI learn.
 - `visualizer-fx.html`: V.4, the effects stage, frozen (commit `3e313d6`'s build).
+- `visualizer-fx-v5.html` and `visualizer-fx-v6.html`: V.5 (`671c956`, the last build labelled V.5) and V.6 (`5b014f4`, CR-146), frozen so every version stays on the menu. They share saved settings with the live page.
 
 They run from `/archive/tools-v1/<file>`. The two shared-chrome links point at
 `../../tools/`, and `tools/tool.js` now works the "back to Sn'Album" link out from

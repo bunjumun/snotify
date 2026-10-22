@@ -2152,6 +2152,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     { name: 'WAVES',          viz: false, draw: drawWaves },
     { name: 'GRID',           viz: false, draw: drawGrid },
     { name: 'VORTEX',         viz: false, draw: drawVortex },
+    { name: 'STREAK TUNNEL',  viz: false, draw: drawStreaks },
   ];
 
   function makeDeck(scene, hue) {
@@ -2405,6 +2406,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       case 1:  cycleScene(1, 1); break;                                   // B
       case 2:  colorHit(1); break;                                        // X
       case 3:  toggle('negative'); break;                                 // Y
+      case 8:  stepVPoint(); break;                                       // Share / Create: step the streak tunnel's vanishing point
       case 9:  flashOp = 1; break;                                        // Start
       case 10: stepFx(-1, false); break;                                  // L3: previous effect
       case 11: stepFx(1, false); break;                                   // R3: next effect
@@ -2415,7 +2417,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   // Nothing on the pad freezes a deck or blacks the picture out: those belong to the
   // person at the laptop (B, F, G, MIDI, the panel), not to whoever holds the controller.
   // The D-pad is not here either: it is held, not pressed (see pollGamepad).
-  const PRESS_BUTTONS = [0, 1, 2, 3, 4, 5, 9, 10, 11];
+  const PRESS_BUTTONS = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11];
   function scan(buttons, prev) {
     for (const i of PRESS_BUTTONS) {
       const now = !!(buttons[i] && buttons[i].pressed);
@@ -2722,7 +2724,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     KeyA: [0, -1], KeyD: [0, 1], KeyW: [1, -1], KeyS: [1, 1],
     ArrowLeft: [2, -1], ArrowRight: [2, 1], ArrowUp: [3, -1], ArrowDown: [3, 1],
   };
-  const BTN_KEYS = { KeyZ: 0, KeyX: 1, KeyC: 2, KeyV: 3, KeyQ: 6, KeyE: 7,
+  const BTN_KEYS = { KeyZ: 0, KeyX: 1, KeyC: 2, KeyV: 3, KeyQ: 6, KeyE: 7, Slash: 8,
                      Equal: 12, Minus: 13, Comma: 14, Period: 15 };      // the last four are the D-pad
 
   function activateVirtual() {
@@ -3435,6 +3437,50 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         i === 0 ? ctx.moveTo(cx + WP.x, cy + WP.y) : ctx.lineTo(cx + WP.x, cy + WP.y);
       }
       ctx.stroke();
+    }
+  }
+
+  /* ── SCENE 11 — STREAK TUNNEL ──
+     Long straight lines streaming out of a vanishing point: short and thin where they
+     start near it, long and thick by the edge, so the picture rushes at you. It shares
+     the tunnels' warp (see TUNNELS above): the right trigger and bass stretch and twist
+     the lines, the left trigger sways the point, and Line width scales them.
+     The vanishing point itself is stepped from the controller (Share, or / on the
+     keyboard, or MIDI): centre, left, right, up, down, and round. It glides to the
+     new place in about a second, never jumps; the sticks do not move it. */
+  const VPOINTS = [['centre', 0, 0], ['left', -0.3, 0], ['right', 0.3, 0], ['up', 0, -0.3], ['down', 0, 0.3]];
+  let vpIdx = 0;
+  function stepVPoint() {
+    vpIdx = (vpIdx + 1) % VPOINTS.length;
+    hudNote('Point: ' + VPOINTS[vpIdx][0], 1400);
+  }
+  function drawStreaks(D) {
+    const ctx = D.cx, W = D.cv.width, H = D.cv.height, m = Math.min(W, H);
+    screenMode(ctx);
+    const T = tunnelFrame(D, 0.35 * vjSpeed(D), 0.6, m);
+    ctx.lineCap = 'round';
+    // Glide the point (time constant 0.25 s, so it settles in about a second)
+    const tg = VPOINTS[vpIdx];
+    if (T.vx === undefined) { T.vx = tg[1]; T.vy = tg[2]; }
+    const kk = 1 - Math.exp(-(D.ms - (T.vms === undefined ? D.ms : T.vms)) / 250);
+    T.vms = D.ms;
+    T.vx += (tg[1] - T.vx) * kk; T.vy += (tg[2] - T.vy) * kk;
+    const cx = W / 2 + T.vx * W, cy = H / 2 + T.vy * H;
+    const maxR = Math.hypot(Math.max(cx, W - cx), Math.max(cy, H - cy)) * 1.05;
+    const n = Math.round(110 + T.cx * 40), stretch = 1 + 1.6 * T.rt + 0.5 * T.bass;
+    for (let i = 0; i < n; i++) {
+      const sd = (i * 0.61803398875) % 1, sd2 = (i * 0.7548776662) % 1;     // fixed per line, spread evenly
+      const p = (T.ph * (0.6 + sd2 * 0.8) + sd) % 1;                         // how far out this line's head is
+      const r0 = Math.pow(p, 2.2) * maxR;
+      const r1 = Math.min(maxR * 1.2, r0 + (0.08 + 0.55 * p) * maxR * stretch * (0.6 + sd2));
+      const ang = (i / n) * Math.PI * 2 + (sd - 0.5) * 0.35 + T.ang * 0.2;
+      const c = Math.cos(ang), s = Math.sin(ang);
+      warpPt(T, c * r0, s * r0, p); const x0 = cx + WP.x, y0 = cy + WP.y;
+      warpPt(T, c * r1, s * r1, Math.min(1, r1 / maxR)); const x1 = cx + WP.x, y1 = cy + WP.y;
+      const hue = (D.hue + D.drift + sd * 120 + p * 60) % 360;
+      ctx.strokeStyle = hsla(hue, 100, 62, Math.min(0.95, 0.3 + p * 0.8));
+      ctx.lineWidth = lwk(0.8 + p * 2.8);
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
     }
   }
 
@@ -4380,6 +4426,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     { id: 'cycle',    label: 'Auto-cycle on / off', def: 70, fn: () => toggleCycle() },
     { id: 'audience', label: 'Audience control on / off', def: 71, fn: () => toggleAudience() },
     { id: 'auto',     label: 'Auto on / off',     def: 72, fn: () => toggleAuto() },
+    { id: 'vpoint',   label: 'Streak tunnel: step the point', def: 73, fn: () => stepVPoint() },
   ];
 
   let CC_MAP = {}, NOTE_MAP = {};

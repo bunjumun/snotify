@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizer FX V.5 — Midwest Psych Fest</title>
+  <title>Visualizer FX V.6 — Midwest Psych Fest</title>
   <!--
     The Visualizer, put through a press. Everything the unified Visualizer does
     (two decks, ten scenes, a crossfader, gamepad / keyboard / MIDI, routed
@@ -861,6 +861,25 @@
       </details>
     </div>
 
+    <div class="sect" data-tab="stage" id="tgt-sect">
+      <div class="sect-title">Stage targets</div>
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn wide" id="tgt-on">Stage targets: off</button>
+        <button class="btn ghost" id="tgt-alloff">All off</button>
+      </div>
+      <canvas id="tgt-prev" width="320" height="180" style="width:100%;height:auto;border:1px solid rgba(255,255,255,0.12);border-radius:6px;background:#000;cursor:crosshair;touch-action:none"></canvas>
+      <div class="note" style="margin-top:6px">Click the picture to mark where someone stands (up to 8); drag to move, wheel to resize, double-click to remove. The rings show here only, never on the projector.</div>
+      <div id="tgt-list"></div>
+      <label class="fld">
+        <span>Focus <em id="focus-val">0.70</em></span>
+        <input type="range" id="focus" min="0" max="1" step="0.05" value="0.7" />
+      </label>
+      <label class="fld">
+        <span>Outside dim <em id="focusDim-val">0.50</em></span>
+        <input type="range" id="focusDim" min="0" max="1" step="0.05" value="0.5" />
+      </label>
+    </div>
+
     <div class="sect" data-tab="stage">
       <div class="sect-title">Controller</div>
       <div class="status off" id="pad-status">No controller yet: press a button on it.</div>
@@ -1346,6 +1365,10 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     autoAfter: 10,                 // seconds without the controller before automated mode; 0 is off
     lineWidth: 1,                  // 0.3 to 3: a multiplier on every line the scenes draw; a look, so it is in the presets
     white: 1,                      // 0.1 to 1: the most the output may brighten; a venue setting, so not in the presets
+    targetsOn: false,              // Stage targets master switch; a rig setting, so not in the presets
+    targets: [],                   // up to 8 of { x, y, r, on, name }: x,y 0..1 from the top left of the output, r a fraction of its height
+    focus: 0.7,                    // 0 to 1: how much the effects calm outside the targets (and push a little inside)
+    focusDim: 0.5,                 // 0 to 1: how much the picture outside the targets is dimmed
     idleOn: true,                  // go to the idle scene between songs; a venue setting, so not in the presets
     idleThresh: 0.02,              // raw level (RMS of the loudest channel, before the auto level) under which the room counts as quiet
     idleDelay: 4,                  // seconds of quiet, with nobody on the controls, before it goes idle
@@ -1386,6 +1409,12 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         out.white = Math.max(0.1, Math.min(1, +out.white || 1));
         out.lineWidth = Math.max(0.3, Math.min(3, +out.lineWidth || 1));
         out.idleOn = out.idleOn !== false;
+        out.targetsOn = !!out.targetsOn;
+        out.focus = Math.max(0, Math.min(1, isFinite(+saved.focus) && saved.focus != null ? +saved.focus : DEFAULTS.focus));
+        out.focusDim = Math.max(0, Math.min(1, isFinite(+saved.focusDim) && saved.focusDim != null ? +saved.focusDim : DEFAULTS.focusDim));
+        out.targets = (Array.isArray(saved.targets) ? saved.targets : []).slice(0, 8).map(t => ({
+          x: Math.max(0, Math.min(1, +t.x || 0)), y: Math.max(0, Math.min(1, +t.y || 0)),
+          r: Math.max(0.05, Math.min(0.6, +t.r || 0.2)), on: t.on !== false, name: String(t.name || '').slice(0, 24) }));
         out.idleThresh = Math.max(0.005, Math.min(0.2, +out.idleThresh || DEFAULTS.idleThresh));
         out.idleDelay = Math.max(1, Math.min(30, Math.round(+out.idleDelay || DEFAULTS.idleDelay)));
         if (typeof out.idleScene !== 'string') out.idleScene = DEFAULTS.idleScene;   // the name is checked against SCENES where it is used
@@ -1407,6 +1436,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   function save() {
     try { localStorage.setItem(CONFIG_KEY, JSON.stringify(CONFIG)); } catch (e) {}
   }
+  // The targets the shader gets: the master switch is on and the target is.
+  const activeTargets = () => CONFIG.targetsOn ? CONFIG.targets.filter(t => t.on) : [];
   const restOf = key => (CONFIG.fx && key in CONFIG.fx) ? CONFIG.fx[key] : TARGETS[key].rest;
 
   /* ══════════════════════════════════════════
@@ -3605,6 +3636,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     uniform sampler2D uMot;
     uniform vec2  uMotTexel;
     uniform float uMotMode, uMotBoost, uMotDim, uMotEdge;
+    // Stage targets: the effect strength the pixel being drawn actually gets. main() sets
+    // these from the uniforms before it calls effect(), scaled by the target mask.
+    uniform vec4 uTgt[8];
+    uniform float uTgtN, uFocus, uFocusDim;
+    float gAmt, gWarp, gShift;
 
     const float TAU = 6.28318530718;
 
@@ -3618,12 +3654,12 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     // in every cell, and the picture loses the black it is meant to be set against.
     float gate(float L) { return smoothstep(0.10, 0.95, L); }
 
-    // A wobble every effect shares, driven by uWarp.
+    // A wobble every effect shares, driven by gWarp.
     vec2 warpPx(vec2 px) {
-      if (uWarp < 0.002) return px;
+      if (gWarp < 0.002) return px;
       vec2 q = px / uRes;
-      px.x += (sin(q.y * 18.0 + uTime * 2.0) * 14.0 + sin(q.y * 47.0 - uTime * 3.1) * 5.0) * uWarp * uRS;
-      px.y += sin(q.x * 14.0 - uTime * 1.7) * 10.0 * uWarp * uRS;
+      px.x += (sin(q.y * 18.0 + uTime * 2.0) * 14.0 + sin(q.y * 47.0 - uTime * 3.1) * 5.0) * gWarp * uRS;
+      px.y += sin(q.x * 14.0 - uTime * 1.7) * 10.0 * gWarp * uRS;
       return px;
     }
     // The camera picture controls, in the order a photo editor applies them: colour
@@ -3682,7 +3718,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       vec2 c = uRes * 0.5;
       vec2 q = rot(px - c, -uAngle);
       float row = floor(q.y / cell);
-      float amp = uAmt * cell * 2.4;
+      float amp = gAmt * cell * 2.4;
       float best = 0.0; vec3 bestCol = vec3(0.0);
       for (int k = -3; k <= 3; k++) {
         float ly = (row + float(k) + 0.5) * cell;
@@ -3711,7 +3747,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
           vec2 ctr = (cid + 0.15 + 0.7 * h) * cell;
           vec3 s = src(ctr);
           float L = luma(s);
-          float dens = clamp(pow(gate(L), 0.8) * (0.7 + uAmt * 0.9), 0.0, 1.0);
+          float dens = clamp(pow(gate(L), 0.8) * (0.7 + gAmt * 0.9), 0.0, 1.0);
           float on = step(hash(cid * 1.7 + uSeed + 7.0), dens);
           float r = cell * (0.16 + 0.14 * hash(cid + 3.3));
           float a = (1.0 - smoothstep(r - 0.7, r + 0.7, length(px - ctr))) * on;
@@ -3733,7 +3769,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
           vec2 cc = (id + vec2(float(i), float(j)) + 0.5) * cell;
           vec3 s = src(rot(cc, uAngle) + c);
           float L = luma(s);
-          float r = sqrt(clamp(gate(L) * (0.8 + uAmt * 0.7), 0.0, 1.0)) * cell * 0.74;
+          float r = sqrt(clamp(gate(L) * (0.8 + gAmt * 0.7), 0.0, 1.0)) * cell * 0.74;
           float a = 1.0 - smoothstep(r - 0.9, r + 0.9, length(q - cc));
           acc = max(acc, hueOf(s) * a);
         }
@@ -3749,11 +3785,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       float band = floor(px.y / (12.0 * uRS));
       float tt = floor(uTime * 4.0);
       float g = hash(vec2(band, tt)) - 0.5;
-      float slice = step(0.82 - uAmt * 0.25, hash(vec2(band * 1.3, tt + 9.0)));
-      vec2 p = px + vec2(g * uAmt * 90.0 * uRS * slice, 0.0);
-      vec3 col = vec3(src(p + dir * uShift).r, src(p).g, src(p - dir * uShift).b);
-      col += vec3(src(p + dir * uShift * 2.0).r, 0.0, src(p - dir * uShift * 2.0).b) * 0.35;
-      col = (col - 0.5) * (1.3 + uAmt * 0.7) + 0.5;
+      float slice = step(0.82 - gAmt * 0.25, hash(vec2(band * 1.3, tt + 9.0)));
+      vec2 p = px + vec2(g * gAmt * 90.0 * uRS * slice, 0.0);
+      vec3 col = vec3(src(p + dir * gShift).r, src(p).g, src(p - dir * gShift).b);
+      col += vec3(src(p + dir * gShift * 2.0).r, 0.0, src(p - dir * gShift * 2.0).b) * 0.35;
+      col = (col - 0.5) * (1.3 + gAmt * 0.7) + 0.5;
       return clamp(col, 0.0, 1.0);
     }
 
@@ -3762,7 +3798,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     // brightness here means ink: the dark ground stays bare paper and the lit
     // shapes print. The black plate carries the picture on its own; the cyan,
     // magenta and yellow plates are scaled by the saturation, so they stay off
-    // the page until a colour hit brings them in, each misregistered by uShift.
+    // the page until a colour hit brings them in, each misregistered by gShift.
     float cmykPlate(vec2 px, float ang, vec2 off, float which) {
       float cell = max(uScale * 0.8, 4.0);
       vec2 c = uRes * 0.5;
@@ -3778,14 +3814,14 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
           float v = which < 0.5 ? (1.0 - h.r) : (which < 1.5 ? (1.0 - h.g) : (which < 2.5 ? (1.0 - h.b) : 0.95));
           v *= L;
           if (which < 2.5) v *= uSat;
-          float r = sqrt(clamp(v * (0.8 + uAmt * 0.5), 0.0, 1.0)) * cell * 0.76;
+          float r = sqrt(clamp(v * (0.8 + gAmt * 0.5), 0.0, 1.0)) * cell * 0.76;
           cov = max(cov, 1.0 - smoothstep(r - 0.9, r + 0.9, length(q - cc)));
         }
       }
       return cov;
     }
     vec3 fxCMYK(vec2 px) {
-      vec2 d = vec2(cos(uAngle), sin(uAngle)) * uShift;
+      vec2 d = vec2(cos(uAngle), sin(uAngle)) * gShift;
       float cC = cmykPlate(px, uAngle + 0.262,  d,                  0.0);
       float cM = cmykPlate(px, uAngle + 1.309, -d,                  1.0);
       float cY = cmykPlate(px, uAngle,          vec2(d.y, -d.x),    2.0);
@@ -3801,16 +3837,16 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     // HIGH CONTRAST B/W: unsharp-masked luma against a hard threshold, with a
     // little noise dither that the Amount control takes away.
     vec3 fxBW(vec2 px) {
-      float rad = (1.5 + uAmt * 2.5) * uRS;
+      float rad = (1.5 + gAmt * 2.5) * uRS;
       vec3 s0 = src(px);
       float L0 = luma(s0);
       float bl = 0.25 * (luma(src(px + vec2(rad, 0.0))) + luma(src(px - vec2(rad, 0.0)))
                        + luma(src(px + vec2(0.0, rad))) + luma(src(px - vec2(0.0, rad))));
-      float v = L0 + (L0 - bl) * (1.0 + uAmt * 2.0);
+      float v = L0 + (L0 - bl) * (1.0 + gAmt * 2.0);
       float n = fract(52.9829189 * fract(dot(px / max(uScale * 0.15, 1.0), vec2(0.06711056, 0.00583715))));
-      float soft = mix(0.22, 0.015, clamp(uAmt, 0.0, 1.0));
+      float soft = mix(0.22, 0.015, clamp(gAmt, 0.0, 1.0));
       float t = mix(0.05, 0.75, uThresh);
-      float bw = smoothstep(t - soft, t + soft, v + (n - 0.5) * 0.35 * (1.0 - clamp(uAmt, 0.0, 1.0)));
+      float bw = smoothstep(t - soft, t + soft, v + (n - 0.5) * 0.35 * (1.0 - clamp(gAmt, 0.0, 1.0)));
       return vec3(bw) * hueOf(s0);
     }
 
@@ -3837,7 +3873,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       float s = fract(dot(px, dir) / period + hash(bid + 8.7));
       vec3 s0 = src(px);
       float L = luma(s0);
-      float duty = clamp(0.24 + gate(L) * (1.0 + uAmt * 0.9) + (uThresh - 0.5) * 0.6, 0.08, 0.96);
+      float duty = clamp(0.24 + gate(L) * (1.0 + gAmt * 0.9) + (uThresh - 0.5) * 0.6, 0.08, 0.96);
       float aa = 1.2 / period;
       float st = 1.0 - smoothstep(duty - aa, duty + aa, s);
       if (hash(bid + 2.2) > 0.72) st = 1.0 - st;
@@ -3870,6 +3906,19 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
 
     void main() {
       vec2 px = gl_FragCoord.xy;
+      // Stage targets: m is 1 inside a ring, easing to 0 outside it (1 everywhere with none set).
+      float m = 1.0;
+      if (uTgtN > 0.5) {
+        m = 0.0;
+        for (int i = 0; i < 8; i++) {
+          if (uTgt[i].w > 0.5) {
+            float d = length(px - uTgt[i].xy);
+            m = max(m, 1.0 - smoothstep(uTgt[i].z * 0.55, uTgt[i].z, d));
+          }
+        }
+      }
+      float tg = mix(1.0 - uFocus, 1.0 + 0.3 * uFocus, m);
+      gAmt = uAmt * tg; gWarp = uWarp * tg; gShift = uShift * tg;
       vec3 col = grade(effect(uMode, px), uMode);
       // Mid-dissolve: the look being left, blended out as the new one comes in.
       if (uXf < 0.999) {
@@ -3877,6 +3926,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         col = mix(prevCol, col, uXf);
       }
       col = mix(col, 1.0 - col, uNeg);
+      col *= mix(1.0 - uFocusDim, 1.0, m);
       // The white level is the last thing to touch the picture, so it caps the strobe and
       // the flash (painted before this) and the negative as well. The glitch overlay needs
       // no copy of it: its frames are snapshots of this output, already scaled.
@@ -3915,7 +3965,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
                     'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS', 'uWhite',
                     'uCam', 'uCamFit', 'uCamMix', 'uCamBlend', 'uMirror', 'uCamBright', 'uCamContrast',
                     'uCamGamma', 'uCamBlack', 'uCamWhite', 'uCamSat', 'uCamTemp', 'uCamTint',
-                    'uMot', 'uMotTexel', 'uMotMode', 'uMotBoost', 'uMotDim', 'uMotEdge', 'uZoom', 'uZoomC'];
+                    'uMot', 'uMotTexel', 'uMotMode', 'uMotBoost', 'uMotDim', 'uMotEdge', 'uZoom', 'uZoomC',
+                    'uTgt', 'uTgtN', 'uFocus', 'uFocusDim'];
   let gl = null, glProg = null, glTex = null, glCamTex = null, glLoc = {}, glOk = false, fb2d = null;
   let glOv = null, glOvLoc = {}, glMotTex = null;   // the glitch overlay's own small program
   let glNote = '';
@@ -4149,6 +4200,12 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     gl.uniform1f(glLoc.uSeed, fxSeed);
     gl.uniform1f(glLoc.uRS, rs);
     gl.uniform1f(glLoc.uWhite, CONFIG.white);
+    const tg = activeTargets(), tv = new Float32Array(32);
+    tg.forEach((t, i) => { tv[i * 4] = t.x * W; tv[i * 4 + 1] = (1 - t.y) * H; tv[i * 4 + 2] = t.r * H; tv[i * 4 + 3] = 1; });
+    gl.uniform4fv(glLoc.uTgt, tv);
+    gl.uniform1f(glLoc.uTgtN, tg.length);
+    gl.uniform1f(glLoc.uFocus, tg.length ? CONFIG.focus : 0);
+    gl.uniform1f(glLoc.uFocusDim, tg.length ? CONFIG.focusDim : 0);
     gl.uniform1f(glLoc.uZoom, 1 + 0.08 * MOVE.env * CONFIG.cam.motion.influence);
     gl.uniform2f(glLoc.uZoomC, 0.5 + 0.5 * MOVE.x * CONFIG.cam.motion.xy, 0.5 + 0.5 * MOVE.y * CONFIG.cam.motion.xy);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -4379,7 +4436,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     return Array.from(px);
   }
 
+  let tgtDraw = null;       // set by the Stage targets panel; copies the picture to its preview
   function mirrorFrame() {
+    if (tgtDraw) tgtDraw();
     if (stage.on) mctx.drawImage(canvas, 0, 0, mirror.width, mirror.height);
   }
 
@@ -4803,6 +4862,86 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     }
   }
   for (const [i] of WHITE_IDS) $(i).oninput = e => { CONFIG.white = Math.max(0.1, Math.min(1, +e.target.value)); save(); syncWhite(); };
+  // Stage targets: hot spots on the picture. The shader calms the effects outside them.
+  const TGT_MAX = 8;
+  const tprev = $('tgt-prev'), tctx = tprev.getContext('2d');
+  let tgtDrag = -1, tgtLast = 0;
+  const tgtTouch = () => { save(); renderTargets(); };
+  function tgtPos(e) {
+    const r = tprev.getBoundingClientRect();
+    return { x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)) };
+  }
+  function tgtHit(p) {
+    for (let i = CONFIG.targets.length - 1; i >= 0; i--) {
+      const t = CONFIG.targets[i];
+      if (Math.hypot((p.x - t.x) * tprev.width, (p.y - t.y) * tprev.height) <= t.r * tprev.height + 2) return i;
+    }
+    return -1;
+  }
+  function renderTargets() {
+    $('tgt-on').textContent = 'Stage targets: ' + (CONFIG.targetsOn ? 'ON' : 'off');
+    $('tgt-on').classList.toggle('on', CONFIG.targetsOn);
+    const list = $('tgt-list'); list.textContent = '';
+    CONFIG.targets.forEach((t, i) => {
+      const row = document.createElement('div'); row.className = 'btn-row'; row.style.alignItems = 'center';
+      const on = document.createElement('input'); on.type = 'checkbox'; on.checked = t.on;
+      on.onchange = () => { t.on = on.checked; save(); };
+      const nm = document.createElement('input'); nm.type = 'text'; nm.value = t.name; nm.placeholder = 'Target ' + (i + 1);
+      nm.maxLength = 24; nm.style.cssText = 'flex:1;min-width:0'; nm.oninput = () => { t.name = nm.value; save(); };
+      const rg = document.createElement('input'); rg.type = 'range'; rg.min = 0.05; rg.max = 0.6; rg.step = 0.01; rg.value = t.r;
+      rg.style.width = '70px'; rg.oninput = () => { t.r = +rg.value; save(); };
+      const del = document.createElement('button'); del.className = 'btn ghost sm'; del.textContent = '×';
+      del.onclick = () => { CONFIG.targets.splice(i, 1); tgtTouch(); };
+      row.append(on, nm, rg, del); list.appendChild(row);
+    });
+  }
+  tprev.addEventListener('pointerdown', e => {
+    const p = tgtPos(e), h = tgtHit(p);
+    if (h >= 0) { tgtDrag = h; tprev.setPointerCapture(e.pointerId); return; }
+    if (CONFIG.targets.length >= TGT_MAX) return;
+    CONFIG.targets.push({ x: p.x, y: p.y, r: 0.18, on: true, name: '' });
+    if (!CONFIG.targetsOn) CONFIG.targetsOn = true;
+    tgtDrag = CONFIG.targets.length - 1; tprev.setPointerCapture(e.pointerId); tgtTouch();
+  });
+  tprev.addEventListener('pointermove', e => {
+    if (tgtDrag < 0 || !CONFIG.targets[tgtDrag]) return;
+    const p = tgtPos(e); CONFIG.targets[tgtDrag].x = p.x; CONFIG.targets[tgtDrag].y = p.y;
+  });
+  const tgtUp = () => { if (tgtDrag >= 0) { tgtDrag = -1; save(); } };
+  tprev.addEventListener('pointerup', tgtUp); tprev.addEventListener('pointercancel', tgtUp);
+  tprev.addEventListener('dblclick', e => {
+    const h = tgtHit(tgtPos(e)); if (h >= 0) { CONFIG.targets.splice(h, 1); tgtTouch(); }
+  });
+  tprev.addEventListener('wheel', e => {
+    const h = tgtHit(tgtPos(e)); if (h < 0) return;
+    e.preventDefault();
+    const t = CONFIG.targets[h]; t.r = Math.max(0.05, Math.min(0.6, t.r * (e.deltaY < 0 ? 1.08 : 1 / 1.08)));
+    save(); renderTargets();
+  }, { passive: false });
+  $('tgt-on').onclick = e => { CONFIG.targetsOn = !CONFIG.targetsOn; save(); renderTargets(); e.currentTarget.blur(); };
+  $('tgt-alloff').onclick = e => { CONFIG.targets.forEach(t => { t.on = false; }); CONFIG.targetsOn = false; tgtTouch(); e.currentTarget.blur(); };
+  for (const [id, key] of [['focus', 'focus'], ['focusDim', 'focusDim']]) {
+    $(id).value = CONFIG[key]; $(id + '-val').textContent = CONFIG[key].toFixed(2);
+    $(id).oninput = e => { CONFIG[key] = +e.target.value; $(id + '-val').textContent = CONFIG[key].toFixed(2); save(); };
+  }
+  // The picture is copied in the frame it is drawn (a WebGL canvas cannot be read later), about 8 times a second,
+  // and only while the preview is on screen.
+  tgtDraw = () => {
+    const now = performance.now();
+    if (now - tgtLast < 120 || !tprev.offsetParent) return;
+    tgtLast = now;
+    const ph = Math.max(1, Math.round(tprev.width * canvas.height / Math.max(1, canvas.width)));
+    if (tprev.height !== ph) tprev.height = ph;
+    tctx.drawImage(canvas, 0, 0, tprev.width, tprev.height);
+    CONFIG.targets.forEach(t => {
+      tctx.beginPath(); tctx.arc(t.x * tprev.width, t.y * tprev.height, t.r * tprev.height, 0, Math.PI * 2);
+      tctx.lineWidth = 2; tctx.setLineDash(t.on && CONFIG.targetsOn ? [] : [4, 4]);
+      tctx.strokeStyle = t.on && CONFIG.targetsOn ? '#7cf' : 'rgba(255,255,255,0.45)'; tctx.stroke();
+    });
+    tctx.setLineDash([]);
+  };
+  renderTargets();
+
   syncWhite();
 
   $('ch-req').value = CONFIG.channels;
@@ -4831,6 +4970,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     $('autoSpeed-val').textContent = CONFIG.autoSpeed.toFixed(2) + '×';
     $('glitch-val').textContent = CONFIG.glitch.toFixed(2);
     $('lineWidth-val').textContent = CONFIG.lineWidth.toFixed(2) + '×';
+    for (const k of ['focus', 'focusDim']) { $(k).value = CONFIG[k]; $(k + '-val').textContent = CONFIG[k].toFixed(2); }
+    renderTargets();
     syncWhite();
     renderIdleFx();
     $('ch-req').value = CONFIG.channels;

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizer FX V.8 — Midwest Psych Fest</title>
+  <title>Visualizer FX V.9 — Midwest Psych Fest</title>
   <!--
     The Visualizer, put through a press. Everything the unified Visualizer does
     (two decks, ten scenes, a crossfader, gamepad / keyboard / MIDI, routed
@@ -969,6 +969,23 @@
     </div>
 
     <div class="sect" data-tab="show">
+      <div class="sect-title">Scene layer</div>
+      <button class="btn wide" id="scn-on">Scene layer: off</button>
+      <label class="fld">
+        <span>Scene</span>
+        <select id="scn-sel"></select>
+      </label>
+      <label class="fld">
+        <span>Scene mix <em id="scn-mix-val">0.80</em></span>
+        <input type="range" id="scn-mix" min="0" max="1" step="0.01" value="0.8" />
+      </label>
+      <div class="note keep" id="scn-note">
+        Underwater light (caustics, rays, deep water, rising liquid, line art) laid over the decks
+        and through the effects. It is its own layer, so it runs whatever the decks are showing.
+      </div>
+    </div>
+
+    <div class="sect" data-tab="show">
       <div class="sect-title">Decks</div>
       <div id="decks"></div>
       <div class="note">
@@ -1362,6 +1379,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
      different things here and neither tool should inherit the other's.
   ══════════════════════════════════════════ */
   const CONFIG_KEY = 'mpf_vizfx_config';
+  // The scene layer's scenes, by the engine's own ids (tools/water/scenes/fluid-fx/).
+  const SCENE_LAYER = [
+    { id: 1, name: 'Caustics' }, { id: 2, name: 'Rays' }, { id: 3, name: 'Deep' },
+    { id: 4, name: 'Liquid' },   { id: 5, name: 'Lines' },
+  ];
 
   // Mix = the loudest channel, so this works on a mic and on a 16-channel bus alike.
   const PARTY_ROUTES = [
@@ -1387,6 +1409,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     autoAfter: 10,                 // seconds without the controller before automated mode; 0 is off
     lineWidth: 1,                  // 0.3 to 3: a multiplier on every line the scenes draw; a look, so it is in the presets
     white: 1,                      // 0.1 to 1: the most the output may brighten; a venue setting, so not in the presets
+    sceneOn: false,                // Scene layer (the underwater engine in tools/water/); a rig setting, so not in the presets
+    sceneMode: 1,                  // which of its scenes, by the engine's own id (1 Caustics .. 5 Lines)
+    sceneMix: 0.8,                 // 0 to 1: how strongly it is screened over the decks
     targetsOn: false,              // Stage targets master switch; a rig setting, so not in the presets
     targets: [],                   // up to 8 of { x, y, r, on, name }: x,y 0..1 from the top left of the output, r a fraction of its height
     focus: 0.7,                    // 0 to 1: how much the effects calm outside the targets (and push a little inside)
@@ -1432,6 +1457,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         out.lineWidth = Math.max(0.3, Math.min(3, +out.lineWidth || 1));
         out.idleOn = out.idleOn !== false;
         out.targetsOn = !!out.targetsOn;
+        out.sceneOn = !!out.sceneOn;
+        out.sceneMode = SCENE_LAYER.some(t => t.id === +out.sceneMode) ? +out.sceneMode : DEFAULTS.sceneMode;
+        out.sceneMix = Math.max(0, Math.min(1, isFinite(+saved.sceneMix) && saved.sceneMix != null ? +saved.sceneMix : DEFAULTS.sceneMix));
         out.focus = Math.max(0, Math.min(1, isFinite(+saved.focus) && saved.focus != null ? +saved.focus : DEFAULTS.focus));
         out.focusDim = Math.max(0, Math.min(1, isFinite(+saved.focusDim) && saved.focusDim != null ? +saved.focusDim : DEFAULTS.focusDim));
         out.targets = (Array.isArray(saved.targets) ? saved.targets : []).slice(0, 8).map(t => ({
@@ -3559,6 +3587,63 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   }
 
   /* ══════════════════════════════════════════
+     SCENE LAYER
+
+     The underwater projection engine (tools/water/, its own README) is a WebGL2
+     page with a host API, so it runs as it is, in a same-origin iframe, rather
+     than being folded into this file. The iframe sits on screen at full size
+     but invisible: a hidden or offscreen frame has its animation throttled.
+     Each frame it renders is copied out from `onframe`, the one moment its
+     drawing buffer is still whole (it does not preserve it), and compose()
+     screens the copy onto `comp` after the decks, so every effect works on it
+     as it does on deck content. Off, the iframe is removed and costs nothing.
+  ══════════════════════════════════════════ */
+  const WATER = { frame: null, api: null, cv: document.createElement('canvas'), cx: null, fresh: false, error: '' };
+  WATER.cx = WATER.cv.getContext('2d', { alpha: false });
+  function waterSize() {
+    if (WATER.cv.width !== comp.width || WATER.cv.height !== comp.height) { WATER.cv.width = comp.width; WATER.cv.height = comp.height; }
+    // The engine sizes itself from its canvas's CSS box times the pixel ratio, so match that box to `comp`.
+    const dpr = window.devicePixelRatio || 1, w = Math.round(comp.width / dpr) + 'px', h = Math.round(comp.height / dpr) + 'px';
+    if (WATER.frame && (WATER.frame.style.width !== w || WATER.frame.style.height !== h)) { WATER.frame.style.width = w; WATER.frame.style.height = h; }
+  }
+  function sceneLayerStart() {
+    if (WATER.frame) return;
+    WATER.error = ''; WATER.fresh = false;
+    const f = WATER.frame = document.createElement('iframe');
+    f.setAttribute('aria-hidden', 'true'); f.tabIndex = -1;
+    f.style.cssText = 'position:fixed;left:0;top:0;border:0;opacity:0;pointer-events:none;z-index:-1';
+    f.src = 'water/index.html?embed=1&mode=' + CONFIG.sceneMode;
+    f.onload = () => {
+      const api = f.contentWindow && f.contentWindow.WaterProjection;
+      if (!api) { WATER.error = 'The scene engine did not start (WebGL2 missing?).'; renderSceneLayer(); return; }
+      WATER.api = api;
+      api.onframe = () => {
+        waterSize();
+        WATER.cx.drawImage(api.canvas, 0, 0, WATER.cv.width, WATER.cv.height);
+        WATER.fresh = true;
+      };
+      renderSceneLayer();
+    };
+    waterSize();
+    document.body.appendChild(f);
+  }
+  function sceneLayerStop() {
+    if (WATER.frame) WATER.frame.remove();
+    WATER.frame = WATER.api = null; WATER.fresh = false;
+  }
+  function setSceneLayer(on) {
+    CONFIG.sceneOn = !!on; save();
+    if (CONFIG.sceneOn) sceneLayerStart(); else sceneLayerStop();
+    renderSceneLayer();
+  }
+  function setSceneMode(id) {
+    if (!SCENE_LAYER.some(t => t.id === id)) return;
+    CONFIG.sceneMode = id; save();
+    if (WATER.api) WATER.api.setMode(id);
+    renderSceneLayer();
+  }
+
+  /* ══════════════════════════════════════════
      COMPOSITOR
 
      Decks, then the camera, then the flashes, all onto `comp`. Everything the
@@ -3608,6 +3693,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       ctx.globalAlpha = g;
       ctx.drawImage(D.cv, 0, 0);
     });
+    // The scene layer is light on black, so screening it adds its light and leaves the decks' picture in its dark.
+    if (CONFIG.sceneOn && WATER.fresh && !camCovers) {
+      ctx.globalAlpha = CONFIG.sceneMix * IDLE.g;
+      ctx.drawImage(WATER.cv, 0, 0, W, H);
+    }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
@@ -4988,6 +5078,20 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const t = CONFIG.targets[h]; t.r = Math.max(0.05, Math.min(0.6, t.r * (e.deltaY < 0 ? 1.08 : 1 / 1.08)));
     save(); renderTargets();
   }, { passive: false });
+  SCENE_LAYER.forEach(t => { const o = document.createElement('option'); o.value = t.id; o.textContent = t.name; $('scn-sel').appendChild(o); });
+  function renderSceneLayer() {
+    $('scn-on').textContent = 'Scene layer: ' + (CONFIG.sceneOn ? 'ON' : 'off');
+    $('scn-on').classList.toggle('on', CONFIG.sceneOn);
+    $('scn-sel').value = CONFIG.sceneMode;
+    $('scn-mix').value = CONFIG.sceneMix;
+    $('scn-mix-val').textContent = CONFIG.sceneMix.toFixed(2);
+    if (WATER.error) $('scn-note').textContent = WATER.error;
+  }
+  $('scn-on').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
+  $('scn-sel').onchange = e => setSceneMode(+e.currentTarget.value);
+  $('scn-mix').oninput = e => { CONFIG.sceneMix = +e.currentTarget.value; save(); renderSceneLayer(); };
+  renderSceneLayer();
+  if (CONFIG.sceneOn) sceneLayerStart();
   $('tgt-on').onclick = e => { CONFIG.targetsOn = !CONFIG.targetsOn; save(); renderTargets(); e.currentTarget.blur(); };
   $('tgt-alloff').onclick = e => { CONFIG.targets.forEach(t => { t.on = false; }); CONFIG.targetsOn = false; tgtTouch(); e.currentTarget.blur(); };
   for (const [id, key] of [['focus', 'focus'], ['focusDim', 'focusDim']]) {
@@ -6285,7 +6389,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       if (on) enterAdmin(); else leaveAdmin();
       resize(); syncUI();
     },
-    setScene, setXfade, setFx, colorHit, SCENES, OLD_SCENES,
+    setScene, setXfade, setFx, colorHit, SCENES, OLD_SCENES, WATER, setSceneLayer, setSceneMode,
     PRE, pickPreset, pickBuiltin, pickSlot, savePreset, renamePreset, updatePreset, deletePreset, movePreset, captureLook, cleanLook, exportDoc, importDoc, pullPresets, pushPresets, presetTween, mergeRemote, signIn,
     setMode: m => setScene(0, m),
     axis(i, v) { VPAD.axes[i] = v; activateVirtual(); },

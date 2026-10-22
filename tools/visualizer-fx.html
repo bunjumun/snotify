@@ -693,7 +693,7 @@
         </div>
       </details>
       <details class="grp" open>
-        <summary>Colour, glitch and cycling</summary>
+        <summary>Colour, line width, glitch and cycling</summary>
         <label class="fld">
           <span>Colour</span>
           <select id="color-sel">
@@ -715,6 +715,10 @@
         <label class="fld">
           <span>Glitch on kicks <em id="glitch-val">0.50</em></span>
           <input type="range" id="glitch" min="0" max="1" step="0.05" value="0.5" />
+        </label>
+        <label class="fld">
+          <span>Line width <em id="lineWidth-val">1.00×</em></span>
+          <input type="range" id="lineWidth" min="0.3" max="3" step="0.05" value="1" />
         </label>
         <label class="fld">
           <span>Auto-cycle effects</span>
@@ -1340,6 +1344,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     rumble: 0.5, motion: 0.6, motionFlip: { x: false, y: false },
     glitch: 0.5,                   // how strongly a kick stutters the recent picture back; 0 is off
     autoAfter: 10,                 // seconds without the controller before automated mode; 0 is off
+    lineWidth: 1,                  // 0.3 to 3: a multiplier on every line the scenes draw; a look, so it is in the presets
     white: 1,                      // 0.1 to 1: the most the output may brighten; a venue setting, so not in the presets
     idleOn: true,                  // go to the idle scene between songs; a venue setting, so not in the presets
     idleThresh: 0.02,              // raw level (RMS of the loudest channel, before the auto level) under which the room counts as quiet
@@ -1379,6 +1384,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         // camera that was on look as if it were off; it now starts at half and half.
         if (saved.v !== DEFAULTS.v) { out.demo = false; out.v = DEFAULTS.v; out.cam.mix = DEFAULTS.cam.mix; }
         out.white = Math.max(0.1, Math.min(1, +out.white || 1));
+        out.lineWidth = Math.max(0.3, Math.min(3, +out.lineWidth || 1));
         out.idleOn = out.idleOn !== false;
         out.idleThresh = Math.max(0.005, Math.min(0.2, +out.idleThresh || DEFAULTS.idleThresh));
         out.idleDelay = Math.max(1, Math.min(30, Math.round(+out.idleDelay || DEFAULTS.idleDelay)));
@@ -1815,7 +1821,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       fx: fxMode, s: {},
       d: decks.map(D => [D.scene, ((Math.round(D.hue) % 360) + 360) % 360]), sv: SCENE_SV,
       xf: pr3(xfade), tr: trailIdx,
-      c: { pulse: pr3(CONFIG.pulse), glitch: pr3(CONFIG.glitch), mode: CONFIG.colorMode, every: CONFIG.colorEvery },
+      c: { pulse: pr3(CONFIG.pulse), glitch: pr3(CONFIG.glitch), lw: pr3(CONFIG.lineWidth), mode: CONFIG.colorMode, every: CONFIG.colorEvery },
     };
     for (const k in DEFAULTS.fx) L.s[k] = pr3(CONFIG.fx[k]);
     if (withRoutes) L.r = CONFIG.routes.map(r => [r.ch, r.band, r.target, pr3(r.depth)]);
@@ -1849,6 +1855,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       L.c = {};
       if (typeof raw.c.pulse === 'number') L.c.pulse = pr3(pnum(raw.c.pulse, 0, 1.5, 0.5));
       if (typeof raw.c.glitch === 'number') L.c.glitch = pr3(pnum(raw.c.glitch, 0, 1, 0.5));
+      if (typeof raw.c.lw === 'number') L.c.lw = pr3(pnum(raw.c.lw, 0.3, 3, 1));
       if (['auto', 'mono', 'full'].includes(raw.c.mode)) L.c.mode = raw.c.mode;
       if ([0, 8, 4, 2, -1].includes(raw.c.every)) L.c.every = raw.c.every;
     }
@@ -1877,8 +1884,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   function startTween(L) {
     PRE.tween = {
       t0: performance.now(), dur: 1200, last: 0,
-      from: { s: Object.assign({}, CONFIG.fx), xf: xfade, h: decks.map(D => D.hue), pulse: CONFIG.pulse, glitch: CONFIG.glitch },
-      to:   { s: L.s || {}, xf: L.xf, h: (L.d || []).map(e => e ? e[1] : null), pulse: L.c && L.c.pulse, glitch: L.c && L.c.glitch },
+      from: { s: Object.assign({}, CONFIG.fx), xf: xfade, h: decks.map(D => D.hue), pulse: CONFIG.pulse, glitch: CONFIG.glitch, lw: CONFIG.lineWidth },
+      to:   { s: L.s || {}, xf: L.xf, h: (L.d || []).map(e => e ? e[1] : null), pulse: L.c && L.c.pulse, glitch: L.c && L.c.glitch, lw: L.c && L.c.lw },
     };
   }
   function presetTween(now) {
@@ -1895,6 +1902,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     });
     if (typeof T.to.pulse === 'number') CONFIG.pulse = mix(T.from.pulse, T.to.pulse);
     if (typeof T.to.glitch === 'number') CONFIG.glitch = mix(T.from.glitch, T.to.glitch);
+    if (typeof T.to.lw === 'number') CONFIG.lineWidth = mix(T.from.lw, T.to.lw);
     if (p >= 1) { PRE.tween = null; save(); }
     if (p >= 1 || now - T.last > 120) { T.last = now; syncUI(); }
   }
@@ -2170,7 +2178,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     D.cx.globalCompositeOperation = 'source-over'; D.cx.globalAlpha = 1;
     D.cx.fillStyle = '#000';
     D.cx.fillRect(0, 0, D.cv.width, D.cv.height);
-    D.stars.length = 0; D.water = null; D.plasma = null;
+    D.stars.length = 0; D.water = null; D.plasma = null; D.tun = null;
     showHud(); syncUI();
   }
   function cycleScene(i, dir) { setScene(i, decks[i].scene + dir); }
@@ -2890,7 +2898,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
 
       ctx.beginPath();
       ctx.strokeStyle = hsla(h, 100, 62, Math.max(0.05, alpha));
-      ctx.lineWidth   = 1.2 + q.glow * 1.8;
+      ctx.lineWidth   = lwk(1.2 + q.glow * 1.8);
       ctx.shadowColor = hsla(h, 100, 70, 0.8);
       ctx.shadowBlur  = blur(q);
 
@@ -3103,42 +3111,122 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     ctx.restore();
   }
 
+  /* ══════════════════════════════════════════
+     TUNNELS — warp, not pulse
+
+     Tunnel Rush, Tunnel and Vortex used to pulse: the bass multiplied the whole
+     accumulated clock (so each change shoved every ring along), the Rush sized its
+     rings by Amplitude, and the Vortex tightened its spiral on every kick. Now each
+     deck keeps a small state (D.tun): an integrated phase, so a change of speed
+     only changes the slope; and a low-pass over everything that drives it, so a
+     step in the input is a glide over a quarter of a second. Ring size and
+     brightness stay where they were, and the drivers bend the shape instead:
+
+       right trigger and bass  twist the rings (an angle that grows with depth) and
+                               stretch them into ellipses on a slowly turning axis
+       left trigger            sways the vanishing point; the far rings follow it
+                               fully and the near ones hardly at all, so it reads as
+                               perspective rather than the picture sliding
+       a kick                  leans the same way, briefly, rather than flashing
+
+     The tunables are here so they can be tuned by eye without touching the scenes. */
+  const TUN = {
+    smoothMs: 250,     // time for a step in any driver to cover about two thirds of its way
+    twist: 1.6,        // radians of extra turn at the edge at a full right trigger
+    bassTwist: 0.5,    // the same, from the smoothed bass
+    kickTwist: 0.3,    // and from a kick, which fades over about half a second
+    stretch: 0.45,     // how far a ring's axes part at a full right trigger (0.45: 1.45 to 0.69)
+    sway: 0.22,        // fraction of the short side the vanishing point wanders at a full left trigger
+    restSway: 0.02,    // the same with nothing pressed: enough to breathe, not enough to notice
+    rushSize: 0.62,    // Tunnel Rush ring size as a fraction of its maximum; was 0.4 + 0.6 * Amplitude
+  };
+  // Line width is a look setting: one multiplier over every line the scenes draw.
+  const lwk = v => v * CONFIG.lineWidth;
+  const WP = { x: 0, y: 0 };      // scratch for warpPt, so the vertex loops allocate nothing
+
+  function tunnelFrame(D, rate, bassGain, m) {
+    const q = D.q;
+    let T = D.tun;
+    if (!T) T = D.tun = {
+      ms: D.ms, ph: 0, ang: 0, sw: Math.random() * 6,
+      glow: q.glow, cx: q.complexity, zoom: q.zoom, bass: aud.bass, rt: q.rtrigger, lt: q.ltrigger,
+      kick: 0, kickIn: 0, beats: beatCount, tw: 0, st: 0, sa: 0, sx: 0, sy: 0,
+    };
+    const dms = Math.min(60, Math.max(0, D.ms - T.ms));     // a frozen deck adds nothing
+    T.ms = D.ms;
+    const sec = dms * 0.001, k = 1 - Math.exp(-dms / TUN.smoothMs);
+    T.glow += (q.glow - T.glow) * k;
+    T.cx   += (q.complexity - T.cx) * k;
+    T.zoom += (q.zoom - T.zoom) * k;
+    T.bass += (aud.bass - T.bass) * k;
+    T.rt   += (Math.min(1, q.rtrigger) - T.rt) * k;
+    T.lt   += (Math.min(1, q.ltrigger) - T.lt) * k;
+    if (beatCount !== T.beats) { T.beats = beatCount; T.kickIn = 1; }
+    T.kickIn *= Math.exp(-dms / 500);
+    T.kick += (T.kickIn - T.kick) * k;
+    T.ph  += sec * rate * (1 + T.bass * bassGain);
+    T.ang += sec * 0.12;
+    T.sw  += sec * 0.31;
+    T.tw = TUN.twist * T.rt + TUN.bassTwist * T.bass + TUN.kickTwist * T.kick;
+    T.st = Math.min(0.6, TUN.stretch * (0.7 * T.rt + 0.3 * T.bass + 0.3 * T.kick));
+    T.sa = T.ang;
+    const sway = (TUN.restSway + TUN.sway * T.lt) * m;
+    T.sx = Math.sin(T.sw) * sway;
+    T.sy = Math.sin(T.sw * 0.77 + 1.3) * sway * 0.7;
+    return T;
+  }
+  // A point dx, dy from the vanishing point, at depth f (0 at the point, 1 at the edge):
+  // stretched along the turning axis, then moved by the sway, which fades out toward the edge.
+  function warpPt(T, dx, dy, f) {
+    if (T.st > 0.001) {
+      const a = T.sa + T.tw * f, c = Math.cos(a), s = Math.sin(a);
+      const u = (dx * c + dy * s) * (1 + T.st), v = (-dx * s + dy * c) / (1 + T.st);
+      dx = u * c - v * s; dy = u * s + v * c;
+    }
+    const lean = Math.max(0, 1 - f);
+    WP.x = dx + T.sx * lean; WP.y = dy + T.sy * lean;
+  }
+
   /* ── SCENE 4 — TUNNEL RUSH ── */
   function drawTunnelRush(D) {
     const ctx = D.cx, q = D.q, W = D.cv.width, H = D.cv.height;
     const t = D.t, hue = D.hue + D.drift;
+    // Speed enters the pace once, through the integrated phase (it used to multiply a clock that was already speed-driven)
+    const T = tunnelFrame(D, 0.6 * q.speed * q.speed, 0, Math.min(W, H));
     const cx = W / 2 + q.xShift * 80, cy = H / 2 + q.yShift * 80;
 
-    wipe(D, fade(q) + 0.04);
+    wipe(D, fade(T) + 0.04);
+    ctx.lineJoin = ctx.lineCap = 'round';
 
-    const rings  = Math.round(8 + q.complexity * 8);
-    const offset = (t * q.speed * 0.6) % 1;
+    const rings  = Math.round(8 + T.cx * 8);
+    const offset = T.ph % 1;
+    const sides  = Math.round(4 + T.cx * 4);
 
     for (let r = rings; r >= 0; r--) {
       const fi    = ((r / rings) + offset) % 1;
-      const size  = Math.pow(fi, 1.8) * Math.min(W, H) * 0.6 * q.zoom;
+      const size  = Math.pow(fi, 1.8) * Math.min(W, H) * 0.6 * T.zoom;
       const h     = hue + fi * 360 * q.colorSpeed + q.twist * 180;
-      const sides = Math.round(4 + q.complexity * 4);
-      const rot   = fi * Math.PI * 2 * (0.5 + q.pitch * 0.5) + t * 0.1 + q.spin;
+      const rot   = fi * Math.PI * 2 * (0.5 + q.pitch * 0.5) + t * 0.1 + q.spin + T.tw * fi;
+      const s     = size * TUN.rushSize;
 
       ctx.beginPath();
       for (let i = 0; i <= sides; i++) {
         const ang = (i / sides) * Math.PI * 2 + rot;
-        const s   = size * (0.4 + q.amplitude * 0.6);
-        const x = cx + Math.cos(ang) * s, y = cy + Math.sin(ang) * s;
+        warpPt(T, Math.cos(ang) * s, Math.sin(ang) * s, fi);
+        const x = cx + WP.x, y = cy + WP.y;
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
       }
       ctx.closePath();
-      ctx.strokeStyle = hsla(h, 100, 60, Math.min(0.9, (0.25 + q.glow * 0.65) - fi * 0.25));
-      ctx.lineWidth   = (1 - fi) * 2.5 + 0.4 + q.glow * 2;
+      ctx.strokeStyle = hsla(h, 100, 60, Math.min(0.9, (0.25 + T.glow * 0.65) - fi * 0.25));
+      ctx.lineWidth   = lwk((1 - fi) * 2.5 + 0.4 + T.glow * 2);
       ctx.shadowColor = hsla(h, 100, 75, 0.8);
-      ctx.shadowBlur  = blur(q);
+      ctx.shadowBlur  = blur(T);
       ctx.stroke();
 
       // Inner rings only — filling the screen-sized outer rings stacks up
       // faster than the trail fade can clear and washes the scene grey.
       if (r % 3 === 0 && size > 10 && fi < 0.5) {
-        ctx.fillStyle = hsla(h, 100, 50, 0.03 + q.glow * 0.05);
+        ctx.fillStyle = hsla(h, 100, 50, 0.03 + T.glow * 0.05);
         ctx.fill();
       }
     }
@@ -3159,17 +3247,20 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   function drawTunnel(D) {
     const ctx = D.cx, W = D.cv.width, H = D.cv.height;
     screenMode(ctx);
+    const T = tunnelFrame(D, 0.5 * vjSpeed(D), 0.6, Math.min(W, H));
+    ctx.lineJoin = ctx.lineCap = 'round';
     const cx = W / 2, cy = H / 2, maxR = Math.hypot(cx, cy) * 1.1;
-    const tSpeed = vjSpeed(D) * (1 + aud.bass * 1.8);
-    const t = D.ms * 0.001 * tSpeed;
-    const rings = 10 + (D.intensity * 8 | 0), bb = aud.flash * 40;
+    const rings = 10 + (D.intensity * 8 | 0);
     for (let i = rings; i >= 0; i--) {
-      const ph = ((t * 0.5 + i / rings) % 1), r = ph * maxR;
+      const ph = ((T.ph + i / rings) % 1), r = ph * maxR;
       const lw = (1.5 + D.intensity * 4) * (1 - ph * 0.6);
-      const br = Math.min(95, 25 + ph * 55 + bb * (1 - ph));
-      ctx.strokeStyle = `hsl(${(D.hue + i * 28 + t * 25) % 360},100%,${br}%)`;
-      ctx.lineWidth = lw;
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+      const br = Math.min(95, 25 + ph * 55);
+      ctx.strokeStyle = `hsl(${(D.hue + i * 28 + T.ph * 50) % 360},100%,${br}%)`;
+      ctx.lineWidth = lwk(lw);
+      warpPt(T, 0, 0, ph);
+      ctx.beginPath();
+      ctx.ellipse(cx + WP.x, cy + WP.y, r * (1 + T.st), r / (1 + T.st), T.sa + T.tw * ph, 0, Math.PI * 2);
+      ctx.stroke();
     }
   }
 
@@ -3288,7 +3379,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       const hue = (D.hue + i * (300 / n)) % 360, ph = i / n * Math.PI * 2, freq = 1.5 + i * 0.38;
       const yBase = H / 2 + Math.sin(t * 0.28 + i) * vOff;
       ctx.strokeStyle = `hsl(${hue},100%,${55 + aud.flash * 30}%)`;
-      ctx.lineWidth = 1 + D.intensity * 2 * (1 - i / n * 0.6);
+      ctx.lineWidth = lwk(1 + D.intensity * 2 * (1 - i / n * 0.6));
       ctx.beginPath();
       for (let xi = 0; xi <= steps; xi++) {
         const x = xi / steps * W, y = yBase + Math.sin(x / W * Math.PI * 2 * freq + t + ph) * amp;
@@ -3305,7 +3396,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const t = D.ms * 0.001 * vjSpeed(D), wa = (22 + D.intensity * 50) * (1 + aud.bass * 2.5);
     const br = 42 + aud.flash * 35, cols = 10, rows = 7, segs = 36;
     for (let i = 0; i <= cols; i++) {
-      ctx.strokeStyle = `hsl(${(D.hue + i * 11) % 360},100%,${br}%)`; ctx.lineWidth = 1;
+      ctx.strokeStyle = `hsl(${(D.hue + i * 11) % 360},100%,${br}%)`; ctx.lineWidth = lwk(1);
       ctx.beginPath();
       for (let j = 0; j <= segs; j++) {
         const p = j / segs, x = i * (W / cols) + Math.sin(p * Math.PI * 2 + t * 1.2 + i * 0.55) * wa, y = p * H;
@@ -3314,7 +3405,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       ctx.stroke();
     }
     for (let j = 0; j <= rows; j++) {
-      ctx.strokeStyle = `hsl(${(D.hue + j * 22 + 90) % 360},100%,${br}%)`; ctx.lineWidth = 1;
+      ctx.strokeStyle = `hsl(${(D.hue + j * 22 + 90) % 360},100%,${br}%)`; ctx.lineWidth = lwk(1);
       ctx.beginPath();
       for (let i = 0; i <= segs; i++) {
         const p = i / segs, y = j * (H / rows) + Math.sin(p * Math.PI * 2 + t * 0.85 + j * 0.65) * wa, x = p * W;
@@ -3328,19 +3419,20 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   function drawVortex(D) {
     const ctx = D.cx, W = D.cv.width, H = D.cv.height;
     screenMode(ctx);
+    const T = tunnelFrame(D, vjSpeed(D), 0.7, Math.min(W, H));
+    ctx.lineJoin = ctx.lineCap = 'round';
     const cx = W / 2, cy = H / 2;
-    const t = D.ms * 0.001 * vjSpeed(D) * (1 + aud.bass * 2);
     const arms = 2 + (D.intensity * 4 | 0), maxR = Math.hypot(cx, cy);
-    const twists = 3 + D.intensity * 3 + aud.flash * 4, steps = 280;
+    const twists = 3 + D.intensity * 3, steps = 360;
     for (let arm = 0; arm < arms; arm++) {
-      const base = (arm / arms) * Math.PI * 2 + t;
-      ctx.strokeStyle = `hsl(${(D.hue + arm * (360 / arms)) % 360},100%,${58 + aud.flash * 30}%)`;
-      ctx.lineWidth = 1 + D.intensity;
+      const base = (arm / arms) * Math.PI * 2 + T.ph;
+      ctx.strokeStyle = `hsl(${(D.hue + arm * (360 / arms)) % 360},100%,58%)`;
+      ctx.lineWidth = lwk(1 + D.intensity);
       ctx.beginPath();
       for (let i = 0; i <= steps; i++) {
-        const p = i / steps, r = p * maxR, ang = base + p * Math.PI * 2 * twists;
-        i === 0 ? ctx.moveTo(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r)
-                : ctx.lineTo(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r);
+        const p = i / steps, r = p * maxR, ang = base + p * Math.PI * 2 * twists + T.tw * p;
+        warpPt(T, Math.cos(ang) * r, Math.sin(ang) * r, p);
+        i === 0 ? ctx.moveTo(cx + WP.x, cy + WP.y) : ctx.lineTo(cx + WP.x, cy + WP.y);
       }
       ctx.stroke();
     }
@@ -4644,6 +4736,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   bindSlider('autoAfter', 'autoAfter', v => v === 0 ? 'off' : v + ' s');
   bindSlider('autoSpeed', 'autoSpeed', v => v.toFixed(2) + '×');
   bindSlider('glitch', 'glitch', v => v.toFixed(2));
+  bindSlider('lineWidth', 'lineWidth', v => v.toFixed(2) + '×');
   bindSlider('idleThresh', 'idleThresh', v => (v * 100).toFixed(1) + '%');
   bindSlider('idleDelay', 'idleDelay', v => v + ' s');
   // The idle scene and effect lists. The effect list also carries the saved presets, so it is
@@ -4676,7 +4769,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   $('reset-btn').onclick = () => {
     CONFIG = JSON.parse(JSON.stringify(DEFAULTS));
     save();
-    [['gain', 'gain'], ['smooth', 'smoothing'], ['idle', 'idle'], ['beat', 'beat'], ['pulse', 'pulse'], ['feel', 'feel'], ['rumble', 'rumble'], ['motion', 'motion'], ['autoAfter', 'autoAfter'], ['autoSpeed', 'autoSpeed'], ['glitch', 'glitch'], ['idleThresh', 'idleThresh'], ['idleDelay', 'idleDelay']].forEach(([id, key]) => {
+    [['gain', 'gain'], ['smooth', 'smoothing'], ['idle', 'idle'], ['beat', 'beat'], ['pulse', 'pulse'], ['feel', 'feel'], ['rumble', 'rumble'], ['motion', 'motion'], ['autoAfter', 'autoAfter'], ['autoSpeed', 'autoSpeed'], ['glitch', 'glitch'], ['lineWidth', 'lineWidth'], ['idleThresh', 'idleThresh'], ['idleDelay', 'idleDelay']].forEach(([id, key]) => {
       $(id).value = CONFIG[key];
     });
     $('gain-val').textContent   = CONFIG.gain.toFixed(1) + '×';
@@ -4690,6 +4783,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     $('autoAfter-val').textContent = CONFIG.autoAfter === 0 ? 'off' : CONFIG.autoAfter + ' s';
     $('autoSpeed-val').textContent = CONFIG.autoSpeed.toFixed(2) + '×';
     $('glitch-val').textContent = CONFIG.glitch.toFixed(2);
+    $('lineWidth-val').textContent = CONFIG.lineWidth.toFixed(2) + '×';
     syncWhite();
     renderIdleFx();
     $('ch-req').value = CONFIG.channels;
@@ -5180,7 +5274,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   }
   [['gain', () => DEFAULTS.gain], ['smooth', () => DEFAULTS.smoothing], ['idle', () => DEFAULTS.idle], ['beat', () => DEFAULTS.beat],
    ['pulse', () => DEFAULTS.pulse], ['feel', () => DEFAULTS.feel], ['rumble', () => DEFAULTS.rumble], ['motion', () => DEFAULTS.motion],
-   ['autoAfter', () => DEFAULTS.autoAfter], ['autoSpeed', () => DEFAULTS.autoSpeed], ['glitch', () => DEFAULTS.glitch], ['white', () => DEFAULTS.white], ['lv-white', () => DEFAULTS.white], ['xf', () => 0.5], ['trails', () => 1],
+   ['autoAfter', () => DEFAULTS.autoAfter], ['autoSpeed', () => DEFAULTS.autoSpeed], ['glitch', () => DEFAULTS.glitch], ['lineWidth', () => DEFAULTS.lineWidth], ['white', () => DEFAULTS.white], ['lv-white', () => DEFAULTS.white], ['xf', () => 0.5], ['trails', () => 1],
    ['cam-mix', () => DEFAULTS.cam.mix], ['ch-req', () => DEFAULTS.channels]].forEach(([id, d]) => resettable($(id), d));
   fxSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.fx[s.k]));
   camSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.cam.adj[s.k]));
@@ -5221,6 +5315,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     setText($('beat-val'), CONFIG.beat.toFixed(1));
     setVal($('pulse'), CONFIG.pulse);
     setText($('pulse-val'), CONFIG.pulse.toFixed(2));
+    setVal($('lineWidth'), CONFIG.lineWidth);
+    setText($('lineWidth-val'), CONFIG.lineWidth.toFixed(2) + '×');
     setVal($('feel'), CONFIG.feel);
     setText($('feel-val'), CONFIG.feel.toFixed(2));
 

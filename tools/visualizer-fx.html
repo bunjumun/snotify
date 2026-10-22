@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizer FX V.6 — Midwest Psych Fest</title>
+  <title>Visualizer FX V.7 — Midwest Psych Fest</title>
   <!--
     The Visualizer, put through a press. Everything the unified Visualizer does
     (two decks, ten scenes, a crossfader, gamepad / keyboard / MIDI, routed
@@ -164,6 +164,26 @@
       body.projecting .top-btns { right: calc(var(--panel-w) + 16px); top: calc(var(--bar) + 52px + 8px); max-width: calc(100vw - var(--panel-w) - 32px); }
       body.projecting #gear-btn, body.projecting #panel-close { display: none; }
       body.projecting #hud, body.projecting #pad-hint { left: calc((100vw - var(--panel-w)) / 2); }
+    }
+    /* Control screen, laptop-sized and up: the panel is the thing he works from while the band
+       plays, often at arm's length and in the dark, so on a wide window the whole panel is
+       scaled up (CSS zoom, so type, sliders, buttons and hit areas grow together and nothing
+       has to be restyled), the live strip's buttons get taller, and the banner is readable
+       from a step back. Below 1200px it stays as it was: there is no room to spare. The
+       panel's box is divided by the zoom so its on-screen width is exactly --panel-w, which
+       the mirror, banner and button row all lay out against. */
+    @media (min-width: 1200px) {
+      body.projecting { --panel-w: clamp(560px, 40vw, 720px); --ctl-z: 1.3; }
+      body.projecting #panel {
+        zoom: var(--ctl-z);
+        width: calc(var(--panel-w) / var(--ctl-z));
+        top: calc(var(--bar) / var(--ctl-z));
+        height: calc((100vh - var(--bar)) / var(--ctl-z));
+      }
+      body.projecting .live .lv { padding: 13px 6px; font-size: 0.7rem; }
+      body.projecting #ctl-banner { font-size: 0.82rem; height: 60px; }
+      body.projecting #mirror { top: calc(var(--bar) + 60px); height: calc(100vh - var(--bar) - 60px); }
+      body.projecting .top-btns { top: calc(var(--bar) + 60px + 8px); }
     }
     .stage-pill {
       height: 40px; padding: 0 16px; border-radius: 20px;

@@ -1039,7 +1039,7 @@ const BAND_TOOLS = {
       hint: 'V.1 and V.2 combined: two decks, crossfade, audio reactive, gamepad, keyboard or MIDI driven' },
     { href: 'archive/tools-v1/visualizer-fx.html', label: '◉  Visualizer FX · V.4',
       hint: 'The effects stage as it stood on 11 Oct, kept as it was: halftone, stipple, line and CMYK displacement, dazzle camo, projector window' },
-    { href: 'tools/visualizer-fx.html', label: '◉  Visualizer FX · V.6',
+    { href: 'tools/visualizer-fx.html', label: '◉  Visualizer FX · V.7',
       hint: 'V.3 through halftone, stipple, line and CMYK displacement and dazzle camo; live camera, projector output for an audience' },
     { href: 'tools/moire-maker.html', label: '◎  Moiré pattern toy',
       hint: 'Two line fields, live interference' },

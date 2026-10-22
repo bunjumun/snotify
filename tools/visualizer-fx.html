@@ -1309,6 +1309,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     fxShift:    { label: 'RGB/CMYK shift',rest: 0.20, idleGain: 0.10, max: 1.5 },
     fxWarp:     { label: 'FX warp',       rest: 0.10, idleGain: 0.08, max: 1.5 },
     fxThresh:   { label: 'B/W threshold', rest: 0.50, idleGain: 0.00, max: 1.0 },
+    fxVoid:     { label: 'Void',          rest: 0.35, idleGain: 0.00, max: 1.0 },
     fxColor:    { label: 'Colour',        rest: 0.00, idleGain: 0.00, max: 1.0 },
   };
 
@@ -1316,7 +1317,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   const P = {
     amplitude: 0, speed: 0, complexity: 0, colorSpeed: 0,
     glow: 0, zoom: 0, spin: 0, scatter: 0,
-    fxAmount: 0, fxScale: 0, fxAngle: 0, fxShift: 0, fxWarp: 0, fxThresh: 0, fxColor: 0,
+    fxAmount: 0, fxScale: 0, fxAngle: 0, fxShift: 0, fxWarp: 0, fxThresh: 0, fxVoid: 0, fxColor: 0,
     xShift: 0, yShift: 0, twist: 0, pitch: 0, camAxis: 0,
     ltrigger: 0, rtrigger: 0,
   };
@@ -1368,6 +1369,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     { ch: -1, band: 'low',  target: 'amplitude', depth: 0.6 },
     { ch: -1, band: 'low',  target: 'fxWarp',    depth: 0.5 },
     { ch: -1, band: 'low',  target: 'fxThresh',  depth: -0.3 },
+    { ch: -1, band: 'low',  target: 'fxVoid',    depth: -0.5 },   // a kick shrinks the void: more picture on the beat
     { ch: -1, band: 'mid',  target: 'fxScale',   depth: 0.5 },
     { ch: -1, band: 'mid',  target: 'complexity', depth: 0.5 },
     { ch: -1, band: 'high', target: 'fxShift',   depth: 0.9 },
@@ -1401,7 +1403,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     autoFx: [0, 1, 2, 3, 4, 5, 6],         // effects auto may land on: all but the raw picture (the last one, RAW)
     autoPresetsOff: [],                    // ids of saved presets auto may not use
     autoSpeed: 1,                  // 0.25 to 3: scales the automated-mode wobble and how often the auto-cycle steps
-    fx:  { fxAmount: 0.55, fxScale: 0.35, fxAngle: 0.5, fxShift: 0.2, fxWarp: 0.1, fxThresh: 0.5, fxColor: 0 },
+    fx:  { fxAmount: 0.55, fxScale: 0.35, fxAngle: 0.5, fxShift: 0.2, fxWarp: 0.1, fxThresh: 0.5, fxVoid: 0.35, fxColor: 0 },
     cam: { deviceId: '', mirror: true, blend: 'mix', mix: 0.5,
            adj: { bright: 0, contrast: 1, gamma: 1, black: 0, white: 1, sat: 1, temp: 0, tint: 0 },
            motion: { show: 'picture', sens: 0.5, trail: 0.5, boost: 1.6, dim: 0.3, edge: 0.5, learn: 20, floor: 0.03, flicker: true, influence: 0.5, xy: 0.5 } },
@@ -1889,6 +1891,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     if (raw.s && typeof raw.s === 'object') {
       L.s = {};
       FX_SLIDERS.forEach(sl => { if (typeof raw.s[sl.k] === 'number' && isFinite(raw.s[sl.k])) L.s[sl.k] = pr3(pnum(raw.s[sl.k], sl.min, sl.max, 0)); });
+      // A look saved before V.8 has no Void and was made without one: it loads with none, as it looked.
+      if (!phas(raw.s, 'fxVoid')) L.s.fxVoid = 0;
     }
     if (Array.isArray(raw.d)) {
       const old = raw.sv !== SCENE_SV;
@@ -2914,6 +2918,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   /* ══════════════════════════════════════════
      DRAW HELPERS
   ══════════════════════════════════════════ */
+  // How much void the scenes make room for: the Void slider as it stands this frame, held at
+  // nothing in idle (the water has its own exposure). The effects stage reads the same number.
+  const voidK = () => Math.max(0, Math.min(1, P.fxVoid)) * (1 - IDLE.e);
   const hsla = (h, s, l, a) => `hsla(${h % 360},${s}%,${l}%,${a})`;
   const blur = q => q.glow * 34;
   // More glow = longer trails; quiet scenes clear themselves faster.
@@ -2925,7 +2932,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   function wipe(D, base) {
     const c = D.cx;
     c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
-    c.fillStyle = `rgba(0,0,0,${base * (1 - TRAIL_P[trailIdx])})`;
+    // With a void the trails fall to black faster, so the dark is dark and not a smear of the last frame.
+    c.fillStyle = `rgba(0,0,0,${Math.min(1, base * (1 - TRAIL_P[trailIdx]) + (1 - base) * voidK() * 0.12)})`;
     c.fillRect(0, 0, D.cv.width, D.cv.height);
   }
 
@@ -2941,7 +2949,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
 
     wipe(D, fade(q));
 
-    const layers = Math.max(1, Math.round(1 + q.complexity * 4));
+    const layers = Math.max(1, Math.round((1 + q.complexity * 4) * (1 - 0.5 * voidK())));
     for (let l = 0; l < layers; l++) {
       const freq  = 1 + l * 0.7 + q.complexity;
       const phase = t * (0.4 + l * 0.15) * q.speed + l * Math.PI * 0.4;
@@ -2977,7 +2985,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
 
     const slices    = Math.round(4 + q.complexity * 8);
     const halfAngle = Math.PI / slices;
-    const R         = Math.min(W, H) * 0.42 * q.zoom;
+    const R         = Math.min(W, H) * 0.42 * q.zoom * (1 - 0.45 * voidK());
     const speed     = t * q.speed;
 
     // Build one wedge, then mirror + rotate it into every slice. Angles stay
@@ -3349,10 +3357,10 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     S.ph  += sec * (0.5 + Math.min(q.speed, 3) * 1.4 + bass * 0.9);
     S.rot += sec * (0.04 + q.spin * 1.2 + lt * 1.4 + mid * 0.35);
 
-    const n = Math.min(13, 5 + Math.round(Math.min(q.complexity, 3.5) * 2.3));
+    const n = Math.max(3, Math.round(Math.min(13, 5 + Math.round(Math.min(q.complexity, 3.5) * 2.3)) * (1 - 0.4 * voidK())));
     const warp = Math.min(1, lt + 0.12);
     const spread = m * (0.27 + 0.10 * mid + 0.07 * amp + 0.18 * warp);
-    const baseR  = m * (0.19 + 0.09 * D.intensity + 0.08 * amp + 0.10 * S.pulse + 0.08 * bass);
+    const baseR  = m * (0.19 + 0.09 * D.intensity + 0.08 * amp + 0.10 * S.pulse + 0.08 * bass) * (1 - 0.4 * voidK());
     const bright = 0.75 + Math.min(q.glow, 1) * 0.5 + S.pulse * 0.35;
     const hueBase = D.hue + D.drift + S.hueKick + S.ph * 10 * (0.5 + Math.min(q.colorSpeed, 2));
     const hueSpan = 360 * Math.max(0.25, Math.min(1, 0.3 + q.colorSpeed * 0.2));
@@ -3424,7 +3432,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   function drawWaves(D) {
     const ctx = D.cx, W = D.cv.width, H = D.cv.height;
     screenMode(ctx);
-    const t = D.ms * 0.001 * vjSpeed(D), n = 6 + (D.intensity * 10 | 0);
+    const t = D.ms * 0.001 * vjSpeed(D), n = Math.max(3, Math.round((6 + (D.intensity * 10 | 0)) * (1 - 0.5 * voidK())));
     const amp = H * 0.13 * (0.4 + D.intensity) * (1 + aud.mid * 2.2);
     const vOff = H * 0.28 * (1 + aud.bass * 0.6);
     const steps = Math.ceil(W / 3);
@@ -3447,7 +3455,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const ctx = D.cx, W = D.cv.width, H = D.cv.height;
     screenMode(ctx);
     const t = D.ms * 0.001 * vjSpeed(D), wa = (22 + D.intensity * 50) * (1 + aud.bass * 2.5);
-    const br = 42 + aud.flash * 35, cols = 10, rows = 7, segs = 36;
+    const br = 42 + aud.flash * 35, cols = Math.round(10 * (1 - 0.4 * voidK())), rows = Math.round(7 * (1 - 0.4 * voidK())), segs = 36;
     for (let i = 0; i <= cols; i++) {
       ctx.strokeStyle = `hsl(${(D.hue + i * 11) % 360},100%,${br}%)`; ctx.lineWidth = lwk(1);
       ctx.beginPath();
@@ -3647,7 +3655,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     uniform sampler2D uTex;
     uniform vec2  uRes;
     uniform float uTime, uMode, uModeA, uXf, uAmt, uScale, uAngle, uShift, uWarp, uThresh;
-    uniform float uNeg, uSat, uSeed, uRS, uZoom, uWhite;
+    uniform float uNeg, uSat, uSeed, uRS, uZoom, uWhite, uVoid;
     uniform vec2 uZoomC;
     uniform sampler2D uCam;
     uniform vec2  uCamFit;
@@ -3661,6 +3669,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     uniform vec4 uTgt[8];
     uniform float uTgtN, uFocus, uFocusDim;
     float gAmt, gWarp, gShift;
+    // gV: how much of the void this pixel is in (0 clear picture, 1 empty), set in main().
+    float gV;
 
     const float TAU = 6.28318530718;
 
@@ -3673,6 +3683,24 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     // Dim is not lit. Without this the dark ground still scraps together a dot
     // in every cell, and the picture loses the black it is meant to be set against.
     float gate(float L) { return smoothstep(0.10, 0.95, L); }
+
+    // NEGATIVE SPACE. A slow field of value noise (two octaves, in square units so the shapes
+    // are not stretched by the screen) drifting across the picture; where it is high the
+    // picture is held back. It is smoothed over a wide band, so a halftone, line or dot
+    // pattern thins out across many cells, not at a cut. uVoid raises or lowers the bar it
+    // has to clear: 0 is none anywhere (the old look exactly), 1 is most of the frame.
+    float vnoise(vec2 p) {
+      vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+    }
+    float voidAt(vec2 p) {
+      if (uVoid < 0.004) return 0.0;
+      vec2 q = p / uRes.y * 1.5 + vec2(uTime * 0.011, -uTime * 0.007);
+      float n = 0.65 * vnoise(q) + 0.35 * vnoise(q * 2.3 + 7.1);
+      n = (n - 0.5) * 1.8 + 0.5;                      // two octaves of value noise bunch up near the middle: stretch them
+      float lvl = mix(0.72, 0.30, clamp(uVoid, 0.0, 1.0));
+      return smoothstep(lvl - 0.13, lvl + 0.13, n) * smoothstep(0.0, 0.08, uVoid);
+    }
 
     // A wobble every effect shares, driven by gWarp.
     vec2 warpPx(vec2 px) {
@@ -3738,7 +3766,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       vec2 c = uRes * 0.5;
       vec2 q = rot(px - c, -uAngle);
       float row = floor(q.y / cell);
-      float amp = gAmt * cell * 2.4;
+      float amp = gAmt * cell * 2.4 * (1.0 - gV);
       float best = 0.0; vec3 bestCol = vec3(0.0);
       for (int k = -3; k <= 3; k++) {
         float ly = (row + float(k) + 0.5) * cell;
@@ -3746,8 +3774,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         float L = luma(s);
         float yd = ly + L * amp;
         float th = (0.05 + 0.5 * L) * cell * 0.5 + 0.4;
+        th *= 1.0 - 0.9 * gV;                                    // the lines thin toward the void
         float a = 1.0 - smoothstep(th - 0.8, th + 0.8, abs(q.y - yd));
-        a *= smoothstep(0.10, 0.24, L);
+        a *= smoothstep(0.10, 0.24, L) * (1.0 - smoothstep(0.7, 1.0, gV));
         if (a > best) { best = a; bestCol = s; }
       }
       return hueOf(bestCol) * best;
@@ -3767,9 +3796,10 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
           vec2 ctr = (cid + 0.15 + 0.7 * h) * cell;
           vec3 s = src(ctr);
           float L = luma(s);
-          float dens = clamp(pow(gate(L), 0.8) * (0.7 + gAmt * 0.9), 0.0, 1.0);
+          float vc = voidAt(ctr);
+          float dens = clamp(pow(gate(L), 0.8) * (0.7 + gAmt * 0.9), 0.0, 1.0) * (1.0 - vc);   // sparser toward the void
           float on = step(hash(cid * 1.7 + uSeed + 7.0), dens);
-          float r = cell * (0.16 + 0.14 * hash(cid + 3.3));
+          float r = cell * (0.16 + 0.14 * hash(cid + 3.3)) * (1.0 - 0.5 * vc);
           float a = (1.0 - smoothstep(r - 0.7, r + 0.7, length(px - ctr))) * on;
           if (a > best) { best = a; bestCol = s; }
         }
@@ -3790,6 +3820,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
           vec3 s = src(rot(cc, uAngle) + c);
           float L = luma(s);
           float r = sqrt(clamp(gate(L) * (0.8 + gAmt * 0.7), 0.0, 1.0)) * cell * 0.74;
+          r *= 1.0 - voidAt(rot(cc, uAngle) + c);                // the grid holds, the dots shrink to nothing
           float a = 1.0 - smoothstep(r - 0.9, r + 0.9, length(q - cc));
           acc = max(acc, hueOf(s) * a);
         }
@@ -3802,23 +3833,23 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     // sideways in time.
     vec3 fxRGB(vec2 px) {
       vec2 dir = vec2(cos(uAngle), sin(uAngle));
+      float gShiftV = gShift * (1.0 - gV);                      // the channels come back together in the void
       float band = floor(px.y / (12.0 * uRS));
       float tt = floor(uTime * 4.0);
       float g = hash(vec2(band, tt)) - 0.5;
       float slice = step(0.82 - gAmt * 0.25, hash(vec2(band * 1.3, tt + 9.0)));
       vec2 p = px + vec2(g * gAmt * 90.0 * uRS * slice, 0.0);
-      vec3 col = vec3(src(p + dir * gShift).r, src(p).g, src(p - dir * gShift).b);
-      col += vec3(src(p + dir * gShift * 2.0).r, 0.0, src(p - dir * gShift * 2.0).b) * 0.35;
+      vec3 col = vec3(src(p + dir * gShiftV).r, src(p).g, src(p - dir * gShiftV).b);
+      col += vec3(src(p + dir * gShiftV * 2.0).r, 0.0, src(p - dir * gShiftV * 2.0).b) * 0.35;
       col = (col - 0.5) * (1.3 + gAmt * 0.7) + 0.5;
       return clamp(col, 0.0, 1.0);
     }
 
-    // CMYK DISPLACE: four halftone plates on the classic screen angles, printed
-    // on paper. The picture is light on dark, which is the opposite of ink, so
-    // brightness here means ink: the dark ground stays bare paper and the lit
-    // shapes print. The black plate carries the picture on its own; the cyan,
-    // magenta and yellow plates are scaled by the saturation, so they stay off
-    // the page until a colour hit brings them in, each misregistered by gShift.
+    // CMYK DISPLACE: four halftone plates on the classic screen angles. Brightness
+    // means coverage: the dark ground stays empty and the lit shapes print, as white
+    // dots (the key plate, which carries the picture on its own). The cyan, magenta
+    // and yellow plates are scaled by the saturation, so they stay off until a
+    // colour hit brings them in, each misregistered by gShift.
     float cmykPlate(vec2 px, float ang, vec2 off, float which) {
       float cell = max(uScale * 0.8, 4.0);
       vec2 c = uRes * 0.5;
@@ -3834,6 +3865,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
           float v = which < 0.5 ? (1.0 - h.r) : (which < 1.5 ? (1.0 - h.g) : (which < 2.5 ? (1.0 - h.b) : 0.95));
           v *= L;
           if (which < 2.5) v *= uSat;
+          v *= 1.0 - gV;                                       // every plate's dots shrink away in the void
           float r = sqrt(clamp(v * (0.8 + gAmt * 0.5), 0.0, 1.0)) * cell * 0.76;
           cov = max(cov, 1.0 - smoothstep(r - 0.9, r + 0.9, length(q - cc)));
         }
@@ -3841,17 +3873,21 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       return cov;
     }
     vec3 fxCMYK(vec2 px) {
-      vec2 d = vec2(cos(uAngle), sin(uAngle)) * gShift;
+      vec2 d = vec2(cos(uAngle), sin(uAngle)) * gShift * (1.0 - gV);   // misregistration closes up in the void
       float cC = cmykPlate(px, uAngle + 0.262,  d,                  0.0);
       float cM = cmykPlate(px, uAngle + 1.309, -d,                  1.0);
       float cY = cmykPlate(px, uAngle,          vec2(d.y, -d.x),    2.0);
       float cK = cmykPlate(px, uAngle + 0.785,  vec2(0.0),          3.0);
-      vec3 col = vec3(0.96, 0.95, 0.92);
-      col *= mix(vec3(1.0), vec3(0.00, 0.68, 0.94), cC);
-      col *= mix(vec3(1.0), vec3(0.93, 0.00, 0.55), cM);
-      col *= mix(vec3(1.0), vec3(1.00, 0.93, 0.00), cY);
-      col *= mix(vec3(1.0), vec3(0.04),             cK);
-      return col;
+      // Light on dark like every other effect: the plates are added to a black ground, so the
+      // overlaps go to white (cyan, magenta and yellow together) and the black plate, which
+      // carries the picture, prints as white dots. (Until V.8 this printed ink on light paper
+      // and the effect read as the picture inverted.)
+      vec3 col = vec3(0.0);
+      col += cC * vec3(0.00, 0.68, 0.94);
+      col += cM * vec3(0.93, 0.00, 0.55);
+      col += cY * vec3(1.00, 0.93, 0.00);
+      col += cK * vec3(0.96, 0.95, 0.92);
+      return clamp(col, 0.0, 1.0);
     }
 
     // HIGH CONTRAST B/W: unsharp-masked luma against a hard threshold, with a
@@ -3863,10 +3899,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       float bl = 0.25 * (luma(src(px + vec2(rad, 0.0))) + luma(src(px - vec2(rad, 0.0)))
                        + luma(src(px + vec2(0.0, rad))) + luma(src(px - vec2(0.0, rad))));
       float v = L0 + (L0 - bl) * (1.0 + gAmt * 2.0);
+      v -= gV * 0.75;                                          // the void takes the whites first
       float n = fract(52.9829189 * fract(dot(px / max(uScale * 0.15, 1.0), vec2(0.06711056, 0.00583715))));
       float soft = mix(0.22, 0.015, clamp(gAmt, 0.0, 1.0));
       float t = mix(0.05, 0.75, uThresh);
-      float bw = smoothstep(t - soft, t + soft, v + (n - 0.5) * 0.35 * (1.0 - clamp(gAmt, 0.0, 1.0)));
+      float bw = smoothstep(t - soft, t + soft, v + (n - 0.5) * (0.35 * (1.0 - clamp(gAmt, 0.0, 1.0)) + 0.8 * gV));   // and its edge breaks up into dither
       return vec3(bw) * hueOf(s0);
     }
 
@@ -3893,7 +3930,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       float s = fract(dot(px, dir) / period + hash(bid + 8.7));
       vec3 s0 = src(px);
       float L = luma(s0);
-      float duty = clamp(0.24 + gate(L) * (1.0 + gAmt * 0.9) + (uThresh - 0.5) * 0.6, 0.08, 0.96);
+      float duty = clamp(0.24 + gate(L) * (1.0 + gAmt * 0.9) + (uThresh - 0.5) * 0.6, 0.08, 0.96) * (1.0 - gV);   // stripes thin out toward the void
       float aa = 1.2 / period;
       float st = 1.0 - smoothstep(duty - aa, duty + aa, s);
       if (hash(bid + 2.2) > 0.72) st = 1.0 - st;
@@ -3939,6 +3976,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       }
       float tg = mix(1.0 - uFocus, 1.0 + 0.3 * uFocus, m);
       gAmt = uAmt * tg; gWarp = uWarp * tg; gShift = uShift * tg;
+      // The void leaves the stage targets alone: where someone stands, the picture stays.
+      gV = voidAt(px);
+      if (uTgtN > 0.5) gV *= 1.0 - m;
       vec3 col = grade(effect(uMode, px), uMode);
       // Mid-dissolve: the look being left, blended out as the new one comes in.
       if (uXf < 0.999) {
@@ -3946,7 +3986,10 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         col = mix(prevCol, col, uXf);
       }
       col = mix(col, 1.0 - col, uNeg);
-      col *= mix(1.0 - uFocusDim, 1.0, m);
+      // Outside the targets and inside the void both dim the picture; take the stronger, not the
+      // product, so the two never stack into a black hole.
+      float vFloor = mix(1.0, 0.07, gV);
+      col *= min(mix(1.0 - uFocusDim, 1.0, m), vFloor);
       // The white level is the last thing to touch the picture, so it caps the strobe and
       // the flash (painted before this) and the negative as well. The glitch overlay needs
       // no copy of it: its frames are snapshots of this output, already scaled.
@@ -3982,7 +4025,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   `;
 
   const UNIFORMS = ['uTex', 'uRes', 'uTime', 'uMode', 'uModeA', 'uXf', 'uAmt', 'uScale', 'uAngle', 'uShift',
-                    'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS', 'uWhite',
+                    'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS', 'uWhite', 'uVoid',
                     'uCam', 'uCamFit', 'uCamMix', 'uCamBlend', 'uMirror', 'uCamBright', 'uCamContrast',
                     'uCamGamma', 'uCamBlack', 'uCamWhite', 'uCamSat', 'uCamTemp', 'uCamTint',
                     'uMot', 'uMotTexel', 'uMotMode', 'uMotBoost', 'uMotDim', 'uMotEdge', 'uZoom', 'uZoomC',
@@ -4149,6 +4192,12 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         fb2d.fillStyle = '#fff'; fb2d.fillRect(0, 0, W, H);
         fb2d.globalCompositeOperation = 'source-over';
       }
+      // ?nogl has no shader to cut a void in, so the void is a plain dark vignette.
+      { const vk = voidK(); if (vk > 0.01) {
+        const g = fb2d.createRadialGradient(W / 2, H / 2, Math.min(W, H) * (0.55 - 0.3 * vk), W / 2, H / 2, Math.hypot(W, H) / 2);
+        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,' + (0.85 * vk) + ')');
+        fb2d.fillStyle = g; fb2d.fillRect(0, 0, W, H);
+      } }
       if (CONFIG.white < 1) { fb2d.fillStyle = 'rgba(0,0,0,' + (1 - CONFIG.white) + ')'; fb2d.fillRect(0, 0, W, H); }
       mirrorFrame();
       return;
@@ -4220,6 +4269,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     gl.uniform1f(glLoc.uSeed, fxSeed);
     gl.uniform1f(glLoc.uRS, rs);
     gl.uniform1f(glLoc.uWhite, CONFIG.white);
+    gl.uniform1f(glLoc.uVoid, voidK());
     const tg = activeTargets(), tv = new Float32Array(32);
     tg.forEach((t, i) => { tv[i * 4] = t.x * W; tv[i * 4 + 1] = (1 - t.y) * H; tv[i * 4 + 2] = t.r * H; tv[i * 4 + 3] = 1; });
     gl.uniform4fv(glLoc.uTgt, tv);
@@ -5043,6 +5093,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     { k: 'fxShift',  label: 'Shift',     min: 0, max: 1.5, step: 0.01 },
     { k: 'fxWarp',   label: 'Warp',      min: 0, max: 1.5, step: 0.01 },
     { k: 'fxThresh', label: 'Threshold', min: 0, max: 1,   step: 0.01 },
+    { k: 'fxVoid',   label: 'Void',      min: 0, max: 1,   step: 0.01 },
     { k: 'fxColor',  label: 'Colour (resting)', min: 0, max: 1, step: 0.01 },
   ];
   const fxBtns = [], fxSliderEls = [], allowBtns = [], autoBtns = [], autoPreBtns = [];

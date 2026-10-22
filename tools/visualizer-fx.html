@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizer FX V.9 — Midwest Psych Fest</title>
+  <title>Visualizer FX V.10 — Midwest Psych Fest</title>
   <!--
     The Visualizer, put through a press. Everything the unified Visualizer does
     (two decks, ten scenes, a crossfader, gamepad / keyboard / MIDI, routed
@@ -1039,7 +1039,9 @@
       <div class="note">
         The <strong>party map</strong> is already loaded: bass pushes the effect's amount,
         warp and threshold and swells the scene; mids breathe the scale and complexity;
-        highs drive the RGB and CMYK shift and the glow. <strong>Mix</strong> means the loudest
+        highs drive the RGB and CMYK shift and the glow. On the scene layer, bass brightens the water,
+        highs raise the bubbles, the whole mix sets its speed and movement on camera stirs it, and with
+        the camera on the creatures and bubbles swim around whoever is moving. <strong>Mix</strong> means the loudest
         channel, so it works on any input. A negative depth pulls a parameter down instead of up.
       </div>
     </div>
@@ -1328,6 +1330,12 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     fxThresh:   { label: 'B/W threshold', rest: 0.50, idleGain: 0.00, max: 1.0 },
     fxVoid:     { label: 'Void',          rest: 0.35, idleGain: 0.00, max: 1.0 },
     fxColor:    { label: 'Colour',        rest: 0.00, idleGain: 0.00, max: 1.0 },
+    // The scene layer's own controls, 0 to 1 across the engine's range; each rest is the engine's default.
+    sceneBright:  { label: 'Scene brightness', rest: 0.50, idleGain: 0.00, max: 1.0 },
+    sceneSpeed:   { label: 'Scene speed',      rest: 0.31, idleGain: 0.00, max: 1.0 },
+    sceneWarp:    { label: 'Scene distortion', rest: 0.40, idleGain: 0.00, max: 1.0 },
+    sceneBubbles: { label: 'Scene bubbles',    rest: 0.60, idleGain: 0.00, max: 1.0 },
+    sceneFauna:   { label: 'Scene creatures',  rest: 0.60, idleGain: 0.00, max: 1.0 },
   };
 
   // Live resolved values + gamepad-only spatial values
@@ -1335,6 +1343,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     amplitude: 0, speed: 0, complexity: 0, colorSpeed: 0,
     glow: 0, zoom: 0, spin: 0, scatter: 0,
     fxAmount: 0, fxScale: 0, fxAngle: 0, fxShift: 0, fxWarp: 0, fxThresh: 0, fxVoid: 0, fxColor: 0,
+    sceneBright: 0, sceneSpeed: 0, sceneWarp: 0, sceneBubbles: 0, sceneFauna: 0,
     xShift: 0, yShift: 0, twist: 0, pitch: 0, camAxis: 0,
     ltrigger: 0, rtrigger: 0,
   };
@@ -1399,6 +1408,15 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     { ch: -1, band: 'full', target: 'colorSpeed', depth: 0.4 },
     { ch: -1, band: 'motion', target: 'fxAmount', depth: 0.5 },   // quiet until the camera is on and something moves
   ];
+  // The scene layer's share of the party map. Creatures are left off it: their number follows
+  // that control, so a beat on it would spawn and drop fish.
+  const SCENE_ROUTES = [
+    { ch: -1, band: 'low',  target: 'sceneBright',  depth: 0.6 },   // the water swells on the kick
+    { ch: -1, band: 'high', target: 'sceneBubbles', depth: 0.6 },
+    { ch: -1, band: 'full', target: 'sceneSpeed',   depth: 0.4 },
+    { ch: -1, band: 'motion', target: 'sceneWarp',  depth: 0.5 },   // movement on stage stirs it
+  ];
+  PARTY_ROUTES.push(...SCENE_ROUTES);
   const DEFAULTS = {
     v: 3,                      // bumped when a saved value from an older build has to be discarded
     deviceId: '', channels: 2,
@@ -1409,6 +1427,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     autoAfter: 10,                 // seconds without the controller before automated mode; 0 is off
     lineWidth: 1,                  // 0.3 to 3: a multiplier on every line the scenes draw; a look, so it is in the presets
     white: 1,                      // 0.1 to 1: the most the output may brighten; a venue setting, so not in the presets
+    sceneRoutes: true,             // the scene layer's routes are in the map (a map saved before V.10 gets them once)
     sceneOn: false,                // Scene layer (the underwater engine in tools/water/); a rig setting, so not in the presets
     sceneMode: 1,                  // which of its scenes, by the engine's own id (1 Caustics .. 5 Lines)
     sceneMix: 0.8,                 // 0 to 1: how strongly it is screened over the decks
@@ -1458,6 +1477,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         out.idleOn = out.idleOn !== false;
         out.targetsOn = !!out.targetsOn;
         out.sceneOn = !!out.sceneOn;
+        if (!saved.sceneRoutes && Array.isArray(out.routes)) { out.routes = out.routes.concat(JSON.parse(JSON.stringify(SCENE_ROUTES))); out.sceneRoutes = true; }
         out.sceneMode = SCENE_LAYER.some(t => t.id === +out.sceneMode) ? +out.sceneMode : DEFAULTS.sceneMode;
         out.sceneMix = Math.max(0, Math.min(1, isFinite(+saved.sceneMix) && saved.sceneMix != null ? +saved.sceneMix : DEFAULTS.sceneMix));
         out.focus = Math.max(0, Math.min(1, isFinite(+saved.focus) && saved.focus != null ? +saved.focus : DEFAULTS.focus));
@@ -3629,12 +3649,28 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   }
   function sceneLayerStop() {
     if (WATER.frame) WATER.frame.remove();
-    WATER.frame = WATER.api = null; WATER.fresh = false;
+    WATER.frame = WATER.api = WATER.sent = null; WATER.fresh = false;
   }
   function setSceneLayer(on) {
     CONFIG.sceneOn = !!on; save();
     if (CONFIG.sceneOn) sceneLayerStart(); else sceneLayerStop();
     renderSceneLayer();
+  }
+  // Each frame: the resolved scene targets (rest + routes + MIDI) go to the engine, and with the
+  // camera on, where it sees movement goes in as an object the creatures and bubbles swim around.
+  function sceneDrive() {
+    const api = WATER.api;
+    if (!api || !CONFIG.sceneOn) return;
+    const q = v => Math.round(v * 100) / 100;   // a hundredth is below what shows, and spares a message a frame for noise
+    const want = { brightness: q(P.sceneBright), speed: q(P.sceneSpeed), distortion: q(P.sceneWarp), bubbles: q(P.sceneBubbles), fauna: q(P.sceneFauna) };
+    const last = WATER.sent;
+    if (!last || Object.keys(want).some(k => want[k] !== last[k])) { api.setNormalized(want); WATER.sent = want; }
+    // Same place the Water deck scene drops its ripple: output space, mirroring already applied.
+    if (cam.on && MOVE.env > 0.05) api.setObstacles([{ x: 0.5 + 0.5 * MOVE.x, y: 0.5 - 0.5 * MOVE.y, r: 0.08 + 0.17 * Math.min(1, MOVE.env) }]);
+  }
+  function nextSceneLayer() {
+    const i = SCENE_LAYER.findIndex(t => t.id === CONFIG.sceneMode);
+    setSceneMode(SCENE_LAYER[(i + 1) % SCENE_LAYER.length].id);
   }
   function setSceneMode(id) {
     if (!SCENE_LAYER.some(t => t.id === id)) return;
@@ -4624,6 +4660,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     { id: 'fx-scl',  label: 'FX scale',         def: 78, set: v => { CONFIG.fx.fxScale  = v * TARGETS.fxScale.max; } },
     { id: 'cam-mix', label: 'Camera mix',       def: 79, set: v => { CONFIG.cam.mix = v; camLevel = v; } },
     { id: 'colour',  label: 'Colour (resting)', def: 80, set: v => { CONFIG.fx.fxColor = v; } },
+    { id: 'scn-mix', label: 'Scene mix',        def: 81, set: v => { CONFIG.sceneMix = v; renderSceneLayer(); } },
   ];
   // Each NOTE param: { id, label, def (default note), note (live), fn() }
   const NOTE_PARAMS = [
@@ -4631,6 +4668,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     { id: 'trails-c', label: 'Trails step',       def: 50, fn: () => stepTrails(1, true) },
     { id: 'a-scene',  label: 'Deck A next scene', def: 52, fn: () => cycleScene(0, 1) },
     { id: 'b-scene',  label: 'Deck B next scene', def: 53, fn: () => cycleScene(1, 1) },
+    { id: 'scn-on',   label: 'Scene layer on / off', def: 54, fn: () => setSceneLayer(!CONFIG.sceneOn) },
+    { id: 'scn-next', label: 'Scene layer next scene', def: 56, fn: () => nextSceneLayer() },
     { id: 'blackout', label: 'Blackout',          def: 55, fn: () => toggle('blackout') },
     { id: 'flash',    label: 'Flash',             def: 57, fn: () => { flashOp = 1; } },
     { id: 'freeze-a', label: 'Freeze A',          def: 59, fn: () => toggleFreeze(0) },
@@ -6284,6 +6323,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     hapticTick(now);
     if (aud.beat && LEV.raw.low > 0.5) startGlitch(now);
     resolveParams(now);
+    sceneDrive();
     updateActivity();
     updateIdle(now, dt);
 
@@ -6389,7 +6429,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       if (on) enterAdmin(); else leaveAdmin();
       resize(); syncUI();
     },
-    setScene, setXfade, setFx, colorHit, SCENES, OLD_SCENES, WATER, setSceneLayer, setSceneMode,
+    setScene, setXfade, setFx, colorHit, SCENES, OLD_SCENES, WATER, setSceneLayer, setSceneMode, nextSceneLayer, sceneDrive,
     PRE, pickPreset, pickBuiltin, pickSlot, savePreset, renamePreset, updatePreset, deletePreset, movePreset, captureLook, cleanLook, exportDoc, importDoc, pullPresets, pushPresets, presetTween, mergeRemote, signIn,
     setMode: m => setScene(0, m),
     axis(i, v) { VPAD.axes[i] = v; activateVirtual(); },

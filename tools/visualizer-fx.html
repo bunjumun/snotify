@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizer FX V.12 — Midwest Psych Fest</title>
+  <title>Visualizer FX V.13 — Midwest Psych Fest</title>
   <!--
     The Visualizer, put through a press. Everything the unified Visualizer does
     (two decks, ten scenes, a crossfader, gamepad / keyboard / MIDI, routed
@@ -2633,8 +2633,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     // belong to the effect) and the camera mix moved to the D-pad, so that both
     // crossfades live in one place.
     PAD.pitch    = 0;
-    PAD.ltrigger = (src.buttons[6] && src.buttons[6].value) || 0;
-    PAD.rtrigger = (src.buttons[7] && src.buttons[7].value) || 0;
+    // A curve on the triggers too, the other way: a half press already does most of the job,
+    // which is where a hand mid-show actually holds them.
+    const press = b => Math.pow((b && b.value) || 0, 0.6);
+    PAD.ltrigger = press(src.buttons[6]);
+    PAD.rtrigger = press(src.buttons[7]);
 
     if (pad) scan(pad.buttons, prevReal);
 
@@ -2669,8 +2672,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
        left stick  up / down      the effect's scale (cell and line size); it
                                   stays where it is left, like a fader
        right stick left / right   split it (RGB and CMYK separation)
-       right trigger              push the effect harder, and swell the scenes
-       left trigger               warp
+       right trigger              push the effect harder, and swell the scenes and the water
+       left trigger               warp, and stir the water
 
      and the mixer, which is the D-pad and nothing else:
 
@@ -2684,10 +2687,15 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       fxAngle:   P.xShift * 0.35,
       fxScale:   AUTO.scale,
       fxShift:   Math.abs(P.twist) * 1.2,
-      fxAmount:  P.rtrigger * 0.8,
-      amplitude: P.rtrigger * 1.2,
-      glow:      P.rtrigger * 0.35,
-      fxWarp:    P.ltrigger * 1.2,
+      fxAmount:  P.rtrigger * 1.0,
+      amplitude: P.rtrigger * 1.6,
+      glow:      P.rtrigger * 0.5,
+      fxWarp:    P.ltrigger * 1.4,
+      // and the same two gestures on the water, when the scene layer is on
+      sceneBright:  P.rtrigger * 0.45,
+      sceneBubbles: P.rtrigger * 0.4,
+      sceneWarp:    P.ltrigger * 0.6,
+      sceneSpeed:   P.ltrigger * 0.25,
     };
   }
 
@@ -3883,8 +3891,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     vec2 warpPx(vec2 px) {
       if (gWarp < 0.002) return px;
       vec2 q = px / uRes;
-      px.x += (sin(q.y * 18.0 + uTime * 2.0) * 14.0 + sin(q.y * 47.0 - uTime * 3.1) * 5.0) * gWarp * uRS;
-      px.y += sin(q.x * 14.0 - uTime * 1.7) * 10.0 * gWarp * uRS;
+      // Grows with its square above rest: the resting and audio wobble barely change, L2 held
+      // right down is about three times what it was.
+      float wk = gWarp * (1.0 + gWarp * gWarp);
+      px.x += (sin(q.y * 18.0 + uTime * 2.0) * 14.0 + sin(q.y * 47.0 - uTime * 3.1) * 5.0) * wk * uRS;
+      px.y += sin(q.x * 14.0 - uTime * 1.7) * 10.0 * wk * uRS;
       return px;
     }
     // The camera picture controls, in the order a photo editor applies them: colour

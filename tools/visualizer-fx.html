@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizer FX V.13 — Midwest Psych Fest</title>
+  <title>Visualizer FX V.14 — Midwest Psych Fest</title>
   <!--
     The Visualizer, put through a press. Everything the unified Visualizer does
     (two decks, ten scenes, a crossfader, gamepad / keyboard / MIDI, routed
@@ -3024,9 +3024,32 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   /* ══════════════════════════════════════════
      DRAW HELPERS
   ══════════════════════════════════════════ */
-  // How much void the scenes make room for: the Void slider as it stands this frame, held at
-  // nothing in idle (the water has its own exposure). The effects stage reads the same number.
+  /* NEGATIVE SPACE (CR-158). Until V.13 the Void slider drove a drifting noise mask in the
+     effects shader that dimmed whatever lay under it: a dark blob floating over the picture,
+     which is not what was asked for. Now the shader has no void at all, and each scene leaves
+     its own black, in a shape that belongs to it: the waves break into columns, the
+     kaleidoscope loses whole mirrored petals and its centre, the tunnels open into wedges,
+     the plasma blobs hollow into rings, the stars stream in lanes, the grid empties cell by
+     cell. Void sets how much of each composition is empty (0 is each scene as it was before
+     CR-149), and a kick still closes it a little on the beat through the default route. The
+     effects see that black like any other dark in the picture, so they edge it in their own
+     pattern without being told to. */
+  // The Void slider as it stands this frame, held at nothing in idle (the water has its own exposure).
   const voidK = () => Math.max(0, Math.min(1, P.fxVoid)) * (1 - IDLE.e);
+  // Is position u (0 to 1 along a line, round a circle) in a lit stretch? Of `k` equal
+  // stretches, the lit share of each is 1 - 0.85 v; `ph` slides them along, so a gap travels.
+  const lit = (u, v, k, ph) => v < 0.01 || ((u * k + ph) % 1 + 1) % 1 < 1 - 0.85 * v;
+  // 0 to 1 as v climbs from `at` to `at + 0.12`: an element fading out of the composition
+  // rather than popping, so the kick riding the slider breathes it rather than flickering.
+  const gone = (v, at) => Math.max(0, Math.min(1, (v - at) / 0.12));
+  // A pen for broken polylines: each step draws from the last point only while lit, so one
+  // path holds every dash and nothing is allocated. penAt() sets the first point.
+  const PEN = { down: false, x: 0, y: 0 };
+  function penAt(x, y) { PEN.down = false; PEN.x = x; PEN.y = y; }
+  function penTo(c, x, y, on) {
+    if (on) { if (!PEN.down) c.moveTo(PEN.x, PEN.y); c.lineTo(x, y); }
+    PEN.down = on; PEN.x = x; PEN.y = y;
+  }
   const hsla = (h, s, l, a) => `hsla(${h % 360},${s}%,${l}%,${a})`;
   const blur = q => q.glow * 34;
   // More glow = longer trails; quiet scenes clear themselves faster.
@@ -3055,7 +3078,10 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
 
     wipe(D, fade(q));
 
-    const layers = Math.max(1, Math.round((1 + q.complexity * 4) * (1 - 0.5 * voidK())));
+    const layers = Math.max(1, Math.round(1 + q.complexity * 4));
+    // The void: columns of black cut down through every layer at once, drifting sideways,
+    // each layer's cut a touch later than the last so the columns lean.
+    const vk = voidK(), cph = t * 0.03 * q.speed;
     for (let l = 0; l < layers; l++) {
       const freq  = 1 + l * 0.7 + q.complexity;
       const phase = t * (0.4 + l * 0.15) * q.speed + l * Math.PI * 0.4;
@@ -3075,7 +3101,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
           + Math.sin(nx * freq * Math.PI * 2 + phase) * amp
           + Math.sin(nx * freq * 3.7 * Math.PI + phase * 1.3) * amp * 0.3
           + q.pitch * H * 0.2;
-        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        x === 0 ? penAt(x, y) : penTo(ctx, x, y, lit(nx, vk, 3, cph + l * 0.025));
       }
       ctx.stroke();
     }
@@ -3091,7 +3117,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
 
     const slices    = Math.round(4 + q.complexity * 8);
     const halfAngle = Math.PI / slices;
-    const R         = Math.min(W, H) * 0.42 * q.zoom * (1 - 0.45 * voidK());
+    const R         = Math.min(W, H) * 0.42 * q.zoom;
+    const vk        = voidK();
     const speed     = t * q.speed;
 
     // Build one wedge, then mirror + rotate it into every slice. Angles stay
@@ -3111,15 +3138,23 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     ctx.rotate(q.spin * Math.PI + t * 0.15 * q.speed);
 
     for (let s = 0; s < slices; s++) {
+      // The void takes whole petals (a slice and its mirror together, so the symmetry holds),
+      // each at its own point on the slider, though every third pair stays so a flower is
+      // always left; and it hollows the middle out from the centre.
+      const pair = s >> 1;
+      const petal = pair % 3 === 0 ? 1 : 1 - gone(vk, 0.12 + 0.6 * ((pair * 0.618034) % 1));
+      if (petal <= 0) continue;
       ctx.save();
       ctx.rotate((s / slices) * Math.PI * 2);
       if (s % 2) ctx.scale(1, -1);   // mirrored slices are what sell the kaleidoscope
 
       for (const p of seed) {
+        const a = petal * (1 - gone(vk * 0.6, p.fi));
+        if (a <= 0) continue;
         const h = hue + p.fi * 180 + s * (360 / slices);
         ctx.beginPath();
         ctx.arc(p.x, p.y, Math.max(0.5, p.size), 0, Math.PI * 2);
-        ctx.fillStyle   = hsla(h, 100, 60, Math.min(0.8, 0.25 + q.glow * 0.6));
+        ctx.fillStyle   = hsla(h, 100, 60, a * Math.min(0.8, 0.25 + q.glow * 0.6));
         ctx.shadowColor = hsla(h, 100, 75, 0.9);
         ctx.shadowBlur  = blur(q);
         ctx.fill();
@@ -3253,12 +3288,16 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     let gain = 2.5 + q.glow * 6;
     if (IDLE.e > 0.01) gain *= 1 + IDLE.e * (Math.min(8, Math.max(1, 1.1 / (S.pk * gain))) - 1);
     const lx = WATER_LIGHT[0] * gain, ly = WATER_LIGHT[1] * gain, sky = 0.18 * gain;
+    // The void: the dim shallows drop to black and only the brighter crests stay, as islands of
+    // light; the ramp is stretched back over what is left so a crest still reaches white.
+    const fl = 0.5 * voidK(), fk = 1 / (1 - fl);
     let top = 0;
     for (let y = 1; y < h - 1; y++) {
       let i = y * w + 1, p = i * 4;
       for (let x = 1; x < w - 1; x++, i++, p += 4) {
         let v = -((a[i + 1] - a[i - 1]) * lx + (a[i + w] - a[i - w]) * ly) + Math.abs(a[i]) * sky;
         if (v > top) top = v;
+        v = (v - fl) * fk;
         v = v < 0 ? 0 : v > 1 ? 1 : v;
         const k = ((v * 255) | 0) * 3;
         d[p] = lut[k]; d[p + 1] = lut[k + 1]; d[p + 2] = lut[k + 2];
@@ -3368,6 +3407,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const rings  = Math.round(8 + T.cx * 8);
     const offset = T.ph % 1;
     const sides  = Math.round(4 + T.cx * 4);
+    // The void: three wedges of black opening from the vanishing point, turning slowly, cut
+    // out of every ring at the same screen angle so they read as one shape through the depth.
+    const vk = voidK(), wph = T.ang * 0.4;
 
     for (let r = rings; r >= 0; r--) {
       const fi    = ((r / rings) + offset) % 1;
@@ -3381,9 +3423,17 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         const ang = (i / sides) * Math.PI * 2 + rot;
         warpPt(T, Math.cos(ang) * s, Math.sin(ang) * s, fi);
         const x = cx + WP.x, y = cy + WP.y;
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        if (vk < 0.01) { i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); continue; }
+        // Each side is drawn or not by where its middle points, in short steps so a wedge's
+        // edge cuts across a side rather than taking the whole side or none of it.
+        if (i === 0) { penAt(x, y); continue; }
+        const x0 = PEN.x, y0 = PEN.y;
+        for (let k = 1; k <= 6; k++) {
+          const xs = x0 + (x - x0) * k / 6, ys = y0 + (y - y0) * k / 6;
+          penTo(ctx, xs, ys, lit(Math.atan2(ys - cy, xs - cx) / (Math.PI * 2) + 0.5, vk, 3, wph));
+        }
       }
-      ctx.closePath();
+      if (vk < 0.01) ctx.closePath();
       ctx.strokeStyle = hsla(h, 100, 60, Math.min(0.9, (0.25 + T.glow * 0.65) - fi * 0.25));
       ctx.lineWidth   = lwk((1 - fi) * 2.5 + 0.4 + T.glow * 2);
       ctx.shadowColor = hsla(h, 100, 75, 0.8);
@@ -3392,7 +3442,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
 
       // Inner rings only — filling the screen-sized outer rings stacks up
       // faster than the trail fade can clear and washes the scene grey.
-      if (r % 3 === 0 && size > 10 && fi < 0.5) {
+      if (vk < 0.01 && r % 3 === 0 && size > 10 && fi < 0.5) {
         ctx.fillStyle = hsla(h, 100, 50, 0.03 + T.glow * 0.05);
         ctx.fill();
       }
@@ -3417,7 +3467,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const T = tunnelFrame(D, 0.5 * vjSpeed(D), 0.6, Math.min(W, H));
     ctx.lineJoin = ctx.lineCap = 'round';
     const cx = W / 2, cy = H / 2, maxR = Math.hypot(cx, cy) * 1.1;
-    const rings = 10 + (D.intensity * 8 | 0);
+    const rings = 10 + (D.intensity * 8 | 0), vk = voidK();
     for (let i = rings; i >= 0; i--) {
       const ph = ((T.ph + i / rings) % 1), r = ph * maxR;
       const lw = (1.5 + D.intensity * 4) * (1 - ph * 0.6);
@@ -3425,9 +3475,21 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       ctx.strokeStyle = `hsl(${(D.hue + i * 28 + T.ph * 50) % 360},100%,${br}%)`;
       ctx.lineWidth = lwk(lw);
       warpPt(T, 0, 0, ph);
-      ctx.beginPath();
-      ctx.ellipse(cx + WP.x, cy + WP.y, r * (1 + T.st), r / (1 + T.st), T.sa + T.tw * ph, 0, Math.PI * 2);
-      ctx.stroke();
+      if (vk < 0.01) {
+        ctx.beginPath();
+        ctx.ellipse(cx + WP.x, cy + WP.y, r * (1 + T.st), r / (1 + T.st), T.sa + T.tw * ph, 0, Math.PI * 2);
+        ctx.stroke();
+        continue;
+      }
+      // The void: each ring opens into three arcs, the gaps a little further round on each
+      // ring out, so the black between them is a turning spiral rather than holes.
+      const span = Math.PI * 2 / 3 * (1 - 0.85 * vk), a0 = T.ang * 0.6 + ph * 2.2;
+      for (let g = 0; g < 3; g++) {
+        const a = a0 + g * Math.PI * 2 / 3;
+        ctx.beginPath();
+        ctx.ellipse(cx + WP.x, cy + WP.y, r * (1 + T.st), r / (1 + T.st), T.sa + T.tw * ph, a, a + span);
+        ctx.stroke();
+      }
     }
   }
 
@@ -3463,10 +3525,14 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     S.ph  += sec * (0.5 + Math.min(q.speed, 3) * 1.4 + bass * 0.9);
     S.rot += sec * (0.04 + q.spin * 1.2 + lt * 1.4 + mid * 0.35);
 
-    const n = Math.max(3, Math.round(Math.min(13, 5 + Math.round(Math.min(q.complexity, 3.5) * 2.3)) * (1 - 0.4 * voidK())));
+    const n = Math.min(13, 5 + Math.round(Math.min(q.complexity, 3.5) * 2.3));
     const warp = Math.min(1, lt + 0.12);
     const spread = m * (0.27 + 0.10 * mid + 0.07 * amp + 0.18 * warp);
-    const baseR  = m * (0.19 + 0.09 * D.intensity + 0.08 * amp + 0.10 * S.pulse + 0.08 * bass) * (1 - 0.4 * voidK());
+    const baseR  = m * (0.19 + 0.09 * D.intensity + 0.08 * amp + 0.10 * S.pulse + 0.08 * bass);
+    // The void hollows every blob into a ring with black at its heart, the hole up to about
+    // half its radius; where rings overlap the screen blend lights the crossings, and the
+    // holes leave the black between them shaped like the blobs themselves.
+    const hole = 0.5 * voidK();
     const bright = 0.75 + Math.min(q.glow, 1) * 0.5 + S.pulse * 0.35;
     const hueBase = D.hue + D.drift + S.hueKick + S.ph * 10 * (0.5 + Math.min(q.colorSpeed, 2));
     const hueSpan = 360 * Math.max(0.25, Math.min(1, 0.3 + q.colorSpeed * 0.2));
@@ -3484,8 +3550,12 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       const r = baseR * (0.7 + 0.5 * Math.sin(S.ph * 1.1 + i * 1.9));
       const hue = (hueBase + (i / n) * hueSpan) % 360;
       const g = ctx.createRadialGradient(px, py, 0, px, py, r);
-      g.addColorStop(0,   `hsla(${hue},100%,${Math.min(92, 58 + 14 * bright + aud.flash * 20)}%,1)`);
-      g.addColorStop(0.5, `hsla(${(hue + 45) % 360},100%,${28 + 10 * bright}%,0.8)`);
+      if (hole > 0.005) {
+        g.addColorStop(0, `hsla(${hue},100%,5%,0)`);
+        g.addColorStop(hole, `hsla(${hue},100%,5%,0)`);
+      }
+      g.addColorStop(hole > 0.005 ? hole + 0.1 : 0, `hsla(${hue},100%,${Math.min(92, 58 + 14 * bright + aud.flash * 20)}%,1)`);
+      g.addColorStop(0.5 + hole * 0.6, `hsla(${(hue + 45) % 360},100%,${28 + 10 * bright}%,0.8)`);
       g.addColorStop(1,   `hsla(${hue},100%,5%,0)`);
       ctx.fillStyle = g; ctx.fillRect(px - r, py - r, r * 2, r * 2);
 
@@ -3500,8 +3570,12 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   }
 
   /* ── SCENE 7 — STARS ── */
-  function spawnStar(s, hue, speedMult, W, H) {
-    const a = Math.random() * Math.PI * 2, spd = (0.6 + Math.random() * 3.5) * (speedMult || 1);
+  // With a void (`v`), stars leave only along five lanes turning slowly with `lph`, so the
+  // black between the streams is a set of wedges rather than a sky with fewer stars.
+  function spawnStar(s, hue, speedMult, W, H, v, lph) {
+    let a = Math.random() * Math.PI * 2;
+    if (v > 0.01) a = ((a / (Math.PI * 2) * 5) | 0) * Math.PI * 2 / 5 + lph + (Math.random() - 0.5) * Math.PI * 2 / 5 * (1 - v) * (1 - v);
+    const spd = (0.6 + Math.random() * 3.5) * (speedMult || 1);
     s.x = W / 2 + (Math.random() - 0.5) * 30; s.y = H / 2 + (Math.random() - 0.5) * 30;
     s.vx = Math.cos(a) * spd; s.vy = Math.sin(a) * spd;
     s.life = 0; s.maxLife = 80 + Math.random() * 140;
@@ -3513,17 +3587,20 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     if (!D.stars.length) {
       for (let i = 0; i < 280; i++) {
         const s = { x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 100, hue: 0, sz: 1 };
-        spawnStar(s, D.hue, 1, W, H);
+        spawnStar(s, D.hue, 1, W, H, voidK(), D.ms * 0.00005);
         s.life = Math.random() * s.maxLife;
         D.stars.push(s);
       }
     }
     ctx.globalCompositeOperation = 'screen';
     const sp = vjSpeed(D), bm = 1 + aud.flash * 3.5, sm = 1 + aud.mid * 0.8;
-    for (const s of D.stars) {
+    const vk = voidK(), lph = D.ms * 0.00005, keep = D.stars.length * (1 - 0.6 * vk);
+    for (let si = 0; si < D.stars.length; si++) {
+      const s = D.stars[si];
       if (!D.frozen) { s.x += s.vx * sp * bm; s.y += s.vy * sp * bm; s.life++; }
       if (s.x < -20 || s.x > W + 20 || s.y < -20 || s.y > H + 20 || s.life >= s.maxLife)
-        if (!D.frozen) spawnStar(s, D.hue, 1 + aud.bass * 2, W, H);
+        if (!D.frozen) spawnStar(s, D.hue, 1 + aud.bass * 2, W, H, vk, lph);
+      if (si >= keep) continue;   // and the streams thin toward constellations
       const tt = s.life / s.maxLife;
       const fd = tt < 0.15 ? tt / 0.15 : 1 - (tt - 0.15) / 0.85;
       const sz = s.sz * (1 + tt * 2.5 * D.intensity) * sm;
@@ -3538,7 +3615,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   function drawWaves(D) {
     const ctx = D.cx, W = D.cv.width, H = D.cv.height;
     screenMode(ctx);
-    const t = D.ms * 0.001 * vjSpeed(D), n = Math.max(3, Math.round((6 + (D.intensity * 10 | 0)) * (1 - 0.5 * voidK())));
+    const t = D.ms * 0.001 * vjSpeed(D), n = 6 + (D.intensity * 10 | 0), vk = voidK();
     const amp = H * 0.13 * (0.4 + D.intensity) * (1 + aud.mid * 2.2);
     const vOff = H * 0.28 * (1 + aud.bass * 0.6);
     const steps = Math.ceil(W / 3);
@@ -3550,7 +3627,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       ctx.beginPath();
       for (let xi = 0; xi <= steps; xi++) {
         const x = xi / steps * W, y = yBase + Math.sin(x / W * Math.PI * 2 * freq + t + ph) * amp;
-        xi === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        // The void breaks every line into two dashes, each line's a step on from the last,
+        // so the gaps line up into black channels running diagonally across the bundle.
+        xi === 0 ? penAt(x, y) : penTo(ctx, x, y, lit(xi / steps, vk, 2, t * 0.04 + i / n * 0.3));
       }
       ctx.stroke();
     }
@@ -3561,13 +3640,17 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const ctx = D.cx, W = D.cv.width, H = D.cv.height;
     screenMode(ctx);
     const t = D.ms * 0.001 * vjSpeed(D), wa = (22 + D.intensity * 50) * (1 + aud.bass * 2.5);
-    const br = 42 + aud.flash * 35, cols = Math.round(10 * (1 - 0.4 * voidK())), rows = Math.round(7 * (1 - 0.4 * voidK())), segs = 36;
+    const br = 42 + aud.flash * 35, cols = 10, rows = 7, segs = 36, vk = voidK();
+    // The void empties cells, each at its own point on the slider, and a line is drawn only
+    // where it borders a cell still lit: the dark cells become black islands with no edge.
+    const cell = (ci, rj) => ci >= 0 && ci < cols && rj >= 0 && rj < rows && (((ci * 7 + rj * 13) * 0.618034) % 1) >= vk * 0.9;
     for (let i = 0; i <= cols; i++) {
       ctx.strokeStyle = `hsl(${(D.hue + i * 11) % 360},100%,${br}%)`; ctx.lineWidth = lwk(1);
       ctx.beginPath();
       for (let j = 0; j <= segs; j++) {
         const p = j / segs, x = i * (W / cols) + Math.sin(p * Math.PI * 2 + t * 1.2 + i * 0.55) * wa, y = p * H;
-        j === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        const rj = Math.min(rows - 1, ((j - 0.5) / segs * rows) | 0);
+        j === 0 ? penAt(x, y) : penTo(ctx, x, y, vk < 0.01 || cell(i - 1, rj) || cell(i, rj));
       }
       ctx.stroke();
     }
@@ -3576,7 +3659,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       ctx.beginPath();
       for (let i = 0; i <= segs; i++) {
         const p = i / segs, y = j * (H / rows) + Math.sin(p * Math.PI * 2 + t * 0.85 + j * 0.65) * wa, x = p * W;
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        const ci = Math.min(cols - 1, ((i - 0.5) / segs * cols) | 0);
+        i === 0 ? penAt(x, y) : penTo(ctx, x, y, vk < 0.01 || cell(ci, j - 1) || cell(ci, j));
       }
       ctx.stroke();
     }
@@ -3591,6 +3675,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const cx = W / 2, cy = H / 2;
     const arms = 2 + (D.intensity * 4 | 0), maxR = Math.hypot(cx, cy);
     const twists = 3 + D.intensity * 3, steps = 360;
+    // The void opens a black eye at the centre and breaks each arm into four strokes that
+    // stream along it, so the spiral is drawn as much by its gaps as by its lines.
+    const vk = voidK(), eye = 0.35 * vk;
     for (let arm = 0; arm < arms; arm++) {
       const base = (arm / arms) * Math.PI * 2 + T.ph;
       ctx.strokeStyle = `hsl(${(D.hue + arm * (360 / arms)) % 360},100%,58%)`;
@@ -3599,7 +3686,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       for (let i = 0; i <= steps; i++) {
         const p = i / steps, r = p * maxR, ang = base + p * Math.PI * 2 * twists + T.tw * p;
         warpPt(T, Math.cos(ang) * r, Math.sin(ang) * r, p);
-        i === 0 ? ctx.moveTo(cx + WP.x, cy + WP.y) : ctx.lineTo(cx + WP.x, cy + WP.y);
+        i === 0 ? penAt(cx + WP.x, cy + WP.y) : penTo(ctx, cx + WP.x, cy + WP.y, p > eye && lit(p, vk, 4, -T.ph * 0.5 + arm * 0.25));
       }
       ctx.stroke();
     }
@@ -3633,12 +3720,16 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const cx = W / 2 + T.vx * W, cy = H / 2 + T.vy * H;
     const maxR = Math.hypot(Math.max(cx, W - cx), Math.max(cy, H - cy)) * 1.05;
     const n = Math.round(110 + T.cx * 40), stretch = 1 + 1.6 * T.rt + 0.5 * T.bass;
+    // The void: the streaks keep to three sectors that turn slowly, leaving wedges of black
+    // between them that rush outward with the lines.
+    const vk = voidK();
     for (let i = 0; i < n; i++) {
       const sd = (i * 0.61803398875) % 1, sd2 = (i * 0.7548776662) % 1;     // fixed per line, spread evenly
       const p = (T.ph * (0.6 + sd2 * 0.8) + sd) % 1;                         // how far out this line's head is
       const r0 = Math.pow(p, 2.2) * maxR;
       const r1 = Math.min(maxR * 1.2, r0 + (0.08 + 0.55 * p) * maxR * stretch * (0.6 + sd2));
       const ang = (i / n) * Math.PI * 2 + (sd - 0.5) * 0.35 + T.ang * 0.2;
+      if (!lit(ang / (Math.PI * 2), vk, 3, -T.ang * 0.15)) continue;
       const c = Math.cos(ang), s = Math.sin(ang);
       warpPt(T, c * r0, s * r0, p); const x0 = cx + WP.x, y0 = cy + WP.y;
       warpPt(T, c * r1, s * r1, Math.min(1, r1 / maxR)); const x1 = cx + WP.x, y1 = cy + WP.y;
@@ -3839,7 +3930,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     uniform sampler2D uTex;
     uniform vec2  uRes;
     uniform float uTime, uMode, uModeA, uXf, uAmt, uScale, uAngle, uShift, uWarp, uThresh;
-    uniform float uNeg, uSat, uSeed, uRS, uZoom, uWhite, uVoid, uBlack, uKeyOn, uKeyGrid;
+    uniform float uNeg, uSat, uSeed, uRS, uZoom, uWhite, uBlack, uKeyOn, uKeyGrid;
     uniform mat3 uKey;
     uniform vec2 uZoomC;
     uniform sampler2D uCam;
@@ -3854,8 +3945,6 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     uniform vec4 uTgt[8];
     uniform float uTgtN, uFocus, uFocusDim;
     float gAmt, gWarp, gShift;
-    // gV: how much of the void this pixel is in (0 clear picture, 1 empty), set in main().
-    float gV;
 
     const float TAU = 6.28318530718;
 
@@ -3868,24 +3957,6 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     // Dim is not lit. Without this the dark ground still scraps together a dot
     // in every cell, and the picture loses the black it is meant to be set against.
     float gate(float L) { return smoothstep(0.10, 0.95, L); }
-
-    // NEGATIVE SPACE. A slow field of value noise (two octaves, in square units so the shapes
-    // are not stretched by the screen) drifting across the picture; where it is high the
-    // picture is held back. It is smoothed over a wide band, so a halftone, line or dot
-    // pattern thins out across many cells, not at a cut. uVoid raises or lowers the bar it
-    // has to clear: 0 is none anywhere (the old look exactly), 1 is most of the frame.
-    float vnoise(vec2 p) {
-      vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-      return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
-    }
-    float voidAt(vec2 p) {
-      if (uVoid < 0.004) return 0.0;
-      vec2 q = p / uRes.y * 1.5 + vec2(uTime * 0.011, -uTime * 0.007);
-      float n = 0.65 * vnoise(q) + 0.35 * vnoise(q * 2.3 + 7.1);
-      n = (n - 0.5) * 1.8 + 0.5;                      // two octaves of value noise bunch up near the middle: stretch them
-      float lvl = mix(0.72, 0.30, clamp(uVoid, 0.0, 1.0));
-      return smoothstep(lvl - 0.13, lvl + 0.13, n) * smoothstep(0.0, 0.08, uVoid);
-    }
 
     // A wobble every effect shares, driven by gWarp.
     vec2 warpPx(vec2 px) {
@@ -3954,7 +4025,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       vec2 c = uRes * 0.5;
       vec2 q = rot(px - c, -uAngle);
       float row = floor(q.y / cell);
-      float amp = gAmt * cell * 2.4 * (1.0 - gV);
+      float amp = gAmt * cell * 2.4;
       float best = 0.0; vec3 bestCol = vec3(0.0);
       for (int k = -3; k <= 3; k++) {
         float ly = (row + float(k) + 0.5) * cell;
@@ -3962,9 +4033,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         float L = luma(s);
         float yd = ly + L * amp;
         float th = (0.05 + 0.5 * L) * cell * 0.5 + 0.4;
-        th *= 1.0 - 0.9 * gV;                                    // the lines thin toward the void
         float a = 1.0 - smoothstep(th - 0.8, th + 0.8, abs(q.y - yd));
-        a *= smoothstep(0.10, 0.24, L) * (1.0 - smoothstep(0.7, 1.0, gV));
+        a *= smoothstep(0.10, 0.24, L);
         if (a > best) { best = a; bestCol = s; }
       }
       return hueOf(bestCol) * best;
@@ -3984,10 +4054,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
           vec2 ctr = (cid + 0.15 + 0.7 * h) * cell;
           vec3 s = src(ctr);
           float L = luma(s);
-          float vc = voidAt(ctr);
-          float dens = clamp(pow(gate(L), 0.8) * (0.7 + gAmt * 0.9), 0.0, 1.0) * (1.0 - vc);   // sparser toward the void
+          float dens = clamp(pow(gate(L), 0.8) * (0.7 + gAmt * 0.9), 0.0, 1.0);
           float on = step(hash(cid * 1.7 + uSeed + 7.0), dens);
-          float r = cell * (0.16 + 0.14 * hash(cid + 3.3)) * (1.0 - 0.5 * vc);
+          float r = cell * (0.16 + 0.14 * hash(cid + 3.3));
           float a = (1.0 - smoothstep(r - 0.7, r + 0.7, length(px - ctr))) * on;
           if (a > best) { best = a; bestCol = s; }
         }
@@ -4008,7 +4077,6 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
           vec3 s = src(rot(cc, uAngle) + c);
           float L = luma(s);
           float r = sqrt(clamp(gate(L) * (0.8 + gAmt * 0.7), 0.0, 1.0)) * cell * 0.74;
-          r *= 1.0 - voidAt(rot(cc, uAngle) + c);                // the grid holds, the dots shrink to nothing
           float a = 1.0 - smoothstep(r - 0.9, r + 0.9, length(q - cc));
           acc = max(acc, hueOf(s) * a);
         }
@@ -4021,14 +4089,13 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     // sideways in time.
     vec3 fxRGB(vec2 px) {
       vec2 dir = vec2(cos(uAngle), sin(uAngle));
-      float gShiftV = gShift * (1.0 - gV);                      // the channels come back together in the void
       float band = floor(px.y / (12.0 * uRS));
       float tt = floor(uTime * 4.0);
       float g = hash(vec2(band, tt)) - 0.5;
       float slice = step(0.82 - gAmt * 0.25, hash(vec2(band * 1.3, tt + 9.0)));
       vec2 p = px + vec2(g * gAmt * 90.0 * uRS * slice, 0.0);
-      vec3 col = vec3(src(p + dir * gShiftV).r, src(p).g, src(p - dir * gShiftV).b);
-      col += vec3(src(p + dir * gShiftV * 2.0).r, 0.0, src(p - dir * gShiftV * 2.0).b) * 0.35;
+      vec3 col = vec3(src(p + dir * gShift).r, src(p).g, src(p - dir * gShift).b);
+      col += vec3(src(p + dir * gShift * 2.0).r, 0.0, src(p - dir * gShift * 2.0).b) * 0.35;
       col = (col - 0.5) * (1.3 + gAmt * 0.7) + 0.5;
       return clamp(col, 0.0, 1.0);
     }
@@ -4053,7 +4120,6 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
           float v = which < 0.5 ? (1.0 - h.r) : (which < 1.5 ? (1.0 - h.g) : (which < 2.5 ? (1.0 - h.b) : 0.95));
           v *= L;
           if (which < 2.5) v *= uSat;
-          v *= 1.0 - gV;                                       // every plate's dots shrink away in the void
           float r = sqrt(clamp(v * (0.8 + gAmt * 0.5), 0.0, 1.0)) * cell * 0.76;
           cov = max(cov, 1.0 - smoothstep(r - 0.9, r + 0.9, length(q - cc)));
         }
@@ -4061,7 +4127,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       return cov;
     }
     vec3 fxCMYK(vec2 px) {
-      vec2 d = vec2(cos(uAngle), sin(uAngle)) * gShift * (1.0 - gV);   // misregistration closes up in the void
+      vec2 d = vec2(cos(uAngle), sin(uAngle)) * gShift;
       float cC = cmykPlate(px, uAngle + 0.262,  d,                  0.0);
       float cM = cmykPlate(px, uAngle + 1.309, -d,                  1.0);
       float cY = cmykPlate(px, uAngle,          vec2(d.y, -d.x),    2.0);
@@ -4087,11 +4153,10 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       float bl = 0.25 * (luma(src(px + vec2(rad, 0.0))) + luma(src(px - vec2(rad, 0.0)))
                        + luma(src(px + vec2(0.0, rad))) + luma(src(px - vec2(0.0, rad))));
       float v = L0 + (L0 - bl) * (1.0 + gAmt * 2.0);
-      v -= gV * 0.75;                                          // the void takes the whites first
       float n = fract(52.9829189 * fract(dot(px / max(uScale * 0.15, 1.0), vec2(0.06711056, 0.00583715))));
       float soft = mix(0.22, 0.015, clamp(gAmt, 0.0, 1.0));
       float t = mix(0.05, 0.75, uThresh);
-      float bw = smoothstep(t - soft, t + soft, v + (n - 0.5) * (0.35 * (1.0 - clamp(gAmt, 0.0, 1.0)) + 0.8 * gV));   // and its edge breaks up into dither
+      float bw = smoothstep(t - soft, t + soft, v + (n - 0.5) * (0.35 * (1.0 - clamp(gAmt, 0.0, 1.0))));
       return vec3(bw) * hueOf(s0);
     }
 
@@ -4118,7 +4183,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       float s = fract(dot(px, dir) / period + hash(bid + 8.7));
       vec3 s0 = src(px);
       float L = luma(s0);
-      float duty = clamp(0.24 + gate(L) * (1.0 + gAmt * 0.9) + (uThresh - 0.5) * 0.6, 0.08, 0.96) * (1.0 - gV);   // stripes thin out toward the void
+      float duty = clamp(0.24 + gate(L) * (1.0 + gAmt * 0.9) + (uThresh - 0.5) * 0.6, 0.08, 0.96);
       float aa = 1.2 / period;
       float st = 1.0 - smoothstep(duty - aa, duty + aa, s);
       if (hash(bid + 2.2) > 0.72) st = 1.0 - st;
@@ -4178,9 +4243,6 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       }
       float tg = mix(1.0 - uFocus, 1.0 + 0.3 * uFocus, m);
       gAmt = uAmt * tg; gWarp = uWarp * tg; gShift = uShift * tg;
-      // The void leaves the stage targets alone: where someone stands, the picture stays.
-      gV = voidAt(px);
-      if (uTgtN > 0.5) gV *= 1.0 - m;
       vec3 col = grade(effect(uMode, px), uMode);
       // Mid-dissolve: the look being left, blended out as the new one comes in.
       if (uXf < 0.999) {
@@ -4188,10 +4250,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         col = mix(prevCol, col, uXf);
       }
       col = mix(col, 1.0 - col, uNeg);
-      // Outside the targets and inside the void both dim the picture; take the stronger, not the
-      // product, so the two never stack into a black hole.
-      float vFloor = mix(1.0, 0.07, gV);
-      col *= min(mix(1.0 - uFocusDim, 1.0, m), vFloor);
+      // Outside the stage targets the picture dims.
+      col *= mix(1.0 - uFocusDim, 1.0, m);
       // The white level is the last thing to touch the picture, so it caps the strobe and
       // the flash (painted before this) and the negative as well. The glitch overlay needs
       // no copy of it: its frames are snapshots of this output, already scaled.
@@ -4228,7 +4288,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   `;
 
   const UNIFORMS = ['uTex', 'uRes', 'uTime', 'uMode', 'uModeA', 'uXf', 'uAmt', 'uScale', 'uAngle', 'uShift',
-                    'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS', 'uWhite', 'uVoid', 'uBlack', 'uKeyOn', 'uKeyGrid', 'uKey',
+                    'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS', 'uWhite', 'uBlack', 'uKeyOn', 'uKeyGrid', 'uKey',
                     'uCam', 'uCamFit', 'uCamMix', 'uCamBlend', 'uMirror', 'uCamBright', 'uCamContrast',
                     'uCamGamma', 'uCamBlack', 'uCamWhite', 'uCamSat', 'uCamTemp', 'uCamTint',
                     'uMot', 'uMotTexel', 'uMotMode', 'uMotBoost', 'uMotDim', 'uMotEdge', 'uZoom', 'uZoomC',
@@ -4395,12 +4455,6 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         fb2d.fillStyle = '#fff'; fb2d.fillRect(0, 0, W, H);
         fb2d.globalCompositeOperation = 'source-over';
       }
-      // ?nogl has no shader to cut a void in, so the void is a plain dark vignette.
-      { const vk = voidK(); if (vk > 0.01) {
-        const g = fb2d.createRadialGradient(W / 2, H / 2, Math.min(W, H) * (0.55 - 0.3 * vk), W / 2, H / 2, Math.hypot(W, H) / 2);
-        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,' + (0.85 * vk) + ')');
-        fb2d.fillStyle = g; fb2d.fillRect(0, 0, W, H);
-      } }
       if (CONFIG.white < 1) { fb2d.fillStyle = 'rgba(0,0,0,' + (1 - CONFIG.white) + ')'; fb2d.fillRect(0, 0, W, H); }
       if (CONFIG.black > 0 && !FLAGS.blackout) { fb2d.globalCompositeOperation = 'lighten'; fb2d.fillStyle = 'rgba(255,255,255,' + Math.min(CONFIG.black, CONFIG.white) + ')'; fb2d.fillRect(0, 0, W, H); fb2d.globalCompositeOperation = 'source-over'; }
       mirrorFrame();
@@ -4477,7 +4531,6 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     gl.uniform1f(glLoc.uKeyOn, CONFIG.keyOn ? 1 : 0);
     gl.uniform1f(glLoc.uKeyGrid, CONFIG.keyOn && CONFIG.keyGrid ? 1 : 0);
     if (CONFIG.keyOn) gl.uniformMatrix3fv(glLoc.uKey, false, keyInverse());
-    gl.uniform1f(glLoc.uVoid, voidK());
     const tg = activeTargets(), tv = new Float32Array(32);
     tg.forEach((t, i) => { tv[i * 4] = t.x * W; tv[i * 4 + 1] = (1 - t.y) * H; tv[i * 4 + 2] = t.r * H; tv[i * 4 + 3] = 1; });
     gl.uniform4fv(glLoc.uTgt, tv);

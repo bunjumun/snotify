@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizer FX V.14 — Midwest Psych Fest</title>
+  <title>Visualizer FX V.15 — Midwest Psych Fest</title>
   <!--
     The Visualizer, put through a press. Everything the unified Visualizer does
     (two decks, ten scenes, a crossfader, gamepad / keyboard / MIDI, routed
@@ -1021,10 +1021,21 @@
         <span>Scene mix <em id="scn-mix-val">0.80</em></span>
         <input type="range" id="scn-mix" min="0" max="1" step="0.01" value="0.8" />
       </label>
+      <label class="fld">
+        <span>Blend</span>
+        <select id="scn-blend">
+          <option value="add">Add over the decks</option>
+          <option value="dissolve">Dissolve: decks fade as it rises</option>
+        </select>
+      </label>
+      <canvas id="scn-prev" width="320" height="180" style="width:100%;height:auto;border:1px solid rgba(255,255,255,0.12);border-radius:6px;background:#000;cursor:ns-resize;touch-action:none;margin-top:6px"></canvas>
       <div class="note keep" id="scn-note">
-        Underwater light (caustics, rays, deep water, rising liquid, line art) laid over the decks
-        and through the effects. It is its own layer, so it runs whatever the decks are showing.
+        Drag the <strong>ceiling</strong> line down from the top to where the ceiling starts on the real wall,
+        and the <strong>floor</strong> line up from the bottom to where the floor starts. Ceiling at the top edge
+        and floor at the bottom edge means no ceiling or floor, just the wall.
       </div>
+      <div id="scn-params"></div>
+      <button class="btn ghost wide" id="scn-reset">Reset scene settings</button>
     </div>
 
     <div class="sect" data-tab="show">
@@ -1474,6 +1485,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     key: [[0, 0], [1, 0], [1, 1], [0, 1]],   // TL, TR, BR, BL, 0..1 from the top left of the output
     keyGrid: false,                // a test grid on the output while lining the corners up
     sceneRoutes: true,             // the scene layer's routes are in the map (a map saved before V.10 gets them once)
+    sceneParams: {},               // the engine's own settings the user has moved (real units, by its parameter id), re-sent whenever it starts
+    sceneRest: {},                 // resting levels of the routed scene targets (sceneBright ...), 0..1
+    sceneBlend: 'add',             // 'add' lays the layer over the decks; 'dissolve' fades the decks out as it comes up
     sceneOn: false,                // Scene layer (the underwater engine in tools/water/); a rig setting, so not in the presets
     sceneMode: 1,                  // which of its scenes, by the engine's own id (1 Caustics .. 5 Lines)
     sceneMix: 0.8,                 // 0 to 1: how strongly it is screened over the decks
@@ -1527,6 +1541,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         out.idleOn = out.idleOn !== false;
         out.targetsOn = !!out.targetsOn;
         out.sceneOn = !!out.sceneOn;
+        out.sceneBlend = out.sceneBlend === 'dissolve' ? 'dissolve' : 'add';
+        out.sceneParams = Object.fromEntries(Object.entries(saved.sceneParams && typeof saved.sceneParams === 'object' ? saved.sceneParams : {})
+          .filter(([k, v]) => /^[A-Za-z0-9_]+$/.test(k) && (typeof v === 'boolean' || (typeof v === 'number' && isFinite(v)))));
+        out.sceneRest = Object.fromEntries(Object.entries(saved.sceneRest && typeof saved.sceneRest === 'object' ? saved.sceneRest : {})
+          .filter(([k, v]) => k in TARGETS && k.startsWith('scene') && typeof v === 'number' && isFinite(v)).map(([k, v]) => [k, Math.max(0, Math.min(1, v))]));
         if (!saved.sceneRoutes && Array.isArray(out.routes)) { out.routes = out.routes.concat(JSON.parse(JSON.stringify(SCENE_ROUTES))); out.sceneRoutes = true; }
         out.sceneMode = SCENE_LAYER.some(t => t.id === +out.sceneMode) ? +out.sceneMode : DEFAULTS.sceneMode;
         out.sceneMix = Math.max(0, Math.min(1, isFinite(+saved.sceneMix) && saved.sceneMix != null ? +saved.sceneMix : DEFAULTS.sceneMix));
@@ -1558,7 +1577,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   }
   // The targets the shader gets: the master switch is on and the target is.
   const activeTargets = () => CONFIG.targetsOn ? CONFIG.targets.filter(t => t.on) : [];
-  const restOf = key => (CONFIG.fx && key in CONFIG.fx) ? CONFIG.fx[key] : TARGETS[key].rest;
+  const restOf = key => (CONFIG.fx && key in CONFIG.fx) ? CONFIG.fx[key] : (CONFIG.sceneRest && key in CONFIG.sceneRest) ? CONFIG.sceneRest[key] : TARGETS[key].rest;
 
   /* ══════════════════════════════════════════
      AUDIO ENGINE
@@ -3786,6 +3805,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       const api = f.contentWindow && f.contentWindow.WaterProjection;
       if (!api) { WATER.error = 'The scene engine did not start (WebGL2 missing?).'; renderSceneLayer(); return; }
       WATER.api = api;
+      if (Object.keys(CONFIG.sceneParams).length) api.setState(CONFIG.sceneParams);   // validated and clamped by the engine
+      buildSceneParams();
       api.onframe = () => {
         waterSize();
         WATER.cx.drawImage(api.canvas, 0, 0, WATER.cv.width, WATER.cv.height);
@@ -3799,6 +3820,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   function sceneLayerStop() {
     if (WATER.frame) WATER.frame.remove();
     WATER.frame = WATER.api = WATER.sent = null; WATER.fresh = false;
+    buildSceneParams();
   }
   function setSceneLayer(on) {
     CONFIG.sceneOn = !!on; save();
@@ -3815,6 +3837,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const last = WATER.sent;
     if (!last || Object.keys(want).some(k => want[k] !== last[k])) { api.setNormalized(want); WATER.sent = want; }
     // Same place the Water deck scene drops its ripple: output space, mirroring already applied.
+    drawScenePreview();
     if (cam.on && MOVE.env > 0.05) api.setObstacles([{ x: 0.5 + 0.5 * MOVE.x, y: 0.5 - 0.5 * MOVE.y, r: 0.08 + 0.17 * Math.min(1, MOVE.env) }]);
   }
   function nextSceneLayer() {
@@ -3865,8 +3888,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     ctx.globalCompositeOperation = 'screen';
     // All camera and nothing else showing: no point drawing what is covered.
     const camCovers = glOk && cam.on && CONFIG.cam.blend === 'mix' && camMix >= 0.99;
+    const deckK = CONFIG.sceneOn && WATER.fresh && CONFIG.sceneBlend === 'dissolve' ? 1 - CONFIG.sceneMix : 1;
     decks.forEach((D, i) => {
-      const g = gains[i] * D.intensity * IDLE.g;
+      const g = gains[i] * D.intensity * IDLE.g * deckK;
       if (g < 0.004 || camCovers) {
         // Out of the mix: don't spend a frame on it, and don't leave a ghost
         // behind for when it comes back.
@@ -5350,9 +5374,113 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     $('scn-on').classList.toggle('on', CONFIG.sceneOn);
     $('scn-sel').value = CONFIG.sceneMode;
     $('scn-mix').value = CONFIG.sceneMix;
+    $('scn-blend').value = CONFIG.sceneBlend;
+    drawScenePreview(true);
     $('scn-mix-val').textContent = CONFIG.sceneMix.toFixed(2);
     if (WATER.error) $('scn-note').textContent = WATER.error;
   }
+  /* Scene layer settings: the preview with its two lines, and every other control the engine offers,
+     built from its own manifest so a parameter it gains later shows up here without more code. */
+  const SCN_SKIP = new Set(['mode', 'brightness', 'speed', 'distortion', 'bubbles', 'fauna', 'rotation', 'flipH', 'flipV', 'horizon', 'floorLevel']);
+  const SCN_GROUP_SKIP = new Set(['Avoidance']);   // the camera drives these
+  const SCN_REST = [['sceneBright', 'Brightness'], ['sceneSpeed', 'Speed'], ['sceneWarp', 'Distortion'], ['sceneBubbles', 'Bubbles'], ['sceneFauna', 'Creatures']];
+  const sdec = step => (step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3);
+  function sceneField(label, input, valEl) {
+    const l = document.createElement('label'); l.className = 'fld';
+    const sp = document.createElement('span'); sp.textContent = label + ' ';
+    if (valEl) sp.appendChild(valEl);
+    l.append(sp, input); return l;
+  }
+  function sceneSlider(label, min, max, step, value, onset) {
+    const inp = document.createElement('input'); inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step; inp.value = value;
+    const em = document.createElement('em'); em.textContent = (+value).toFixed(sdec(step));
+    inp.oninput = () => { const v = +inp.value; em.textContent = v.toFixed(sdec(step)); onset(v); };
+    return sceneField(label, inp, em);
+  }
+  function buildSceneParams() {
+    const box = $('scn-params'); box.innerHTML = '';
+    const api = WATER.api;
+    if (!api) { const n = document.createElement('div'); n.className = 'note'; n.textContent = 'Turn the scene layer on to see all of its settings.'; box.appendChild(n); return; }
+    const group = (title, open) => { const d = document.createElement('details'); d.className = 'grp'; if (open) d.open = true; const sm = document.createElement('summary'); sm.textContent = title; d.appendChild(sm); box.appendChild(d); return d; };
+    const feel = group('Feel (resting levels)', true);
+    SCN_REST.forEach(([k, label]) => feel.appendChild(sceneSlider(label, 0, 1, 0.01, CONFIG.sceneRest[k] != null ? CONFIG.sceneRest[k] : TARGETS[k].rest, v => { CONFIG.sceneRest[k] = v; save(); })));
+    const note = document.createElement('div'); note.className = 'note'; note.textContent = 'Where each rests when nothing is moving it. The sound routes, the camera and the triggers add to these.'; feel.appendChild(note);
+    const st = api.getState(), groups = [];
+    for (const p of api.getManifest()) {
+      if (SCN_SKIP.has(p.id) || SCN_GROUP_SKIP.has(p.group) || (p.group === 'Output' && p.id !== 'res')) continue;
+      let g = groups.find(x => x.title === p.group);
+      if (!g) { g = { title: p.group, el: group(p.group, p.group === 'Room') }; groups.push(g); }
+      const cur = CONFIG.sceneParams[p.id] != null ? CONFIG.sceneParams[p.id] : st[p.id];
+      const set = v => { CONFIG.sceneParams[p.id] = v; api.setState({ [p.id]: v }); save(); };
+      if (p.type === 'bool') {
+        const b = document.createElement('button'); b.className = 'btn ghost sm' + (cur ? ' on' : ''); b.textContent = p.label + (cur ? ': on' : ': off');
+        b.onclick = () => { const v = !(CONFIG.sceneParams[p.id] != null ? CONFIG.sceneParams[p.id] : api.getState()[p.id]); set(v); b.classList.toggle('on', v); b.textContent = p.label + (v ? ': on' : ': off'); b.blur(); };
+        g.el.appendChild(b);
+      } else if (p.type === 'enum') {
+        const sel = document.createElement('select');
+        p.options.forEach((t, i) => { const o = document.createElement('option'); o.value = i; o.textContent = t; sel.appendChild(o); });
+        sel.value = cur; sel.onchange = () => set(+sel.value);
+        g.el.appendChild(sceneField(p.label, sel));
+      } else {
+        g.el.appendChild(sceneSlider(p.label, p.min, p.max, p.step, cur, set));
+      }
+    }
+  }
+  $('scn-reset').onclick = e => {
+    const api = WATER.api, man = api ? api.getManifest() : [];
+    CONFIG.sceneParams = {}; CONFIG.sceneRest = {}; save();
+    if (api) api.setState(Object.fromEntries(man.filter(p => p.id !== 'mode').map(p => [p.id, p.default])));
+    buildSceneParams(); drawScenePreview(true); e.currentTarget.blur();
+  };
+  // The preview, with the ceiling and floor lines. The engine's own lines are for its own page; here they are
+  // dragged on the picture it makes, and the values go straight back to its Room settings (horizon, floorLevel).
+  const sprev = $('scn-prev'), sctx = sprev.getContext('2d');
+  let scnDrag = -1, scnLast = 0;
+  const SCN_MIN_WALL = 0.25;   // the engine keeps this much wall between the two
+  function sceneRoom() {
+    const st = WATER.api ? WATER.api.getState() : {}, P2 = CONFIG.sceneParams;
+    return [P2.horizon != null ? P2.horizon : (st.horizon != null ? st.horizon : 1), P2.floorLevel != null ? P2.floorLevel : (st.floorLevel != null ? st.floorLevel : 0)];
+  }
+  function drawScenePreview(force) {
+    const now = performance.now();
+    if (!force && (now - scnLast < 120 || !sprev.offsetParent)) return;
+    scnLast = now;
+    const ph = Math.max(1, Math.round(sprev.width * comp.height / Math.max(1, comp.width)));
+    if (sprev.height !== ph) sprev.height = ph;
+    const W = sprev.width, H = sprev.height;
+    sctx.fillStyle = '#000'; sctx.fillRect(0, 0, W, H);
+    if (WATER.fresh) sctx.drawImage(WATER.cv, 0, 0, W, H);
+    else { sctx.fillStyle = 'rgba(255,255,255,0.4)'; sctx.font = '12px sans-serif'; sctx.fillText(CONFIG.sceneOn ? 'Starting...' : 'Scene layer is off', 10, 22); }
+    const [h, f] = sceneRoom();
+    [[h, 'ceiling starts', 0], [f, 'floor starts', 1]].forEach(([v, label, i]) => {
+      const y = Math.max(1, Math.min(H - 1, (1 - v) * H));
+      sctx.setLineDash([6, 4]); sctx.lineWidth = 2; sctx.strokeStyle = scnDrag === i ? '#fff' : '#5cc8ff';
+      sctx.beginPath(); sctx.moveTo(0, y); sctx.lineTo(W, y); sctx.stroke(); sctx.setLineDash([]);
+      sctx.fillStyle = scnDrag === i ? '#fff' : '#5cc8ff'; sctx.font = 'bold 11px sans-serif';
+      sctx.fillText(label, 8, i === 0 ? y + 14 : y - 6);
+      sctx.beginPath(); sctx.arc(W - 14, y, scnDrag === i ? 8 : 6, 0, Math.PI * 2); sctx.fill();
+    });
+  }
+  function sceneLineAt(e) {
+    const r = sprev.getBoundingClientRect(), y = (e.clientY - r.top) / r.height;   // 0 at the top
+    const [h, f] = sceneRoom();
+    return Math.abs(y - (1 - h)) <= Math.abs(y - (1 - f)) ? 0 : 1;
+  }
+  function sceneLineSet(i, e) {
+    const api = WATER.api; if (!api) return;
+    const r = sprev.getBoundingClientRect(), v = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
+    const [h, f] = sceneRoom();
+    const next = i === 0 ? { horizon: Math.max(0.3, Math.min(1, Math.max(v, f + SCN_MIN_WALL))) } : { floorLevel: Math.max(0, Math.min(0.5, Math.min(v, h - SCN_MIN_WALL))) };
+    Object.assign(CONFIG.sceneParams, next); api.setState(next); drawScenePreview(true);
+  }
+  sprev.addEventListener('pointerdown', e => {
+    if (!WATER.api) return;
+    scnDrag = sceneLineAt(e); sprev.setPointerCapture(e.pointerId); e.preventDefault(); sceneLineSet(scnDrag, e);
+  });
+  sprev.addEventListener('pointermove', e => { if (scnDrag >= 0) sceneLineSet(scnDrag, e); });
+  const scnEnd = () => { if (scnDrag >= 0) { scnDrag = -1; save(); drawScenePreview(true); } };
+  sprev.addEventListener('pointerup', scnEnd); sprev.addEventListener('pointercancel', scnEnd);
+  $('scn-blend').onchange = e => { CONFIG.sceneBlend = e.currentTarget.value === 'dissolve' ? 'dissolve' : 'add'; save(); };
   $('water-big-on').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
   $('water-btn').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
   $('scn-on').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
@@ -6658,7 +6786,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       if (on) enterAdmin(); else leaveAdmin();
       resize(); syncUI();
     },
-    setScene, setXfade, setFx, colorHit, SCENES, OLD_SCENES, WATER, setSceneLayer, setSceneMode, nextSceneLayer, sceneDrive, keyInverse, renderKeystone,
+    setScene, setXfade, setFx, colorHit, SCENES, OLD_SCENES, WATER, buildSceneParams, drawScenePreview, setSceneLayer, setSceneMode, nextSceneLayer, sceneDrive, keyInverse, renderKeystone,
     PRE, pickPreset, pickBuiltin, pickSlot, savePreset, renamePreset, updatePreset, deletePreset, movePreset, captureLook, cleanLook, exportDoc, importDoc, pullPresets, pushPresets, presetTween, mergeRemote, signIn,
     setMode: m => setScene(0, m),
     axis(i, v) { VPAD.axes[i] = v; activateVirtual(); },

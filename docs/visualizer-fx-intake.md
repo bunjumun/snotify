@@ -32,7 +32,7 @@ Prefer the layer route for anything that is already a page with its own engine; 
 
 - Ledger row in `change requests/LEDGER.md` before code (next free CR number from its tail).
 - Named branch off `main`; pull first, another session may have shipped.
-- Build number up by one (`<title>`, `core.js` menu label, archive README line, `core.js?v=` across the 8 pages; BSD `sed -i ''`). Freeze the previous build as `archive/tools-v1/visualizer-fx-vN.html`: the two shared-chrome links become `../../tools/`, and a layer's `src` becomes `../../tools/<name>/index.html`.
+- Build number up by one (`<title>`, a new line at the top of `VISUALIZERS` in `core.js` with `current: true` moved off the one below it, archive README line, `core.js?v=` across the 9 pages; BSD `sed -i ''`). The Visualizers page (`visualizers.html`) and the live door on Image tools both read that list, so there is no other menu to edit. Freeze the previous build as `archive/tools-v1/visualizer-fx-vN.html`: the two shared-chrome links become `../../tools/`, and a layer's `src` becomes `../../tools/<name>/index.html`.
 - Test cold in a browser at 1280x800: load the URL, touch nothing, confirm it runs itself; then toggle it, drive it, reload and confirm it comes back; every effect over it; `?nogl`; no console errors. A background browser pane stops animation: front it before judging a frame.
 - Commit, merge, push, confirm on https://bunjumun.github.io/snotify/tools/visualizer-fx.html (add `?v=N` if the browser serves a cached copy), then ledger, Apple Note COMPLETED entry and the memory build number.
 - Say what was *not* checked: a real projector, a real band, his pad in his hand.

@@ -588,7 +588,7 @@
 
 <div class="top-btns">
   <button class="stage-pill" id="aud-btn" title="Audience control (J). Lets the controller plugged into this laptop drive the projector. Off, the controller is ignored; this screen, the keyboard and MIDI keep working.">Audience control · off</button>
-  <button class="stage-pill" id="auto-btn" title="Auto (Y). The effect auto-cycle and automated mode, which changes things by itself when nobody is on the controller. Off, nothing moves unless a hand or the sound moves it, and the idle scene stays off too.">Auto · ON</button>
+  <button class="stage-pill" id="auto-btn" title="Auto (Y). The effect auto-cycle and automated mode, which changes things by itself when nobody is on the controller. Off, nothing moves unless a hand or the sound moves it.">Auto · ON</button>
   <button class="stage-pill" id="water-btn" title="Water scenes on / off: the Scene layer, underwater light over the decks and through the effects. Pick the scene in ⚙ settings.">Water · off</button>
   <button class="icon-btn" id="proj-btn"  title="Send the picture to the projector in a window of its own (click it once there to fill the screen), or bring it back (\). Settings stay on this screen.">📺</button>
   <button class="icon-btn" id="top-btn"   title="Float on top of other apps in its own small window (Chrome only)" hidden>📌</button>
@@ -635,7 +635,7 @@
   </div>
   <div class="live" id="live">
     <button class="btn ghost sm lv" id="lv-fill" style="display:none" title="Fill the projector window (Shift+\). Chrome only lets a window go fullscreen from a click inside that window, so if it will not do it from here the window is moved onto the projector and its prompt flashes: click once in it.">Fill projector</button>
-    <button class="btn ghost sm lv" id="lv-auto" title="Auto (Y). The effect auto-cycle and automated mode, which changes things by itself when nobody is on the controller. Off, nothing moves unless a hand or the sound moves it, and the idle scene stays off too.">Auto · ON</button>
+    <button class="btn ghost sm lv" id="lv-auto" title="Auto (Y). The effect auto-cycle and automated mode, which changes things by itself when nobody is on the controller. Off, nothing moves unless a hand or the sound moves it.">Auto · ON</button>
     <button class="btn ghost sm lv" id="lv-aud" title="Audience control (J). Lets the controller plugged into this laptop drive the projector. Off, the controller is ignored; this screen, the keyboard and MIDI keep working.">Audience · off</button>
     <button class="btn ghost sm lv" data-fx="blackout" title="Blackout (B)">Blackout</button>
     <button class="btn ghost sm lv" data-fx="strobe" title="Strobe (R). It fades itself out and switches off within five seconds, and each time it fires it is 10% dimmer than the last, until five seconds go by with no strobe.">Strobe</button>
@@ -1169,7 +1169,6 @@
         <button class="btn ghost sm" id="idle-preview">Preview idle</button>
       </div>
       <div class="note">
-        Idle only runs while <strong>Auto</strong> is on (the button in the top bar, or Y): Auto off holds it off.
         With nothing played into it, and then nobody on the controls, it settles into the
         <strong>idle scene</strong> and <strong>idle effect</strong> and the sound stops moving the
         picture. Play a song and watch the bar: set the white mark just under the quietest the music
@@ -2873,9 +2872,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       if (lvl > thr * IDLE_HYST) { if (IDLE.aboveSince < 0) IDLE.aboveSince = now; } else IDLE.aboveSince = -1;
     } else { IDLE.belowSince = IDLE.aboveSince = -1; }
 
-    // Idle is the one thing Auto off did not stop: it swapped to the idle scene after the delay with nobody on
-    // the controls, which is exactly what the Auto button's tooltip says Off prevents. It follows Auto now.
-    IDLE.blocked = !CONFIG.idleOn ? 'off' : !CONFIG.autoOn ? 'auto' : CONFIG.demo ? 'demo' : (cam.on && camMix > 0.05) ? 'camera' : '';
+    IDLE.blocked = !CONFIG.idleOn ? 'off' : CONFIG.demo ? 'demo' : (cam.on && camMix > 0.05) ? 'camera' : '';
     let want = IDLE.want;
     if (IDLE.preview) want = true;
     else if (IDLE.blocked) want = false;
@@ -6169,7 +6166,6 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     if (IDLE.on) return 'Idle: ' + SCENES[idleSceneIndex()].name.toLowerCase() + '. Any key, button or stick, or sound above the mark, brings it back.';
     if (IDLE.want) return 'Going idle…';
     if (IDLE.blocked === 'off') return 'Idle is off.';
-    if (IDLE.blocked === 'auto') return 'Held off while Auto is off. Turn Auto on (Y) for idle to run.';
     if (IDLE.blocked === 'demo') return 'Held off while the demo pulse is on.';
     if (IDLE.blocked === 'camera') return 'Held off while the camera is in the picture.';
     const wait = CONFIG.idleDelay * 1000;

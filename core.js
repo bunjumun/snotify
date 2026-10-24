@@ -1032,8 +1032,10 @@ const BUILTIN_TOOLS = [];
 // one below; the frozen copy it leaves behind lives in archive/tools-v1/. The Image tools page gets
 // one door to this page and one to the current build, so its list stays short.
 const VISUALIZERS = [
-  { href: 'tools/visualizer-fx.html', label: '◉  Visualizer FX · V.16',
+  { href: 'tools/visualizer-fx.html', label: '◉  Visualizer FX · V.17',
     hint: 'V.3 through halftone, stipple, line and CMYK displacement and dazzle camo; live camera, projector output for an audience', current: true },
+  { href: 'archive/tools-v1/visualizer-fx-v16.html', label: '◉  Visualizer FX · V.16',
+    hint: 'Kept as it was on 24 Oct: the Scene tab, the three mixes at the top, and the Idle button, before the blend modes' },
   { href: 'archive/tools-v1/visualizer-fx-v15.html', label: '◉  Visualizer FX · V.15',
     hint: 'Kept as it was on 24 Oct: the Scene layer with ceiling and floor lines and the engine controls, before the Scene tab' },
   { href: 'archive/tools-v1/visualizer-fx-v14.html', label: '◉  Visualizer FX · V.14',

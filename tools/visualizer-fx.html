@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizer FX V.16 — Midwest Psych Fest</title>
+  <title>Visualizer FX V.17 — Midwest Psych Fest</title>
   <!--
     The Visualizer, put through a press. Everything the unified Visualizer does
     (two decks, ten scenes, a crossfader, gamepad / keyboard / MIDI, routed
@@ -517,6 +517,16 @@
     }
     .lv-white input { flex: 1; min-width: 0; }
     .lv-white em { font-style: normal; color: #fff; min-width: 3.2em; text-align: right; }
+    /* The levels and mixes, together. One column at the default width, two once the panel is dragged wider (see #panel-grip). */
+    .lv-grid { flex: 1 1 100%; display: grid; grid-template-columns: 1fr; gap: 6px 22px; }
+    #panel.wide .lv-grid { grid-template-columns: 1fr 1fr; }
+    .lv-mix select { flex: 1; min-width: 0; font: inherit; font-size: 0.64rem; letter-spacing: 0.04em; text-transform: none; padding: 4px 6px;
+      background: rgba(0,0,0,0.4); color: #fff; border: 1px solid rgba(255,255,255,0.25); border-radius: 6px; }
+    /* A grip on the panel's left edge: drag to widen the settings, double-click for the default. */
+    #panel-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 12px; cursor: ew-resize; z-index: 6; touch-action: none; }
+    #panel-grip::after { content: ''; position: absolute; left: 4px; top: 50%; height: 56px; width: 4px; margin-top: -28px; border-radius: 2px;
+      background: rgba(255,255,255,0.22); transition: background .15s; }
+    #panel-grip:hover::after, #panel-grip.drag::after { background: #ff3cac; }
     .lv-mix > span, .lv-mix > button { min-width: 4.6em; }
     .lv-mix > button { padding: 3px 8px; letter-spacing: 0.1em; text-transform: uppercase; font-size: 0.64rem; }
     .lv-mix > button.on { border-color: #5cc8ff; color: #fff; background: rgba(60,170,255,0.25); }
@@ -630,6 +640,7 @@
 
 <!-- ══ SETTINGS ══ -->
 <div id="panel">
+  <div id="panel-grip" title="Drag to widen the settings. Double-click for the default width."></div>
   <div class="panel-head">
     <h2>Visualizer FX Settings</h2>
     <button class="panel-close" id="panel-close" title="Close settings (Esc)">×</button>
@@ -646,6 +657,7 @@
     <button class="btn ghost sm lv" data-fx="negative" title="Negative (I, or Y on the pad)">Negative</button>
     <button class="btn ghost sm lv" id="hit-btn" title="Colour hit (X on the pad)">Colour</button>
     <button class="btn ghost sm lv" id="flash-btn" title="Flash (Space, or Start on the pad)">Flash</button>
+    <div class="lv-grid">
     <label class="lv-white" title="White level: the most the whites may brighten on the output, strobe and flash included. A venue setting, kept out of the presets. Double-click to reset.">
       <span>White</span><input type="range" id="lv-white" min="0.1" max="1" step="0.01" value="1" /><em id="lv-white-val">100%</em>
     </label>
@@ -661,6 +673,19 @@
     <label class="lv-white lv-mix" title="Scene mix: how much of the water scene is in the picture. The button turns the scene layer on and off. Double-click the slider to reset.">
       <button type="button" class="btn ghost sm" id="water-top">Water</button><input type="range" id="scn-mix" min="0" max="1" step="0.01" value="0.8" /><em id="scn-mix-val">0.80</em>
     </label>
+    <label class="lv-white lv-mix" title="How the water scene is blended into the decks. Dissolve, Multiply, Difference, Overlay, Luma key and Displace all use Scene mix as their strength.">
+      <span>Blend</span>
+      <select id="scn-blend">
+        <option value="add">Add: light over the decks</option>
+        <option value="dissolve">Dissolve: decks fade as it rises</option>
+        <option value="multiply">Multiply: decks show through the water</option>
+        <option value="difference">Difference: colours invert where it is</option>
+        <option value="overlay">Overlay: contrast through the water</option>
+        <option value="luma">Luma key: decks cut out by its light</option>
+        <option value="displace">Displace: the water bends the decks</option>
+      </select>
+    </label>
+    </div>
   </div>
   <div class="tabs" id="tabs" role="tablist">
     <button class="tab" data-tab="show">Show</button>
@@ -1000,7 +1025,7 @@
     </div>
 
     <div class="sect" data-tab="show">
-      <div class="sect-title">Mix</div>
+      <div class="sect-title">Trails and beat</div>
       <label class="fld">
         <span>Trails <em id="trails-val">0.07</em></span>
         <input type="range" id="trails" min="0" max="5" step="1" value="1" />
@@ -1020,15 +1045,11 @@
         <button class="water-on" id="water-big-on">🌊 Water scenes: off</button>
         <div class="water-scenes" id="water-scenes"></div>
       </div>
-      <label class="fld">
-        <span>Blend</span>
-        <select id="scn-blend">
-          <option value="add">Add over the decks</option>
-          <option value="dissolve">Dissolve: decks fade as it rises</option>
-        </select>
-      </label>
-      <div class="note keep">The scene mix is the slider at the top of settings, with the decks and the camera.</div>
-      <div class="sect-title" style="margin-top:14px">Ceiling and floor</div>
+      <div class="note keep">The mix and the <strong>blend</strong> (dissolve, multiply, displace and the rest) are at the top of settings, with the decks and the camera.</div>
+    </div>
+
+    <div class="sect" data-tab="scene">
+      <div class="sect-title">Ceiling and floor</div>
       <canvas id="scn-prev" width="320" height="180" style="width:100%;height:auto;border:1px solid rgba(255,255,255,0.12);border-radius:6px;background:#000;touch-action:none;margin-top:6px"></canvas>
       <div class="status off" id="scn-room">Wall only.</div>
       <div class="btn-row" style="margin-top:6px"><button class="btn ghost wide" id="scn-room-reset">Reset ceiling and floor</button></div>
@@ -1038,6 +1059,10 @@
         Only a line you grab moves. With a ceiling the water surface is pinned there, so the rise and drain
         cycle stops. Both at the edges means just the wall.
       </div>
+    </div>
+
+    <div class="sect" data-tab="scene">
+      <div class="sect-title">Scene settings</div>
       <div id="scn-params"></div>
       <button class="btn ghost wide" id="scn-reset">Reset all scene settings</button>
     </div>
@@ -1545,7 +1570,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
         out.idleOn = out.idleOn !== false;
         out.targetsOn = !!out.targetsOn;
         out.sceneOn = !!out.sceneOn;
-        out.sceneBlend = out.sceneBlend === 'dissolve' ? 'dissolve' : 'add';
+        out.sceneBlend = ['add', 'dissolve', 'multiply', 'difference', 'overlay', 'luma', 'displace'].includes(out.sceneBlend) ? out.sceneBlend : 'add';
         out.sceneParams = Object.fromEntries(Object.entries(saved.sceneParams && typeof saved.sceneParams === 'object' ? saved.sceneParams : {})
           .filter(([k, v]) => /^[A-Za-z0-9_]+$/.test(k) && (typeof v === 'boolean' || (typeof v === 'number' && isFinite(v)))));
         out.sceneRest = Object.fromEntries(Object.entries(saved.sceneRest && typeof saved.sceneRest === 'object' ? saved.sceneRest : {})
@@ -3790,6 +3815,10 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
      screens the copy onto `comp` after the decks, so every effect works on it
      as it does on deck content. Off, the iframe is removed and costs nothing.
   ══════════════════════════════════════════ */
+  // How each blend meets the decks (canvas composite operations); Luma key and Displace are special-cased where used.
+  const SCENE_BLENDS = ['add', 'dissolve', 'multiply', 'difference', 'overlay', 'luma', 'displace'];
+  const SCENE_BLEND_OP = { add: 'screen', dissolve: 'screen', multiply: 'multiply', difference: 'difference', overlay: 'overlay', luma: 'multiply' };
+  const LUMA = { cv: document.createElement('canvas'), cx: null }; LUMA.cx = LUMA.cv.getContext('2d', { alpha: false });
   const WATER = { frame: null, api: null, cv: document.createElement('canvas'), cx: null, fresh: false, error: '' };
   WATER.cx = WATER.cv.getContext('2d', { alpha: false });
   function waterSize() {
@@ -3906,10 +3935,23 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       ctx.globalAlpha = g;
       ctx.drawImage(D.cv, 0, 0);
     });
-    // The scene layer is light on black, so screening it adds its light and leaves the decks' picture in its dark.
-    if (CONFIG.sceneOn && WATER.fresh && !camCovers) {
+    // The scene layer is light on black. Add and Dissolve screen it on, which adds its light and leaves the
+    // decks in its dark; the others use it as a window or a key. Displace is not drawn here: the effects
+    // shader bends where the decks are read by the water's light (uWaterAmt).
+    if (CONFIG.sceneOn && WATER.fresh && !camCovers && !(CONFIG.sceneBlend === 'displace' && glOk)) {
+      const mode = CONFIG.sceneBlend;
       ctx.globalAlpha = CONFIG.sceneMix * IDLE.g;
-      ctx.drawImage(WATER.cv, 0, 0, W, H);
+      ctx.globalCompositeOperation = SCENE_BLEND_OP[mode] || 'screen';
+      if (mode === 'luma') {
+        // The water's brightness as a grey, so the decks keep their own colours where it is lit: grey backdrop, water's luminosity on it.
+        if (LUMA.cv.width !== W || LUMA.cv.height !== H) { LUMA.cv.width = W; LUMA.cv.height = H; }
+        LUMA.cx.globalCompositeOperation = 'source-over'; LUMA.cx.globalAlpha = 1;
+        LUMA.cx.fillStyle = '#808080'; LUMA.cx.fillRect(0, 0, W, H);
+        LUMA.cx.globalCompositeOperation = 'luminosity'; LUMA.cx.drawImage(WATER.cv, 0, 0, W, H);
+        ctx.drawImage(LUMA.cv, 0, 0, W, H);
+      } else {
+        ctx.drawImage(WATER.cv, 0, 0, W, H);
+      }
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
@@ -3962,6 +4004,9 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     uniform mat3 uKey;
     uniform vec2 uZoomC;
     uniform sampler2D uCam;
+    uniform sampler2D uWater;
+    uniform float uWaterAmt;
+    uniform vec2  uWaterTexel;
     uniform vec2  uCamFit;
     uniform float uCamMix, uCamBlend, uMirror;
     uniform float uCamBright, uCamContrast, uCamGamma, uCamBlack, uCamWhite, uCamSat, uCamTemp, uCamTint;
@@ -4020,6 +4065,14 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     vec3 src(vec2 px) {
       // The movement zoom: a slight push in on everything, decks and camera alike.
       vec2 uv = (warpPx(px) / uRes - uZoomC) / uZoom + uZoomC;
+      // Displace blend: where the water's light changes quickly (the edges of its caustics and ripples) the decks are
+      // read from somewhere else, so they seem to lie under moving water. Three taps of its brightness, 3 px apart.
+      if (uWaterAmt > 0.002) {
+        float w0 = dot(texture2D(uWater, uv).rgb, vec3(0.299, 0.587, 0.114));
+        float wx = dot(texture2D(uWater, uv + vec2(uWaterTexel.x * 3.0, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
+        float wy = dot(texture2D(uWater, uv + vec2(0.0, uWaterTexel.y * 3.0)).rgb, vec3(0.299, 0.587, 0.114));
+        uv += vec2(wx - w0, wy - w0) * uWaterAmt * 0.16;
+      }
       vec3 d = texture2D(uTex, uv).rgb;
       if (uCamMix < 0.002) return d;
       vec2 cuv = uv;
@@ -4316,12 +4369,12 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   `;
 
   const UNIFORMS = ['uTex', 'uRes', 'uTime', 'uMode', 'uModeA', 'uXf', 'uAmt', 'uScale', 'uAngle', 'uShift',
-                    'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS', 'uWhite', 'uBlack', 'uKeyOn', 'uKeyGrid', 'uKey',
+                    'uWarp', 'uThresh', 'uNeg', 'uSat', 'uSeed', 'uRS', 'uWhite', 'uBlack', 'uKeyOn', 'uKeyGrid', 'uKey', 'uWater', 'uWaterAmt', 'uWaterTexel',
                     'uCam', 'uCamFit', 'uCamMix', 'uCamBlend', 'uMirror', 'uCamBright', 'uCamContrast',
                     'uCamGamma', 'uCamBlack', 'uCamWhite', 'uCamSat', 'uCamTemp', 'uCamTint',
                     'uMot', 'uMotTexel', 'uMotMode', 'uMotBoost', 'uMotDim', 'uMotEdge', 'uZoom', 'uZoomC',
                     'uTgt', 'uTgtN', 'uFocus', 'uFocusDim'];
-  let gl = null, glProg = null, glTex = null, glCamTex = null, glLoc = {}, glOk = false, fb2d = null;
+  let gl = null, glProg = null, glTex = null, glCamTex = null, glWaterTex = null, glLoc = {}, glOk = false, fb2d = null;
   let glOv = null, glOvLoc = {}, glMotTex = null;   // the glitch overlay's own small program
   let glNote = '';
 
@@ -4389,6 +4442,19 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
 
   // The camera's own texture, on unit 1. Its filtering must not need mipmaps, as a
   // video frame is rarely a power of two.
+  // The water scene for the Displace blend, on unit 4. A 1 px black texel until it is first used, so the sampler is never incomplete.
+  function makeWaterTexture() {
+    gl.activeTexture(gl.TEXTURE4);
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.activeTexture(gl.TEXTURE0);
+    return t;
+  }
   function makeCamTexture() {
     gl.activeTexture(gl.TEXTURE1);
     const t = gl.createTexture();
@@ -4433,6 +4499,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     glCamTex = makeCamTexture();
+    glWaterTex = makeWaterTexture();
     glMotTex = makeMotTexture();
     buildOverlay();
     glOk = true;
@@ -4458,6 +4525,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       glCamTex = makeCamTexture();
+    glWaterTex = makeWaterTexture();
       glMotTex = makeMotTexture();
       buildOverlay();
       glOk = true;
@@ -4510,6 +4578,14 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     gl.bindTexture(gl.TEXTURE_2D, glMotTex);
     if (TRK.dirty && TRK.have) { gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, TRK.w, TRK.h, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, TRK.bytes); TRK.dirty = false; }
     gl.uniform1i(glLoc.uMot, 3);
+    // The water for the Displace blend, on unit 4: uploaded only while it is being used.
+    const dispOn = CONFIG.sceneOn && WATER.fresh && CONFIG.sceneBlend === 'displace' && CONFIG.sceneMix * IDLE.g > 0.002;
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, glWaterTex);
+    if (dispOn) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, WATER.cv);
+    gl.uniform1i(glLoc.uWater, 4);
+    gl.uniform1f(glLoc.uWaterAmt, dispOn ? CONFIG.sceneMix * IDLE.g : 0);
+    gl.uniform2f(glLoc.uWaterTexel, 1 / Math.max(1, WATER.cv.width), 1 / Math.max(1, WATER.cv.height));
     gl.activeTexture(gl.TEXTURE0);
     const mo = CONFIG.cam.motion;
     gl.uniform1f(glLoc.uMotMode, camLive && TRK.have ? ({ picture: 0, bodies: 1, both: 2 }[mo.show] || 0) : 0);
@@ -5496,7 +5572,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   sprev.addEventListener('pointermove', e => { if (scnDrag >= 0) sceneLineSet(scnDrag, e); });
   const scnEnd = () => { if (scnDrag >= 0) { scnDrag = -1; save(); drawScenePreview(true); } };
   sprev.addEventListener('pointerup', scnEnd); sprev.addEventListener('pointercancel', scnEnd);
-  $('scn-blend').onchange = e => { CONFIG.sceneBlend = e.currentTarget.value === 'dissolve' ? 'dissolve' : 'add'; save(); };
+  $('scn-blend').onchange = e => { CONFIG.sceneBlend = SCENE_BLENDS.includes(e.currentTarget.value) ? e.currentTarget.value : 'add'; save(); e.currentTarget.blur(); };
   $('water-big-on').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
   $('water-btn').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
   $('water-top').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
@@ -6062,6 +6138,32 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   $('lv-frza').onclick = e => { toggleFreeze(0); e.currentTarget.blur(); };
   $('lv-frzb').onclick = e => { toggleFreeze(1); e.currentTarget.blur(); };
   showTab(UI.tab);
+
+  // The settings' width: drag the grip on the panel's left edge, double-click it for the default. Remembered.
+  // The width is on-screen pixels. With the picture on the projector the panel is scaled by CSS zoom, and the
+  // mirror, banner and buttons lay themselves out against --panel-w, so both are set together.
+  const grip = $('panel-grip');
+  function applyPanelW(w) {
+    if (!w) { panel.style.width = ''; document.body.style.removeProperty('--panel-w'); return; }
+    const lo = 340, hi = Math.max(lo, innerWidth - 240);
+    w = Math.max(lo, Math.min(hi, w));
+    const z = parseFloat(getComputedStyle(panel).zoom) || 1;
+    panel.style.width = (w / z) + 'px';
+    document.body.style.setProperty('--panel-w', w + 'px');
+  }
+  applyPanelW(UI.panelW);
+  addEventListener('resize', () => applyPanelW(UI.panelW));
+  new MutationObserver(() => applyPanelW(UI.panelW)).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  grip.addEventListener('pointerdown', e => { grip.setPointerCapture(e.pointerId); grip.classList.add('drag'); e.preventDefault(); });
+  grip.addEventListener('pointermove', e => {
+    if (!grip.hasPointerCapture(e.pointerId)) return;
+    UI.panelW = Math.round(innerWidth - e.clientX); applyPanelW(UI.panelW);
+  });
+  const gripEnd = () => { if (grip.classList.contains('drag')) { grip.classList.remove('drag'); saveUI(); } };
+  grip.addEventListener('pointerup', gripEnd); grip.addEventListener('pointercancel', gripEnd);
+  grip.addEventListener('dblclick', () => { UI.panelW = 0; applyPanelW(0); saveUI(); });
+  // At 560 px and wider the levels sit two to a row.
+  new ResizeObserver(() => panel.classList.toggle('wide', panel.getBoundingClientRect().width >= 560)).observe(panel);
 
   const setText = (el, txt) => { if (el && el.textContent !== txt) el.textContent = txt; };
 
@@ -6810,7 +6912,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       if (on) enterAdmin(); else leaveAdmin();
       resize(); syncUI();
     },
-    setScene, setXfade, setFx, colorHit, toggleIdle, SCENES, OLD_SCENES, WATER, buildSceneParams, drawScenePreview, setSceneLayer, setSceneMode, nextSceneLayer, sceneDrive, keyInverse, renderKeystone,
+    setScene, setXfade, setFx, colorHit, toggleIdle, applyPanelW, UI, SCENES, OLD_SCENES, WATER, buildSceneParams, drawScenePreview, setSceneLayer, setSceneMode, nextSceneLayer, sceneDrive, keyInverse, renderKeystone,
     PRE, pickPreset, pickBuiltin, pickSlot, savePreset, renamePreset, updatePreset, deletePreset, movePreset, captureLook, cleanLook, exportDoc, importDoc, pullPresets, pushPresets, presetTween, mergeRemote, signIn,
     setMode: m => setScene(0, m),
     axis(i, v) { VPAD.axes[i] = v; activateVirtual(); },

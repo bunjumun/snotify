@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizer FX V.15 — Midwest Psych Fest</title>
+  <title>Visualizer FX V.16 — Midwest Psych Fest</title>
   <!--
     The Visualizer, put through a press. Everything the unified Visualizer does
     (two decks, ten scenes, a crossfader, gamepad / keyboard / MIDI, routed
@@ -517,6 +517,9 @@
     }
     .lv-white input { flex: 1; min-width: 0; }
     .lv-white em { font-style: normal; color: #fff; min-width: 3.2em; text-align: right; }
+    .lv-mix > span, .lv-mix > button { min-width: 4.6em; }
+    .lv-mix > button { padding: 3px 8px; letter-spacing: 0.1em; text-transform: uppercase; font-size: 0.64rem; }
+    .lv-mix > button.on { border-color: #5cc8ff; color: #fff; background: rgba(60,170,255,0.25); }
     .live .lv { flex: 1 1 22%; min-width: 74px; padding: 9px 6px; font-size: 0.64rem; text-align: center; }
     .tabs { display: flex; padding: 0 10px; border-bottom: 1px solid rgba(255,255,255,0.1); flex-shrink: 0; }
     .tabs .tab {
@@ -529,6 +532,7 @@
     #panel .sect { display: none; }
     #panel[data-tab="show"]   .sect[data-tab="show"],
     #panel[data-tab="camera"] .sect[data-tab="camera"],
+    #panel[data-tab="scene"]  .sect[data-tab="scene"],
     #panel[data-tab="stage"]  .sect[data-tab="stage"],
     #panel[data-tab="sound"]  .sect[data-tab="sound"],
     #panel[data-tab="help"]   .sect[data-tab="help"] { display: block; }
@@ -646,14 +650,20 @@
     <label class="lv-white" title="Black level: lifts black to a faint light, for when the stage needs a little light under the picture. Blackout stays black. A venue setting, kept out of the presets. Double-click to reset.">
       <span>Black</span><input type="range" id="lv-black" min="0" max="0.3" step="0.005" value="0" /><em id="lv-black-val">0%</em>
     </label>
-  </div>
-  <div class="water-big">
-    <button class="water-on" id="water-big-on">🌊 Water scenes: off</button>
-    <div class="water-scenes" id="water-scenes"></div>
+    <label class="lv-white lv-mix" title="Crossfader: deck A to deck B. The D-pad left and right move it too. Double-click to centre.">
+      <span>Decks</span><input type="range" id="xf" min="0" max="1" step="0.01" value="0.5" /><em id="xf-val">A</em>
+    </label>
+    <label class="lv-white lv-mix" title="Camera mix: camera against the animations. The D-pad up and down move it with the camera on. Double-click to reset.">
+      <span>Camera</span><input type="range" id="cam-mix" min="0" max="1" step="0.01" value="0.5" /><em id="cam-mix-val">0.50</em>
+    </label>
+    <label class="lv-white lv-mix" title="Scene mix: how much of the water scene is in the picture. The button turns the scene layer on and off. Double-click the slider to reset.">
+      <button type="button" class="btn ghost sm" id="water-top">Water</button><input type="range" id="scn-mix" min="0" max="1" step="0.01" value="0.8" /><em id="scn-mix-val">0.80</em>
+    </label>
   </div>
   <div class="tabs" id="tabs" role="tablist">
     <button class="tab" data-tab="show">Show</button>
     <button class="tab" data-tab="camera">Camera</button>
+    <button class="tab" data-tab="scene">Scene</button>
     <button class="tab" data-tab="stage">Stage</button>
     <button class="tab" data-tab="sound">Sound</button>
     <button class="tab" data-tab="help">Help</button>
@@ -822,10 +832,6 @@
         <button class="btn ghost" id="cam-mirror">Mirror</button>
         <button class="btn ghost" id="cam-centre">50%</button>
       </div>
-      <label class="fld">
-        <span>Camera mix <em id="cam-mix-val">0.50</em></span>
-        <input type="range" id="cam-mix" min="0" max="1" step="0.01" value="0.5" />
-      </label>
       <div class="note">
         With the camera on, the <strong>D-pad</strong> up and down (<strong>=</strong> and <strong>-</strong>
         on a keyboard) move the mix: up toward all camera, down toward all animations, gliding for as long as
@@ -994,10 +1000,6 @@
     <div class="sect" data-tab="show">
       <div class="sect-title">Mix</div>
       <label class="fld">
-        <span>Crossfader <em id="xf-val">A</em></span>
-        <input type="range" id="xf" min="0" max="1" step="0.01" value="0.5" />
-      </label>
-      <label class="fld">
         <span>Trails <em id="trails-val">0.07</em></span>
         <input type="range" id="trails" min="0" max="5" step="1" value="1" />
       </label>
@@ -1010,17 +1012,12 @@
       <div class="note keep" id="tap-note">Tap in time to set the pulse's tempo, with or without audio.</div>
     </div>
 
-    <div class="sect" data-tab="show">
+    <div class="sect" data-tab="scene">
       <div class="sect-title">Scene layer</div>
-      <button class="btn wide" id="scn-on">Scene layer: off</button>
-      <label class="fld">
-        <span>Scene</span>
-        <select id="scn-sel"></select>
-      </label>
-      <label class="fld">
-        <span>Scene mix <em id="scn-mix-val">0.80</em></span>
-        <input type="range" id="scn-mix" min="0" max="1" step="0.01" value="0.8" />
-      </label>
+      <div class="water-big" style="padding:0 0 10px;border:0">
+        <button class="water-on" id="water-big-on">🌊 Water scenes: off</button>
+        <div class="water-scenes" id="water-scenes"></div>
+      </div>
       <label class="fld">
         <span>Blend</span>
         <select id="scn-blend">
@@ -1028,14 +1025,19 @@
           <option value="dissolve">Dissolve: decks fade as it rises</option>
         </select>
       </label>
-      <canvas id="scn-prev" width="320" height="180" style="width:100%;height:auto;border:1px solid rgba(255,255,255,0.12);border-radius:6px;background:#000;cursor:ns-resize;touch-action:none;margin-top:6px"></canvas>
+      <div class="note keep">The scene mix is the slider at the top of settings, with the decks and the camera.</div>
+      <div class="sect-title" style="margin-top:14px">Ceiling and floor</div>
+      <canvas id="scn-prev" width="320" height="180" style="width:100%;height:auto;border:1px solid rgba(255,255,255,0.12);border-radius:6px;background:#000;touch-action:none;margin-top:6px"></canvas>
+      <div class="status off" id="scn-room">Wall only.</div>
+      <div class="btn-row" style="margin-top:6px"><button class="btn ghost wide" id="scn-room-reset">Reset ceiling and floor</button></div>
       <div class="note keep" id="scn-note">
-        Drag the <strong>ceiling</strong> line down from the top to where the ceiling starts on the real wall,
-        and the <strong>floor</strong> line up from the bottom to where the floor starts. Ceiling at the top edge
-        and floor at the bottom edge means no ceiling or floor, just the wall.
+        Grab the dashed <strong>ceiling</strong> line (it starts at the top) and drag it down to where the ceiling
+        starts on the real wall; grab the <strong>floor</strong> line (it starts at the bottom) and drag it up.
+        Only a line you grab moves. With a ceiling the water surface is pinned there, so the rise and drain
+        cycle stops. Both at the edges means just the wall.
       </div>
       <div id="scn-params"></div>
-      <button class="btn ghost wide" id="scn-reset">Reset scene settings</button>
+      <button class="btn ghost wide" id="scn-reset">Reset all scene settings</button>
     </div>
 
     <div class="sect" data-tab="show">
@@ -5356,7 +5358,6 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const t = CONFIG.targets[h]; t.r = Math.max(0.05, Math.min(0.6, t.r * (e.deltaY < 0 ? 1.08 : 1 / 1.08)));
     save(); renderTargets();
   }, { passive: false });
-  SCENE_LAYER.forEach(t => { const o = document.createElement('option'); o.value = t.id; o.textContent = t.name; $('scn-sel').appendChild(o); });
   SCENE_LAYER.forEach(t => {
     const b = document.createElement('button');
     b.textContent = t.name; b.dataset.id = t.id; b.title = t.name + ' (turns the water scenes on)';
@@ -5370,9 +5371,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     $('water-btn').textContent = 'Water · ' + (on ? 'ON' : 'off');
     $('water-btn').classList.toggle('active', on);
     $('water-scenes').querySelectorAll('button').forEach(b => b.classList.toggle('on', on && +b.dataset.id === CONFIG.sceneMode));
-    $('scn-on').textContent = 'Scene layer: ' + (CONFIG.sceneOn ? 'ON' : 'off');
-    $('scn-on').classList.toggle('on', CONFIG.sceneOn);
-    $('scn-sel').value = CONFIG.sceneMode;
+    $('water-top').classList.toggle('on', on);
     $('scn-mix').value = CONFIG.sceneMix;
     $('scn-blend').value = CONFIG.sceneBlend;
     drawScenePreview(true);
@@ -5452,6 +5451,8 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     if (WATER.fresh) sctx.drawImage(WATER.cv, 0, 0, W, H);
     else { sctx.fillStyle = 'rgba(255,255,255,0.4)'; sctx.font = '12px sans-serif'; sctx.fillText(CONFIG.sceneOn ? 'Starting...' : 'Scene layer is off', 10, 22); }
     const [h, f] = sceneRoom();
+    const room = (h < 0.999 ? 'Ceiling starts ' + Math.round((1 - h) * 100) + '% down' : 'No ceiling') + ' · ' + (f > 0.001 ? 'floor starts ' + Math.round((1 - f) * 100) + '% down' : 'no floor');
+    const rel = $('scn-room'); if (rel && rel.textContent !== room) rel.textContent = room;
     [[h, 'ceiling starts', 0], [f, 'floor starts', 1]].forEach(([v, label, i]) => {
       const y = Math.max(1, Math.min(H - 1, (1 - v) * H));
       sctx.setLineDash([6, 4]); sctx.lineWidth = 2; sctx.strokeStyle = scnDrag === i ? '#fff' : '#5cc8ff';
@@ -5461,10 +5462,15 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       sctx.beginPath(); sctx.arc(W - 14, y, scnDrag === i ? 8 : 6, 0, Math.PI * 2); sctx.fill();
     });
   }
+  // A line is only taken when the pointer is within a finger's width of it. Before, a click anywhere moved the
+  // nearer line, and a stray click on the preview put a ceiling in the room without anyone noticing.
+  const SCN_GRAB = 22;   // css px
   function sceneLineAt(e) {
-    const r = sprev.getBoundingClientRect(), y = (e.clientY - r.top) / r.height;   // 0 at the top
+    const r = sprev.getBoundingClientRect(), y = e.clientY - r.top;   // 0 at the top
     const [h, f] = sceneRoom();
-    return Math.abs(y - (1 - h)) <= Math.abs(y - (1 - f)) ? 0 : 1;
+    const dh = Math.abs(y - (1 - h) * r.height), df = Math.abs(y - (1 - f) * r.height);
+    if (Math.min(dh, df) > SCN_GRAB) return -1;
+    return dh <= df ? 0 : 1;
   }
   function sceneLineSet(i, e) {
     const api = WATER.api; if (!api) return;
@@ -5475,16 +5481,23 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   }
   sprev.addEventListener('pointerdown', e => {
     if (!WATER.api) return;
-    scnDrag = sceneLineAt(e); sprev.setPointerCapture(e.pointerId); e.preventDefault(); sceneLineSet(scnDrag, e);
+    scnDrag = sceneLineAt(e);
+    if (scnDrag < 0) return;
+    sprev.setPointerCapture(e.pointerId); e.preventDefault(); sceneLineSet(scnDrag, e);
   });
+  sprev.addEventListener('pointermove', e => { if (scnDrag < 0) sprev.style.cursor = sceneLineAt(e) >= 0 ? 'ns-resize' : 'default'; });
+  $('scn-room-reset').onclick = e => {
+    delete CONFIG.sceneParams.horizon; delete CONFIG.sceneParams.floorLevel; save();
+    if (WATER.api) WATER.api.setState({ horizon: 1, floorLevel: 0 });
+    drawScenePreview(true); e.currentTarget.blur();
+  };
   sprev.addEventListener('pointermove', e => { if (scnDrag >= 0) sceneLineSet(scnDrag, e); });
   const scnEnd = () => { if (scnDrag >= 0) { scnDrag = -1; save(); drawScenePreview(true); } };
   sprev.addEventListener('pointerup', scnEnd); sprev.addEventListener('pointercancel', scnEnd);
   $('scn-blend').onchange = e => { CONFIG.sceneBlend = e.currentTarget.value === 'dissolve' ? 'dissolve' : 'add'; save(); };
   $('water-big-on').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
   $('water-btn').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
-  $('scn-on').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
-  $('scn-sel').onchange = e => setSceneMode(+e.currentTarget.value);
+  $('water-top').onclick = e => { setSceneLayer(!CONFIG.sceneOn); e.currentTarget.blur(); };
   $('scn-mix').oninput = e => { CONFIG.sceneMix = +e.currentTarget.value; save(); renderSceneLayer(); };
   renderSceneLayer();
   if (CONFIG.sceneOn) sceneLayerStart();
@@ -5988,7 +6001,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   const UI = { tab: 'show', closed: {}, notes: {} };
   try { Object.assign(UI, JSON.parse(localStorage.getItem(UI_KEY) || '{}')); } catch (e) {}
   const saveUI = () => { try { localStorage.setItem(UI_KEY, JSON.stringify(UI)); } catch (e) {} };
-  const TABS = ['show', 'camera', 'stage', 'sound', 'help'];
+  const TABS = ['show', 'camera', 'scene', 'stage', 'sound', 'help'];
 
   function showTab(name) {
     if (!TABS.includes(name)) name = 'show';
@@ -6034,7 +6047,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   [['gain', () => DEFAULTS.gain], ['smooth', () => DEFAULTS.smoothing], ['idle', () => DEFAULTS.idle], ['beat', () => DEFAULTS.beat],
    ['pulse', () => DEFAULTS.pulse], ['feel', () => DEFAULTS.feel], ['rumble', () => DEFAULTS.rumble], ['motion', () => DEFAULTS.motion],
    ['autoAfter', () => DEFAULTS.autoAfter], ['autoSpeed', () => DEFAULTS.autoSpeed], ['glitch', () => DEFAULTS.glitch], ['lineWidth', () => DEFAULTS.lineWidth], ['white', () => DEFAULTS.white], ['lv-white', () => DEFAULTS.white], ['black', () => DEFAULTS.black], ['lv-black', () => DEFAULTS.black], ['xf', () => 0.5], ['trails', () => 1],
-   ['cam-mix', () => DEFAULTS.cam.mix], ['ch-req', () => DEFAULTS.channels]].forEach(([id, d]) => resettable($(id), d));
+   ['cam-mix', () => DEFAULTS.cam.mix], ['scn-mix', () => DEFAULTS.sceneMix], ['ch-req', () => DEFAULTS.channels]].forEach(([id, d]) => resettable($(id), d));
   fxSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.fx[s.k]));
   camSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.cam.adj[s.k]));
   motSliderEls.forEach(({ s, inp }) => resettable(inp, () => DEFAULTS.cam.motion[s.k]));
@@ -6062,7 +6075,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     const setVal = (el, v) => { if (el && el !== act && el.value !== String(v)) el.value = v; };
 
     setVal($('xf'), xfade);
-    setText($('xf-val'), xfade < 0.02 ? 'A' : xfade > 0.98 ? 'B' : Math.round(xfade * 100) + '% toward B');
+    setText($('xf-val'), xfade < 0.02 ? 'A' : xfade > 0.98 ? 'B' : Math.round(xfade * 100) + '% B');
     setVal($('trails'), trailIdx);
     setText($('trails-val'), TRAIL_P[trailIdx].toFixed(2));
     document.querySelectorAll('[data-fx]').forEach(b => b.classList.toggle('on', !!FLAGS[b.dataset.fx]));

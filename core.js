@@ -1027,42 +1027,53 @@ on('textSave', 'click', saveTextEdit);
 const BUILTIN_TOOLS = [];
 
 // Per-band sets, same idea as BAND_THEME.
+// Every version of the visualizer, newest first, for the Visualizers page (visualizers.html), which
+// reads it through renderToolDoors. A release adds its line at the top and drops `current` from the
+// one below; the frozen copy it leaves behind lives in archive/tools-v1/. The Image tools page gets
+// one door to this page and one to the current build, so its list stays short.
+const VISUALIZERS = [
+  { href: 'tools/visualizer-fx.html', label: '◉  Visualizer FX · V.16',
+    hint: 'V.3 through halftone, stipple, line and CMYK displacement and dazzle camo; live camera, projector output for an audience', current: true },
+  { href: 'archive/tools-v1/visualizer-fx-v15.html', label: '◉  Visualizer FX · V.15',
+    hint: 'Kept as it was on 24 Oct: the Scene layer with ceiling and floor lines and the engine controls, before the Scene tab' },
+  { href: 'archive/tools-v1/visualizer-fx-v14.html', label: '◉  Visualizer FX · V.14',
+    hint: 'Kept as it was on 23 Oct: negative space inside the deck scenes, before the Scene layer settings' },
+  { href: 'archive/tools-v1/visualizer-fx-v13.html', label: '◉  Visualizer FX · V.13',
+    hint: 'Kept as it was on 23 Oct: stronger triggers, with the Void slider as a drifting mask, before negative space moved into the scenes' },
+  { href: 'archive/tools-v1/visualizer-fx-v12.html', label: '◉  Visualizer FX · V.12',
+    hint: 'Kept as it was on 22 Oct: black level and keystone, before the stronger triggers' },
+  { href: 'archive/tools-v1/visualizer-fx-v11.html', label: '◉  Visualizer FX · V.11',
+    hint: 'Kept as it was on 22 Oct: the big Water scenes button, before black level and keystone' },
+  { href: 'archive/tools-v1/visualizer-fx-v10.html', label: '◉  Visualizer FX · V.10',
+    hint: 'Kept as it was on 22 Oct: the Scene layer on the audio routes, camera and MIDI, before the big Water button' },
+  { href: 'archive/tools-v1/visualizer-fx-v9.html', label: '◉  Visualizer FX · V.9',
+    hint: 'Kept as it was on 22 Oct: V.8 plus the Scene layer, before it joined the audio routes and camera' },
+  { href: 'archive/tools-v1/visualizer-fx-v8.html', label: '◉  Visualizer FX · V.8',
+    hint: 'Kept as it was on 22 Oct before the Scene layer: V.7 plus Negative space' },
+  { href: 'archive/tools-v1/visualizer-fx-v7.html', label: '◉  Visualizer FX · V.7',
+    hint: 'Kept as it was on 22 Oct before Negative space: V.6 plus the larger control screen' },
+  { href: 'archive/tools-v1/visualizer-fx-v6.html', label: '◉  Visualizer FX · V.6',
+    hint: 'Kept as it was on 22 Oct: V.5 plus Stage targets' },
+  { href: 'archive/tools-v1/visualizer-fx-v5.html', label: '◉  Visualizer FX · V.5',
+    hint: 'Kept as it was on 22 Oct before Stage targets: water scene, idle, auto limits, tunnels, streak tunnel' },
+  { href: 'archive/tools-v1/visualizer-fx.html', label: '◉  Visualizer FX · V.4',
+    hint: 'The effects stage as it stood on 11 Oct, kept as it was: halftone, stipple, line and CMYK displacement, dazzle camo, projector window' },
+  { href: 'tools/visualizer.html', label: '◉  Visualizer · V.3',
+    hint: 'V.1 and V.2 combined: two decks, crossfade, audio reactive, gamepad, keyboard or MIDI driven' },
+  { href: 'archive/tools-v1/visualizer.html', label: '◉  Visualizer · V.2',
+    hint: 'The second (10 Aug, afternoon): one scene played from a gamepad, audio routed per channel' },
+  { href: 'archive/tools-v1/vj-mixer.html', label: '◉  VJ Mixer · V.1',
+    hint: 'The first one (10 Aug, morning): two generators, a crossfader, mic reactive, MIDI learn' },
+];
+
 const BAND_TOOLS = {
   lakehorse: [
     { id: 'dazzle', label: '▨  Dazzle camouflage generator',
       hint: 'Panels, stripe angles, seed — save as SVG or PNG' },
-    { href: 'archive/tools-v1/vj-mixer.html', label: '◉  VJ Mixer · V.1',
-      hint: 'The first one (10 Aug, morning): two generators, a crossfader, mic reactive, MIDI learn' },
-    { href: 'archive/tools-v1/visualizer.html', label: '◉  Visualizer · V.2',
-      hint: 'The second (10 Aug, afternoon): one scene played from a gamepad, audio routed per channel' },
-    { href: 'tools/visualizer.html', label: '◉  Visualizer · V.3',
-      hint: 'V.1 and V.2 combined: two decks, crossfade, audio reactive, gamepad, keyboard or MIDI driven' },
-    { href: 'archive/tools-v1/visualizer-fx.html', label: '◉  Visualizer FX · V.4',
-      hint: 'The effects stage as it stood on 11 Oct, kept as it was: halftone, stipple, line and CMYK displacement, dazzle camo, projector window' },
-    { href: 'archive/tools-v1/visualizer-fx-v5.html', label: '◉  Visualizer FX · V.5',
-      hint: 'Kept as it was on 22 Oct before Stage targets: water scene, idle, auto limits, tunnels, streak tunnel' },
-    { href: 'archive/tools-v1/visualizer-fx-v6.html', label: '◉  Visualizer FX · V.6',
-      hint: 'Kept as it was on 22 Oct: V.5 plus Stage targets' },
-    { href: 'archive/tools-v1/visualizer-fx-v7.html', label: '◉  Visualizer FX · V.7',
-      hint: 'Kept as it was on 22 Oct before Negative space: V.6 plus the larger control screen' },
-    { href: 'archive/tools-v1/visualizer-fx-v8.html', label: '◉  Visualizer FX · V.8',
-      hint: 'Kept as it was on 22 Oct before the Scene layer: V.7 plus Negative space' },
-    { href: 'archive/tools-v1/visualizer-fx-v9.html', label: '◉  Visualizer FX · V.9',
-      hint: 'Kept as it was on 22 Oct: V.8 plus the Scene layer, before it joined the audio routes and camera' },
-    { href: 'archive/tools-v1/visualizer-fx-v10.html', label: '◉  Visualizer FX · V.10',
-      hint: 'Kept as it was on 22 Oct: the Scene layer on the audio routes, camera and MIDI, before the big Water button' },
-    { href: 'archive/tools-v1/visualizer-fx-v11.html', label: '◉  Visualizer FX · V.11',
-      hint: 'Kept as it was on 22 Oct: the big Water scenes button, before black level and keystone' },
-    { href: 'archive/tools-v1/visualizer-fx-v12.html', label: '◉  Visualizer FX · V.12',
-      hint: 'Kept as it was on 22 Oct: black level and keystone, before the stronger triggers' },
-    { href: 'archive/tools-v1/visualizer-fx-v13.html', label: '◉  Visualizer FX · V.13',
-      hint: 'Kept as it was on 23 Oct: stronger triggers, with the Void slider as a drifting mask, before negative space moved into the scenes' },
-    { href: 'archive/tools-v1/visualizer-fx-v14.html', label: '◉  Visualizer FX · V.14',
-      hint: 'Kept as it was on 23 Oct: negative space inside the deck scenes, before the Scene layer settings' },
-    { href: 'archive/tools-v1/visualizer-fx-v15.html', label: '◉  Visualizer FX · V.15',
-      hint: 'Kept as it was on 24 Oct: the Scene layer with ceiling and floor lines and the engine controls, before the Scene tab' },
-    { href: 'tools/visualizer-fx.html', label: '◉  Visualizer FX · V.16',
-      hint: 'V.3 through halftone, stipple, line and CMYK displacement and dazzle camo; live camera, projector output for an audience' },
+    { href: 'visualizers.html', label: '◉  Visualizers',
+      hint: 'Every version of the visualizer, newest first, from the first VJ mixer to the current build' },
+    { href: VISUALIZERS[0].href, label: VISUALIZERS[0].label + ' · live',
+      hint: 'The current build, straight in' },
     { href: 'tools/moire-maker.html', label: '◎  Moiré pattern toy',
       hint: 'Two line fields, live interference' },
     { href: 'tools/moire-zip.html', label: '⧉  Moiré colour separation',
@@ -1199,16 +1210,18 @@ function renderToolMenu(){
 function renderToolDoors(){
   const d = $('toolDoors');
   if (!d) return;
-  d.innerHTML = toolList.map(t => {
+  // The Visualizers page asks for its own list (data-list on the grid); every other page shows the band's tools.
+  const list = d.dataset.list === 'visualizers' ? VISUALIZERS : toolList;
+  d.innerHTML = list.map(t => {
     // Labels ship as "GLYPH  Title", same convention the menu's own <b> reads.
     const m = /^(\S+)\s+(.*)$/.exec(t.label || '');
     const icon = m ? m[1] : '▨';
     const title = m ? m[2] : (t.label || '');
     return t.href
-      ? `<a class="door" href="${esc(safeHref(toolHref(t.href)))}" target="_blank" rel="noopener">
+      ? `<a class="door${t.current ? ' current' : ''}" href="${esc(safeHref(toolHref(t.href)))}" target="_blank" rel="noopener">
            <div class="dooricon">${esc(icon)}</div>
            <div class="doortitle">${esc(title)}</div>
-           <div class="doorsub">${esc(t.hint)}</div>
+           <div class="doorsub">${esc(t.hint)}</div>${t.current ? '<div class="doorbadge">current</div>' : ''}
          </a>`
       : `<button class="door" data-tool="${esc(t.id)}">
            <div class="dooricon">${esc(icon)}</div>

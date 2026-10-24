@@ -588,6 +588,7 @@
 
 <div class="top-btns">
   <button class="stage-pill" id="aud-btn" title="Audience control (J). Lets the controller plugged into this laptop drive the projector. Off, the controller is ignored; this screen, the keyboard and MIDI keep working.">Audience control · off</button>
+  <button class="stage-pill" id="idle-btn" title="Idle mode: after a quiet spell with nobody on the controls the picture settles into the idle scene (Water by default). Off, it never does, and one already showing comes back. Same setting as Idle on in the Sound tab.">Idle · ON</button>
   <button class="stage-pill" id="auto-btn" title="Auto (Y). The effect auto-cycle and automated mode, which changes things by itself when nobody is on the controller. Off, nothing moves unless a hand or the sound moves it.">Auto · ON</button>
   <button class="stage-pill" id="water-btn" title="Water scenes on / off: the Scene layer, underwater light over the decks and through the effects. Pick the scene in ⚙ settings.">Water · off</button>
   <button class="icon-btn" id="proj-btn"  title="Send the picture to the projector in a window of its own (click it once there to fill the screen), or bring it back (\). Settings stay on this screen.">📺</button>
@@ -635,6 +636,7 @@
   </div>
   <div class="live" id="live">
     <button class="btn ghost sm lv" id="lv-fill" style="display:none" title="Fill the projector window (Shift+\). Chrome only lets a window go fullscreen from a click inside that window, so if it will not do it from here the window is moved onto the projector and its prompt flashes: click once in it.">Fill projector</button>
+    <button class="btn ghost sm lv" id="lv-idle" title="Idle mode: after a quiet spell with nobody on the controls the picture settles into the idle scene (Water by default). Off, it never does, and one already showing comes back. Same setting as Idle on in the Sound tab.">Idle · ON</button>
     <button class="btn ghost sm lv" id="lv-auto" title="Auto (Y). The effect auto-cycle and automated mode, which changes things by itself when nobody is on the controller. Off, nothing moves unless a hand or the sound moves it.">Auto · ON</button>
     <button class="btn ghost sm lv" id="lv-aud" title="Audience control (J). Lets the controller plugged into this laptop drive the projector. Off, the controller is ignored; this screen, the keyboard and MIDI keep working.">Audience · off</button>
     <button class="btn ghost sm lv" data-fx="blackout" title="Blackout (B)">Blackout</button>
@@ -6602,6 +6604,11 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
     pill.classList.toggle('active', stage.audience);
     const label = 'Audience control · ' + (stage.audience ? 'ON' : 'off');
     if (pill.textContent !== label) pill.textContent = label;
+    const ipill = $('idle-btn'), ilabel = 'Idle · ' + (CONFIG.idleOn ? 'ON' : 'off');
+    ipill.classList.toggle('active', CONFIG.idleOn);
+    if (ipill.textContent !== ilabel) ipill.textContent = ilabel;
+    $('lv-idle').classList.toggle('on', CONFIG.idleOn);
+    if ($('lv-idle').textContent !== ilabel) $('lv-idle').textContent = ilabel;
     const apill = $('auto-btn'), alabel = 'Auto · ' + (CONFIG.autoOn ? 'ON' : 'off');
     apill.classList.toggle('active', CONFIG.autoOn);
     if (apill.textContent !== alabel) apill.textContent = alabel;
@@ -6644,6 +6651,10 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
   }
   $('proj-btn').onclick   = () => { toggleProjector(); $('proj-btn').blur(); };
   $('aud-btn').onclick    = () => { toggleAudience(); $('aud-btn').blur(); };
+  // Idle on / off. Off, updateIdle holds it blocked, and one already showing goes back on the next frame.
+  const toggleIdle = () => { CONFIG.idleOn = !CONFIG.idleOn; save(); syncUI(); };
+  $('idle-btn').onclick   = () => { toggleIdle(); $('idle-btn').blur(); };
+  $('lv-idle').onclick    = e => { toggleIdle(); e.currentTarget.blur(); };
   $('auto-btn').onclick   = () => { toggleAuto(); $('auto-btn').blur(); };
   $('lv-auto').onclick    = e => { toggleAuto(); e.currentTarget.blur(); };
   $('stage-start').onclick = e => { toggleProjector(); e.currentTarget.blur(); };
@@ -6799,7 +6810,7 @@ Speed, Colour speed, Spin   its pace, its colour spread, its turning</div>
       if (on) enterAdmin(); else leaveAdmin();
       resize(); syncUI();
     },
-    setScene, setXfade, setFx, colorHit, SCENES, OLD_SCENES, WATER, buildSceneParams, drawScenePreview, setSceneLayer, setSceneMode, nextSceneLayer, sceneDrive, keyInverse, renderKeystone,
+    setScene, setXfade, setFx, colorHit, toggleIdle, SCENES, OLD_SCENES, WATER, buildSceneParams, drawScenePreview, setSceneLayer, setSceneMode, nextSceneLayer, sceneDrive, keyInverse, renderKeystone,
     PRE, pickPreset, pickBuiltin, pickSlot, savePreset, renamePreset, updatePreset, deletePreset, movePreset, captureLook, cleanLook, exportDoc, importDoc, pullPresets, pushPresets, presetTween, mergeRemote, signIn,
     setMode: m => setScene(0, m),
     axis(i, v) { VPAD.axes[i] = v; activateVirtual(); },

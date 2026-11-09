@@ -1322,6 +1322,14 @@
           <div class="todo-list add-todo-list" id="addTodoList"></div>
         </div>
 
+        <!-- CR-170: a small variant of a mix (one stem was muted) should not lose
+             the list its sibling already earned. -->
+        <div id="addCarryWrap" style="display:none">
+          <label>Keep “Fixed in this mix” items from</label>
+          <select id="addCarry"></select>
+          <div class="hint">Copies that mix's list into this upload's change notes, ahead of anything ticked above.</div>
+        </div>
+
         <label>Change notes (optional — becomes this version's changelog)</label>
         <textarea id="addNote" placeholder="- Vocal +2 dB&#10;- New outro"></textarea>
         <!-- What the ticks will add, shown rather than described, so the
@@ -7156,7 +7164,33 @@ function addTodoRows(){
 }
 // Switching songs abandons the ticks, because a tick means "this mix fixes that
 // note" and the mix has just changed what it is a mix of.
-function resetAddTodo(){ addTicks = new Map(); renderAddTodo(); }
+function resetAddTodo(){ addTicks = new Map(); fillAddCarry(); renderAddTodo(); }
+
+// The "Fixed in this mix:" block a version's changelog already holds: the
+// header line, then its bullets and their indented replies, up to a blank line.
+function fixedBlockOf(ver){
+  const lines = (ver.changelog || '').split('\n');
+  const at = lines.findIndex(l => /^\s*Fixed in this mix:?\s*$/i.test(l));
+  if (at < 0) return [];
+  const out = [];
+  for (const l of lines.slice(at + 1)){
+    if (!l.trim()) break;
+    out.push(l.replace(/\s+$/, ''));
+  }
+  return out;
+}
+function fillAddCarry(){
+  const song = addTodoSong(), sel = $('addCarry');
+  const opts = song ? song.versions.map((v, i) => ({ v, i })).filter(o => fixedBlockOf(o.v).length) : [];
+  $('addCarryWrap').style.display = opts.length ? 'block' : 'none';
+  sel.innerHTML = `<option value="">None, start fresh</option>` +
+    opts.map(o => `<option value="${o.i}">${esc(o.v.name)} (${fixedBlockOf(o.v).filter(l => /^-/.test(l)).length} items)</option>`).join('');
+}
+$('addCarry').addEventListener('change', updateAddTodoPreview);
+function carriedLines(){
+  const song = addTodoSong(), i = $('addCarry').value;
+  return song && i !== '' && song.versions[Number(i)] ? fixedBlockOf(song.versions[Number(i)]) : [];
+}
 
 // A re-render replaces the textareas, so whatever is typed in them has to come
 // back into the map first or ticking a second note would silently eat the reply
@@ -7219,8 +7253,9 @@ $('addTodoList').addEventListener('input', (e) => {
 // tool you stop trusting with the box.
 function addTodoLogLines(){
   const song = addTodoSong();
-  if (!song || !addTicks.size) return '';
-  const out = ['Fixed in this mix:'];
+  const carried = carriedLines();
+  if (!song || (!addTicks.size && !carried.length)) return '';
+  const out = ['Fixed in this mix:', ...carried];
   for (const c of addTodoRows()){
     if (!addTicks.has(c.id)) continue;
     out.push(`- ${c.text.replace(/\s+/g, ' ').trim()} (at ${fmt(c.time)})`);

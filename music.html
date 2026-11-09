@@ -113,7 +113,8 @@
     border-bottom: 1px solid var(--line); font-size: 13px; }
   .vlog-upd:last-child { border-bottom: none; }
   .vu-icon { flex: none; }
-  .vlog-upd.link { cursor: pointer; }
+  .vlog-upd.link, .vlog-cmt.link { cursor: pointer; }
+  .vlog-cmt.link:hover { background: var(--hover, rgba(127,127,127,.08)); }
   .vlog-upd.link:hover { background: var(--hover, rgba(127,127,127,.08)); }
   .vu-body b { color: var(--text); font-weight: 600; }
   .vu-song { color: var(--text); }
@@ -7012,6 +7013,23 @@ async function vlogPostReply(row){
 }
 $('vlogList').addEventListener('click', (e) => {
   if (e.target.closest('.vlog-more')){ vlogShown += VLOG_PAGE; renderVlog(); return; }
+  const cm = e.target.closest('.vlog-cmt[data-song]');
+  if (cm && activeSong && cm.dataset.song === activeSong.id){
+    // CR-174: a comment in the song's own log opens the mix it was made on, at its time.
+    const vi = activeSong.versions.findIndex(v => v.id === cm.dataset.ver);
+    if (vi >= 0 && vi !== activeVer) switchVersion(vi);
+    openDrawer(true);
+    const time = cm.dataset.time === '' ? null : Number(cm.dataset.time);
+    if (Number.isFinite(time)){
+      const gen = openGen; let tries = 0;
+      const tick = () => {
+        if (gen !== openGen || ++tries > 75) return;
+        if (readyByVer[activeVer] === true && curWS()) seekTo(time); else setTimeout(tick, 200);
+      };
+      tick();
+    }
+    return;
+  }
   const row = e.target.closest('.vlog-upd');
   if (!row) return;
   if (e.target.closest('.vu-reply-send')){ vlogPostReply(row); return; }
@@ -7080,7 +7098,7 @@ async function renderVlog(){
     if (it.c){
       const c = it.c;
       return `
-    <div class="vlog-entry vlog-cmt ${c.resolved ? 'resolved' : ''}">
+    <div class="vlog-entry vlog-cmt link ${c.resolved ? 'resolved' : ''}" data-song="${esc(activeSong.id)}" data-ver="${esc(c.versionId || '')}" data-time="${Number.isFinite(c.time) ? c.time : ''}" title="Go to this comment in the mix">
       <div class="vlog-chead">
         <span class="vu-icon">💬</span>
         <span class="vlog-name">${esc(c.name || 'Someone')}</span>

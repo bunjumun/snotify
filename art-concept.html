@@ -197,6 +197,9 @@
     border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 13px;
   }
   .row.toolbar input.cname { flex: 0 0 110px; min-width: 0; }
+  .cadd input.cadd-name { flex: 0 0 96px; }
+  /* An add was refused for want of a name: this is the box to fill in. */
+  input.cname.need, .cadd input.cadd-name.need { border-color: #e8a13a; box-shadow: 0 0 0 2px rgba(232,161,58,.28); }
 
   .addblock { display: flex; gap: 8px; flex-wrap: wrap; }
   .pastehint { color: var(--text-mute); font-size: 12px; }
@@ -287,7 +290,7 @@
             <select id="tgtRef" style="display:none"></select>
             <span class="grow"></span>
             <input class="nm cname" id="cName" placeholder="Your name" maxlength="40"
-                   title="Shown on the notes you leave (remembered on this device)" />
+                   title="Needed to add an idea, an edit or a note; it is shown with it (remembered on this device)" />
             <span class="status" id="docStatus"></span>
             <button class="btn primary" id="saveBtn" style="display:none" title="Save your changes into this version. Nothing new is created.">Save</button>
             <button class="btn ghost" id="saveEditBtn" title="Branch off: save this as a suggested edit alongside what you are looking at">Save as new edit</button>
@@ -433,7 +436,7 @@ function draftRow(d, tog){
     : isMerged(d.id) ? '<span class="vb merged">adopted</span>'
     : isMain(d.id) ? '<span class="vb main">main</span>'
     : '<span class="vb sug">suggestion</span>';
-  const who = !root && m.author ? `<span class="vwho">${esc(m.author)}</span>` : '';
+  const who = m.author ? `<span class="vwho">${esc(m.author)}</span>` : '';
   row.innerHTML =
     `${tog ? `<button class="vtog" data-tog title="${tog.open ? 'Hide' : 'Show'} ${tog.count} earlier edit${tog.count === 1 ? '' : 's'}">${tog.open ? '▾' : '▸'} ${tog.count}</button>` : ''}
      <span class="nm">${esc(d.name)}</span>
@@ -964,9 +967,30 @@ const rootsFor  = (bid) => threadFor(bid).filter(c => !c.parentId);
 const repliesFor = (bid, rootId) => threadFor(bid).filter(c => c.parentId === rootId);
 const openCount = (bid) => rootsFor(bid).filter(c => !c.resolved).length;
 
+/** Everything that adds something (an idea, an edit, an adoption, a note, a reply)
+ *  is signed by a band member, so the name is asked for here rather than
+ *  silently saved as blank. Returns the name, or '' after pointing at the box
+ *  to fill in, in which case the caller must stop. The name lives in the
+ *  toolbar field and is remembered on this device; the note composer's own box
+ *  writes to the same place. */
+function requireName(focusEl){
+  const el = $('cName');
+  const who = (el.value || '').trim();
+  document.querySelectorAll('input.cname, input.cadd-name').forEach(i => i.classList.toggle('need', !who));
+  if (who){
+    localStorage.setItem('mp_name', who);
+    document.querySelectorAll('input.cadd-name').forEach(i => { i.value = who; });
+    return who;
+  }
+  say('Add your name first, then try again.', true);
+  (focusEl || el).focus();
+  return '';
+}
+
 async function addComment(bid, text, parentId){
   const txt = (text || '').trim();
   if (!txt) return;
+  if (!requireName()) return;
   // A thread hangs off the block id, so the id has to be in the saved body
   // before the comment can find its way back. Save first, once, deliberately.
   if (idsMinted || dirty){
@@ -1030,6 +1054,7 @@ function threadEl(blk){
     el.querySelector('[data-res]').onclick = () => resolveComment(bid, c.id, !c.resolved);
     el.querySelector('[data-del]').onclick = () => deleteComment(bid, c.id);
     el.querySelector('[data-reply]').onclick = () => {
+      if (!requireName()) return;
       const t = prompt('Reply');
       if (t) addComment(bid, t, c.id);
     };
@@ -1047,16 +1072,28 @@ function threadEl(blk){
   });
   const row = document.createElement('div');
   row.className = 'cadd';
+  const nm = document.createElement('input');
+  nm.className = 'cname cadd-name';
+  nm.placeholder = 'Your name';
+  nm.maxLength = 40;
+  nm.value = ($('cName').value || '').trim();
+  nm.addEventListener('input', () => { $('cName').value = nm.value; nm.classList.remove('need'); $('cName').classList.remove('need'); });
+  nm.addEventListener('change', () => localStorage.setItem('mp_name', nm.value.trim()));
   const inp = document.createElement('input');
   inp.placeholder = 'Add a note…';
   inp.maxLength = 280;
   const go = document.createElement('button');
   go.className = 'btn ghost sm';
   go.textContent = 'Add';
-  const send = () => { const v = inp.value; inp.value = ''; addComment(bid, v, null); };
+  // Name first, then clear: an unsigned note stays in the box instead of being lost.
+  const send = () => {
+    const v = inp.value;
+    if (!v.trim() || !requireName(nm)) return;
+    inp.value = ''; addComment(bid, v, null);
+  };
   go.onclick = send;
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
-  row.append(inp, go);
+  row.append(nm, inp, go);
   box.appendChild(row);
   return box;
 }
@@ -1138,9 +1175,11 @@ async function overwriteIsSafe(){
  */
 async function save(kind, from){
   if (kind === 'here' && !current) kind = 'idea';
+  // Saving in place adds nothing, so it stays unsigned; the rest each add a version.
+  const who = kind === 'here' ? ($('cName').value || '').trim() : requireName();
+  if (kind !== 'here' && !who) return;
   const name = $('draftName').value.trim() || 'Concept';
   // Prune empty text and empty link blocks on the way out.
-  const who = ($('cName').value || '').trim();
   const base = from || current;
   // A suggestion gets its own note threads rather than inheriting the parent's,
   // so a note on one branch never shows up on its sibling.
@@ -1207,6 +1246,9 @@ async function save(kind, from){
 /** Land a suggestion on the idea's main line, and mark the branch adopted. */
 async function adopt(){
   if (!current || isMain(current.id) || isMerged(current.id)) return;
+  // Before the confirm, not inside save(): a save refused for want of a name
+  // would otherwise fall through to marking the branch adopted with nothing landed.
+  if (!requireName()) return;
   const root = ideaRootOf(current.id);
   const head = headOf(root);
   const branchId = current.id;

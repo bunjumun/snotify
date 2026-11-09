@@ -636,3 +636,54 @@ body[data-theme="dazzle"] select,
 body[data-theme="dazzle"] textarea {
   font-family: var(--font-icons), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
+
+/* ---------- Login banner (CR-182) ---------- */
+/* Built by syncBanner() in core.js, which holds the reasoning. Deliberately NOT
+   scoped to the dazzle theme: it shows on a cold gate, before any theme is
+   applied, so it carries its own colours and takes the theme's variables only
+   where they happen to exist (var() fallbacks). Nothing here may take a click or
+   cover a control: fixed, click-through, and placed by script into free space. */
+.dzban {
+  position: fixed; left: 0; right: 0; height: 64px; z-index: 51;
+  pointer-events: none; overflow: hidden;
+}
+.dzban-fly {
+  position: absolute; left: 0; top: 11px; display: flex; align-items: center;
+  will-change: transform; animation: dzban-fly 60s linear infinite;
+}
+/* Right to left, then a short pause off screen before the next pass. */
+@keyframes dzban-fly {
+  0%        { transform: translateX(100vw); }
+  90%, 100% { transform: translateX(-100%); }
+}
+.dzban-ship { flex: none; filter: drop-shadow(0 2px 4px rgba(0,0,0,.85)); animation: dzban-bob 3.2s ease-in-out infinite alternate; }
+@keyframes dzban-bob { from { transform: translateY(-3px) rotate(-1deg); } to { transform: translateY(3px) rotate(1deg); } }
+.dzban-tow { flex: none; }
+.dzban-strip {
+  flex: none; position: relative; height: 30px; box-sizing: border-box; display: flex; align-items: center;
+  padding: 0 20px; background: rgba(8,8,10,.94); border: 1px solid #fff;
+  transform-origin: left center; animation: dzban-flap 1.7s ease-in-out infinite alternate;
+}
+/* A painted band along the top and bottom edge, the hull's own, so the strip
+   reads as part of the ship's livery and the words keep a dark ground. */
+.dzban-strip::before, .dzban-strip::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 4px;
+  background: var(--dazzle-2, repeating-linear-gradient(112deg, #fff 0 4px, #08080a 4px 9px)) center / 100% 100% no-repeat;
+}
+.dzban-strip::before { top: 0; }
+.dzban-strip::after  { bottom: 0; }
+@keyframes dzban-flap { from { transform: skewY(-1.4deg); } to { transform: skewY(1.4deg) translateY(1px); } }
+.dzban-text {
+  white-space: nowrap; color: #f3f5f5; letter-spacing: -.02em;
+  font: 700 12px/1 var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
+}
+.dzban-text b { color: var(--amber, #ff8a1f); font-weight: 700; margin-right: 6px; }
+.dzban-gem { display: inline-block; width: 6px; height: 6px; margin: 0 18px; vertical-align: middle;
+  background: var(--amber, #ff8a1f); transform: rotate(45deg); }
+/* Reduced motion: parked at the left, one line, cut off with an ellipsis. */
+@media (prefers-reduced-motion: reduce) {
+  .dzban-fly   { animation: none; transform: translateX(16px); }
+  .dzban-ship, .dzban-strip { animation: none; }
+  .dzban-strip { max-width: calc(100vw - 190px); overflow: hidden; }
+  .dzban-text  { display: block; overflow: hidden; text-overflow: ellipsis; }
+}

@@ -778,7 +778,7 @@ const wantsHome = () => new URLSearchParams(location.search).has('home');
 // The band password was wrong or has changed since we cached it.
 const isAuthErr = (e) => e && (e.status === 401 || e.status === 403 || /band password/i.test(e.message || ''));
 
-function unlockView(){ document.body.classList.remove('locked'); $('gateModal').classList.remove('open'); }
+function unlockView(){ document.body.classList.remove('locked'); $('gateModal').classList.remove('open'); syncBanner(); }
 
 // Fuzzy band lookup happens server-side: there is no public manifest to scan,
 // and the RPC deliberately reveals at most one band name per query.
@@ -813,7 +813,127 @@ function showGate(bandSlug, hard = true, bandTitle = null){
   $('gatePass').value = '';
   gateStep(1);
   $('gateModal').classList.add('open');
+  syncBanner();
 }
+
+// ---------- The login banner (CR-182) ----------
+// A spaceship tows a strip of recent site updates across the gate, like a
+// banner behind a plane. Three rules shaped it, the first of which he gave
+// outright: it must not block anything.
+//   1. It is only ever painted in free space. The gate's box is measured and
+//      the banner flies below it, or above it if that is where the room is, and
+//      is hidden when neither has room (a short landscape phone) or when any
+//      other dialog is open (the admin one, say). It is re-measured on resize
+//      and whenever the box changes height, which it does between the band-name
+//      step and the password step. On top of that it is click-through
+//      (pointer-events: none), fixed (so it can never shift the layout) and
+//      aria-hidden (a moving ticker read aloud is noise).
+//   2. It flies right to left. The ship leads and the text trails behind it, so
+//      the first words go past first and the line reads in the right order.
+//      Flown left to right, the viewer would meet the END of the sentence first.
+//   3. It shows on every gate, not only a Lakehorse-themed one. On a cold load
+//      the band is not known and the theme is not applied yet, so tying it to
+//      the theme would mean no banner at page load, which is the one moment it
+//      is wanted. The ship and strip carry their own colours for that reason.
+// The updates are a static file, updates.json at the repo root, because the
+// gate is pre-login (a Supabase table would need a migration and a public
+// policy) and because a one-line file is the cheapest thing to keep current.
+// Everything from it goes in through textContent, never innerHTML.
+const BANNER = { speed: 70, max: 8, h: 64 };      // px per second, entries, box height
+let bannerEl = null, bannerBusy = false, bannerLoad = null, bannerRO = null;
+
+function bannerUpdates(){
+  if (!bannerLoad) bannerLoad = fetch('updates.json', { cache: 'no-cache' })
+    .then(r => r.ok ? r.json() : [])
+    .then(l => (Array.isArray(l) ? l : []).filter(u => u && typeof u.t === 'string' && u.t).slice(0, BANNER.max))
+    .catch(() => []);
+  return bannerLoad;
+}
+const bannerWanted = () => {
+  const gate = $('gateModal');
+  return !!gate && gate.classList.contains('open')
+      && !document.querySelector('.modal-back.open:not(#gateModal)');
+};
+function bannerPlace(){
+  if (!bannerEl) return;
+  const m = document.querySelector('#gateModal .modal');
+  const r = m ? m.getBoundingClientRect() : { top: 0, bottom: 0 };
+  const vh = window.innerHeight, H = BANNER.h, gap = 20, hullBand = 52;
+  const below = vh - 16 - (r.bottom + gap), above = r.top - gap - hullBand;
+  let top = null;
+  if (below >= H) top = r.bottom + gap + Math.min(70, (below - H) / 2);
+  else if (above >= H) top = hullBand + (above - H) / 2;
+  bannerEl.style.display = top === null ? 'none' : '';
+  if (top !== null) bannerEl.style.top = Math.round(top) + 'px';
+}
+function bannerTime(){
+  // Same speed whatever the length: the strip is as long as its text, so the
+  // trip is (screen + craft) / speed. A tenth of each loop is spent off screen.
+  const fly = bannerEl && bannerEl.firstChild;
+  if (fly) fly.style.animationDuration = (((window.innerWidth + fly.offsetWidth) / BANNER.speed) / 0.9).toFixed(1) + 's';
+}
+function bannerBuild(list){
+  const MON = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const el = document.createElement('div');
+  el.className = 'dzban'; el.setAttribute('aria-hidden', 'true');
+  const fly = document.createElement('div'); fly.className = 'dzban-fly';
+  // Static markup only: the ship (nose to the left, flown tail first by the
+  // flip), then the tow lines that run from its tail to the strip's corners.
+  fly.innerHTML =
+    `<svg class="dzban-ship" viewBox="0 0 50 22" width="96" height="42"><defs>`
+  + `<clipPath id="bnClip"><path d="M48.4 11 L30 6.6 L16 4 L7 1.2 L9.4 8 L3.4 9.4 L3.4 12.6 L9.4 14 L7 20.8 L16 18 L30 15.4 Z"/></clipPath>`
+  + `<pattern id="bnA" width="2.4" height="2.4" patternTransform="rotate(-52)" patternUnits="userSpaceOnUse"><rect width="2.4" height="2.4" fill="#eceff0"/><rect width="2.4" height="1.2" fill="#08080a"/></pattern>`
+  + `<pattern id="bnB" width="2.1" height="2.1" patternTransform="rotate(38)" patternUnits="userSpaceOnUse"><rect width="2.1" height="2.1" fill="#eceff0"/><rect width="2.1" height="1.05" fill="#08080a"/></pattern>`
+  + `<pattern id="bnC" width="2.7" height="2.7" patternTransform="rotate(8)" patternUnits="userSpaceOnUse"><rect width="2.7" height="2.7" fill="#eceff0"/><rect width="2.7" height="1.35" fill="#08080a"/></pattern>`
+  + `<radialGradient id="bnG"><stop offset="0" stop-color="#fff1c9"/><stop offset=".4" stop-color="#ff8a1f" stop-opacity=".9"/><stop offset="1" stop-color="#ff8a1f" stop-opacity="0"/></radialGradient>`
+  + `</defs><g transform="translate(50 0) scale(-1 1)">`
+  + `<ellipse cx="3" cy="11" rx="5" ry="3.2" fill="url(#bnG)"/>`
+  + `<path d="M48.4 11 L30 6.6 L16 4 L7 1.2 L9.4 8 L3.4 9.4 L3.4 12.6 L9.4 14 L7 20.8 L16 18 L30 15.4 Z" fill="#eceff0" stroke="#08080a" stroke-width="1.1" stroke-linejoin="round" paint-order="stroke fill"/>`
+  + `<g clip-path="url(#bnClip)"><path d="M0 0 H14 L16 22 H0 Z" fill="url(#bnA)"/><path d="M14 0 H27 L29 22 H16 Z" fill="url(#bnB)"/><path d="M27 0 H40 L42 22 H29 Z" fill="url(#bnC)"/>`
+  + `<path d="M14 0 L16 22 M27 0 L29 22 M40 0 L42 22" stroke="#08080a" stroke-width=".5" fill="none"/><path d="M40.6 8.9 L48.4 11 L40.6 13.1 Z" fill="#ff8a1f"/></g>`
+  + `<path d="M25.4 11 C25.4 9.2 28 8.4 31 8.6 C33 8.8 34.2 9.9 34.2 11 C34.2 12.1 33 13.2 31 13.4 C28 13.6 25.4 12.8 25.4 11 Z" fill="#0c1114" stroke="#08080a" stroke-width=".7"/>`
+  + `<path d="M27 10 C28.4 9.4 30.2 9.3 31.6 9.6" stroke="#fff" stroke-width=".55" stroke-linecap="round" fill="none" opacity=".7"/>`
+  + `<g stroke="#08080a" stroke-width=".7"><circle cx="9.2" cy="5.6" r="2.1" fill="#eceff0"/><circle cx="9.2" cy="16.4" r="2.1" fill="#eceff0"/></g>`
+  + `<circle cx="9.2" cy="5.6" r="1.15" fill="#ff8a1f"/><circle cx="9.2" cy="16.4" r="1.15" fill="#ff8a1f"/></g></svg>`
+  + `<svg class="dzban-tow" viewBox="0 0 30 30" width="30" height="30"><path d="M0 15 L30 1 M0 15 L30 29" stroke="#fff" stroke-opacity=".75" stroke-width="1" fill="none"/></svg>`;
+  const strip = document.createElement('div'); strip.className = 'dzban-strip';
+  const text = document.createElement('span'); text.className = 'dzban-text';
+  list.forEach((u, i) => {
+    if (i){ const gem = document.createElement('i'); gem.className = 'dzban-gem'; text.appendChild(gem); }
+    const d = new Date(String(u.d || '') + 'T00:00:00');
+    const when = document.createElement('b');
+    when.textContent = isNaN(d) ? '' : `${d.getDate()} ${MON[d.getMonth()]}`;
+    text.append(when, ' ' + u.t);
+  });
+  strip.appendChild(text); fly.appendChild(strip); el.appendChild(fly);
+  return el;
+}
+async function syncBanner(){
+  if (!bannerWanted()){
+    if (bannerEl){ bannerEl.remove(); bannerEl = null; }
+    if (bannerRO){ bannerRO.disconnect(); bannerRO = null; }
+    return;
+  }
+  if (bannerEl) return bannerPlace();
+  if (bannerBusy) return;
+  bannerBusy = true;
+  const list = await bannerUpdates();
+  bannerBusy = false;
+  // The gate may have closed while the file was on its way.
+  if (!list.length || !bannerWanted() || bannerEl) return;
+  bannerEl = bannerBuild(list);
+  document.body.appendChild(bannerEl);
+  bannerTime(); bannerPlace();
+  const m = document.querySelector('#gateModal .modal');
+  if (m && 'ResizeObserver' in window){ bannerRO = new ResizeObserver(bannerPlace); bannerRO.observe(m); }
+  if (document.fonts) document.fonts.ready.then(() => { if (bannerEl) bannerTime(); });
+}
+window.addEventListener('resize', () => { if (bannerEl){ bannerPlace(); bannerTime(); } });
+// Dialogs open and close from a dozen places (a backdrop click, a Close
+// button, the gate itself), so rather than hook each one the banner watches
+// their class and follows whichever is open. Idempotent, so extra calls are free.
+document.querySelectorAll('.modal-back').forEach(el =>
+  new MutationObserver(() => syncBanner()).observe(el, { attributes: true, attributeFilter: ['class'] }));
 
 // Step 1: resolve the typed band name.
 async function gateNext(){
@@ -989,8 +1109,8 @@ async function adminShowLoggedOut(){
     $('adminPass').value = ''; $('adminLoginErr').textContent = '';
   }
 }
-function openAdmin(){ $('adminModal').classList.add('open'); adminShowLoggedOut(); }
-function closeAdmin(){ $('adminModal').classList.remove('open'); }
+function openAdmin(){ $('adminModal').classList.add('open'); adminShowLoggedOut(); syncBanner(); }
+function closeAdmin(){ $('adminModal').classList.remove('open'); syncBanner(); }
 async function adminDoSetup(){
   const password = $('adminSetupPass').value;
   const question = $('adminSetupQ').value.trim();

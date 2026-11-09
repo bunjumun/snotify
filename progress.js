@@ -374,7 +374,20 @@
    * yet gets the checklist number rather than a wrong one. */
   function songPct(ticks, shape, todos) {
     const list = shapedList(SONG, shape);
-    return clampPct(pct(list, ticks) + todoSwing(list, ticks, todos));
+    return capWhileOpen(clampPct(pct(list, ticks) + todoSwing(list, ticks, todos)), list, ticks, todos);
+  }
+
+  /* NO 100% WHILE ANYTHING IS OPEN. At his word: "mango tree world reached 100%
+   * before all comments were resolved." The swing is +4 per resolved note and
+   * -1 per open one, so a song with plenty resolved could out-earn its open
+   * notes, clamp to 100, and read as finished with comments still waiting.
+   * The swing may take a song up to 99 and no further; only the last open note
+   * being resolved (or removed) lets it reach 100. */
+  function capWhileOpen(p, list, ticks, todos) {
+    let open = todos ? (todos.open || 0) : 0;
+    for (const ph of list) for (const t of ph.tasks)
+      if (t.custom && !ticks.has(t.key)) open++;
+    return open > 0 ? Math.min(p, 99) : p;
   }
 
   /* The album percentage: the manual half plus the mean of the songs.
@@ -418,7 +431,7 @@
      * and is diluted by however many songs there are — so a to-do on one track
      * nudges the record slightly, which is right, and does not get counted a
      * second time at full strength, which would not be. */
-    return clampPct(base + todoSwing(list, ticks));
+    return capWhileOpen(clampPct(base + todoSwing(list, ticks)), list, ticks, null);
   }
 
 

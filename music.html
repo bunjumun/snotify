@@ -12,7 +12,7 @@
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
 <link rel="stylesheet" href="core.css?v=37" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=31" />
+<link rel="stylesheet" href="theme-dazzle.css?v=32" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -1848,79 +1848,56 @@
               <!-- Lakehorse only (see theme-dazzle.css): a dazzle-painted boat
                    riding the playhead, where the swell is breaking. -->
               <div id="boat" aria-hidden="true">
-                <!-- A dazzle cruiser, seen from above with the bow to the
-                     right, running down the track. Warship proportions — nine
-                     lengths to the beam, a raked bow, turrets fore and aft —
-                     and the disruptive scheme painted as hard chevrons rather
-                     than an even hatch, which is what dazzle actually was: not
-                     concealment but bold shapes that break up a hull's line and
-                     make its heading hard to read. -->
+                <!-- CR-181: a dazzle-painted spaceship, seen from above with the
+                     nose to the right, in the same slot the cruiser held. It
+                     is drawn the way the livery on a prototype racing car is
+                     painted: even stripes inside each panel, the ruling turning
+                     at every seam, and one orange accent on the nose. Two
+                     thruster rings sit aft where the cruiser's turrets were.
+                     The ship is a delta wing so it still reads at 44 pixels. -->
                 <svg viewBox="0 0 50 22">
                   <defs>
-                    <clipPath id="hullClip">
-                      <path d="M4 11 L44.5 11 L47.5 8.6 L47.5 12.2 C47.5 15.2 45.6 16.6 42 16.6
-                               L8.5 16.6 C5.6 16.6 4 15.4 4 13.4 Z"/>
+                    <clipPath id="shipClip">
+                      <path d="M48.4 11 L30 6.6 L16 4 L7 1.2 L9.4 8 L3.4 9.4 L3.4 12.6 L9.4 14 L7 20.8 L16 18 L30 15.4 Z"/>
                     </clipPath>
-                    <clipPath id="ssClip"><rect x="17" y="4" width="12" height="7"/></clipPath>
+                    <pattern id="shipA" width="2.4" height="2.4" patternTransform="rotate(-52)" patternUnits="userSpaceOnUse">
+                      <rect width="2.4" height="2.4" fill="#eceff0"/><rect width="2.4" height="1.2" fill="#08080a"/>
+                    </pattern>
+                    <pattern id="shipB" width="2.1" height="2.1" patternTransform="rotate(38)" patternUnits="userSpaceOnUse">
+                      <rect width="2.1" height="2.1" fill="#eceff0"/><rect width="2.1" height="1.05" fill="#08080a"/>
+                    </pattern>
+                    <pattern id="shipC" width="2.7" height="2.7" patternTransform="rotate(8)" patternUnits="userSpaceOnUse">
+                      <rect width="2.7" height="2.7" fill="#eceff0"/><rect width="2.7" height="1.35" fill="#08080a"/>
+                    </pattern>
                   </defs>
 
-                  <!-- HULL, seen from the side and a little above: sheer line
-                       along the deck, raked stem at the bow, counter stern. -->
-                  <path d="M4 11 L44.5 11 L47.5 8.6 L47.5 12.2 C47.5 15.2 45.6 16.6 42 16.6
-                           L8.5 16.6 C5.6 16.6 4 15.4 4 13.4 Z"
-                        fill="#fff" stroke="#08080a" stroke-width="1.1"
+                  <!-- HULL: three panels, each ruled at its own angle. -->
+                  <path d="M48.4 11 L30 6.6 L16 4 L7 1.2 L9.4 8 L3.4 9.4 L3.4 12.6 L9.4 14 L7 20.8 L16 18 L30 15.4 Z"
+                        fill="#eceff0" stroke="#08080a" stroke-width="1.1"
                         stroke-linejoin="round" paint-order="stroke fill"/>
-
-                  <!-- The scheme: bold bands raked at opposing angles, so no two
-                       adjacent shapes agree on which way she is heading. That is
-                       what dazzle was for — not hiding a ship, but making her
-                       course and speed hard to read. -->
-                  <g clip-path="url(#hullClip)" fill="#08080a">
-                    <path d="M6.5 10 L9.5 10 L6.5 18 L3.5 18 Z"/>
-                    <path d="M13 10 L15 10 L18.5 18 L16.5 18 Z"/>
-                    <path d="M20.5 10 L24 10 L20.5 18 L17 18 Z"/>
-                    <path d="M28 10 L30 10 L33 18 L31 18 Z"/>
-                    <path d="M34.5 10 L38 10 L35 18 L31.5 18 Z"/>
-                    <path d="M42 10 L44 10 L46.5 18 L44.5 18 Z"/>
+                  <g clip-path="url(#shipClip)">
+                    <path d="M0 0 H14 L16 22 H0 Z" fill="url(#shipA)"/>
+                    <path d="M14 0 H27 L29 22 H16 Z" fill="url(#shipB)"/>
+                    <path d="M27 0 H40 L42 22 H29 Z" fill="url(#shipC)"/>
+                    <path d="M14 0 L16 22 M27 0 L29 22 M40 0 L42 22" stroke="#08080a" stroke-width=".5" fill="none"/>
+                    <!-- the one accent: an orange nose cap -->
+                    <path d="M40.6 8.9 L48.4 11 L40.6 13.1 Z" fill="#ff8a1f"/>
                   </g>
 
-                  <!-- SUPERSTRUCTURE: bridge block, funnel and the tripod mast
-                       that makes a warship read as a warship in silhouette. -->
-                  <path d="M18 10.8 L18 6.4 L21 6.4 L21 4.8 L25.5 4.8 L25.5 6.4 L28 6.4 L28 10.8 Z"
-                        fill="#fff" stroke="#08080a" stroke-width=".85" stroke-linejoin="round"/>
-                  <g clip-path="url(#ssClip)" fill="#08080a">
-                    <path d="M19.4 4 L20.6 4 L19 11 L17.8 11 Z"/>
-                    <path d="M24 4 L25.4 4 L26.8 11 L25.4 11 Z"/>
-                  </g>
-                  <!-- funnel, raked back -->
-                  <path d="M29.4 10.8 L30.2 6.6 L32.6 6.6 L32.8 10.8 Z"
-                        fill="#08080a" stroke="#08080a" stroke-width=".7" stroke-linejoin="round"/>
-                  <path d="M30.3 7.4 H32.5" stroke="#fff" stroke-width=".6"/>
-                  <!-- tripod mast and yard -->
-                  <g stroke="#08080a" stroke-width=".75" stroke-linecap="round" fill="none">
-                    <path d="M23 4.8 L23 0.8"/>
-                    <path d="M21 3.4 H25.2"/>
-                    <path d="M23 2.2 L21.4 4.8 M23 2.2 L24.6 4.8"/>
-                  </g>
+                  <!-- CANOPY, with a highlight so it reads as glass -->
+                  <path d="M25.4 11 C25.4 9.2 28 8.4 31 8.6 C33 8.8 34.2 9.9 34.2 11 C34.2 12.1 33 13.2 31 13.4 C28 13.6 25.4 12.8 25.4 11 Z"
+                        fill="#0c1114" stroke="#08080a" stroke-width=".7"/>
+                  <path d="M27 10 C28.4 9.4 30.2 9.3 31.6 9.6" stroke="#fff" stroke-width=".55"
+                        stroke-linecap="round" fill="none" opacity=".7"/>
 
-                  <!-- MAIN BATTERY: two turrets forward, one aft, barrels out -->
-                  <g fill="#fff" stroke="#08080a" stroke-width=".75" stroke-linejoin="round">
-                    <path d="M33.6 10.8 L34.4 8.9 L38.4 8.9 L39 10.8 Z"/>
-                    <path d="M39.8 10.8 L40.5 9.3 L43.6 9.3 L44.1 10.8 Z"/>
-                    <path d="M8.8 10.8 L9.5 8.9 L13.5 8.9 L14.1 10.8 Z"/>
+                  <!-- THRUSTERS: a ring each side aft, amber at the throat -->
+                  <g stroke="#08080a" stroke-width=".7">
+                    <circle cx="9.2" cy="5.6" r="2.1" fill="#eceff0"/>
+                    <circle cx="9.2" cy="16.4" r="2.1" fill="#eceff0"/>
                   </g>
-                  <g stroke="#08080a" stroke-width=".7" stroke-linecap="round">
-                    <path d="M38.2 9.4 L42.4 8.6 M38.2 10.2 L42.4 9.5"/>
-                    <path d="M43.4 9.7 L46.6 9.1"/>
-                    <path d="M13.2 9.4 L17.4 8.6 M13.2 10.2 L17.4 9.5"/>
-                  </g>
-
-                  <!-- boot-topping at the waterline, and the bow wave she pushes -->
-                  <path d="M4.6 15.2 C14 16.1 34 16.1 46.8 14.4"
-                        fill="none" stroke="#08080a" stroke-width=".8"/>
-                  <path d="M46.4 16.4 C48.2 16.8 49.2 17.4 49.6 18.2
-                           M3.6 16.4 C2 16.9 1 17.6 .6 18.6"
-                        fill="none" stroke="#fff" stroke-width=".9" stroke-linecap="round" opacity=".85"/>
+                  <circle cx="9.2" cy="5.6" r="1.15" fill="#ff8a1f"/>
+                  <circle cx="9.2" cy="16.4" r="1.15" fill="#ff8a1f"/>
+                  <path d="M3.4 11 H0.6" stroke="#ff8a1f" stroke-width="1.6" stroke-linecap="round" opacity=".85"/>
                 </svg>
               </div>
               <!-- …and the horse below it: same playhead, opposite side of the
@@ -2013,7 +1990,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=59"></script>
+<script src="core.js?v=60"></script>
 <!-- The two checklists and the arithmetic. No DOM, no network; it throws at
      load if the weights stop summing to 100, which is deliberate. -->
 <script src="progress.js?v=17"></script>

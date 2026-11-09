@@ -19,16 +19,20 @@ body[data-theme="dazzle"] {
   --bg-soft:   #101014;
   --bg-row:    #141418;
   --bg-hover:  #1e1e24;
-  --line:      #34353c;
+  --line:      #2b3236;
   --edge:      #ffffff;
   --text:      #ffffff;
-  --text-dim:  #a8a9b2;
-  --text-mute: #6c6e78;
+  --text-dim:  #aab2b6;
+  --text-mute: #7e888d;
+  /* The one colour in the chrome, and it is the buoys' own orange (see BUOY_SVG
+     in music.html): nose caps, thruster glow, anything that has to be found at
+     a glance against the dazzle. */
+  --amber:     #ff8a1f;
   --accent:    #ffffff;
   --accent-2:  #c9cad2;
   --warn:      #ffffff;
   --err:       #ff5c5c;
-  --wave:      #52545e;
+  --wave:      #4d575c;
   --wave-prog: #ffffff;
   --shadow:    0 10px 40px rgba(0,0,0,.75);
   --radius:    3px;
@@ -142,10 +146,12 @@ body[data-theme="dazzle"] .todo-dot.resolved { background: #fff; border: 2px sol
 /* Bar geometry comes from --bar-* above; this is the water it sits in: a
    vertical gradient for depth and a hard waterline through the middle. */
 body[data-theme="dazzle"] .wavewrap {
-  /* The one place colour is allowed back in: a very slight blue cast on the
-     water, so the white linework and the two black-and-white things sailing on
-     it read as objects ON the sea rather than as more of the same ink. */
+  /* A very slight cool cast on the water, so the white linework and the
+     things sailing on it read as objects ON the sea rather than as more of the
+     same ink. CR-181 laid the chop over it: long wavelets that glint only where
+     they face the light, which is what dark water looks like from above. */
   background:
+    var(--wet-chop, none) 0 0 / 480px 160px repeat,
     linear-gradient(180deg, rgba(88,142,196,.16) 0%, rgba(46,92,146,.10) 45%, rgba(10,26,48,.30) 100%),
     linear-gradient(180deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,.01) 45%, rgba(0,0,0,.34) 100%);
   border-radius: var(--radius);
@@ -453,3 +459,72 @@ body[data-theme="dazzle"] .dz-grid label { text-transform: uppercase; letter-spa
 body[data-theme="dazzle"] .tool-add input { border-radius: var(--radius); }
 body[data-theme="dazzle"] .tool-what b { text-transform: uppercase; letter-spacing: .05em; font-size: 12.5px; }
 
+
+/* ---------- Wet hull (CR-181) ---------- */
+/* Paint, then weather. paintDazzle() in core.js lays down the stripes; this is
+   what water does to them. Frames (the top band, the doors, the modal caps) get
+   the full treatment: gloss, standing beads and runs hanging off the stripes.
+   Dense lists (song rows, comments) stay dry apart from a gloss edge, because
+   beads over a column of small type read as dirt on the screen rather than as
+   water on the paint, and the playing row alone is allowed its beads.
+   Every image here is static. Nothing animates, so there is nothing for
+   prefers-reduced-motion to switch off. */
+
+/* Light on a wet plate: a hard highlight on the top lip, a dark line beneath. */
+body[data-theme="dazzle"] .song,
+body[data-theme="dazzle"] .door,
+body[data-theme="dazzle"] .piece,
+body[data-theme="dazzle"] .empty {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.13), inset 0 -1px 0 rgba(0,0,0,.6);
+}
+/* One diagonal streak across each row, as a background IMAGE so that the
+   shorthand `background` on :hover and .active does not wipe it. */
+body[data-theme="dazzle"] .song,
+body[data-theme="dazzle"] .door {
+  background-image: linear-gradient(115deg, transparent 36%, rgba(255,255,255,.045) 46%, transparent 56%);
+}
+body[data-theme="dazzle"] .song.active {
+  background-image: var(--wet-beads, none), linear-gradient(115deg, transparent 36%, rgba(255,255,255,.07) 46%, transparent 56%);
+  background-size: 360px 240px, auto;
+}
+/* The thrusters of the plate you are listening to. */
+body[data-theme="dazzle"] .song.active::before { border-right-color: var(--amber); }
+
+/* Runs from the hull band across the top of every page. Shorter than the gap
+   between the band and the header (46px), so none of them ever touches text. */
+body[data-theme="dazzle"]::after {
+  content: ""; position: fixed; top: 15px; left: 0; right: 0; height: 30px;
+  z-index: 59; pointer-events: none;
+  background: var(--drips, none) 0 0 / 720px 34px repeat-x;
+}
+
+/* Doors: runs under the stripe band, beads over the plate behind the words.
+   The words sit above the water layer so they stay crisp. */
+body[data-theme="dazzle"] .door::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: var(--drips, none) 0 13px / 720px 34px repeat-x,
+              var(--wet-beads, none) 0 0 / 360px 240px;
+}
+body[data-theme="dazzle"] .door > * { position: relative; z-index: 1; }
+
+/* Modal caps drip too, but only the first few pixels of a run: the heading is
+   close under the band. */
+body[data-theme="dazzle"] .modal {
+  position: relative;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.13), inset 0 -1px 0 rgba(0,0,0,.6), var(--shadow);
+}
+body[data-theme="dazzle"] .modal::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 16px;
+  pointer-events: none;
+  background: var(--drips, none) 0 0 / 720px 34px repeat-x;
+}
+
+/* The door's glyph tile is square, and it used to borrow the wide band for its
+   paint, which tiled a dozen-pixel strip down it. It takes the plate scheme. */
+body[data-theme="dazzle"] .door .glyph {
+  /* A dark centre with a white rim, the way the play button is a life ring:
+     hairline stripes behind an emoji swallow it, so it gets a disc to sit on. */
+  background:
+    radial-gradient(circle, #08080a 0 17px, #fff 17px 18px, transparent 18.5px),
+    var(--dazzle-narrow) center / 100% 100% no-repeat;
+}

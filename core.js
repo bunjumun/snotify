@@ -353,17 +353,85 @@ function dazzlePanelSVG(poly, i, rand, pal, scale, conflict, stripeBase){
   return { defs: `<clipPath id="dp${i}"><polygon points="${pts}"/></clipPath>`, body: out + `</g>` };
 }
 
-// A whole scheme, as standalone SVG markup.
+// The naval look (CR-181). The original painter above rules every panel with
+// stripes whose widths never settle, which reads as a scribble from a distance.
+// Four real hulls (a World War 2 torpedo boat, a modern carrier, a First World
+// War cruiser and a prototype racing car) agree on something it misses: inside
+// a panel the paint is EVEN, and all the dazzle is in the turn at the seam.
+// So this painter takes four vocabularies and lets the panel pick one:
+//   herring  even stripes, one width per panel, ruled at a new angle
+//   chevron  a few wide V bands of uneven width, apex towards the bow
+//   wheel    wedges fanned round a point, the carrier's pinwheel
+//   flat     one tone, so the eye has somewhere to rest
+// `prev` is the angle of the panel painted before this one, and the new ruling
+// always turns at least 38 degrees away from it: no two neighbours may agree
+// about which way the ship is facing. It is a chain rather than a true
+// adjacency test, which is cheap and, with panels cut at random, close enough.
+function dazzleNavalPanel(poly, i, rand, pal, scale, mix, prev){
+  const pts = poly.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const span = Math.hypot(x1 - x0, y1 - y0);
+  const kinds = Object.keys(mix);
+  let pick = rand() * kinds.reduce((s, k) => s + mix[k], 0), kind = kinds[0];
+  for (const k of kinds){ if ((pick -= mix[k]) < 0){ kind = k; break; } }
+  const gi = Math.floor(rand() * pal.length);
+  const si = (gi + 1 + Math.floor(rand() * (pal.length - 1))) % pal.length;
+  const ground = pal[gi], ink = pal[si];
+  const ang = (prev + (rand() < 0.5 ? -1 : 1) * (38 + rand() * 80) + 360) % 360;
+  const f = (n) => n.toFixed(1);
+  let out = `<g clip-path="url(#dp${i})"><rect x="${f(cx - span)}" y="${f(cy - span)}" `
+          + `width="${f(span * 2)}" height="${f(span * 2)}" fill="${ground}"/>`;
+  if (kind === 'herring'){
+    const period = (5 + rand() * 7) * scale, bar = period * (0.42 + rand() * 0.16);
+    out += `<g transform="rotate(${f(ang)} ${f(cx)} ${f(cy)})">`;
+    for (let x = cx - span, g = 0; x < cx + span && g++ < 160; x += period)
+      out += `<rect x="${f(x)}" y="${f(cy - span)}" width="${f(bar)}" height="${f(span * 2)}" fill="${ink}"/>`;
+    out += `</g>`;
+  } else if (kind === 'chevron'){
+    const apex = span * (0.22 + rand() * 0.3);
+    out += `<g transform="rotate(${f(ang)} ${f(cx)} ${f(cy)})">`;
+    for (let x = cx - span, g = 0; x < cx + span && g++ < 40;){
+      const t = (5 + rand() * 12) * scale;
+      out += `<polygon fill="${ink}" points="${f(x)},${f(cy - span)} ${f(x + apex)},${f(cy)} ${f(x)},${f(cy + span)} `
+           + `${f(x + t)},${f(cy + span)} ${f(x + apex + t)},${f(cy)} ${f(x + t)},${f(cy - span)}"/>`;
+      x += t + (5 + rand() * 14) * scale;
+    }
+    out += `</g>`;
+  } else if (kind === 'wheel'){
+    const ox = x0 + rand() * (x1 - x0), oy = y0 + rand() * (y1 - y0);
+    const n = 6 + Math.floor(rand() * 5), R = span * 1.6;
+    const w = Array.from({ length: n }, () => 0.5 + rand());
+    const tot = w.reduce((a, b) => a + b, 0);
+    let a = rand() * 360;
+    for (let k = 0; k < n; k++){
+      const a2 = a + 360 * w[k] / tot;
+      const p = (t) => `${f(ox + R * Math.cos(t * Math.PI / 180))},${f(oy + R * Math.sin(t * Math.PI / 180))}`;
+      out += `<polygon fill="${pal[(gi + k) % pal.length]}" points="${f(ox)},${f(oy)} ${p(a)} ${p(a2)}"/>`;
+      a = a2;
+    }
+  }
+  return { defs: `<clipPath id="dp${i}"><polygon points="${pts}"/></clipPath>`, body: out + `</g>`, ang };
+}
+
+// A whole scheme, as standalone SVG markup. `look: 'naval'` swaps in the
+// painter above; left out, every caller (the dazzle workshop included) gets
+// exactly the scheme it always did.
 function dazzleSVG({ w = 1200, h = 120, seed = 1, cuts = 7, ink = '#ffffff',
                      ground = '#08080a', scale = 1, stretch = true,
-                     tones = 2, conflict = 1 } = {}){
+                     tones = 2, conflict = 1, look = '',
+                     mix = { herring: .55, chevron: .2, wheel: .1, flat: .15 } } = {}){
   const rand = rng(seed);
   const pal = dazzlePalette(ink, ground, tones);
   const panels = dazzlePanels(w, h, cuts, rand, conflict);
   const stripeBase = rand() * 360;                  // the scheme's prevailing ruling
-  let defs = '', body = '';
+  let defs = '', body = '', prev = stripeBase;
   panels.forEach((poly, i) => {
-    const part = dazzlePanelSVG(poly, i, rand, pal, scale, conflict, stripeBase);
+    const part = look === 'naval'
+      ? dazzleNavalPanel(poly, i, rand, pal, scale, mix, prev)
+      : dazzlePanelSVG(poly, i, rand, pal, scale, conflict, stripeBase);
+    if (part.ang !== undefined) prev = part.ang;
     defs += part.defs; body += part.body;
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" `
@@ -381,20 +449,95 @@ const dazzleURL = (opts) =>
 // seeds are drawn at load rather than fixed. The four surfaces still get
 // different seeds from each other, so they never fall into step — it is one
 // ship's worth of scheme, freshly painted, not four copies of one pattern.
+// ---------- The wet layer (CR-181) ----------
+// The hull is painted; this is what the weather does to it. Three textures,
+// all generated here like the stripes and all laid on as static images, so the
+// page pays for each filter once at decode time and never again — an animated
+// SVG filter re-runs on every frame, which on a phone is exactly the sort of
+// thing that makes iOS Safari quietly stop painting layers (see the note on
+// background-attachment in theme-dazzle.css).
+//   beads  water standing on the paint: a lit dome with a dark underside
+//   chop   long low wavelets that only glint where they face the light
+//   drips  paint-white runs hanging from the stripe bands
+// The beads and the chop come out of feTurbulence, tiled with stitchTiles so
+// the repeat has no visible seam. The lighting uses a gentle height map and a
+// steep shape mask, which is what makes a bead a dome and not a flat blot.
+const svgURL = (svg) => `url("data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, '%27')}")`;
+
+function wetBeadsSVG(seed, w = 360, h = 240){
+  const m = (a, b) => `0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 ${a} 0 0 0 ${b}`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs>`
+    + `<filter id="b" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">`
+    + `<feTurbulence type="fractalNoise" baseFrequency=".085" numOctaves="2" seed="${(seed % 997) + 1}" stitchTiles="stitch" result="n"/>`
+    + `<feColorMatrix in="n" type="matrix" values="${m(22, -15.7)}" result="m"/>`
+    + `<feColorMatrix in="n" type="matrix" values="${m(7, -4.2)}" result="h"/>`
+    + `<feSpecularLighting in="h" surfaceScale="6" specularConstant="1.5" specularExponent="24" lighting-color="#fff" result="s">`
+    + `<feDistantLight azimuth="225" elevation="48"/></feSpecularLighting>`
+    + `<feComposite in="s" in2="m" operator="in" result="sp"/>`
+    + `<feFlood flood-color="#cfe9ee" flood-opacity=".16"/><feComposite in2="m" operator="in" result="body"/>`
+    + `<feOffset in="m" dx="1.2" dy="2.2" result="o"/><feGaussianBlur in="o" stdDeviation="1.3" result="ob"/>`
+    + `<feFlood flood-color="#000" flood-opacity=".6"/><feComposite in2="ob" operator="in" result="sh"/>`
+    + `<feMerge><feMergeNode in="sh"/><feMergeNode in="body"/><feMergeNode in="sp"/></feMerge></filter></defs>`
+    + `<rect width="${w}" height="${h}" filter="url(#b)"/></svg>`;
+}
+
+function wetChopSVG(seed, w = 480, h = 160){
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs>`
+    + `<filter id="c" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">`
+    + `<feTurbulence type="fractalNoise" baseFrequency=".012 .07" numOctaves="3" seed="${(seed % 997) + 1}" stitchTiles="stitch" result="n"/>`
+    + `<feColorMatrix in="n" type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1 0 0 0 0" result="h"/>`
+    + `<feSpecularLighting in="h" surfaceScale="10" specularConstant=".9" specularExponent="36" lighting-color="#d6eef2">`
+    + `<feDistantLight azimuth="270" elevation="26"/></feSpecularLighting></filter></defs>`
+    + `<rect width="${w}" height="${h}" filter="url(#c)" opacity=".5"/></svg>`;
+}
+
+// Mostly short, a few long: squaring the roll bunches the lengths near zero,
+// which is how a run actually distributes. A drip is a rounded bar with a bead
+// at its foot, and none of it is allowed to cross the tile edge, so the repeat
+// stays clean.
+function dripsSVG(seed, w = 720, h = 34){
+  const r = rng(seed);
+  let out = '', x = 8 + r() * 30;
+  while (x < w - 10){
+    const sw = 2.2 + r() * 2.6, len = 5 + Math.pow(r(), 2.2) * (h - 11);
+    out += `<rect x="${x.toFixed(1)}" y="0" width="${sw.toFixed(1)}" height="${len.toFixed(1)}" rx="${(sw / 2).toFixed(1)}"/>`
+         + `<circle cx="${(x + sw / 2).toFixed(1)}" cy="${(len + sw * 0.5).toFixed(1)}" r="${(sw * 0.62 + 0.4).toFixed(1)}"/>`;
+    x += 16 + r() * 58;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
+       + `<g fill="#e6eaea" fill-opacity=".85">${out}</g></svg>`;
+}
+
 function paintDazzle(){
   const b = document.body.style;
   const s = () => (Math.random() * 0xffffffff) >>> 0;
-  b.setProperty('--dazzle',     dazzleURL({ w: 1400, h: 140, seed: s(), cuts: 8, scale: 1.1 }));   // 2 tones, full conflict
-  b.setProperty('--dazzle-2',   dazzleURL({ w: 1400, h: 120, seed: s(), cuts: 9, scale: 0.72 }));
-  b.setProperty('--dazzle-narrow', dazzleURL({ w: 120, h: 900, seed: s(), cuts: 7, scale: 0.9 }));
+  // Three tones now (white, the grey between, black) and the naval painter.
+  // The bands are drawn at the shape they are shown at. The first cut of this
+  // drew them ten times too tall and let the CSS squash them to a dozen pixels,
+  // which is fine for a stripe that happens to run vertically and turns every
+  // other angle into a smear of mid grey: the stripes lost their edges and the
+  // band read as a washed-out strip. The pinwheel stays out of them as well,
+  // since a fan of wedges is only legible with room to fan.
+  const band = { look: 'naval', tones: 3 };
+  b.setProperty('--dazzle',     dazzleURL({ ...band, w: 1440, h: 14, seed: s(), cuts: 16, scale: 0.5,
+                                            mix: { herring: .55, chevron: .3, flat: .15 } }));
+  b.setProperty('--dazzle-2',   dazzleURL({ ...band, w: 1440, h: 12, seed: s(), cuts: 18, scale: 0.42,
+                                            mix: { herring: .7, chevron: .3 } }));
+  b.setProperty('--dazzle-narrow', dazzleURL({ ...band, w: 40, h: 120, seed: s(), cuts: 8, scale: 0.9,
+                                            mix: { herring: .8, chevron: .2 } }));
   // The page-wide scheme, drawn in translucent white so the page colour carries
   // it and the surfaces stacked on top can let it through. How strong it is and
-  // how big the plates are belong to the band — see the design settings.
+  // how big the plates are belong to the band — see the design settings. This
+  // is the one surface big enough for the pinwheel to read.
   const d = design;
-  b.setProperty('--dazzle-bg',  dazzleURL({ w: 1600, h: 1000, seed: s(), cuts: 11,
+  b.setProperty('--dazzle-bg',  dazzleURL({ ...band, w: 1600, h: 1000, seed: s(), cuts: 11,
                                             scale: num(d.schemeScale, DESIGN_DEFAULTS.schemeScale),
                                             ink: `rgba(255,255,255,${num(d.schemeInk, DESIGN_DEFAULTS.schemeInk)})`,
-                                            ground: 'rgba(0,0,0,0)' }));
+                                            ground: 'rgba(0,0,0,0)',
+                                            mix: { herring: .4, chevron: .2, wheel: .3, flat: .1 } }));
+  b.setProperty('--wet-beads',  svgURL(wetBeadsSVG(s())));
+  b.setProperty('--wet-chop',   svgURL(wetChopSVG(s())));
+  b.setProperty('--drips',      svgURL(dripsSVG(s())));
 }
 
 // ---------- Page design ----------

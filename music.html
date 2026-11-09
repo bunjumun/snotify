@@ -6983,7 +6983,8 @@ const vlogMoreRow = (older) =>
 // CR-169: a What's-new row is a link to its context and, for comments, a place
 // to answer. Rows carry the ids recent_updates (v41) hands back.
 function vlogOpenContext(el){
-  const si = songs.findIndex(s => s.id === el.dataset.song);
+  // recent_updates hands back the raw song uuid; the client's song ids are band-scoped (`band/uuid`).
+  const si = songs.findIndex(s => s.id === curBand + '/' + el.dataset.song);
   if (si < 0) return;
   const vi = Math.max(0, songs[si].versions.findIndex(v => v.id === el.dataset.ver));
   const time = el.dataset.time === '' ? null : Number(el.dataset.time);
@@ -7097,7 +7098,7 @@ async function renderVlog(){
       ? updates.map(u => {
           const meta = UPDATE_KIND[u.kind] || { icon: '•', verb: 'Update' };
           const cmt = u.kind === 'comment' || u.kind === 'resolved';
-          const linked = !!u.song_id && songs.some(s => s.id === u.song_id);
+          const linked = !!u.song_id && songs.some(s => s.id === curBand + '/' + u.song_id);
           const verb = u.kind === 'comment' && u.parent_id ? 'Reply' : meta.verb;
           const where = u.song && u.kind !== 'song' && u.kind !== 'mix'
             ? ` on <span class="vu-song">${esc(u.song)}${Number.isFinite(u.time_s) ? ' @ ' + esc(fmt(u.time_s)) : ''}</span>` : '';

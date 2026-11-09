@@ -60,8 +60,9 @@
   .cpost .csum { display: flex; align-items: center; gap: 10px; padding: 7px 10px; cursor: pointer; font-size: 13px; }
   .cpost .csum:hover { background: var(--field); }
   .cpost .cdate { width: 96px; flex: none; font-weight: 700; font-size: 12px; }
-  .cpost .cslot { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cpost .cplat { color: var(--text-mute); font-size: 12px; }
+  .cpost .cslot { flex: 1 0 90px; min-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 480px) { .cpost .cdate { width: 78px; } }
+  .cpost .cplat { color: var(--text-mute); font-size: 12px; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cpost .cchip { font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--text-dim); cursor: pointer; white-space: nowrap; }
   .cpost.st-asset_ready .cchip { border-color: var(--accent-2); color: var(--accent-2); }
   .cpost.st-scheduled .cchip, .cpost.st-posted .cchip { border-color: var(--accent); color: var(--accent); }
@@ -72,6 +73,15 @@
   .cpost .cmore .cwide { grid-column: 1 / -1; }
   .cpost .cdelp { color: var(--text-mute); cursor: pointer; justify-self: end; font-size: 12px; }
   .cpost .cdelp:hover { color: var(--err); }
+  .cpost .cwho { font-size: 10px; font-weight: 700; width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--field); border: 1px solid var(--line); color: var(--text-dim); flex: none; }
+  .cpost .cpeople, .cpost .ccal { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .cpost .clbl { font-size: 12px; color: var(--text-mute); }
+  .cpost .cperson { font-size: 12px; padding: 2px 4px 2px 9px; border-radius: 999px; border: 1px solid var(--line); }
+  .cpost .cx { cursor: pointer; padding: 0 5px; color: var(--text-mute); }
+  .cpost .cx:hover { color: var(--err); }
+  .cpost .cadd { width: 150px; }
+  .cpost .csmall { font-size: 12px; padding: 3px 9px; text-decoration: none; }
+  .cpost .ccal .cdelp { margin-left: auto; }
   @media (max-width: 640px) { .cpost .cmore { grid-template-columns: 1fr 1fr; } }
   .rdetail-head h2 { margin: 0; font-size: 20px; cursor: text; }
   .rdetail-head h2:hover { text-decoration: underline dotted; text-underline-offset: 4px; }
@@ -689,6 +699,62 @@ function campaignWeekLabel(k){
   return k < 0 ? Math.abs(k) + ' week' + (k === -1 ? '' : 's') + ' before' : k + ' week' + (k === 1 ? '' : 's') + ' after';
 }
 
+// ---- Collaborators. Names are free text, the same identity comments use
+// (mp_name, remembered per device on the Music page), so "Take it" adds you.
+let campaignMeFallback = '';
+const campaignMe = () => { try { return (localStorage.getItem('mp_name') || '').trim(); } catch (_){ return campaignMeFallback; } };
+function campaignAskMe(){
+  let me = campaignMe();
+  if (me) return me;
+  me = (prompt('Your name (the same one you comment with):') || '').trim();
+  if (me) { campaignMeFallback = me; try { localStorage.setItem('mp_name', me); } catch (_){} }
+  return me;
+}
+const campaignInitials = (n) => String(n || '').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+function campaignPeople(posts){
+  const set = new Set();
+  posts.forEach(c => (c.assignees || []).forEach(a => set.add(a)));
+  if (campaignMe()) set.add(campaignMe());
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+// ---- Calendar export. All-day events on the post's date; no API, no account.
+function campaignYmd(r, off){
+  const [y, m, d] = r.release_date.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + off));
+  return dt.toISOString().slice(0, 10).replace(/-/g, '');
+}
+function campaignEventTitle(r, c){ return `${r.title}: ${c.slot || 'Post'}${c.platform ? ' (' + c.platform + ')' : ''}`; }
+function campaignEventDetails(c){
+  return [c.asset_kind && 'Asset: ' + c.asset_kind, (c.assignees || []).length && 'Who: ' + c.assignees.join(', '),
+          c.copy && 'Caption: ' + c.copy, c.link].filter(Boolean).join('\n');
+}
+function campaignGcalUrl(r, c){
+  const q = new URLSearchParams({ action: 'TEMPLATE', text: campaignEventTitle(r, c),
+    dates: campaignYmd(r, c.offset_days) + '/' + campaignYmd(r, c.offset_days + 1), details: campaignEventDetails(c) });
+  return 'https://calendar.google.com/calendar/render?' + q.toString();
+}
+function campaignIcs(r, posts){
+  const escTxt = (t) => String(t).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/([,;])/g, '\\$1');
+  // RFC 5545 folds lines at 75 octets; continuation lines start with a space.
+  const fold = (line) => { const out = []; let cur = '';
+    for (const ch of line){ if (new TextEncoder().encode(cur + ch).length > 75){ out.push(cur); cur = ' ' + ch; } else cur += ch; }
+    out.push(cur); return out.join('\r\n'); };
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Lakehorse//Release campaign//EN', 'CALSCALE:GREGORIAN'];
+  posts.forEach(c => lines.push('BEGIN:VEVENT', 'UID:' + c.id + '@snotify', 'DTSTAMP:' + stamp,
+    'DTSTART;VALUE=DATE:' + campaignYmd(r, c.offset_days), 'DTEND;VALUE=DATE:' + campaignYmd(r, c.offset_days + 1),
+    'SUMMARY:' + escTxt(campaignEventTitle(r, c)), 'DESCRIPTION:' + escTxt(campaignEventDetails(c)), 'END:VEVENT'));
+  lines.push('END:VCALENDAR');
+  return lines.map(fold).join('\r\n') + '\r\n';
+}
+function campaignDownloadIcs(r, posts, name){
+  const url = URL.createObjectURL(new Blob([campaignIcs(r, posts)], { type: 'text/calendar' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name.replace(/[^\w.-]+/g, '-') + '.ics' });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 const campaignOpen = new Set();   // post ids with the detail panel open
 function campaignPostHtml(r, c){
   const sel = (field, opts) => `<select data-f="${field}">${opts.map(o => {
@@ -702,6 +768,7 @@ function campaignPostHtml(r, c){
       <span class="cdate">${esc(date || campaignOffsetLabel(c.offset_days))}</span>
       <span class="cslot">${esc(c.slot || 'Untitled post')}</span>
       <span class="cplat">${esc([c.platform, c.asset_kind].filter(Boolean).join(' · '))}</span>
+      ${(c.assignees || []).map(a => `<span class="cwho" title="${esc(a)}">${esc(campaignInitials(a))}</span>`).join('')}
       <span class="cchip" data-act="status" title="Click to advance: idea, asset ready, scheduled, posted">${esc(stLabel)}</span>
     </div>
     <div class="cmore">
@@ -712,7 +779,18 @@ function campaignPostHtml(r, c){
       <textarea data-f="copy" placeholder="Caption draft">${esc(c.copy)}</textarea>
       <input class="cwide" type="text" data-f="link" value="${esc(c.link)}" placeholder="Link (asset or post)">
       <input class="cwide" type="text" data-f="result" value="${esc(c.result)}" placeholder="What moved (pre-saves, plays, signups)">
-      <span class="cdelp" data-act="del" title="Delete this post">Delete post</span>
+      <div class="cwide cpeople">
+        <span class="clbl">Who</span>
+        ${(c.assignees || []).map(a => `<span class="cperson">${esc(a)}<span class="cx" data-act="unassign" data-who="${esc(a)}" title="Remove ${esc(a)}">×</span></span>`).join('')}
+        <input type="text" class="cadd" data-act="assign-input" list="campPeople" placeholder="Add a name, Enter">
+        <button class="addbtn csmall" data-act="take">${campaignMe() && (c.assignees || []).includes(campaignMe()) ? 'Drop it' : 'Take it'}</button>
+      </div>
+      <div class="cwide ccal">
+        ${r.release_date ? `<a class="addbtn csmall" href="${esc(campaignGcalUrl(r, c))}" target="_blank" rel="noopener">Google Calendar</a>
+        <button class="addbtn csmall" data-act="ics" title="Download an .ics file: opens in Apple Calendar">Apple Calendar (.ics)</button>`
+          : '<span class="clbl">Set a release date to add this to a calendar</span>'}
+        <span class="cdelp" data-act="del" title="Delete this post">Delete post</span>
+      </div>
     </div>
   </div>`;
 }
@@ -786,7 +864,9 @@ function paintCampaign(r){
       <button class="addbtn" id="campAddBtn">+ Add post</button>
       <button class="addbtn ${campaignView === 'asset' ? 'radiobtn on' : ''}" id="campViewBtn"
               title="Group posts by the asset cut they need, so one editing session covers a batch">${campaignView === 'asset' ? 'By asset cut' : 'By date'}</button>
+      ${posts.length && r.release_date ? `<button class="addbtn" id="campIcsBtn" title="Every post as one .ics file: Apple Calendar opens it; Google Calendar can import it">All to calendar (.ics)</button>` : ''}
       <span class="cwarn" id="campWarn">${campaignWarnHtml(posts)}</span>
+      <datalist id="campPeople">${campaignPeople(posts).map(n => `<option value="${esc(n)}">`).join('')}</datalist>
     </div>
     <div id="campList">${campaignBody(r, posts)}</div>`;
   // Generate needs the new ids, so it is the one action that refetches.
@@ -809,6 +889,7 @@ function paintCampaign(r){
       paintCampaign(r);
     } catch (err){ alert(String(err.message || err)); }
   });
+  if ($('campIcsBtn')) $('campIcsBtn').addEventListener('click', () => campaignDownloadIcs(r, posts, r.title + ' campaign'));
   $('campViewBtn').addEventListener('click', () => { campaignView = campaignView === 'asset' ? 'calendar' : 'asset'; paintCampaign(r); });
   const list = $('campList');
   list.addEventListener('change', async (e) => {
@@ -830,10 +911,47 @@ function paintCampaign(r){
       paintCampaign(r);
     }
   });
+  list.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter' || !e.target.matches('[data-act="assign-input"]')) return;
+    e.preventDefault();
+    const name = e.target.value.trim(), row = e.target.closest('.cpost');
+    const c = row && posts.find(x => x.id === row.dataset.id);
+    if (!name || !c || (c.assignees || []).includes(name)) { e.target.value = ''; return; }
+    const prev = c.assignees || [];
+    c.assignees = [...prev, name];
+    paintCampaign(r);
+    const again = document.querySelector(`.cpost[data-id="${CSS.escape(c.id)}"] [data-act="assign-input"]`);
+    if (again) again.focus();
+    try { await libRpc('save_campaign_post', { rid: r.id, post: { id: c.id, assignees: c.assignees } }); }
+    catch (err){ alert(String(err.message || err)); c.assignees = prev; paintCampaign(r); }
+  });
   list.addEventListener('click', async (e) => {
     const row = e.target.closest('.cpost');
     if (!row) return;
     const id = row.dataset.id, c = posts.find(x => x.id === id);
+    const setWho = async (next) => {
+      const prev = c.assignees || [];
+      c.assignees = next;
+      paintCampaign(r);
+      try { await libRpc('save_campaign_post', { rid: r.id, post: { id, assignees: next } }); }
+      catch (err){ alert(String(err.message || err)); c.assignees = prev; paintCampaign(r); }
+    };
+    if (e.target.closest('[data-act="take"]') && c){
+      const me = campaignAskMe();
+      if (!me) return;
+      const cur = c.assignees || [];
+      await setWho(cur.includes(me) ? cur.filter(a => a !== me) : [...cur, me]);
+      return;
+    }
+    if (e.target.closest('[data-act="unassign"]') && c){
+      await setWho((c.assignees || []).filter(a => a !== e.target.dataset.who));
+      return;
+    }
+    if (e.target.closest('[data-act="ics"]') && c){
+      campaignDownloadIcs(r, [c], r.title + ' ' + (c.slot || 'post'));
+      return;
+    }
+    if (e.target.closest('.cmore') && !e.target.closest('[data-act="del"]')) return;
     if (e.target.closest('[data-act="del"]')){
       if (!confirm('Delete this post?')) return;
       try {

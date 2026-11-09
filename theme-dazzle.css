@@ -562,11 +562,15 @@ body[data-theme="dazzle"] .door h2,
 body[data-theme="dazzle"] .modal h2,
 body[data-theme="dazzle"] .drawer h3 {
   font-family: var(--font-display); font-weight: 900;
+  /* Orbitron's word space is as wide as its letters, so a heading reads as a
+     row of separate islands. Pulled in, and the tracking below is near zero:
+     CR-181 first set it at .06 to .1em, which on a face this wide was too much. */
+  word-spacing: -.12em;
 }
-body[data-theme="dazzle"] header.app h1 { font-size: 21px; letter-spacing: .1em; }
-body[data-theme="dazzle"] .door h2      { font-size: 15px; letter-spacing: .06em; line-height: 1.25; }
-body[data-theme="dazzle"] .modal h2     { font-size: 14px; letter-spacing: .08em; }
-body[data-theme="dazzle"] .drawer h3    { font-size: 13px; letter-spacing: .08em; }
+body[data-theme="dazzle"] header.app h1 { font-size: 21px; letter-spacing: .02em; }
+body[data-theme="dazzle"] .door h2      { font-size: 15px; letter-spacing: .01em; line-height: 1.25; }
+body[data-theme="dazzle"] .modal h2     { font-size: 14px; letter-spacing: .02em; }
+body[data-theme="dazzle"] .drawer h3    { font-size: 13px; letter-spacing: .02em; }
 
 body[data-theme="dazzle"] .addbtn,
 body[data-theme="dazzle"] .badge,
@@ -577,7 +581,8 @@ body[data-theme="dazzle"] .verbtn,
 body[data-theme="dazzle"] .rev,
 body[data-theme="dazzle"] .toolitem b,
 body[data-theme="dazzle"] .tool-what b {
-  font-family: var(--font-display); font-weight: 700; font-size: 10.5px; letter-spacing: .06em;
+  font-family: var(--font-display); font-weight: 700; font-size: 10.5px; letter-spacing: .02em;
+  word-spacing: -.1em;
 }
 
 /* Data. */
@@ -587,7 +592,7 @@ body[data-theme="dazzle"] .bandline,
 body[data-theme="dazzle"] .door .tally,
 body[data-theme="dazzle"] .time,
 body[data-theme="dazzle"] .song .idx {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono); letter-spacing: -.02em;
 }
 body[data-theme="dazzle"] header.app p { font-size: 12.5px; }
-body[data-theme="dazzle"] .door .tally { font-weight: 700; letter-spacing: .04em; }
+body[data-theme="dazzle"] .door .tally { font-weight: 700; letter-spacing: 0; }

@@ -7016,8 +7016,14 @@ function seekWhenOn(vi, time, cid){
     if (activeVer === vi && readyByVer[vi] === true && curWS()){
       seekTo(time);
       if (cid){ renderComments(); focusComment(cid); }
-      [400, 1500].forEach(ms => setTimeout(() => {
-        if (gen === openGen && activeVer === vi && Math.abs(curWS().getCurrentTime() - time) > 1.5 + ms / 1000) seekTo(time);
+      // A late media-ready or the swap's own playhead restore can still move it:
+      // keep checking for 4 s and put it back if it is not where it should be
+      // (time if paused, time plus elapsed if playing).
+      const t0 = Date.now();
+      [250, 600, 1200, 2200, 4000].forEach(ms => setTimeout(() => {
+        if (gen !== openGen || activeVer !== vi || !curWS()) return;
+        const w = curWS(), want = w.isPlaying() ? time + (Date.now() - t0) / 1000 : time;
+        if (Math.abs(w.getCurrentTime() - want) > 1) seekTo(Math.max(0, want));
       }, ms));
     } else setTimeout(tick, 200);
   };

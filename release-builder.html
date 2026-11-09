@@ -49,6 +49,24 @@
   .rdetail-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
   .reldate { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
   .reldate input { background: transparent; color: inherit; border: 1px solid var(--border, #444); border-radius: 6px; padding: 3px 6px; font: inherit; }
+  .rcamp { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 18px; }
+  .rcamp h3 { margin: 0 0 4px; font-size: 16px; }
+  .rcamp .chint { font-size: 12px; color: var(--text-mute); margin-bottom: 12px; }
+  .rcamp .ctools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .rcamp .cwarn { font-size: 12px; color: var(--err); }
+  .rcamp .cweek { font-size: 12px; font-weight: 700; color: var(--text-dim); margin: 14px 0 6px; }
+  .cpost { display: grid; grid-template-columns: 92px 70px 1fr 1fr; gap: 6px 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; align-items: center; }
+  .cpost input, .cpost select, .cpost textarea { background: var(--field); color: var(--text, inherit); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; min-width: 0; }
+  .cpost textarea { grid-column: 1 / -1; min-height: 38px; resize: vertical; }
+  .cpost .cdate { font-size: 12px; font-weight: 700; }
+  .cpost .cdate small { display: block; color: var(--text-mute); font-weight: 400; }
+  .cpost .cwide { grid-column: span 2; }
+  .cpost .cdelp { color: var(--text-mute); cursor: pointer; justify-self: end; }
+  .cpost .cdelp:hover { color: var(--err); }
+  .cpost.st-posted { opacity: .6; }
+  .cpost.st-asset_ready { border-left: 3px solid var(--accent-2); }
+  .cpost.st-scheduled { border-left: 3px solid var(--accent); }
+  @media (max-width: 640px) { .cpost { grid-template-columns: 1fr 1fr; } }
   .rdetail-head h2 { margin: 0; font-size: 20px; cursor: text; }
   .rdetail-head h2:hover { text-decoration: underline dotted; text-underline-offset: 4px; }
   .rdetail-head .rpctbig { font-size: 20px; font-weight: 800; color: var(--text-dim); margin-left: auto; }
@@ -624,6 +642,154 @@ function fmtRelDate(s){
   return d + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1] + ' ' + y;
 }
 
+// ---------- CR-177 step 2: campaign calendar ----------
+// A campaign is dated posts hung off a release. Posts store offset_days from
+// the release date (negative = before) and never a calendar date, so moving
+// the release date moves the whole campaign. No auto-posting: this says what
+// and when; posting stays manual.
+const CAMPAIGN_PLATFORMS = ['Instagram', 'TikTok', 'YouTube Shorts', 'Bluesky', 'Newsletter'];
+const CAMPAIGN_ASSETS = ['9:16 clip', 'square lyric card', '30s audio teaser', 'still', 'other'];
+const CAMPAIGN_STATUS = [['idea', 'Idea'], ['asset_ready', 'Asset ready'], ['scheduled', 'Scheduled'], ['posted', 'Posted']];
+const CAMPAIGN_TEMPLATE = [
+  { slot: 'Announce',               offset_days: -42, asset_kind: 'still' },
+  { slot: 'Tease',                  offset_days: -28, asset_kind: '9:16 clip' },
+  { slot: 'Lead single',            offset_days: -21, asset_kind: '30s audio teaser' },
+  { slot: 'Behind the scenes',      offset_days: -14, asset_kind: '9:16 clip' },
+  { slot: 'Pre-save push',          offset_days: -7,  asset_kind: 'square lyric card' },
+  { slot: 'Release day',            offset_days: 0,   asset_kind: 'still' },
+  { slot: 'Listening room / party', offset_days: 0,   asset_kind: 'still' },
+  { slot: 'Fan-reaction repost',    offset_days: 7,   asset_kind: 'still' },
+  { slot: 'Deep-cut spotlight',     offset_days: 21,  asset_kind: '30s audio teaser' },
+];
+// A pure "listen now" post. The 80/20 warning counts these.
+const LISTEN_NOW_RE = /listen now|release day|out now/i;
+let campaignView = 'calendar';   // 'calendar' | 'asset'
+const campaignCache = {};        // release id -> posts
+
+function campaignDate(r, off){
+  if (!r.release_date) return '';
+  const [y, m, d] = r.release_date.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + off));
+  return fmtRelDate(dt.getUTCFullYear() + '-' + (dt.getUTCMonth() + 1) + '-' + dt.getUTCDate());
+}
+function campaignOffsetLabel(off){
+  if (off === 0) return 'Release day';
+  const w = Math.abs(off) / 7;
+  return 'T' + (off < 0 ? '-' : '+') + (Number.isInteger(w) ? w + 'w' : Math.abs(off) + 'd');
+}
+function campaignWeekKey(off){ return Math.floor(off / 7); }
+function campaignWeekLabel(k){
+  if (k === 0) return 'Release week';
+  return k < 0 ? Math.abs(k) + ' week' + (k === -1 ? '' : 's') + ' before' : k + ' week' + (k === 1 ? '' : 's') + ' after';
+}
+
+function campaignPostHtml(r, c){
+  const sel = (field, opts) => `<select data-f="${field}">${opts.map(o => {
+    const [v, l] = Array.isArray(o) ? o : [o, o];
+    return `<option value="${esc(v)}" ${c[field] === v ? 'selected' : ''}>${esc(l)}</option>`;
+  }).join('')}${opts.some(o => (Array.isArray(o) ? o[0] : o) === c[field]) ? '' : `<option value="${esc(c[field])}" selected>${esc(c[field] || '—')}</option>`}</select>`;
+  const date = campaignDate(r, c.offset_days);
+  return `<div class="cpost st-${esc(c.status)}" data-id="${esc(c.id)}">
+    <div class="cdate">${date ? esc(date) : esc(campaignOffsetLabel(c.offset_days))}
+      <small>${date ? esc(campaignOffsetLabel(c.offset_days)) : 'set a release date'}</small></div>
+    <input type="number" data-f="offset_days" value="${c.offset_days}" title="Days from the release date (negative = before)">
+    <input type="text" data-f="slot" value="${esc(c.slot)}" placeholder="Slot, e.g. Tease">
+    ${sel('platform', ['', ...CAMPAIGN_PLATFORMS])}
+    ${sel('asset_kind', ['', ...CAMPAIGN_ASSETS])}
+    ${sel('status', CAMPAIGN_STATUS)}
+    <span class="cdelp" data-act="del" title="Delete this post">✕</span>
+    <textarea data-f="copy" placeholder="Caption draft">${esc(c.copy)}</textarea>
+    <input class="cwide" type="text" data-f="link" value="${esc(c.link)}" placeholder="Link (asset or post)">
+    <input class="cwide" type="text" data-f="result" value="${esc(c.result)}" placeholder="What moved (pre-saves, plays, signups)">
+  </div>`;
+}
+
+function campaignBody(r, posts){
+  if (!posts.length) return `<div class="rempty2">No posts yet. “Generate from template” lays out nine, dated from the release date.</div>`;
+  if (campaignView === 'asset'){
+    const groups = {};
+    posts.forEach(c => { (groups[c.asset_kind || 'No asset cut set'] = groups[c.asset_kind || 'No asset cut set'] || []).push(c); });
+    return Object.keys(groups).map(k => `<div class="cweek">${esc(k)} — ${groups[k].length} post${groups[k].length === 1 ? '' : 's'}, one editing session</div>`
+      + groups[k].map(c => campaignPostHtml(r, c)).join('')).join('');
+  }
+  let out = '', last = null;
+  posts.forEach(c => {
+    const k = campaignWeekKey(c.offset_days);
+    if (k !== last){ out += `<div class="cweek">${esc(campaignWeekLabel(k))}</div>`; last = k; }
+    out += campaignPostHtml(r, c);
+  });
+  return out;
+}
+
+async function renderCampaign(r){
+  const wrap = document.getElementById('relCampaign');
+  if (!wrap) return;
+  wrap.innerHTML = `<h3>Campaign</h3><div class="chint">Dated posts for this release. Dates follow the release date; nothing posts automatically.</div><div class="rempty2">Loading…</div>`;
+  let posts;
+  try { posts = await libRpc('get_campaign', { rid: r.id }); }
+  catch (err){ wrap.innerHTML = `<h3>Campaign</h3><div class="rempty2">Could not load the campaign: ${esc(String(err.message || err))}</div>`; return; }
+  if (r.id !== curReleaseId) return;
+  posts = Array.isArray(posts) ? posts : [];
+  campaignCache[r.id] = posts;
+  paintCampaign(r);
+}
+
+function paintCampaign(r){
+  const wrap = document.getElementById('relCampaign');
+  if (!wrap) return;
+  const posts = campaignCache[r.id] || [];
+  const listen = posts.filter(c => LISTEN_NOW_RE.test(c.slot)).length;
+  const warn = posts.length >= 5 && listen / posts.length > 0.2;
+  wrap.innerHTML = `<h3>Campaign</h3>
+    <div class="chint">Dated posts for this release. Dates follow the release date; nothing posts automatically.</div>
+    <div class="ctools">
+      <button class="addbtn" id="campGenBtn" ${r.release_date ? '' : 'disabled'}
+              title="${r.release_date ? 'Add the nine-post rollout template' : 'Set a release date first'}">Generate from template</button>
+      <button class="addbtn" id="campAddBtn">+ Add post</button>
+      <button class="addbtn ${campaignView === 'asset' ? 'radiobtn on' : ''}" id="campViewBtn"
+              title="Group posts by the asset cut they need, so one editing session covers a batch">${campaignView === 'asset' ? 'By asset cut' : 'By date'}</button>
+      ${warn ? `<span class="cwarn">${listen} of ${posts.length} posts are “listen now”. Aim for no more than 1 in 5.</span>` : ''}
+    </div>
+    <div id="campList">${campaignBody(r, posts)}</div>`;
+  $('campGenBtn').addEventListener('click', async () => {
+    if (posts.length && !confirm('This release already has posts. Add the template posts alongside them?')) return;
+    try {
+      await libRpc('generate_campaign', { rid: r.id, posts: CAMPAIGN_TEMPLATE.map(t => ({ ...t, platform: 'Instagram' })) });
+      await renderCampaign(r);
+    } catch (err){ alert(String(err.message || err)); }
+  });
+  $('campAddBtn').addEventListener('click', async () => {
+    try {
+      await libRpc('save_campaign_post', { rid: r.id, post: { offset_days: 0, slot: 'New post' } });
+      await renderCampaign(r);
+    } catch (err){ alert(String(err.message || err)); }
+  });
+  $('campViewBtn').addEventListener('click', () => { campaignView = campaignView === 'asset' ? 'calendar' : 'asset'; paintCampaign(r); });
+  const list = $('campList');
+  list.addEventListener('change', async (e) => {
+    const f = e.target.dataset.f, row = e.target.closest('.cpost');
+    if (!f || !row) return;
+    const c = posts.find(x => x.id === row.dataset.id);
+    if (!c) return;
+    const val = f === 'offset_days' ? (parseInt(e.target.value, 10) || 0) : e.target.value;
+    try {
+      await libRpc('save_campaign_post', { rid: r.id, post: { id: c.id, [f]: val } });
+      c[f] = val;
+      // Anything that changes grouping, order, the date or the colour re-sorts; text fields stay put so focus survives.
+      if (f === 'offset_days'){ posts.sort((a, b) => a.offset_days - b.offset_days); }
+      if (['offset_days', 'status', 'asset_kind', 'slot'].includes(f)) paintCampaign(r);
+    } catch (err){ alert(String(err.message || err)); e.target.value = c[f]; }
+  });
+  list.addEventListener('click', async (e) => {
+    const del = e.target.closest('[data-act="del"]');
+    if (!del) return;
+    const row = del.closest('.cpost');
+    if (!confirm('Delete this post?')) return;
+    try { await libRpc('delete_campaign_post', { pid: row.dataset.id }); await renderCampaign(r); }
+    catch (err){ alert(String(err.message || err)); }
+  });
+}
+
 // ---------- Render ----------
 function render(){
   if (curReleaseId && releases.some(r => r.id === curReleaseId)) renderDetail();
@@ -733,7 +899,9 @@ function renderDetail(){
     <div class="rsonglist" id="relSongList">
       ${list.length ? list.map((s, i) => relSongRowHtml(s, i, list.length)).join('')
                     : `<div class="rempty2">Nothing in this release yet. “+ Add tracks” pulls from your library.</div>`}
-    </div>`;
+    </div>
+    <div id="relCampaign" class="rcamp"></div>`;
+  renderCampaign(r);
   // CR-103: mounted after innerHTML is set, same as every other listener
   // below — .pacc's own wiring needs the element to exist in the DOM first.
   if (window.PROGRESS) renderReleaseProgress(list);

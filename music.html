@@ -114,6 +114,8 @@
   .vlog-upd:last-child { border-bottom: none; }
   .vu-icon { flex: none; }
   .vlog-upd.link, .vlog-cmt.link { cursor: pointer; }
+  .cmt.cflash { animation: cflash 2.2s ease-out; }
+  @keyframes cflash { 0%, 40% { background: rgba(255,200,60,.35); } 100% { background: transparent; } }
   .vlog-cmt.link:hover { background: var(--hover, rgba(127,127,127,.08)); }
   .vlog-upd.link:hover { background: var(--hover, rgba(127,127,127,.08)); }
   .vu-body b { color: var(--text); font-weight: 600; }
@@ -6987,19 +6989,33 @@ function vlogOpenContext(el){
   if (isCmt) openDrawer(true); else openVlog(false);
   if (isCmt && Number.isFinite(time)){
     // Seek once that mix has loaded; give up if another song takes over.
-    seekWhenOn(vi, time);
+    seekWhenOn(vi, time, el.dataset.comment);
   }
 }
 // CR-174: seek to a comment's time on a given mix. Waits until that mix is the
 // ACTIVE one and loaded (switchVersion swaps late and then restores the old
 // playhead, which used to overwrite an early seek), then seeks, and re-asserts
 // twice because a late media-ready can still drop or move the position.
-function seekWhenOn(vi, time){
+function focusComment(cid){
+  if (!cid) return;
+  let tries = 0; const gen = openGen;
+  const go = () => {
+    if (gen !== openGen || ++tries > 30) return;
+    let el = $('clist').querySelector(`.cmt[data-id="${CSS.escape(cid)}"]`);
+    if (!el && hideResolved){ hideResolved = false; $('cHideResolved').checked = false; renderComments(); el = $('clist').querySelector(`.cmt[data-id="${CSS.escape(cid)}"]`); }
+    if (!el){ setTimeout(go, 200); return; }
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.remove('cflash'); void el.offsetWidth; el.classList.add('cflash');
+  };
+  go();
+}
+function seekWhenOn(vi, time, cid){
   const gen = openGen; let tries = 0;
   const tick = () => {
     if (gen !== openGen || ++tries > 100) return;
     if (activeVer === vi && readyByVer[vi] === true && curWS()){
       seekTo(time);
+      if (cid){ renderComments(); focusComment(cid); }
       [400, 1500].forEach(ms => setTimeout(() => {
         if (gen === openGen && activeVer === vi && Math.abs(curWS().getCurrentTime() - time) > 1.5 + ms / 1000) seekTo(time);
       }, ms));
@@ -7033,8 +7049,8 @@ $('vlogList').addEventListener('click', (e) => {
     openDrawer(true);
     const time = cm.dataset.time === '' ? null : Number(cm.dataset.time);
     if (Number.isFinite(time)){
-      seekWhenOn(vi >= 0 ? vi : activeVer, time);
-    }
+      seekWhenOn(vi >= 0 ? vi : activeVer, time, cm.dataset.cid);
+    } else focusComment(cm.dataset.cid);
     return;
   }
   const row = e.target.closest('.vlog-upd');
@@ -7105,7 +7121,7 @@ async function renderVlog(){
     if (it.c){
       const c = it.c;
       return `
-    <div class="vlog-entry vlog-cmt link ${c.resolved ? 'resolved' : ''}" data-song="${esc(activeSong.id)}" data-ver="${esc(c.versionId || '')}" data-time="${Number.isFinite(c.time) ? c.time : ''}" title="Go to this comment in the mix">
+    <div class="vlog-entry vlog-cmt link ${c.resolved ? 'resolved' : ''}" data-song="${esc(activeSong.id)}" data-cid="${esc(c.id)}" data-ver="${esc(c.versionId || '')}" data-time="${Number.isFinite(c.time) ? c.time : ''}" title="Go to this comment in the mix">
       <div class="vlog-chead">
         <span class="vu-icon">💬</span>
         <span class="vlog-name">${esc(c.name || 'Someone')}</span>

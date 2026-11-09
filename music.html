@@ -6982,9 +6982,15 @@ const vlogMoreRow = (older) =>
   `<div class="vlog-more-row"><button class="vlog-more" type="button">Show more${older ? ` (${older} older)` : ''}</button></div>`;
 // CR-169: a What's-new row is a link to its context and, for comments, a place
 // to answer. Rows carry the ids recent_updates (v41) hands back.
+// recent_updates returns the song's database uuid, but the client's song ids are
+// band/comment-key, so they never match. Join on the mix's version id (carried by
+// every mix and comment row), falling back to the title for a bare song row.
+function songIndexForUpdate(verId, title){
+  if (verId){ const i = songs.findIndex(s => s.versions.some(v => v.id === verId)); if (i >= 0) return i; }
+  return title ? songs.findIndex(s => s.title === title) : -1;
+}
 function vlogOpenContext(el){
-  // recent_updates hands back the raw song uuid; the client's song ids are band-scoped (`band/uuid`).
-  const si = songs.findIndex(s => s.id === curBand + '/' + el.dataset.song);
+  const si = songIndexForUpdate(el.dataset.ver, el.dataset.title);
   if (si < 0) return;
   const vi = Math.max(0, songs[si].versions.findIndex(v => v.id === el.dataset.ver));
   const time = el.dataset.time === '' ? null : Number(el.dataset.time);
@@ -7008,7 +7014,16 @@ function focusComment(cid){
     let el = $('clist').querySelector(`.cmt[data-id="${CSS.escape(cid)}"]`);
     if (!el && hideResolved){ hideResolved = false; $('cHideResolved').checked = false; renderComments(); el = $('clist').querySelector(`.cmt[data-id="${CSS.escape(cid)}"]`); }
     if (!el){ setTimeout(go, 200); return; }
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // Centre it in the list by hand: scrollIntoView also scrolls the page and fights the
+    // drawer's slide-in, which left the row a little too high. Redo it once the drawer has
+    // settled, since its height changes while it opens.
+    const centre = () => {
+      const l = $('clist'), live = l.querySelector(`.cmt[data-id="${CSS.escape(cid)}"]`);
+      if (!live) return;
+      const r = live.getBoundingClientRect(), lr = l.getBoundingClientRect();
+      l.scrollTop += (r.top - lr.top) - (lr.height - r.height) / 2;
+    };
+    centre(); setTimeout(centre, 350); setTimeout(centre, 900);
     el.classList.remove('cflash'); void el.offsetWidth; el.classList.add('cflash');
   };
   go();
@@ -7037,15 +7052,16 @@ async function vlogPostReply(row){
   const input = row.querySelector('.vu-reply-input'), text = input.value.trim();
   if (!text) return;
   if (!isAuthed(curBand)){ showGate(curBand, false); return; }
-  const s = songs.find(x => x.id === row.dataset.song);
+  const s = songs[songIndexForUpdate(row.dataset.ver, row.dataset.title)];
+  if (!s) return;
   const ver = s && (s.versions.find(v => v.id === row.dataset.ver) || s.versions[0]);
   const btn = row.querySelector('.vu-reply-send'); btn.disabled = true;
   try {
     const time = row.dataset.time === '' ? 0 : Number(row.dataset.time);
-    const saved = await libRpc('add_comment', { sid: row.dataset.song, time_s: time, txt: text,
+    const saved = await libRpc('add_comment', { sid: s.id, time_s: time, txt: text,
       who: $('cname').value.trim(), ver: ver ? ver.name : '', vid: ver ? ver.id : null,
       parent_id: row.dataset.parent || row.dataset.comment, tg: null });
-    if (commentCache[row.dataset.song]) commentCache[row.dataset.song].push(mapRow(saved));
+    if (commentCache[s.id]) commentCache[s.id].push(mapRow(saved));
   } catch (err){ btn.disabled = false; alert('Could not post the reply: ' + (err.message || err)); return; }
   vlogShown = Math.max(vlogShown, VLOG_PAGE); renderVlog(); refreshListBadges();
 }
@@ -7098,7 +7114,7 @@ async function renderVlog(){
       ? updates.map(u => {
           const meta = UPDATE_KIND[u.kind] || { icon: '•', verb: 'Update' };
           const cmt = u.kind === 'comment' || u.kind === 'resolved';
-          const linked = !!u.song_id && songs.some(s => s.id === curBand + '/' + u.song_id);
+          const linked = !!u.song_id && songIndexForUpdate(u.version_id, u.song) >= 0;
           const verb = u.kind === 'comment' && u.parent_id ? 'Reply' : meta.verb;
           const where = u.song && u.kind !== 'song' && u.kind !== 'mix'
             ? ` on <span class="vu-song">${esc(u.song)}${Number.isFinite(u.time_s) ? ' @ ' + esc(fmt(u.time_s)) : ''}</span>` : '';
@@ -7107,7 +7123,7 @@ async function renderVlog(){
             : u.kind === 'log' ? `<span class="vu-verb">${esc(meta.verb)}</span> ${esc(u.label)}`
             : `<span class="vu-verb">${esc(meta.verb)}</span> <span class="vu-song">${esc(u.label)}</span>`;
           return `<div class="vlog-upd${linked ? ' link' : ''}" data-kind="${esc(u.kind)}" data-song="${esc(u.song_id || '')}"
-              data-ver="${esc(u.version_id || '')}" data-comment="${esc(u.comment_id || '')}"
+              data-ver="${esc(u.version_id || '')}" data-title="${esc(u.song || '')}" data-comment="${esc(u.comment_id || '')}"
               data-parent="${esc(u.parent_id || '')}" data-time="${Number.isFinite(u.time_s) ? u.time_s : ''}">
             <span class="vu-icon">${meta.icon}</span>
             <span class="vu-body">${body}${u.kind === 'comment' && linked

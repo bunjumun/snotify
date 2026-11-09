@@ -113,6 +113,19 @@
     border-bottom: 1px solid var(--line); font-size: 13px; }
   .vlog-upd:last-child { border-bottom: none; }
   .vu-icon { flex: none; }
+  .vlog-upd.link { cursor: pointer; }
+  .vlog-upd.link:hover { background: var(--hover, rgba(127,127,127,.08)); }
+  .vu-body b { color: var(--text); font-weight: 600; }
+  .vu-song { color: var(--text); }
+  .vu-snip { margin-top: 2px; overflow-wrap: anywhere; }
+  .vu-reply-link { color: var(--accent); font-size: 12px; cursor: pointer; }
+  .vu-reply-link:hover { text-decoration: underline; }
+  .vu-reply-box { display: flex; gap: 6px; margin-top: 4px; }
+  .vu-reply-box[hidden] { display: none; }
+  .vu-reply-input { flex: 1 1 auto; min-width: 0; font-size: 13px; padding: 4px 6px; border-radius: 6px;
+    border: 1px solid var(--line); background: transparent; color: var(--text); }
+  .vu-reply-send { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--accent);
+    background: none; color: var(--accent); cursor: pointer; }
   .vu-body { flex: 1 1 auto; min-width: 0; color: var(--text-dim); }
   .vu-verb { color: var(--text-mute); font-weight: 600; }
   .vu-at { flex: none; color: var(--text-mute); font-size: 11px; white-space: nowrap; }
@@ -6863,9 +6876,59 @@ const VLOG_PAGE = 10;
 let vlogShown = VLOG_PAGE, vlogKey = null;
 const vlogMoreRow = (older) =>
   `<div class="vlog-more-row"><button class="vlog-more" type="button">Show more${older ? ` (${older} older)` : ''}</button></div>`;
+// CR-169: a What's-new row is a link to its context and, for comments, a place
+// to answer. Rows carry the ids recent_updates (v41) hands back.
+function vlogOpenContext(el){
+  const si = songs.findIndex(s => s.id === el.dataset.song);
+  if (si < 0) return;
+  const vi = Math.max(0, songs[si].versions.findIndex(v => v.id === el.dataset.ver));
+  const time = el.dataset.time === '' ? null : Number(el.dataset.time);
+  const isCmt = el.dataset.kind === 'comment' || el.dataset.kind === 'resolved';
+  openSong(si, false, vi);
+  if (isCmt) openDrawer(true); else openVlog(false);
+  if (isCmt && Number.isFinite(time)){
+    // Seek once that mix has loaded; give up if another song takes over.
+    const gen = openGen; let tries = 0;
+    const tick = () => {
+      if (gen !== openGen || ++tries > 75) return;
+      if (readyByVer[activeVer] === true && curWS()) seekTo(time); else setTimeout(tick, 200);
+    };
+    tick();
+  }
+}
+async function vlogPostReply(row){
+  const input = row.querySelector('.vu-reply-input'), text = input.value.trim();
+  if (!text) return;
+  if (!isAuthed(curBand)){ showGate(curBand, false); return; }
+  const s = songs.find(x => x.id === row.dataset.song);
+  const ver = s && (s.versions.find(v => v.id === row.dataset.ver) || s.versions[0]);
+  const btn = row.querySelector('.vu-reply-send'); btn.disabled = true;
+  try {
+    const time = row.dataset.time === '' ? 0 : Number(row.dataset.time);
+    const saved = await libRpc('add_comment', { sid: row.dataset.song, time_s: time, txt: text,
+      who: $('cname').value.trim(), ver: ver ? ver.name : '', vid: ver ? ver.id : null,
+      parent_id: row.dataset.parent || row.dataset.comment, tg: null });
+    if (commentCache[row.dataset.song]) commentCache[row.dataset.song].push(mapRow(saved));
+  } catch (err){ btn.disabled = false; alert('Could not post the reply: ' + (err.message || err)); return; }
+  vlogShown = Math.max(vlogShown, VLOG_PAGE); renderVlog(); refreshListBadges();
+}
 $('vlogList').addEventListener('click', (e) => {
-  if (!e.target.closest('.vlog-more')) return;
-  vlogShown += VLOG_PAGE; renderVlog();
+  if (e.target.closest('.vlog-more')){ vlogShown += VLOG_PAGE; renderVlog(); return; }
+  const row = e.target.closest('.vlog-upd');
+  if (!row) return;
+  if (e.target.closest('.vu-reply-send')){ vlogPostReply(row); return; }
+  if (e.target.closest('.vu-reply-input')) return;
+  if (e.target.closest('.vu-reply-link')){
+    const box = row.querySelector('.vu-reply-box'); box.hidden = !box.hidden;
+    if (!box.hidden) box.querySelector('input').focus();
+    return;
+  }
+  if (row.classList.contains('link')) vlogOpenContext(row);
+});
+$('vlogList').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.classList.contains('vu-reply-input')){
+    e.preventDefault(); vlogPostReply(e.target.closest('.vlog-upd'));
+  }
 });
 
 async function renderVlog(){
@@ -6885,9 +6948,22 @@ async function renderVlog(){
     $('vlogList').innerHTML = updates.length
       ? updates.map(u => {
           const meta = UPDATE_KIND[u.kind] || { icon: '•', verb: 'Update' };
-          return `<div class="vlog-upd">
+          const cmt = u.kind === 'comment' || u.kind === 'resolved';
+          const linked = !!u.song_id && songs.some(s => s.id === u.song_id);
+          const verb = u.kind === 'comment' && u.parent_id ? 'Reply' : meta.verb;
+          const where = u.song && u.kind !== 'song' && u.kind !== 'mix'
+            ? ` on <span class="vu-song">${esc(u.song)}${Number.isFinite(u.time_s) ? ' @ ' + esc(fmt(u.time_s)) : ''}</span>` : '';
+          const body = cmt
+            ? `${u.who ? `<b>${esc(u.who)}</b> ` : ''}<span class="vu-verb">${esc(verb.toLowerCase())}</span>${where}<div class="vu-snip">${esc(u.label)}</div>`
+            : u.kind === 'log' ? `<span class="vu-verb">${esc(meta.verb)}</span> ${esc(u.label)}`
+            : `<span class="vu-verb">${esc(meta.verb)}</span> <span class="vu-song">${esc(u.label)}</span>`;
+          return `<div class="vlog-upd${linked ? ' link' : ''}" data-kind="${esc(u.kind)}" data-song="${esc(u.song_id || '')}"
+              data-ver="${esc(u.version_id || '')}" data-comment="${esc(u.comment_id || '')}"
+              data-parent="${esc(u.parent_id || '')}" data-time="${Number.isFinite(u.time_s) ? u.time_s : ''}">
             <span class="vu-icon">${meta.icon}</span>
-            <span class="vu-body"><span class="vu-verb">${esc(meta.verb)}</span> ${u.who ? esc(u.who) + ': ' : ''}${esc(u.label)}</span>
+            <span class="vu-body">${body}${u.kind === 'comment' && linked
+              ? `<div><span class="vu-reply-link" role="button" tabindex="0">Reply</span></div>
+                 <div class="vu-reply-box" hidden><input class="vu-reply-input" type="text" maxlength="2000" placeholder="Reply to ${esc(u.who || 'this comment')}…"><button class="vu-reply-send" type="button">Send</button></div>` : ''}</span>
             <span class="vu-at">${esc(timeago(new Date(u.at).getTime()))}</span>
           </div>`;
         }).join('') + (updates.length >= want ? vlogMoreRow() : '')

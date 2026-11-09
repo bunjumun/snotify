@@ -12,7 +12,7 @@
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
 <link rel="stylesheet" href="core.css?v=37" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=34" />
+<link rel="stylesheet" href="theme-dazzle.css?v=35" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -1277,7 +1277,7 @@
         <a class="navitem" id="releaseBtn" href="release-builder.html">🚀 Release</a>
         <a class="navitem" id="homeBtn" href="index.html">💿 Sn'Album</a>
       </div>
-      <button class="addbtn" id="editBtn" title="Edit — reorder, rename, stack, unstack, trash">✏️</button>
+      <button class="addbtn" id="editBtn" title="Edit — reorder, rename, stack, unstack, trash">✏</button>
       <button class="addbtn" id="trashBtn" title="Trash — deleted songs are archived here until you confirm permanent deletion">
         🗑<span id="trashCount"></span>
       </button>
@@ -4151,7 +4151,7 @@ function renderVersions(){
     <div class="vmhead"><span>Stack</span>
       <span style="display:inline-flex;gap:2px">
         <span class="ec" id="verShare" title="Copy share link to the whole stack — every version of “${esc(activeSong.title)}”">🔗</span>
-        ${owner ? `<span class="ec" id="verEditBtn" title="Edit the stack — reorder, rename, unstack, trash">✏️</span>` : ''}
+        ${owner ? `<span class="ec" id="verEditBtn" title="Edit the stack — reorder, rename, unstack, trash">✏</span>` : ''}
       </span>
     </div>`
   + activeSong.versions.map((v, vi) => `
@@ -6575,7 +6575,7 @@ function renderProfileVersions(){
                               : `Star ${esc(v.name)} — the most-starred mix is the band's current favourite`}"
          >${iStarred(v) ? '★' : '☆'}${starsOf(v).length ? `<b>${starsOf(v).length}</b>` : ''}</span>` : ''}
       <div class="pvacts">
-        ${owner ? `<span class="pv" data-act="rename" title="Rename ${esc(v.name)}">✏️</span>` : ''}
+        ${owner ? `<span class="pv" data-act="rename" title="Rename ${esc(v.name)}">✏</span>` : ''}
         <span class="pv" data-act="play" title="Play ${esc(v.name)} from the top">▶</span>
         <span class="pv" data-act="share" title="Share ${esc(v.name)}: asks whether you want a public or a band link">🔗</span>
         <span class="pv" data-act="audio" title="Copy a direct link to the audio file">🎵</span>
@@ -6936,7 +6936,7 @@ $('cToggle').onclick = () => openDrawer(!$('drawer').classList.contains('open'))
 // deliberately not sources — see schema-v35.sql for why.
 const UPDATE_KIND = {
   song:    { icon: '🎵', verb: 'New song' },
-  mix:     { icon: '🎚️', verb: 'New mix' },
+  mix:     { icon: '🎚', verb: 'New mix' },
   comment: { icon: '💬', verb: 'New comment' },
   resolved:{ icon: '✅', verb: 'Resolved' },
   log:     { icon: '📜', verb: 'Log updated' },

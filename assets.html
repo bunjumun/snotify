@@ -10,7 +10,7 @@
 <meta name="description" content="Band assets — the lore document, stacked by draft, with one draft live." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>" />
 <link rel="stylesheet" href="core.css?v=37" />
-<link rel="stylesheet" href="theme-dazzle.css?v=34" />
+<link rel="stylesheet" href="theme-dazzle.css?v=35" />
 <style>
   /* Assets-only surface. Everything shared lives in core.css. */
 
@@ -1213,7 +1213,7 @@ function renderLinkList(){
     url.textContent = l.url;
 
     const edit = document.createElement('button');
-    edit.title = 'Edit this link'; edit.textContent = '✏️';
+    edit.title = 'Edit this link'; edit.textContent = '✏';
     edit.addEventListener('click', () => {
       $('linkAddName').value = l.name;
       $('linkAddUrl').value = l.url;

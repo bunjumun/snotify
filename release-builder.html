@@ -82,6 +82,11 @@
   .cpost .cadd { width: 150px; }
   .cpost .csmall { font-size: 12px; padding: 3px 9px; text-decoration: none; }
   .cpost .ccal .cdelp { margin-left: auto; }
+  .cpost .clink { text-decoration: none; font-size: 13px; color: var(--text-dim); flex: none; }
+  .cpost .clink:hover { color: var(--accent); }
+  .cpost.tst-pitched .cchip, .cpost.tst-followed_up .cchip { border-color: var(--accent-2); color: var(--accent-2); }
+  .cpost.tst-covered .cchip { border-color: var(--accent); color: var(--accent); }
+  .cpost.tst-passed .cslot { opacity: .5; }
   @media (max-width: 640px) { .cpost .cmore { grid-template-columns: 1fr 1fr; } }
   .rdetail-head h2 { margin: 0; font-size: 20px; cursor: text; }
   .rdetail-head h2:hover { text-decoration: underline dotted; text-underline-offset: 4px; }
@@ -663,17 +668,20 @@ function fmtRelDate(s){
 // the release date (negative = before) and never a calendar date, so moving
 // the release date moves the whole campaign. No auto-posting: this says what
 // and when; posting stays manual.
-const CAMPAIGN_PLATFORMS = ['Instagram', 'TikTok', 'YouTube Shorts', 'Bluesky', 'Newsletter'];
-const CAMPAIGN_ASSETS = ['9:16 clip', 'square lyric card', '30s audio teaser', 'still', 'other'];
+const CAMPAIGN_PLATFORMS = ['Instagram', 'TikTok', 'YouTube Shorts', 'Bluesky', 'Newsletter', 'Email'];
+const CAMPAIGN_ASSETS = ['9:16 clip', 'square lyric card', '30s audio teaser', 'still', 'press kit', 'other'];
 const CAMPAIGN_STATUS = [['idea', 'Idea'], ['asset_ready', 'Asset ready'], ['scheduled', 'Scheduled'], ['posted', 'Posted']];
 const CAMPAIGN_TEMPLATE = [
   { slot: 'Announce',               offset_days: -42, asset_kind: 'still' },
+  { slot: 'Pitch local blogs and coverage accounts', offset_days: -35, asset_kind: 'press kit', platform: 'Email' },
   { slot: 'Tease',                  offset_days: -28, asset_kind: '9:16 clip' },
   { slot: 'Lead single',            offset_days: -21, asset_kind: '30s audio teaser' },
+  { slot: 'Follow up pitches',      offset_days: -20, asset_kind: 'press kit', platform: 'Email' },
   { slot: 'Behind the scenes',      offset_days: -14, asset_kind: '9:16 clip' },
   { slot: 'Pre-save push',          offset_days: -7,  asset_kind: 'square lyric card' },
   { slot: 'Release day',            offset_days: 0,   asset_kind: 'still' },
   { slot: 'Listening room / party', offset_days: 0,   asset_kind: 'still' },
+  { slot: 'Send release to coverage list', offset_days: 0, asset_kind: 'press kit', platform: 'Email' },
   { slot: 'Fan-reaction repost',    offset_days: 7,   asset_kind: 'still' },
   { slot: 'Deep-cut spotlight',     offset_days: 21,  asset_kind: '30s audio teaser' },
 ];
@@ -796,7 +804,7 @@ function campaignPostHtml(r, c){
 }
 
 function campaignBody(r, posts){
-  if (!posts.length) return `<div class="rempty2">No posts yet. “Generate from template” lays out nine, dated from the release date.</div>`;
+  if (!posts.length) return `<div class="rempty2">No posts yet. “Generate from template” lays out the rollout, dated from the release date.</div>`;
   if (campaignView === 'asset'){
     const groups = {};
     posts.forEach(c => { (groups[c.asset_kind || 'No asset cut set'] = groups[c.asset_kind || 'No asset cut set'] || []).push(c); });
@@ -860,7 +868,7 @@ function paintCampaign(r){
     <div class="chint">Dated posts for this release. Dates follow the release date; nothing posts automatically.</div>
     <div class="ctools">
       ${posts.length ? '' : `<button class="addbtn" id="campGenBtn" ${r.release_date ? '' : 'disabled'}
-              title="${r.release_date ? 'Add the nine-post rollout template' : 'Set a release date first'}">Generate from template</button>`}
+              title="${r.release_date ? 'Add the rollout template' : 'Set a release date first'}">Generate from template</button>`}
       <button class="addbtn" id="campAddBtn">+ Add post</button>
       <button class="addbtn ${campaignView === 'asset' ? 'radiobtn on' : ''}" id="campViewBtn"
               title="Group posts by the asset cut they need, so one editing session covers a batch">${campaignView === 'asset' ? 'By asset cut' : 'By date'}</button>
@@ -873,7 +881,7 @@ function paintCampaign(r){
   if ($('campGenBtn')) $('campGenBtn').addEventListener('click', async (e) => {
     e.target.disabled = true;
     try {
-      await libRpc('generate_campaign', { rid: r.id, posts: CAMPAIGN_TEMPLATE.map(t => ({ ...t, platform: 'Instagram' })) });
+      await libRpc('generate_campaign', { rid: r.id, posts: CAMPAIGN_TEMPLATE.map(t => ({ platform: 'Instagram', ...t })) });
       delete campaignCache[r.id];
       await renderCampaign(r);
     } catch (err){ alert(String(err.message || err)); e.target.disabled = false; }
@@ -971,6 +979,151 @@ function paintCampaign(r){
     } else if (e.target.closest('[data-act="toggle"]')){
       row.classList.toggle('open');
       if (row.classList.contains('open')) campaignOpen.add(id); else campaignOpen.delete(id);
+    }
+  });
+}
+
+// ---------- CR-177: outreach targets ----------
+// Who to pitch for this release (local blogs, music-coverage social accounts,
+// radio, playlists, press), how to reach them, and where each pitch stands.
+// Contact fields are links: profile/site, email (mailto), one more contact
+// link (DM, submission form). Same cache-first, optimistic shape as the campaign.
+const TARGET_KINDS = [['blog', 'Blog'], ['social', 'Social account'], ['radio', 'Radio'], ['playlist', 'Playlist'], ['press', 'Press'], ['other', 'Other']];
+const TARGET_STATUS = [['to_pitch', 'To pitch'], ['pitched', 'Pitched'], ['followed_up', 'Followed up'], ['covered', 'Covered'], ['passed', 'Passed']];
+const outreachCache = {};
+const outreachOpen = new Set();
+const todayIso = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const hrefOf = (u) => { u = String(u || '').trim(); if (!u) return ''; if (!/^https?:\/\//i.test(u)) u = 'https://' + u; return safeHref(u); };
+
+function outreachPitchMailto(r, t){
+  const when = r.release_date ? ' out ' + fmtRelDate(r.release_date) : '';
+  const body = `Hi${t.name ? ' ' + t.name : ''},\n\nWe have a new release, "${r.title}",${when}. We'd love for you to hear it ahead of release.\n\n[private listening link]\n\nThanks,\n${campaignMe()}`;
+  return 'mailto:' + encodeURIComponent(t.email || '') + '?subject=' + encodeURIComponent(`New release: ${r.title}`) + '&body=' + encodeURIComponent(body);
+}
+
+function outreachRowHtml(r, t){
+  const sel = (field, opts) => `<select data-f="${field}">${opts.map(([v, l]) => `<option value="${esc(v)}" ${t[field] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  const kind = (TARGET_KINDS.find(k => k[0] === t.kind) || [0, t.kind])[1];
+  const st = (TARGET_STATUS.find(k => k[0] === t.status) || [0, t.status])[1];
+  const links = [
+    t.email ? `<a class="clink" href="mailto:${esc(t.email)}" title="Email ${esc(t.email)}">✉</a>` : '',
+    t.profile_url ? `<a class="clink" href="${esc(hrefOf(t.profile_url))}" target="_blank" rel="noopener" title="Profile or site">↗</a>` : '',
+    t.contact_url ? `<a class="clink" href="${esc(hrefOf(t.contact_url))}" target="_blank" rel="noopener" title="Contact link">💬</a>` : '',
+  ].join('');
+  return `<div class="cpost tst-${esc(t.status)} ${outreachOpen.has(t.id) ? 'open' : ''}" data-id="${esc(t.id)}">
+    <div class="csum" data-act="toggle">
+      <span class="cslot">${esc(t.name || 'Unnamed contact')}</span>
+      <span class="cplat">${esc([kind, t.location].filter(Boolean).join(' · '))}</span>
+      ${links}
+      <span class="cplat">${t.last_touched ? esc(fmtRelDate(t.last_touched)) : ''}</span>
+      <span class="cchip" data-act="status" title="Click to advance: to pitch, pitched, followed up, covered, passed">${esc(st)}</span>
+    </div>
+    <div class="cmore">
+      <input type="text" data-f="name" value="${esc(t.name)}" placeholder="Name (blog, account, show)">
+      ${sel('kind', TARGET_KINDS)}
+      <input type="text" data-f="location" value="${esc(t.location)}" placeholder="Location / scene">
+      <input class="cwide" type="url" data-f="profile_url" value="${esc(t.profile_url)}" placeholder="Profile or site URL">
+      <input type="email" data-f="email" value="${esc(t.email)}" placeholder="Email">
+      <input type="url" data-f="contact_url" value="${esc(t.contact_url)}" placeholder="Other contact link (DM, form)">
+      <input type="date" data-f="last_touched" value="${esc(t.last_touched || '')}" title="Last touched">
+      <textarea data-f="notes" placeholder="Notes: who to ask for, what they cover, what you sent">${esc(t.notes)}</textarea>
+      <div class="cwide ccal">
+        ${t.email ? `<a class="addbtn csmall" href="${esc(outreachPitchMailto(r, t))}" title="Open a pitch email draft in your mail app">Draft pitch</a>` : '<span class="clbl">Add an email to draft a pitch</span>'}
+        ${sel('status', TARGET_STATUS)}
+        <span class="cdelp" data-act="del">Delete contact</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function renderOutreach(r){
+  const wrap = document.getElementById('relOutreach');
+  if (!wrap) return;
+  const cached = outreachCache[r.id];
+  if (cached) paintOutreach(r);
+  else wrap.innerHTML = `<h3>Outreach</h3><div class="rempty2">Loading…</div>`;
+  let list;
+  try { list = await libRpc('get_targets', { rid: r.id }); }
+  catch (err){ if (!cached) wrap.innerHTML = `<h3>Outreach</h3><div class="rempty2">Could not load outreach: ${esc(String(err.message || err))}</div>`; return; }
+  if (r.id !== curReleaseId) return;
+  list = Array.isArray(list) ? list : [];
+  if (cached && JSON.stringify(cached) === JSON.stringify(list)) return;
+  outreachCache[r.id] = list;
+  paintOutreach(r);
+}
+
+function outreachTally(list){
+  const pitched = list.filter(t => t.status !== 'to_pitch').length, covered = list.filter(t => t.status === 'covered').length;
+  return list.length ? ` ${pitched} of ${list.length} pitched, ${covered} covered.` : '';
+}
+// Rewrite one row's summary line (and, when asked, its pitch/status bar) in
+// place so the other inputs keep focus and half-typed text.
+function refreshOutreachRow(r, row, t, withBar){
+  const tmp = document.createElement('div');
+  tmp.innerHTML = outreachRowHtml(r, t);
+  const fresh = tmp.firstElementChild;
+  row.querySelector('.csum').replaceWith(fresh.querySelector('.csum'));
+  if (withBar) row.querySelector('.ccal').replaceWith(fresh.querySelector('.ccal'));
+  row.className = fresh.className + (row.classList.contains('open') ? ' open' : '');
+  const tally = $('outTally');
+  if (tally) tally.textContent = outreachTally(outreachCache[r.id] || []);
+}
+
+function paintOutreach(r){
+  const wrap = document.getElementById('relOutreach');
+  if (!wrap) return;
+  const list = outreachCache[r.id] || [];
+  wrap.innerHTML = `<h3>Outreach</h3>
+    <div class="chint">Local blogs, music-coverage accounts, radio and press to pitch for this release.<span id="outTally">${outreachTally(list)}</span></div>
+    <div class="ctools"><button class="addbtn" id="outAddBtn">+ Add contact</button></div>
+    <div id="outList">${list.length ? list.map(t => outreachRowHtml(r, t)).join('')
+      : '<div class="rempty2">No contacts yet. Add the blogs and accounts that cover your scene.</div>'}</div>`;
+  $('outAddBtn').addEventListener('click', async () => {
+    const t = { name: '', kind: 'blog', profile_url: '', email: '', contact_url: '', location: '', status: 'to_pitch', last_touched: null, notes: '' };
+    try {
+      t.id = await libRpc('save_target', { rid: r.id, tgt: { kind: 'blog' } });
+      list.push(t); outreachCache[r.id] = list; outreachOpen.add(t.id);
+      paintOutreach(r);
+      const inp = document.querySelector(`#outList .cpost[data-id="${CSS.escape(t.id)}"] [data-f="name"]`);
+      if (inp) inp.focus();
+    } catch (err){ alert(String(err.message || err)); }
+  });
+  const box = $('outList');
+  const save = async (t, patch) => {
+    const prev = {};
+    Object.keys(patch).forEach(k => { prev[k] = t[k]; t[k] = patch[k]; });
+    try { await libRpc('save_target', { rid: r.id, tgt: { id: t.id, ...patch } }); }
+    catch (err){ alert(String(err.message || err)); Object.assign(t, prev); paintOutreach(r); }
+  };
+  box.addEventListener('change', async (e) => {
+    const f = e.target.dataset.f, row = e.target.closest('.cpost');
+    const t = row && list.find(x => x.id === row.dataset.id);
+    if (!f || !t) return;
+    const patch = { [f]: e.target.value };
+    if (f === 'status' && ['pitched', 'followed_up'].includes(e.target.value)) patch.last_touched = todayIso();
+    const pending = save(t, patch);   // mutates t at once, then saves
+    refreshOutreachRow(r, row, t, f === 'status' || f === 'email');
+    await pending;
+  });
+  box.addEventListener('click', async (e) => {
+    const row = e.target.closest('.cpost');
+    const t = row && list.find(x => x.id === row.dataset.id);
+    if (!t || e.target.closest('a')) return;
+    if (e.target.closest('[data-act="del"]')){
+      if (!confirm(`Delete ${t.name || 'this contact'}?`)) return;
+      try { await libRpc('delete_target', { tid: t.id }); outreachCache[r.id] = list.filter(x => x !== t); paintOutreach(r); }
+      catch (err){ alert(String(err.message || err)); }
+    } else if (e.target.closest('[data-act="status"]')){
+      const order = TARGET_STATUS.map(x => x[0]);
+      const next = order[(order.indexOf(t.status) + 1) % order.length];
+      const patch = { status: next };
+      if (['pitched', 'followed_up'].includes(next)) patch.last_touched = todayIso();
+      const pending = save(t, patch);
+      refreshOutreachRow(r, row, t, true);
+      await pending;
+    } else if (e.target.closest('[data-act="toggle"]')){
+      row.classList.toggle('open');
+      if (row.classList.contains('open')) outreachOpen.add(t.id); else outreachOpen.delete(t.id);
     }
   });
 }
@@ -1085,8 +1238,10 @@ function renderDetail(){
       ${list.length ? list.map((s, i) => relSongRowHtml(s, i, list.length)).join('')
                     : `<div class="rempty2">Nothing in this release yet. “+ Add tracks” pulls from your library.</div>`}
     </div>
-    <div id="relCampaign" class="rcamp"></div>`;
+    <div id="relCampaign" class="rcamp"></div>
+    <div id="relOutreach" class="rcamp"></div>`;
   renderCampaign(r);
+  renderOutreach(r);
   // CR-103: mounted after innerHTML is set, same as every other listener
   // below — .pacc's own wiring needs the element to exist in the DOM first.
   if (window.PROGRESS) renderReleaseProgress(list);

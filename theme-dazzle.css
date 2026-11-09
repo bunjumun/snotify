@@ -528,3 +528,66 @@ body[data-theme="dazzle"] .door .glyph {
     radial-gradient(circle, #08080a 0 17px, #fff 17px 18px, transparent 18.5px),
     var(--dazzle-narrow) center / 100% 100% no-repeat;
 }
+
+/* ---------- Type (CR-181) ---------- */
+/* Retro-futurist, and kept to where it earns its place. Orbitron (the 1970s
+   idea of the 21st century, wide and geometric) letters the things you read as
+   labels: the masthead, headings, buttons. Space Mono, a typewriter in a
+   spacesuit, sets the numbers and small data: counts, times, tallies. Reading
+   text (comments, lyrics, notes) keeps the system face, because a long
+   paragraph in a display face is a chore.
+   Self-hosted in fonts/ (Latin subset, ~46 KB for the four weights, SIL OFL),
+   so no third-party request and no flash of a foreign host. font-display: swap
+   shows the system face at once and swaps when the file lands. They are only
+   fetched where a rule below uses them, and every rule is scoped to the dazzle
+   theme, so another band's pages never download them. */
+@font-face { font-family: "Orbitron"; font-weight: 700; font-style: normal; font-display: swap;
+  src: url("fonts/orbitron-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Orbitron"; font-weight: 900; font-style: normal; font-display: swap;
+  src: url("fonts/orbitron-latin-900-normal.woff2") format("woff2"); }
+@font-face { font-family: "Space Mono"; font-weight: 400; font-style: normal; font-display: swap;
+  src: url("fonts/space-mono-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Space Mono"; font-weight: 700; font-style: normal; font-display: swap;
+  src: url("fonts/space-mono-latin-700-normal.woff2") format("woff2"); }
+
+body[data-theme="dazzle"] {
+  --font-display: "Orbitron", "Eurostile", "Bank Gothic", system-ui, sans-serif;
+  --font-mono:    "Space Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* Display. Orbitron runs wide, so sizes and tracking come down from the
+   system-face values above. */
+body[data-theme="dazzle"] header.app h1,
+body[data-theme="dazzle"] .door h2,
+body[data-theme="dazzle"] .modal h2,
+body[data-theme="dazzle"] .drawer h3 {
+  font-family: var(--font-display); font-weight: 900;
+}
+body[data-theme="dazzle"] header.app h1 { font-size: 21px; letter-spacing: .1em; }
+body[data-theme="dazzle"] .door h2      { font-size: 15px; letter-spacing: .06em; line-height: 1.25; }
+body[data-theme="dazzle"] .modal h2     { font-size: 14px; letter-spacing: .08em; }
+body[data-theme="dazzle"] .drawer h3    { font-size: 13px; letter-spacing: .08em; }
+
+body[data-theme="dazzle"] .addbtn,
+body[data-theme="dazzle"] .badge,
+body[data-theme="dazzle"] .modal .btn,
+body[data-theme="dazzle"] .composer button,
+body[data-theme="dazzle"] #textBar .btn,
+body[data-theme="dazzle"] .verbtn,
+body[data-theme="dazzle"] .rev,
+body[data-theme="dazzle"] .toolitem b,
+body[data-theme="dazzle"] .tool-what b {
+  font-family: var(--font-display); font-weight: 700; font-size: 10.5px; letter-spacing: .06em;
+}
+
+/* Data. */
+body[data-theme="dazzle"] header.app p,
+body[data-theme="dazzle"] header.app .count,
+body[data-theme="dazzle"] .bandline,
+body[data-theme="dazzle"] .door .tally,
+body[data-theme="dazzle"] .time,
+body[data-theme="dazzle"] .song .idx {
+  font-family: var(--font-mono);
+}
+body[data-theme="dazzle"] header.app p { font-size: 12.5px; }
+body[data-theme="dazzle"] .door .tally { font-weight: 700; letter-spacing: .04em; }

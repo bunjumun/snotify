@@ -8130,9 +8130,12 @@ let _mpPosAt = 0;
 function updateMediaPosition(w){
   if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
   const now = Date.now(); if (now - _mpPosAt < 1000) return; _mpPosAt = now;
-  const d = w.getDuration(), p = w.getCurrentTime();
-  if (!isFinite(d) || d <= 0) return;
-  try { navigator.mediaSession.setPositionState({ duration: d, position: Math.min(p, d), playbackRate: 1 }); } catch(e){}
+  // Must never throw: this runs inside wavesurfer's timeupdate, which seekTo() triggers synchronously.
+  try {
+    const d = w.getDuration(), p = w.getCurrentTime();
+    if (!isFinite(d) || d <= 0) return;
+    navigator.mediaSession.setPositionState({ duration: d, position: Math.min(p, d), playbackRate: 1 });
+  } catch(e){}
 }
 
 // The now-playing title is a door too, same as the one in the list.

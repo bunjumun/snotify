@@ -734,25 +734,50 @@ function campaignBody(r, posts){
   return out;
 }
 
+// Paint from cache at once (no "Loading…" flash when renderDetail re-runs after
+// a date, radio or track edit), then refetch quietly and repaint only if the
+// server's copy differs.
 async function renderCampaign(r){
   const wrap = document.getElementById('relCampaign');
   if (!wrap) return;
-  wrap.innerHTML = `<h3>Campaign</h3><div class="chint">Dated posts for this release. Dates follow the release date; nothing posts automatically.</div><div class="rempty2">Loading…</div>`;
+  const cached = campaignCache[r.id];
+  if (cached) paintCampaign(r);
+  else wrap.innerHTML = `<h3>Campaign</h3><div class="rempty2">Loading…</div>`;
   let posts;
   try { posts = await libRpc('get_campaign', { rid: r.id }); }
-  catch (err){ wrap.innerHTML = `<h3>Campaign</h3><div class="rempty2">Could not load the campaign: ${esc(String(err.message || err))}</div>`; return; }
+  catch (err){
+    if (!cached) wrap.innerHTML = `<h3>Campaign</h3><div class="rempty2">Could not load the campaign: ${esc(String(err.message || err))}</div>`;
+    return;
+  }
   if (r.id !== curReleaseId) return;
   posts = Array.isArray(posts) ? posts : [];
+  if (cached && JSON.stringify(cached) === JSON.stringify(posts)) return;
   campaignCache[r.id] = posts;
   paintCampaign(r);
+}
+
+function campaignWarnHtml(posts){
+  const listen = posts.filter(c => LISTEN_NOW_RE.test(c.slot)).length;
+  return posts.length >= 5 && listen / posts.length > 0.2
+    ? `${listen} of ${posts.length} posts are “listen now”. Aim for no more than 1 in 5.` : '';
+}
+
+// Rewrite one row's one-line summary and status colour in place. The detail
+// inputs are left alone, so focus and half-typed text survive a save.
+function refreshCampaignRow(r, row, c){
+  const tmp = document.createElement('div');
+  tmp.innerHTML = campaignPostHtml(r, c);
+  const fresh = tmp.firstElementChild;
+  row.querySelector('.csum').replaceWith(fresh.querySelector('.csum'));
+  row.className = fresh.className + (row.classList.contains('open') ? ' open' : '');
+  const w = $('campWarn');
+  if (w) w.textContent = campaignWarnHtml(campaignCache[r.id] || []);
 }
 
 function paintCampaign(r){
   const wrap = document.getElementById('relCampaign');
   if (!wrap) return;
   const posts = campaignCache[r.id] || [];
-  const listen = posts.filter(c => LISTEN_NOW_RE.test(c.slot)).length;
-  const warn = posts.length >= 5 && listen / posts.length > 0.2;
   wrap.innerHTML = `<h3>Campaign</h3>
     <div class="chint">Dated posts for this release. Dates follow the release date; nothing posts automatically.</div>
     <div class="ctools">
@@ -761,19 +786,27 @@ function paintCampaign(r){
       <button class="addbtn" id="campAddBtn">+ Add post</button>
       <button class="addbtn ${campaignView === 'asset' ? 'radiobtn on' : ''}" id="campViewBtn"
               title="Group posts by the asset cut they need, so one editing session covers a batch">${campaignView === 'asset' ? 'By asset cut' : 'By date'}</button>
-      ${warn ? `<span class="cwarn">${listen} of ${posts.length} posts are “listen now”. Aim for no more than 1 in 5.</span>` : ''}
+      <span class="cwarn" id="campWarn">${campaignWarnHtml(posts)}</span>
     </div>
     <div id="campList">${campaignBody(r, posts)}</div>`;
-  if ($('campGenBtn')) $('campGenBtn').addEventListener('click', async () => {
+  // Generate needs the new ids, so it is the one action that refetches.
+  if ($('campGenBtn')) $('campGenBtn').addEventListener('click', async (e) => {
+    e.target.disabled = true;
     try {
       await libRpc('generate_campaign', { rid: r.id, posts: CAMPAIGN_TEMPLATE.map(t => ({ ...t, platform: 'Instagram' })) });
+      delete campaignCache[r.id];
       await renderCampaign(r);
-    } catch (err){ alert(String(err.message || err)); }
+    } catch (err){ alert(String(err.message || err)); e.target.disabled = false; }
   });
+  // Add and delete patch the cache locally rather than refetching.
   $('campAddBtn').addEventListener('click', async () => {
+    const post = { offset_days: 0, slot: 'New post', platform: '', asset_kind: '', status: 'idea', copy: '', link: '', result: '' };
     try {
-      await libRpc('save_campaign_post', { rid: r.id, post: { offset_days: 0, slot: 'New post' } });
-      await renderCampaign(r);
+      post.id = await libRpc('save_campaign_post', { rid: r.id, post: { offset_days: 0, slot: 'New post' } });
+      posts.push(post);
+      posts.sort((a, b) => a.offset_days - b.offset_days);
+      campaignOpen.add(post.id);
+      paintCampaign(r);
     } catch (err){ alert(String(err.message || err)); }
   });
   $('campViewBtn').addEventListener('click', () => { campaignView = campaignView === 'asset' ? 'calendar' : 'asset'; paintCampaign(r); });
@@ -784,13 +817,18 @@ function paintCampaign(r){
     const c = posts.find(x => x.id === row.dataset.id);
     if (!c) return;
     const val = f === 'offset_days' ? (parseInt(e.target.value, 10) || 0) : e.target.value;
-    try {
-      await libRpc('save_campaign_post', { rid: r.id, post: { id: c.id, [f]: val } });
-      c[f] = val;
-      // Anything that changes grouping, order, the date or the colour re-sorts; text fields stay put so focus survives.
-      if (f === 'offset_days'){ posts.sort((a, b) => a.offset_days - b.offset_days); }
-      if (['offset_days', 'asset_kind', 'slot', 'platform'].includes(f)) paintCampaign(r);
-    } catch (err){ alert(String(err.message || err)); e.target.value = c[f]; }
+    const prev = c[f];
+    c[f] = val;
+    // Only a move in time, or an asset change while grouped by asset, regroups the list.
+    const regroup = f === 'offset_days' || (f === 'asset_kind' && campaignView === 'asset');
+    if (regroup){ posts.sort((a, b) => a.offset_days - b.offset_days); paintCampaign(r); }
+    else refreshCampaignRow(r, row, c);
+    try { await libRpc('save_campaign_post', { rid: r.id, post: { id: c.id, [f]: val } }); }
+    catch (err){
+      alert(String(err.message || err));
+      c[f] = prev;
+      paintCampaign(r);
+    }
   });
   list.addEventListener('click', async (e) => {
     const row = e.target.closest('.cpost');
@@ -798,13 +836,20 @@ function paintCampaign(r){
     const id = row.dataset.id, c = posts.find(x => x.id === id);
     if (e.target.closest('[data-act="del"]')){
       if (!confirm('Delete this post?')) return;
-      try { await libRpc('delete_campaign_post', { pid: id }); await renderCampaign(r); }
-      catch (err){ alert(String(err.message || err)); }
+      try {
+        await libRpc('delete_campaign_post', { pid: id });
+        campaignCache[r.id] = posts.filter(x => x.id !== id);
+        campaignOpen.delete(id);
+        paintCampaign(r);
+      } catch (err){ alert(String(err.message || err)); }
     } else if (e.target.closest('[data-act="status"]') && c){
+      // Optimistic: the chip moves on click, and moves back if the save fails.
       const order = CAMPAIGN_STATUS.map(x => x[0]);
-      const next = order[(order.indexOf(c.status) + 1) % order.length];
-      try { await libRpc('save_campaign_post', { rid: r.id, post: { id, status: next } }); c.status = next; paintCampaign(r); }
-      catch (err){ alert(String(err.message || err)); }
+      const prev = c.status;
+      c.status = order[(order.indexOf(prev) + 1) % order.length];
+      refreshCampaignRow(r, row, c);
+      try { await libRpc('save_campaign_post', { rid: r.id, post: { id, status: c.status } }); }
+      catch (err){ alert(String(err.message || err)); c.status = prev; refreshCampaignRow(r, row, c); }
     } else if (e.target.closest('[data-act="toggle"]')){
       row.classList.toggle('open');
       if (row.classList.contains('open')) campaignOpen.add(id); else campaignOpen.delete(id);

@@ -1,0 +1,311 @@
+<meta charset="utf-8">
+<title>Comment Marker WAV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: single working column; input, options, marker list, export bar */
+:root{
+  --bg:#f3f4f1; --panel:#ffffff; --fg:#1d211f; --muted:#5f6763; --line:#d9ddd8;
+  --accent:#2f7a6b; --accent-fg:#ffffff; --done:#9aa19d; --warn:#a2611a;
+  --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#151816; --panel:#1d211f; --fg:#e6e9e6; --muted:#9aa29e; --line:#2f3532;
+  --accent:#5fb8a5; --accent-fg:#0d1513; --done:#5f6763; --warn:#e0a25a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#151816; --panel:#1d211f; --fg:#e6e9e6; --muted:#9aa29e; --line:#2f3532;
+  --accent:#5fb8a5; --accent-fg:#0d1513; --done:#5f6763; --warn:#e0a25a; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:15px;line-height:1.5}
+.wrap{max-width:860px;margin:0 auto;padding-inline:16px;padding-block:28px 48px;display:grid;gap:20px}
+h1{font-size:1.5rem;font-weight:600;margin:0;text-wrap:balance}
+.sub{color:var(--muted);margin:4px 0 0;max-width:62ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;display:grid;gap:12px;min-width:0}
+.label{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.drop{border:1.5px dashed var(--line);border-radius:6px;padding:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.drop.over{border-color:var(--accent)}
+.loaded{font-family:var(--mono);font-size:.85rem;min-width:0;overflow-wrap:anywhere}
+textarea{width:100%;box-sizing:border-box;min-height:90px;font-family:var(--mono);font-size:.8rem;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px}
+details summary{cursor:pointer;color:var(--muted);font-size:.85rem}
+.opts{display:flex;flex-wrap:wrap;gap:18px;align-items:center}
+.opts label{display:flex;gap:8px;align-items:center;font-size:.9rem}
+select,input[type=number]{font:inherit;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:4px 6px}
+input[type=number]{width:4.5em}
+button{font:inherit;font-weight:600;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:8px 14px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.list{display:grid;gap:0;max-height:430px;overflow:auto;border-top:1px solid var(--line)}
+.group{font-size:.78rem;color:var(--muted);padding:10px 2px 4px;font-weight:600;letter-spacing:.03em;position:sticky;top:0;background:var(--panel)}
+.row{display:grid;grid-template-columns:auto 4.2em minmax(0,1fr);gap:10px;align-items:baseline;padding:6px 2px;border-bottom:1px solid var(--line)}
+.row .t{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.85rem;color:var(--accent)}
+.row .txt{min-width:0}
+.row .full{color:var(--muted);font-size:.8rem;display:block;overflow-wrap:anywhere}
+.row.done .t,.row.done .lbl{color:var(--done);text-decoration:line-through}
+.bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.status{font-size:.9rem;color:var(--muted)}
+.status.err{color:var(--warn)}
+.hint{margin:0;font-size:.85rem;color:var(--muted);min-height:1.2em}
+.hint.err{color:var(--warn)}
+.how{color:var(--muted);font-size:.88rem;margin:0;padding-left:1.2em}
+.how li{margin:2px 0}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Comment Marker WAV</h1>
+    <p class="sub">Turns a timestamped comment export into a WAV with a ding and a Logic marker at every comment. A low ding marks the bounce start.</p>
+  </header>
+
+  <section class="panel">
+    <div class="label">Comment export</div>
+    <div class="drop" id="drop">
+      <span class="loaded" id="loaded">Loaded: Mango Tree World comments (1).txt</span>
+      <label><button type="button" id="pick">Choose .txt file</button>
+      <input type="file" id="file" accept=".txt,text/plain" hidden></label>
+    </div>
+    <details><summary>Or paste the export text</summary>
+      <textarea id="paste" spellcheck="false"></textarea>
+    </details>
+  </section>
+
+  <section class="panel">
+    <div class="label">Options</div>
+    <div class="opts">
+      <label><input type="checkbox" id="incDone"> Include checked-off comments</label>
+      <label>Label length <input type="number" id="maxLen" min="10" max="200" value="48"> chars</label>
+      <label>Sample rate <select id="sr"><option value="48000">48 kHz</option><option value="44100">44.1 kHz</option></select></label>
+    </div>
+    <div class="label">Tempo and bounce start</div>
+    <div class="opts">
+      <label>BPM <input type="number" id="bpm" min="20" max="400" step="0.01" placeholder="none"></label>
+      <span style="display:flex;gap:6px;align-items:center;font-size:.9rem">Time sig
+        <select id="sigTop" aria-label="Beats per bar"></select>
+        <span aria-hidden="true">/</span>
+        <select id="sigBot" aria-label="Beat note value"><option>2</option><option selected>4</option><option>8</option><option>16</option></select>
+      </span>
+      <label>Bounce starts at <select id="offMode"><option value="none">wherever I place it</option><option value="bar">bar.beat</option><option value="sec">time</option></select></label>
+      <input type="text" id="offVal" placeholder="5 or 5.3" aria-label="Bounce start position" style="width:7em;font:inherit;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:4px 6px" hidden>
+    </div>
+    <p class="hint" id="offHint"></p>
+  </section>
+
+  <section class="panel">
+    <div class="bar"><div class="label" id="count">Markers</div>
+      <div class="opts"><button type="button" id="all">Select all</button><button type="button" id="none">Select none</button></div></div>
+    <div class="list" id="list"></div>
+  </section>
+
+  <section class="panel">
+    <div class="bar">
+      <span class="status" id="status">Ready.</span>
+      <button type="button" class="primary" id="make">Download marker WAV</button>
+    </div>
+    <ol class="how">
+      <li id="howPlace">Drop the WAV on an empty track with its left edge where the commented bounce starts.</li>
+      <li>Select the region, then Navigate &gt; Other &gt; Import Marker from Audio File.</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+const SAMPLE = "Mango Tree World \u2014 comments\nExported 10/9/2026, 6:17:04 PM\n\n[Mango Tree World 10-5-26]\n  [x] 1:19  sorry to say the glitch is still there.  \u2014 jack, 10/5/2026\n         \u21b3 ah i hear it, on the 'n' of can't hide  \u2014 bunj, 10/5/2026\n         \u21b3 so strange, it was in the last mix bounce too, but not there in live playback, i bounced again and i *think it's gone now  \u2014 bunj, 10/6/2026\n  [ ] 1:27  remove or lower ben's 'grab a cup'  \u2014 bunj, 10/5/2026\n  [ ] 1:33  lower or take out ben's trailing vocal on this line, gets in the way until 'from the mango tree world'  \u2014 bunj, 10/5/2026\n  [ ] 3:31  soften ben low vocal on right side here  \u2014 jack, 10/5/2026\n\n[Mango Tree World MIX 8-22-26]\n  [ ] 0:00  add rest of ambient intro pls (before congas enter)  \u2014 jack, 9/27/2026\n  [ ] 3:48  fade out the waves here  \u2014 jack, 9/27/2026\n\n[Mango Tree World MIX 8-18-26]\n  [x] 1:20  here's the vocal click on the Right side to remove  \u2014 jack, 9/27/2026\n         \u21b3 was maybe an audio artifact but it seems to be gone now.  \u2014 james, 10/5/2026\n\n[Mango Tree World 8-14-26]\n  [ ] 0:58  Love the drums on this part of the verse. Sounds like the Snare pops up around 0:55 to a good level, could use that louder volume on the Snare at the beginning (or something reinforcing backbeat)  \u2014 Dan, 8/16/2026\n         \u21b3 sounds like you are maybe sidesticking on the rim  up to there, i'll see if i can make a round robin of our actual snare from when it pops in and layer that in triggere'd by your snare rim clicks, unless it's just a mic on/off issue.  will be back with more info  \u2014 bunj, 10/6/2026\n  [x] 0:59  conga part up, electric guitar down a little bit in n this beginning of intro area, bass down a tiny bit til first 'you wanted from me'  \u2014 8/16/2026\n  [x] 1:21  vocal glitch right side here  \u2014 jack, 8/16/2026\n  [ ] 1:22  Regular congas back in here  \u2014 Dan, 8/16/2026\n  [ ] 1:37  wide assortment of panned backing vocals on 'tree', maybe even a new reverb here to let in your awesome melody in the chorus (warmer vibe)  \u2014 jack, 8/16/2026\n  [ ] 1:50  Synth pad enters here, carries through breakdown (\"unglued.....you wanted\")  \u2014 Dan, 8/16/2026\n  [x] 1:53  more ben backing vocals here pls  \u2014 jack, 8/16/2026\n         \u21b3 maybe adding james was enough? let me know.  \u2014 james, 10/5/2026\n  [ ] 2:11  This drop is a very cool moment  \u2014 Dan, 8/16/2026\n  [x] 2:23  louder vocals here  \u2014 jack, 8/16/2026\n         \u21b3 turned it up a few dbs.  click 'reference' on your comment to see the edit screen recording  \u2014 bunj, 8/22/2026\n  [ ] 3:06  e. guitar up a lil  \u2014 jack, 8/16/2026\n  [ ] 3:10  Congas can come down in this whole section  \u2014 Dan, 8/16/2026\n  [ ] 3:22  more vocals from drop to the acapella outro. outro vocals could go down a tiny bit  \u2014 jack, 8/16/2026\n         \u21b3 to clarify, do you mean more vocals as in more layers or more vocals as in more volume for lead vocals?  \u2014 bunj, 8/22/2026\n\n[Mango Tree World vocal mute idea]\n  [ ] 2:10  3 tubular bell hits could be cool here almost does a who thing with the vox off here  \u2014 bunj, 8/10/2026\n  [x] 2:21  Can we add the start of this line too? ('and now I'm...walking' etc.)  \u2014 8/10/2026\n  [ ] 2:44  more ben backing vocal thing here, and repeat til outro. I think its like a long ahh sound  \u2014 8/10/2026\n\n[Mango Tree World MIX 7-19-26]\n  [x] 0:21  deep mind is bit loud at this very moment  \u2014 7/21/2026\n\n[Mix 6-29-26]\n  [x] 1:32  test comment  \u2014 bunj, 7/20/2026\n  [x] 1:58  test comment #2  \u2014 bunj, 7/20/2026\n\n[Mango Tree World FINAL MIX 8-10-26 a]\n  [x] 0:46  I think I'd like more piano throughout, or added presence.  \u2014 jack, 8/10/2026\n         \u21b3 boosted high mids, cut a little bit of lows. .in 8-18-26  \u2014 bunj, 8/18/2026\n  [x] 1:21  little vocal glitch here (right side I think)  \u2014 8/10/2026\n  [ ] 2:08  can that little icky mouth sound be removed, and my vocal turned down just a bit so it can sit better in the silence?  \u2014 8/10/2026\n         \u21b3 i should 'remove silence' on all vocal tracks and solo to find all mouth sounds to remove.  \u2014 bunj, 8/14/2026\n  [ ] 2:14  perfect backing vocal effects here, now the lead vocals need to rest on top of that fluffy pillow you made.  \u2014 8/10/2026\n  [ ] 3:22  theres a lower jack vocal here that could be turned down a tiny bit, it adds a nice thing, it just pops out lil too much in that spot  \u2014 8/10/2026\n         \u21b3 this may be taken care of by the note below  \u2014 bunj, 8/22/2026\n";
+let parsed = {title:"", items:[]};
+const $ = id => document.getElementById(id);
+
+function parseTime(s){ return s.split(":").map(Number).reduce((a,b)=>a*60+b,0); }
+function parse(text){
+  const lines = text.replace(/\r/g,"").split("\n");
+  let title = (lines[0]||"").split(/\s+[—-]\s+comments/i)[0].trim() || "Comments";
+  let bounce = "", items = [];
+  for(const ln of lines){
+    const h = ln.match(/^\[(.+)\]\s*$/);
+    if(h){ bounce = h[1]; continue; }
+    const m = ln.match(/^\s+\[( |x|X)\]\s+(\d+:\d{2}(?::\d{2})?)\s+(.*)$/);
+    if(!m) continue;
+    let rest = m[3], who = "";
+    const k = rest.lastIndexOf(" — ");
+    if(k >= 0){ const meta = rest.slice(k+3).trim(); rest = rest.slice(0,k);
+      const c = meta.indexOf(","); if(c>0 && !/^\d/.test(meta)) who = meta.slice(0,c).trim(); }
+    items.push({bounce, done:m[1]!==" ", time:parseTime(m[2]), stamp:m[2], text:rest.trim().replace(/\s+/g," "), who, on:m[1]===" "});
+  }
+  return {title, items};
+}
+function shorten(s, n){
+  if(s.length <= n) return s;
+  let cut = s.slice(0, n); const sp = cut.lastIndexOf(" ");
+  if(sp > n*0.5) cut = cut.slice(0, sp);
+  return cut.replace(/[\s,.;:]+$/,"") + "…";
+}
+function visible(){ return parsed.items.filter(it => $("incDone").checked || !it.done); }
+
+/* tempo + offset. Assumes bar 1 = project 0:00 and a constant tempo. */
+function tempo(){
+  const bpm = parseFloat($("bpm").value), num = +$("sigTop").value || 4, den = +$("sigBot").value || 4;
+  /* BPM counts quarter notes, as in Logic; a beat is one denominator note */
+  return {bpm: bpm > 0 ? bpm : null, bpb: num, beatSec: bpm > 0 ? (60 / bpm) * (4 / den) : null};
+}
+function parseClock(s){
+  s = String(s).trim(); if(!s) return NaN;
+  if(s.includes(":")) return s.split(":").map(Number).reduce((a,b)=>a*60+b,0);
+  return Number(s);
+}
+/* returns {sec, err} : bounce start in project seconds */
+function offset(){
+  const mode = $("offMode").value, raw = $("offVal").value.trim(), {bpm, bpb, beatSec} = tempo();
+  if(mode === "none" || !raw) return {sec:0, none: mode==="none" || !raw};
+  if(mode === "sec"){ const s = parseClock(raw); return isFinite(s) && s >= 0 ? {sec:s} : {sec:0, err:"Enter the start as seconds or m:ss, e.g. 0:07.5"}; }
+  if(!bpm) return {sec:0, err:"Set a BPM to use a bar position."};
+  const m = raw.match(/^(\d+)(?:\.(\d+))?$/);
+  if(!m || +m[1] < 1) return {sec:0, err:"Enter the bar as 5 or bar.beat as 5.3"};
+  const bar = +m[1], beat = m[2] ? +m[2] : 1;
+  if(beat < 1 || beat > bpb) return {sec:0, err:`Beat must be 1 to ${bpb}.`};
+  return {sec: ((bar-1)*bpb + (beat-1)) * beatSec};
+}
+function barBeat(sec){
+  const {bpm, bpb, beatSec} = tempo(); if(!bpm) return "";
+  const beats = sec / beatSec + 1e-6;
+  return `${Math.floor(beats / bpb) + 1}.${Math.floor(beats % bpb) + 1}`;
+}
+function labelFor(it, n, off){
+  const bb = barBeat(off + it.time);
+  return (bb ? bb + " " : "") + shorten(it.text, n);
+}
+function syncOffsetUI(){
+  const mode = $("offMode").value, o = offset();
+  $("offVal").hidden = mode === "none";
+  $("offVal").placeholder = mode === "bar" ? "5 or 5.3" : "0:07.5";
+  const hint = $("offHint"); hint.classList.toggle("err", !!o.err);
+  if(o.err) hint.textContent = o.err;
+  else if(mode === "none" || o.none) hint.textContent = tempo().bpm ? "Bar positions count the bounce start as bar 1." : "";
+  else hint.textContent = `Bounce start lands at ${o.sec.toFixed(3)} s` + (tempo().bpm ? ` (bar ${barBeat(o.sec)})` : "") + ". Bar math assumes bar 1 at 0:00 and a steady tempo.";
+  $("howPlace").textContent = (mode === "none" || o.none || o.err)
+    ? "Drop the WAV on an empty track with its left edge where the commented bounce starts."
+    : "Drop the WAV on an empty track with its left edge at the very start of the project (bar 1).";
+}
+
+function render(){
+  const list = $("list"); list.textContent = "";
+  const n = +$("maxLen").value || 48, off = offset().sec;
+  syncOffsetUI();
+  let last = null, shown = visible();
+  for(const it of shown){
+    if(it.bounce !== last){ last = it.bounce; const g=document.createElement("div"); g.className="group"; g.textContent=it.bounce; list.append(g); }
+    const r = document.createElement("label"); r.className = "row"+(it.done?" done":"");
+    const cb = document.createElement("input"); cb.type="checkbox"; cb.checked=it.on; cb.onchange=()=>{it.on=cb.checked; count();};
+    const t = document.createElement("span"); t.className="t"; t.textContent=it.stamp;
+    const tx = document.createElement("span"); tx.className="txt";
+    const l = document.createElement("span"); l.className="lbl"; l.textContent=labelFor(it,n,off);
+    tx.append(l);
+    if(it.text.length > n){ const f=document.createElement("span"); f.className="full"; f.textContent=(it.who?it.who+": ":"")+it.text; tx.append(f); }
+    else if(it.who){ const f=document.createElement("span"); f.className="full"; f.textContent=it.who; tx.append(f); }
+    r.append(cb,t,tx); list.append(r);
+  }
+  count();
+}
+function count(){
+  const sel = visible().filter(i=>i.on).length;
+  $("count").textContent = `Markers · ${sel} selected`;
+}
+function load(text, name){
+  parsed = parse(text);
+  $("loaded").textContent = name ? "Loaded: "+name : "Loaded from pasted text";
+  setStatus(parsed.items.length ? "Ready." : "No timestamped comments found in that text.", !parsed.items.length);
+  render();
+}
+function setStatus(msg, err){ const s=$("status"); s.textContent=msg; s.classList.toggle("err",!!err); }
+
+/* ---------- audio ---------- */
+function addDing(buf, sr, at, f, dur, gain){
+  const p = Math.round(at*sr), n = Math.round(dur*sr), atk = sr*0.002;
+  for(let i=0;i<n && p+i<buf.length;i++){
+    const t=i/sr, env=Math.exp(-t*(f<1000?8:12))*Math.min(1,i/atk);
+    buf[p+i] += gain*env*(0.6*Math.sin(2*Math.PI*f*t)+0.25*Math.sin(2*Math.PI*f*2.76*t)+0.15*Math.sin(2*Math.PI*f*5.4*t));
+  }
+}
+function buildWav(markers, sr){
+  const last = markers.reduce((a,m)=>Math.max(a,m.time),0);
+  const len = Math.ceil((last+3)*sr);
+  const buf = new Float32Array(len);
+  for(const m of markers) addDing(buf, sr, m.time, m.start?440:1760, m.start?0.6:0.35, 0.8);
+  const enc = new TextEncoder();
+  const labels = markers.map(m=>enc.encode(m.label));
+  const cueSize = 4 + markers.length*24;
+  let adtlSize = 4;
+  for(const l of labels){ const b=4+l.length+1; adtlSize += 8 + b + (b%2); }
+  const dataSize = len*2;
+  const total = 4 + (8+16) + (8+dataSize) + (8+cueSize) + (8+adtlSize);
+  const ab = new ArrayBuffer(8+total), v = new DataView(ab); let o=0;
+  const str=s=>{for(let i=0;i<s.length;i++) v.setUint8(o++,s.charCodeAt(i));};
+  const u32=x=>{v.setUint32(o,x,true);o+=4;}, u16=x=>{v.setUint16(o,x,true);o+=2;};
+  str("RIFF");u32(total);str("WAVE");
+  str("fmt ");u32(16);u16(1);u16(1);u32(sr);u32(sr*2);u16(2);u16(16);
+  str("data");u32(dataSize);
+  for(let i=0;i<len;i++){ const s=Math.max(-1,Math.min(1,buf[i])); v.setInt16(o,Math.round(s*32767),true); o+=2; }
+  str("cue ");u32(cueSize);u32(markers.length);
+  markers.forEach((m,i)=>{ const p=Math.round(m.time*sr); u32(i+1);u32(p);str("data");u32(0);u32(0);u32(p); });
+  str("LIST");u32(adtlSize);str("adtl");
+  labels.forEach((l,i)=>{ const b=4+l.length+1; str("labl");u32(b);u32(i+1);
+    new Uint8Array(ab,o,l.length).set(l); o+=l.length; v.setUint8(o++,0); if(b%2) v.setUint8(o++,0); });
+  return new Uint8Array(ab);
+}
+
+/* ---------- zip (store) for in-app saves, which accept .zip but not .wav ---------- */
+const CRC = (()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(d){let c=0xFFFFFFFF;for(let i=0;i<d.length;i++)c=CRC[(c^d[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+function zipOne(name, data){
+  const nm=new TextEncoder().encode(name), crc=crc32(data), sz=data.length;
+  const out=new Uint8Array(30+nm.length+sz+46+nm.length+22), v=new DataView(out.buffer); let o=0;
+  const u32=x=>{v.setUint32(o,x,true);o+=4;}, u16=x=>{v.setUint16(o,x,true);o+=2;};
+  u32(0x04034b50);u16(20);u16(0x0800);u16(0);u16(0);u16(0x21);u32(crc);u32(sz);u32(sz);u16(nm.length);u16(0);
+  out.set(nm,o);o+=nm.length; out.set(data,o);o+=sz;
+  const cd=o;
+  u32(0x02014b50);u16(20);u16(20);u16(0x0800);u16(0);u16(0);u16(0x21);u32(crc);u32(sz);u32(sz);u16(nm.length);u16(0);u16(0);u16(0);u16(0);u32(0);u32(0);
+  out.set(nm,o);o+=nm.length;
+  const cdLen=o-cd;
+  u32(0x06054b50);u16(0);u16(0);u16(1);u16(1);u32(cdLen);u32(cd);u16(0);
+  return out;
+}
+
+let downloads = null;
+(async()=>{ try{ if(window.claude?.use) downloads = await window.claude.use("downloads"); }catch(e){} })();
+
+async function make(){
+  const sel = visible().filter(i=>i.on).sort((a,b)=>a.time-b.time);
+  if(!sel.length){ setStatus("Select at least one comment.", true); return; }
+  const n = +$("maxLen").value || 48, sr = +$("sr").value, o = offset();
+  if(o.err){ setStatus(o.err, true); return; }
+  const off = o.sec, bb = barBeat(off);
+  const markers = [{time:off,label:"BOUNCE START"+(bb?" "+bb:""),start:true}, ...sel.map(i=>({time:off+i.time,label:labelFor(i,n,off)}))];
+  const wav = buildWav(markers, sr);
+  const base = (parsed.title||"Comments").replace(/[\\/:*?"<>|]+/g,"").trim() + " markers";
+  const mb = (wav.length/1048576).toFixed(1);
+  if(downloads){
+    try{
+      await downloads.save({filename: base+".zip", data: new Blob([zipOne(base+".wav", wav)])});
+      setStatus(`Saved ${base}.zip (${sel.length} markers, ${mb} MB WAV inside). Unzip it, then drop the WAV in Logic.`);
+    }catch(e){
+      setStatus(e && e.code==="declined" ? "Download cancelled." : "Couldn't save the file here: "+(e&&e.message||"unknown error"), e&&e.code!=="declined");
+    }
+    return;
+  }
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([wav],{type:"audio/wav"})); a.download=base+".wav";
+  document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  setStatus(`Downloaded ${base}.wav (${sel.length} markers, ${mb} MB).`);
+}
+
+$("pick").onclick=()=>$("file").click();
+$("file").onchange=e=>{ const f=e.target.files[0]; if(f) f.text().then(t=>load(t,f.name)); };
+const drop=$("drop");
+drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("over");});
+drop.addEventListener("dragleave",()=>drop.classList.remove("over"));
+drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("over");const f=e.dataTransfer.files[0]; if(f) f.text().then(t=>load(t,f.name));});
+$("paste").addEventListener("input",e=>{ if(e.target.value.trim()) load(e.target.value, ""); });
+$("incDone").onchange=render; $("maxLen").oninput=render;
+["bpm","offVal"].forEach(id=>$(id).addEventListener("input",render));
+for(let i=1;i<=16;i++){ const o=document.createElement("option"); o.textContent=i; if(i===4) o.selected=true; $("sigTop").append(o); }
+$("offMode").onchange=render; $("sigTop").onchange=render; $("sigBot").onchange=render;
+$("all").onclick=()=>{visible().forEach(i=>i.on=true);render();};
+$("none").onclick=()=>{visible().forEach(i=>i.on=false);render();};
+$("make").onclick=make;
+load(SAMPLE, "Mango Tree World comments (1).txt");
+</script>

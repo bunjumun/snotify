@@ -52,6 +52,7 @@ html, body { height: 100%; }
    reset ever written. */
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
+  padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);
   margin: 0;
   background: radial-gradient(1200px 600px at 50% -10%, #1a1c26 0%, var(--bg) 55%) fixed;
   color: var(--text);
@@ -108,7 +109,7 @@ header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px;
 .loading { color: var(--text-dim); padding: 30px; text-align: center; }
 
 /* ---------- Dock (the fixed bottom stack each page builds on) ---------- */
-.dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; }
+.dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding-bottom: env(safe-area-inset-bottom); }
 .dock .inner { max-width: 1000px; margin: 0 auto; }
 
 /* Comments drawer (slides above whatever the page docks below it) */
@@ -138,6 +139,12 @@ header.app .count { margin-left: auto; color: var(--text-mute); font-size: 13px;
 .cmt .body .who { color: var(--text-mute); font-size: 11px; margin-top: 2px; }
 .cmt .del { flex: none; color: var(--text-mute); cursor: pointer; opacity: 0; font-size: 16px; line-height: 1; padding: 2px 4px; }
 .cmt:hover .del { opacity: 1; } .cmt .del:hover { color: #ff6b6b; }
+/* Touch has no hover, so the delete control was unreachable on a phone (CR-175). */
+@media (hover: none) { .cmt .del { opacity: .7; } }
+@media (pointer: coarse) {
+  .cmt .del, .cactions span, .cedit button, .cdl { min-height: 36px; min-width: 36px; display: inline-flex; align-items: center; justify-content: center; }
+  .tagbtn, .addbtn { min-height: 36px; }
+}
 .cempty { color: var(--text-mute); font-size: 13px; padding: 6px 10px; }
 
 /* CR-74. Same label.check pattern the modal and dz-grid already use, scoped
@@ -360,7 +367,7 @@ body.texting [data-txt] {
 body.texting [data-txt]:focus { outline-style: solid; background: var(--bg-hover); }
 #textBar {
   display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
-  align-items: center; gap: 10px; padding: 12px 20px;
+  align-items: center; gap: 10px; padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
   background: var(--bg-soft); border-top: 1px solid var(--accent);
   box-shadow: var(--shadow); font-size: 12.5px; color: var(--text-dim);
 }

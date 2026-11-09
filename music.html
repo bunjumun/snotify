@@ -6987,13 +6987,25 @@ function vlogOpenContext(el){
   if (isCmt) openDrawer(true); else openVlog(false);
   if (isCmt && Number.isFinite(time)){
     // Seek once that mix has loaded; give up if another song takes over.
-    const gen = openGen; let tries = 0;
-    const tick = () => {
-      if (gen !== openGen || ++tries > 75) return;
-      if (readyByVer[activeVer] === true && curWS()) seekTo(time); else setTimeout(tick, 200);
-    };
-    tick();
+    seekWhenOn(vi, time);
   }
+}
+// CR-174: seek to a comment's time on a given mix. Waits until that mix is the
+// ACTIVE one and loaded (switchVersion swaps late and then restores the old
+// playhead, which used to overwrite an early seek), then seeks, and re-asserts
+// twice because a late media-ready can still drop or move the position.
+function seekWhenOn(vi, time){
+  const gen = openGen; let tries = 0;
+  const tick = () => {
+    if (gen !== openGen || ++tries > 100) return;
+    if (activeVer === vi && readyByVer[vi] === true && curWS()){
+      seekTo(time);
+      [400, 1500].forEach(ms => setTimeout(() => {
+        if (gen === openGen && activeVer === vi && Math.abs(curWS().getCurrentTime() - time) > 1.5 + ms / 1000) seekTo(time);
+      }, ms));
+    } else setTimeout(tick, 200);
+  };
+  tick();
 }
 async function vlogPostReply(row){
   const input = row.querySelector('.vu-reply-input'), text = input.value.trim();
@@ -7021,12 +7033,7 @@ $('vlogList').addEventListener('click', (e) => {
     openDrawer(true);
     const time = cm.dataset.time === '' ? null : Number(cm.dataset.time);
     if (Number.isFinite(time)){
-      const gen = openGen; let tries = 0;
-      const tick = () => {
-        if (gen !== openGen || ++tries > 75) return;
-        if (readyByVer[activeVer] === true && curWS()) seekTo(time); else setTimeout(tick, 200);
-      };
-      tick();
+      seekWhenOn(vi >= 0 ? vi : activeVer, time);
     }
     return;
   }

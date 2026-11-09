@@ -55,18 +55,24 @@
   .rcamp .ctools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
   .rcamp .cwarn { font-size: 12px; color: var(--err); }
   .rcamp .cweek { font-size: 12px; font-weight: 700; color: var(--text-dim); margin: 14px 0 6px; }
-  .cpost { display: grid; grid-template-columns: 92px 70px 1fr 1fr; gap: 6px 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; align-items: center; }
+  .cpost { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 4px; }
   .cpost input, .cpost select, .cpost textarea { background: var(--field); color: var(--text, inherit); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; min-width: 0; }
-  .cpost textarea { grid-column: 1 / -1; min-height: 38px; resize: vertical; }
-  .cpost .cdate { font-size: 12px; font-weight: 700; }
-  .cpost .cdate small { display: block; color: var(--text-mute); font-weight: 400; }
-  .cpost .cwide { grid-column: span 2; }
-  .cpost .cdelp { color: var(--text-mute); cursor: pointer; justify-self: end; }
+  .cpost .csum { display: flex; align-items: center; gap: 10px; padding: 7px 10px; cursor: pointer; font-size: 13px; }
+  .cpost .csum:hover { background: var(--field); }
+  .cpost .cdate { width: 96px; flex: none; font-weight: 700; font-size: 12px; }
+  .cpost .cslot { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cpost .cplat { color: var(--text-mute); font-size: 12px; }
+  .cpost .cchip { font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--text-dim); cursor: pointer; white-space: nowrap; }
+  .cpost.st-asset_ready .cchip { border-color: var(--accent-2); color: var(--accent-2); }
+  .cpost.st-scheduled .cchip, .cpost.st-posted .cchip { border-color: var(--accent); color: var(--accent); }
+  .cpost.st-posted .cslot { text-decoration: line-through; opacity: .6; }
+  .cpost .cmore { display: none; grid-template-columns: 1fr 1fr 1fr; gap: 6px 8px; padding: 4px 10px 10px; align-items: center; }
+  .cpost.open .cmore { display: grid; }
+  .cpost .cmore textarea { grid-column: 1 / -1; min-height: 38px; resize: vertical; }
+  .cpost .cmore .cwide { grid-column: 1 / -1; }
+  .cpost .cdelp { color: var(--text-mute); cursor: pointer; justify-self: end; font-size: 12px; }
   .cpost .cdelp:hover { color: var(--err); }
-  .cpost.st-posted { opacity: .6; }
-  .cpost.st-asset_ready { border-left: 3px solid var(--accent-2); }
-  .cpost.st-scheduled { border-left: 3px solid var(--accent); }
-  @media (max-width: 640px) { .cpost { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 640px) { .cpost .cmore { grid-template-columns: 1fr 1fr; } }
   .rdetail-head h2 { margin: 0; font-size: 20px; cursor: text; }
   .rdetail-head h2:hover { text-decoration: underline dotted; text-underline-offset: 4px; }
   .rdetail-head .rpctbig { font-size: 20px; font-weight: 800; color: var(--text-dim); margin-left: auto; }
@@ -683,24 +689,31 @@ function campaignWeekLabel(k){
   return k < 0 ? Math.abs(k) + ' week' + (k === -1 ? '' : 's') + ' before' : k + ' week' + (k === 1 ? '' : 's') + ' after';
 }
 
+const campaignOpen = new Set();   // post ids with the detail panel open
 function campaignPostHtml(r, c){
   const sel = (field, opts) => `<select data-f="${field}">${opts.map(o => {
     const [v, l] = Array.isArray(o) ? o : [o, o];
     return `<option value="${esc(v)}" ${c[field] === v ? 'selected' : ''}>${esc(l)}</option>`;
   }).join('')}${opts.some(o => (Array.isArray(o) ? o[0] : o) === c[field]) ? '' : `<option value="${esc(c[field])}" selected>${esc(c[field] || '—')}</option>`}</select>`;
   const date = campaignDate(r, c.offset_days);
-  return `<div class="cpost st-${esc(c.status)}" data-id="${esc(c.id)}">
-    <div class="cdate">${date ? esc(date) : esc(campaignOffsetLabel(c.offset_days))}
-      <small>${date ? esc(campaignOffsetLabel(c.offset_days)) : 'set a release date'}</small></div>
-    <input type="number" data-f="offset_days" value="${c.offset_days}" title="Days from the release date (negative = before)">
-    <input type="text" data-f="slot" value="${esc(c.slot)}" placeholder="Slot, e.g. Tease">
-    ${sel('platform', ['', ...CAMPAIGN_PLATFORMS])}
-    ${sel('asset_kind', ['', ...CAMPAIGN_ASSETS])}
-    ${sel('status', CAMPAIGN_STATUS)}
-    <span class="cdelp" data-act="del" title="Delete this post">✕</span>
-    <textarea data-f="copy" placeholder="Caption draft">${esc(c.copy)}</textarea>
-    <input class="cwide" type="text" data-f="link" value="${esc(c.link)}" placeholder="Link (asset or post)">
-    <input class="cwide" type="text" data-f="result" value="${esc(c.result)}" placeholder="What moved (pre-saves, plays, signups)">
+  const stLabel = (CAMPAIGN_STATUS.find(x => x[0] === c.status) || [0, c.status])[1];
+  return `<div class="cpost st-${esc(c.status)} ${campaignOpen.has(c.id) ? 'open' : ''}" data-id="${esc(c.id)}">
+    <div class="csum" data-act="toggle">
+      <span class="cdate">${esc(date || campaignOffsetLabel(c.offset_days))}</span>
+      <span class="cslot">${esc(c.slot || 'Untitled post')}</span>
+      <span class="cplat">${esc([c.platform, c.asset_kind].filter(Boolean).join(' · '))}</span>
+      <span class="cchip" data-act="status" title="Click to advance: idea, asset ready, scheduled, posted">${esc(stLabel)}</span>
+    </div>
+    <div class="cmore">
+      <input type="text" data-f="slot" value="${esc(c.slot)}" placeholder="Slot, e.g. Tease">
+      <input type="number" data-f="offset_days" value="${c.offset_days}" title="Days from the release date (negative = before)">
+      ${sel('platform', ['', ...CAMPAIGN_PLATFORMS])}
+      ${sel('asset_kind', ['', ...CAMPAIGN_ASSETS])}
+      <textarea data-f="copy" placeholder="Caption draft">${esc(c.copy)}</textarea>
+      <input class="cwide" type="text" data-f="link" value="${esc(c.link)}" placeholder="Link (asset or post)">
+      <input class="cwide" type="text" data-f="result" value="${esc(c.result)}" placeholder="What moved (pre-saves, plays, signups)">
+      <span class="cdelp" data-act="del" title="Delete this post">Delete post</span>
+    </div>
   </div>`;
 }
 
@@ -743,16 +756,15 @@ function paintCampaign(r){
   wrap.innerHTML = `<h3>Campaign</h3>
     <div class="chint">Dated posts for this release. Dates follow the release date; nothing posts automatically.</div>
     <div class="ctools">
-      <button class="addbtn" id="campGenBtn" ${r.release_date ? '' : 'disabled'}
-              title="${r.release_date ? 'Add the nine-post rollout template' : 'Set a release date first'}">Generate from template</button>
+      ${posts.length ? '' : `<button class="addbtn" id="campGenBtn" ${r.release_date ? '' : 'disabled'}
+              title="${r.release_date ? 'Add the nine-post rollout template' : 'Set a release date first'}">Generate from template</button>`}
       <button class="addbtn" id="campAddBtn">+ Add post</button>
       <button class="addbtn ${campaignView === 'asset' ? 'radiobtn on' : ''}" id="campViewBtn"
               title="Group posts by the asset cut they need, so one editing session covers a batch">${campaignView === 'asset' ? 'By asset cut' : 'By date'}</button>
       ${warn ? `<span class="cwarn">${listen} of ${posts.length} posts are “listen now”. Aim for no more than 1 in 5.</span>` : ''}
     </div>
     <div id="campList">${campaignBody(r, posts)}</div>`;
-  $('campGenBtn').addEventListener('click', async () => {
-    if (posts.length && !confirm('This release already has posts. Add the template posts alongside them?')) return;
+  if ($('campGenBtn')) $('campGenBtn').addEventListener('click', async () => {
     try {
       await libRpc('generate_campaign', { rid: r.id, posts: CAMPAIGN_TEMPLATE.map(t => ({ ...t, platform: 'Instagram' })) });
       await renderCampaign(r);
@@ -777,16 +789,26 @@ function paintCampaign(r){
       c[f] = val;
       // Anything that changes grouping, order, the date or the colour re-sorts; text fields stay put so focus survives.
       if (f === 'offset_days'){ posts.sort((a, b) => a.offset_days - b.offset_days); }
-      if (['offset_days', 'status', 'asset_kind', 'slot'].includes(f)) paintCampaign(r);
+      if (['offset_days', 'asset_kind', 'slot', 'platform'].includes(f)) paintCampaign(r);
     } catch (err){ alert(String(err.message || err)); e.target.value = c[f]; }
   });
   list.addEventListener('click', async (e) => {
-    const del = e.target.closest('[data-act="del"]');
-    if (!del) return;
-    const row = del.closest('.cpost');
-    if (!confirm('Delete this post?')) return;
-    try { await libRpc('delete_campaign_post', { pid: row.dataset.id }); await renderCampaign(r); }
-    catch (err){ alert(String(err.message || err)); }
+    const row = e.target.closest('.cpost');
+    if (!row) return;
+    const id = row.dataset.id, c = posts.find(x => x.id === id);
+    if (e.target.closest('[data-act="del"]')){
+      if (!confirm('Delete this post?')) return;
+      try { await libRpc('delete_campaign_post', { pid: id }); await renderCampaign(r); }
+      catch (err){ alert(String(err.message || err)); }
+    } else if (e.target.closest('[data-act="status"]') && c){
+      const order = CAMPAIGN_STATUS.map(x => x[0]);
+      const next = order[(order.indexOf(c.status) + 1) % order.length];
+      try { await libRpc('save_campaign_post', { rid: r.id, post: { id, status: next } }); c.status = next; paintCampaign(r); }
+      catch (err){ alert(String(err.message || err)); }
+    } else if (e.target.closest('[data-act="toggle"]')){
+      row.classList.toggle('open');
+      if (row.classList.contains('open')) campaignOpen.add(id); else campaignOpen.delete(id);
+    }
   });
 }
 

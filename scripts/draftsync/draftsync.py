@@ -29,6 +29,16 @@ file sitting next to the script (or in the target folder) overrides it.
     # MAX_MB=50
     # STABLE_SECONDS=10
 
+Band subfolders (CR-196): a file directly in the synced folder goes to BAND.
+A file inside a first-level subfolder named after a band ("lakehorse/",
+"dando/", ...) goes to that band instead. The default band's subfolder uses
+BAND_PASS; any other band needs its own line:
+
+    PASS_dando=that-band-password
+
+A subfolder with no password line is skipped with a warning, never uploaded to
+the default band by mistake.
+
 Per-folder upload state is kept in `.snalbum-draftsync-state.json` inside the
 folder, so moving the folder carries its history with it. Delete that file to
 force a fresh scan (already-uploaded files still won't double up).
@@ -222,6 +232,37 @@ def file_into_folder(cfg: dict, song: str, fid: str) -> None:
               {"b": cfg["BAND"], "p": cfg["BAND_PASS"], "f": song, "fid": fid})
 
 
+def band_cfg_for(cfg: dict, band: str) -> dict:
+    """cfg re-pointed at `band`: the default band keeps BAND_PASS, any other
+    needs its own PASS_<band>= line in the config."""
+    if band == cfg["BAND"]:
+        return cfg
+    out = dict(cfg)
+    out["BAND"], out["BAND_PASS"] = band, cfg["PASS_" + band.lower()]
+    return out
+
+
+def band_cfg(cfg: dict, rel: str):
+    """Which band a file uploads to (CR-196). A file directly in the synced
+    folder goes to the default BAND. A file inside a first-level subfolder goes
+    to the band of that name ("lakehorse/", "dando/", ...), using that band's
+    own password: BAND_PASS when it is the default band, otherwise a
+    PASS_<band>= line. No password means None (skip), never a silent fall back
+    to the default band, because that would put dando's songs on Lakehorse."""
+    parts = Path(rel).parts
+    if len(parts) < 2:
+        return cfg
+    slug = parts[0].strip().lower()
+    if slug == cfg["BAND"].lower():
+        return cfg
+    pw = cfg.get("PASS_" + slug)
+    if not pw:
+        return None
+    out = dict(cfg)
+    out["BAND"], out["BAND_PASS"] = slug, pw
+    return out
+
+
 def main() -> None:
     target = target_dir()
     setup_logging(target)
@@ -237,7 +278,8 @@ def main() -> None:
 
     candidates = [p for p in sorted(target.rglob("*"))
                   if p.is_file() and AUDIO_RE.search(p.name)]
-    new_songs, touched_songs = [], set()
+    new_songs, touched_songs = [], set()   # (band, song) pairs, see band_cfg()
+    warned = set()
 
     for path in candidates:
         rel = str(path.relative_to(target))
@@ -267,11 +309,20 @@ def main() -> None:
                                 "sha1": digest, "skipped": True}
             continue
 
+        bcfg = band_cfg(cfg, rel)
+        if bcfg is None:
+            slug = Path(rel).parts[0]
+            if slug not in warned:
+                warned.add(slug)
+                logging.warning("SKIPPED folder “%s”: no PASS_%s= line in %s, so it "
+                                "cannot upload to band “%s”.", slug, slug.lower(),
+                                cfg["_config_src"], slug.lower())
+            continue
         song = sanitise(path.stem) or "untitled"
         upname = sanitise(path.stem) + path.suffix.lower()
         try:
-            logging.info("uploading: %s  ->  song “%s”", rel, song)
-            put_inbox(cfg, song, upname, path.read_bytes())
+            logging.info("uploading: %s  ->  band %s, song “%s”", rel, bcfg["BAND"], song)
+            put_inbox(bcfg, song, upname, path.read_bytes())
         except Exception as exc:  # leave out of state so it retries next run
             logging.error("%s", exc)
             continue
@@ -279,9 +330,9 @@ def main() -> None:
         files_state[rel] = {"size": st.st_size, "mtime": int(st.st_mtime),
                             "sha1": digest, "song": song,
                             "uploaded_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
-        touched_songs.add(song)
+        touched_songs.add((bcfg["BAND"], song))
         if not prev:
-            new_songs.append(song)
+            new_songs.append((bcfg["BAND"], song))
 
     if not touched_songs:
         save_state(target, state)
@@ -289,26 +340,30 @@ def main() -> None:
         return
 
     imported_total, registered = 0, set()
-    for song in sorted(touched_songs):
+    for band, song in sorted(touched_songs):
+        bcfg = band_cfg_for(cfg, band)
         try:
-            imported_total += import_inbox(cfg, song)
-            registered.add(song)
+            imported_total += import_inbox(bcfg, song)
+            registered.add((band, song))
         except Exception as exc:
             logging.error("%s", exc)
 
-    # File freshly-created songs into "Recently uploaded". Only ones new this
-    # run — a song already dragged elsewhere is left where he put it.
-    to_file = [s for s in new_songs if s in registered]
-    if to_file:
+    # File freshly-created songs into "Recently uploaded", per band. Only ones
+    # new this run — a song already dragged elsewhere is left where he put it.
+    for band in sorted({b for b, _ in new_songs}):
+        to_file = [sg for b, sg in new_songs if b == band and (b, sg) in registered]
+        if not to_file:
+            continue
+        bcfg = band_cfg_for(cfg, band)
         try:
-            fid = ensure_folder(cfg)
-            state["folder_id"] = fid
+            fid = ensure_folder(bcfg)
+            state.setdefault("folder_ids", {})[band] = fid
             for song in to_file:
-                file_into_folder(cfg, song, fid)
-            logging.info("filed %d new song(s) into “%s”",
-                         len(to_file), cfg["FOLDER_NAME"])
+                file_into_folder(bcfg, song, fid)
+            logging.info("filed %d new song(s) into “%s” (%s)",
+                         len(to_file), cfg["FOLDER_NAME"], band)
         except Exception as exc:
-            logging.error("could not file into %s: %s", cfg["FOLDER_NAME"], exc)
+            logging.error("could not file into %s (%s): %s", cfg["FOLDER_NAME"], band, exc)
 
     save_state(target, state)
     logging.info("done — %d file(s) up, %d mix(es) registered",

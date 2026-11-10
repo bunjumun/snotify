@@ -20,3 +20,8 @@ BAND_PASS=replace-with-your-band-password
 # watcher). The portable script ignores this and uploads whatever folder it
 # is run from.
 # WATCH_DIR=/Users/bunj/Music/SnAlbum drafts
+
+# --- optional: one subfolder per band (CR-196) ---
+# Files in a subfolder named after a band upload to that band. The default
+# band's subfolder uses BAND_PASS; give every other band its own password:
+# PASS_dando=that-band-password

@@ -72,13 +72,17 @@
      hover and kept while the song plays (pause). */
   .song .splay { position: absolute; left: 0; top: 0; bottom: 0; width: 64px; z-index: 2; padding: 0; margin: 0;
     border: 0; background: transparent; cursor: pointer; color: var(--text); font-size: 44px; line-height: 1; }
-  .song .splay::after { content: "\25B6"; opacity: .8; transition: opacity .12s;
-    position: absolute; left: 40px; top: 50%; transform: translate(-50%, -50%);
-    text-shadow: 0 0 3px var(--bg, #000), 0 0 6px var(--bg, #000); }
+  /* Drawn, not typed: a font glyph's size depends on the font and the theme's
+     icon face, and he asked for this one nearly as tall as the row. */
+  .song .splay::after { content: ""; display: block; position: absolute; left: 40px; top: 50%;
+    width: 38px; height: 52px; transform: translate(-50%, -50%); background: currentColor;
+    clip-path: polygon(0 0, 100% 50%, 0 100%); opacity: .85; transition: opacity .12s;
+    filter: drop-shadow(0 0 3px var(--bg, #000)); }
   .song:hover .splay::after, .song .splay:focus-visible::after, .song.active .splay::after { opacity: 1; }
+  .song.playing .splay::after { width: 36px; height: 46px; clip-path: none; opacity: 1;
+    background: linear-gradient(90deg, currentColor 0 34%, transparent 34% 66%, currentColor 66%); }
   /* The play button takes the place of the track number, so there is one thing in that slot. */
   .song .idx { visibility: hidden; }
-  .song.playing .splay::after { content: "\275A\275A"; font-size: 30px; letter-spacing: -6px; opacity: 1; }
   body.editing .song .splay { display: none; }
 
   /* The controls at the end, as one group — so adding or removing one is never

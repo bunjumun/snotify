@@ -122,7 +122,7 @@
                 + `<h1>${name.replace(/[<>&]/g, '')}</h1>`
                 + `<span class="tb-spacer"></span>`
                 + (OFFLINE ? '' : `<button type="button" class="tb-dl" title="${DL_TIP}"><span class="tb-dl-i">⤓</span><span class="tb-dl-t">Offline copy</span></button>`)
-                + `<a class="tb-back" href="${home}">← Sn'Album</a>`;
+                + `<a class="tb-back" href="${home}">← DIYFY</a>`;
   const dl = bar.querySelector('.tb-dl');
   if (dl) dl.onclick = () => saveOffline(dl);
   const put = () => document.body.insertBefore(bar, document.body.firstChild);

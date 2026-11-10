@@ -955,7 +955,7 @@ async function gateNext(){
   $('gateSuggest').style.display = 'block';
   $('gateSuggest').innerHTML =
     `<div class="hint">No band by that name here. Email ` +
-    `<a href="mailto:bunjumun@gmail.com?subject=S'notify%20band%20page">bunjumun@gmail.com</a> ` +
+    `<a href="mailto:bunjumun@gmail.com?subject=DIYFY%20band%20page">bunjumun@gmail.com</a> ` +
     `to set one up.</div>`;
 }
 // Already logged in on this device → straight in; otherwise ask the password.

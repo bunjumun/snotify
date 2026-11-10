@@ -1305,7 +1305,7 @@
         <a class="navitem" id="gameBtn" href="interactive-music-players/">🎮 Players</a>
         <a class="navitem" id="assetsBtn" href="assets.html">📖 Assets</a>
         <a class="navitem" id="releaseBtn" href="release-builder.html">🚀 Release</a>
-        <a class="navitem" id="homeBtn" href="index.html">💿 Sn'Album</a>
+        <a class="navitem" id="homeBtn" href="index.html">💿 DIYFY</a>
       </div>
       <button class="addbtn" id="editBtn" title="Edit — reorder, rename, stack, unstack, trash">✏</button>
       <button class="addbtn" id="trashBtn" title="Trash — deleted songs are archived here until you confirm permanent deletion">
@@ -2020,7 +2020,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=61"></script>
+<script src="core.js?v=62"></script>
 <!-- The two checklists and the arithmetic. No DOM, no network; it throws at
      load if the weights stop summing to 100, which is deliberate. -->
 <script src="progress.js?v=17"></script>
@@ -2680,10 +2680,10 @@ async function init() {
       if (!songs.length) return showBadLink('Nothing here yet', 'No mixes have been published to this project so far — check back soon.');
     } else if (relView){
       $('collectionTitle').textContent = relView.title;
-      document.title = relView.title + ' · S’notify';
+      document.title = relView.title + ' · DIYFY';
     } else {
       $('collectionTitle').textContent = curBandTitle;
-      document.title = curBandTitle + ' · S’notify';
+      document.title = curBandTitle + ' · DIYFY';
     }
 
     document.body.classList.add('authed');

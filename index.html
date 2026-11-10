@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#0d0e12" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<title>Sn'Album</title>
-<meta name="description" content="Sn'Album — a band's music and artwork, in one place." />
+<title>DIYFY</title>
+<meta name="description" content="DIYFY: a band's music and artwork, in one place." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💿</text></svg>" />
 <!-- Palette, page frame, modals, gate — shared with music.html and art.html -->
 <link rel="stylesheet" href="core.css?v=37" />
@@ -59,7 +59,7 @@
        one band password opens all three. -->
   <div class="modal-back" id="gateModal">
     <div class="modal" style="max-width:360px">
-      <h2 data-txt="album.gate.title">💿 Sn'Album</h2>
+      <h2 data-txt="album.gate.title">💿 DIYFY</h2>
 
       <div id="gateStep1">
         <div class="hint" style="margin-bottom:6px">Enter your band to continue.</div>
@@ -91,7 +91,7 @@
     <header class="app">
       <div class="logo">💿</div>
       <div>
-        <h1 data-txt="album.title">Sn'Album</h1>
+        <h1 data-txt="album.title">DIYFY</h1>
         <p data-txt="album.tagline">Everything the band is working on</p>
       </div>
       <div class="count" id="bandCount"></div>
@@ -164,7 +164,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=61"></script>
+<script src="core.js?v=62"></script>
 <!-- The record's progress bar, read-only here; the player owns the editable one. -->
 <script src="progress.js?v=17"></script>
 <script src="progress-ui.js?v=5"></script>
@@ -238,7 +238,7 @@ async function init(){
     } catch { $('tallyAssets').textContent = 'Not set up yet'; }
   }
 
-  document.title = curBandTitle + " · Sn'Album";
+  document.title = curBandTitle + " · DIYFY";
   $('bandLine').innerHTML = `Signed in as <b>${esc(curBandTitle)}</b>.`;
   const b = encodeURIComponent(curBand);
   $('doorMusic').href = $('musicBtn').href = 'music.html?b=' + b;

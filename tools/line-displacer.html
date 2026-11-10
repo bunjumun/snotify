@@ -1489,6 +1489,12 @@
                 file.arrayBuffer().then(buf => loadGif(buf, file)).catch(() => loadStillFile(file));
                 return;
             }
+            // Animated WebP / APNG / AVIF: the browser's own decoder hands the
+            // frames over (ImageDecoder), where there is one.
+            if (/^image\/(webp|apng|png|avif)$/.test(file.type) && 'ImageDecoder' in window){
+                loadWithDecoder(file).catch(() => loadStillFile(file));
+                return;
+            }
             loadStillFile(file);
         }
 
@@ -1545,10 +1551,41 @@
             let g;
             try { g = GifCodec.decode(buf); } catch (e) { loadStillFile(file); return; }
             if (g.frames.length < 2){ loadStillFile(file); return; }
+            startAnimation(g.frames.map(f => ({ rgba: f.rgba, delay: f.delay })), g.width, g.height, file);
+        }
+
+        async function loadWithDecoder(file){
+            const dec = new ImageDecoder({ data: await file.arrayBuffer(), type: file.type });
+            await dec.tracks.ready;
+            const n = dec.tracks.selectedTrack.frameCount;
+            if (n < 2){ dec.close(); return loadStillFile(file); }
+            const list = [];
+            let w = 0, h = 0;
+            for (let i = 0; i < n; i++){
+                const { image } = await dec.decode({ frameIndex: i });
+                w = image.displayWidth; h = image.displayHeight;
+                const c = document.createElement('canvas');
+                c.width = w; c.height = h;
+                const x = c.getContext('2d');
+                x.fillStyle = '#fff'; x.fillRect(0, 0, w, h);
+                x.drawImage(image, 0, 0);
+                list.push({ canvas: c, delay: (image.duration || 100000) / 1000 });
+                image.close();
+            }
+            dec.close();
+            startAnimation(list, w, h, file);
+        }
+
+        // Frames arrive either as raw pixels (GIF reader) or as finished
+        // canvases (browser decoder); either way they end up as flattened
+        // canvases and everything after this point is the same.
+        function startAnimation(src, w, h, file){
+            const g = { width: w, height: h };
             const raw = document.createElement('canvas');
             raw.width = g.width; raw.height = g.height;
             const rawCtx = raw.getContext('2d');
-            const frames = g.frames.map(f => {
+            const frames = src.map(f => {
+                if (f.canvas) return { canvas: f.canvas, delay: Math.max(20, f.delay || 100) };
                 rawCtx.putImageData(new ImageData(f.rgba, g.width, g.height), 0, 0);
                 const c = document.createElement('canvas');
                 c.width = g.width; c.height = g.height;

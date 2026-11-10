@@ -652,6 +652,31 @@ function paintDazzle(){
   window.dispatchEvent(new Event('dz-painted'));
 }
 
+// One small camouflage per thing (CR-181). The song rows' play buttons each wear
+// their own dazzle scheme, drawn by the same generator as the page's stripes, so
+// the same hull can be told from its sisters at a glance. The seed comes from a
+// name (the song's), not from Math.random(), so a song keeps its camouflage from
+// one visit to the next and no two names are likely to share one: a plain
+// 32-bit FNV-1a hash of the name, which is plenty for a few dozen songs. The
+// ink follows the Plate whites level in Page design, like every other band and
+// plate, and the result is cached by name, size and that level so a re-render
+// of the list does not redraw them.
+const dzBadgeCache = new Map();
+function dazzleBadge(key, w = 56, h = 72){
+  const pw = Math.max(0.15, Math.min(1, num(design.plateWhite, DESIGN_DEFAULTS.plateWhite)));
+  const g = Math.round(8 + (255 - 8) * pw);
+  const ck = key + '|' + w + 'x' + h + '|' + g;
+  let u = dzBadgeCache.get(ck);
+  if (!u){
+    let hash = 2166136261;
+    for (let i = 0; i < key.length; i++){ hash ^= key.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+    u = dazzleURL({ look: 'naval', tones: 3, ink: `rgb(${g},${g},${g})`, w, h, seed: hash >>> 0,
+                    cuts: 5, scale: 1.1, mix: { herring: .5, chevron: .25, wheel: .2, flat: .05 } });
+    dzBadgeCache.set(ck, u);
+  }
+  return u;
+}
+
 // ---------- Page design ----------
 // A band dresses its own pages: how solid the surfaces are, what the page sits
 // on, what colour things pick out in. There is nothing bespoke underneath —

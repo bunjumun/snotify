@@ -12,7 +12,7 @@
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
 <link rel="stylesheet" href="core.css?v=38" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=40" />
+<link rel="stylesheet" href="theme-dazzle.css?v=41" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -2020,7 +2020,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=71"></script>
+<script src="core.js?v=72"></script>
 <!-- The two checklists and the arithmetic. No DOM, no network; it throws at
      load if the weights stop summing to 100, which is deliberate. -->
 <script src="progress.js?v=17"></script>
@@ -3102,7 +3102,7 @@ function songRowHtml(s, i){
   return `
   <div class="song ${n>1?'stacked':''}" data-i="${i}">
     <canvas class="swave" data-wave="${i}" aria-hidden="true"></canvas>
-    <button type="button" class="splay" title="Play “${esc(s.title)}”" aria-label="Play ${esc(s.title)}"></button>
+    <button type="button" class="splay" data-camo="${esc(s.folder || s.title)}" title="Play “${esc(s.title)}”" aria-label="Play ${esc(s.title)}"></button>
     <div class="idx"><span class="num">${i+1}</span><span class="bars"><span></span><span></span><span></span></span></div>
     ${(() => { const a = artOf(s); return a ? `<img class="sart" src="${esc(a.src)}" alt="" loading="lazy" title="${esc(a.title)}" />` : ''; })()}
     <div class="meta">
@@ -3156,6 +3156,16 @@ function displayOrder(){
   const { byFolder, loose } = groupedSongs();
   return [...folders.flatMap(f => byFolder.get(f.id) || []), ...loose];
 }
+// The dazzle theme gives each song's play button its own camouflage (CR-181),
+// seeded from the song so it is stable and different from every other row's.
+// Set from here rather than written into the row's HTML because the image is a
+// data URI full of quotes, which does not survive an inline style attribute.
+function paintSplays(){
+  if (document.body.dataset.theme !== 'dazzle' || typeof dazzleBadge !== 'function') return;
+  $('list').querySelectorAll('.splay').forEach(b => { b.style.backgroundImage = dazzleBadge(b.dataset.camo || ''); });
+}
+window.addEventListener('dz-painted', () => { try { paintSplays(); } catch (e) { /* list not built yet */ } });
+
 function renderList() {
   $('list').className = 'songlist';
   $('trackCount').textContent = `${songs.length} song${songs.length===1?'':'s'}`;
@@ -3184,6 +3194,7 @@ function renderList() {
   }).join('');
   $('list').innerHTML = folderHtml + loose.map(i => songRowHtml(songs[i], i)).join('');
   requestAnimationFrame(fillRowWaves);   // the ghost waveform behind each row
+  paintSplays();
   $('list').querySelectorAll('.mfhead').forEach(el => {
     el.addEventListener('click', async (e) => {
       const fid = el.dataset.fid;

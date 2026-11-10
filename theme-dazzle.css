@@ -682,3 +682,34 @@ body[data-theme="dazzle"] textarea {
   .dzban-strip { max-width: calc(100vw - 190px); overflow: hidden; }
   .dzban-text  { display: block; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* ---------- Song row play buttons (CR-181) ---------- */
+/* The striped bar on the left of each row is gone. The play button that used to
+   sit over it (CR-192) now sits at the very edge of the row, is the row's
+   camouflaged cap, and wears a dazzle scheme of its own: drawn by the page's
+   generator from the song's name (paintSplays in music.html, dazzleBadge in
+   core.js), so it is stable and different on every row. A dark disc carries the
+   glyph, the way the life ring carries the transport's, because a bare white
+   triangle disappears into hairline stripes. */
+body[data-theme="dazzle"] .song::before,
+body[data-theme="dazzle"] .song.stacked::before { content: none; display: none; }
+body[data-theme="dazzle"] .song { padding-left: 68px; }
+body[data-theme="dazzle"] .song .idx { display: none; }
+body[data-theme="dazzle"] .song .splay {
+  left: 0; width: 56px; border-radius: 0; border-right: 1px solid var(--edge);
+  background-color: #08080a; background-size: 100% 100%; background-repeat: no-repeat;
+}
+/* What the old plate said, said on the button: a stack of mixes is a doubled
+   edge, and the song you are on has an amber one. */
+body[data-theme="dazzle"] .song.stacked .splay { border-right: 3px double var(--edge); }
+body[data-theme="dazzle"] .song.active .splay { border-right-color: var(--amber); }
+body[data-theme="dazzle"] .song .splay::before {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 34px; height: 34px;
+  transform: translate(-50%, -50%); border-radius: 50%;
+  background: #08080a; border: 1px solid var(--edge);
+}
+body[data-theme="dazzle"] .song .splay::after,
+body[data-theme="dazzle"] .song:hover .splay::after,
+body[data-theme="dazzle"] .song.playing .splay::after {
+  left: calc(50% + 1px); width: 13px; height: 16px; opacity: 1; filter: none;
+}

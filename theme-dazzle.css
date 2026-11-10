@@ -498,7 +498,7 @@ body[data-theme="dazzle"] .song.active::before { border-right-color: var(--amber
    water layer so they stay crisp. */
 body[data-theme="dazzle"] .door::after {
   content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
-  background: var(--wet-beads, none) 0 0 / 360px 240px;
+  background: var(--door-beads, var(--wet-beads, none)) 0 0 / 360px 240px;
 }
 body[data-theme="dazzle"] .door > * { position: relative; z-index: 1; }
 

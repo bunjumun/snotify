@@ -692,6 +692,12 @@ function paintDoors(){
     if (!key) return;
     el.style.setProperty('--door-band', dazzleBadge(key + '|band', 360, 14,
       { cuts: 7, scale: 0.95, mix: { herring: .55, chevron: .3, flat: .15 } }));
+    // Droplets too: a scatter of their own, seeded from the name.
+    let hh = 2166136261;
+    for (let i = 0; i < key.length; i++){ hh ^= key.charCodeAt(i); hh = Math.imul(hh, 16777619); }
+    el.style.setProperty('--door-beads', svgURL(wetBeadsSVG(hh >>> 0, 360, 240,
+      Math.max(0, Math.min(1, num(design.beads, DESIGN_DEFAULTS.beads))),
+      Math.max(0, Math.min(1, num(design.fringe, DESIGN_DEFAULTS.fringe))))));
     el.style.setProperty('--door-glyph', dazzleBadge(key + '|tile', 62, 62,
       { cuts: 6, scale: 0.6, mix: { herring: .5, chevron: .25, wheel: .2, flat: .05 } }));
   });

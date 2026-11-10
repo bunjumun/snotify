@@ -810,8 +810,9 @@ function showGate(bandSlug, hard = true, bandTitle = null){
 // like a banner behind a plane. It used to fly over the login gate; it now
 // belongs to the first page you land on once logged in (index.html) and to the
 // music player (music.html), and shows only what concerns the logged-in band.
-//   * Per band: an entry in updates.json may carry "b": "lakehorse" (or a list
-//     of slugs) and then shows only to those bands. No "b" means the whole site.
+//   * Landing page: every entry in updates.json. Music player: only entries
+//     tagged "p": 1 (about the player) or "s": "<song title>" (that song is in
+//     the open library).
 //   * Once per page load, never on the gate, never on a shared-mix page.
 //   * Click it (any part) and it goes. Left alone it fades from fully visible at
 //     load to fully transparent at BANNER.fade ms, then removes itself.
@@ -828,7 +829,14 @@ function bannerUpdates(){
     .catch(() => []);
   return bannerLoad;
 }
-const bannerForBand = (u, band) => !u.b || [].concat(u.b).map(bandSlugOf).includes(band);
+// Landing page: every update. Music player: only the ones about the player
+// itself ("p": 1) or about a song in this library ("s": "<song title>").
+const bannerFor = (u) => {
+  if (!/music\.html$/.test(location.pathname)) return true;
+  if (u.p) return true;
+  const have = (typeof songs !== 'undefined' && Array.isArray(songs)) ? songs : [];
+  return !!u.s && have.some(x => String(x && x.title || '').toLowerCase() === String(u.s).toLowerCase());
+};
 function bannerHide(){
   bannerDone = true;
   if (bannerEl){ bannerEl.remove(); bannerEl = null; }
@@ -884,7 +892,7 @@ async function syncBanner(){
   const band = curBand;
   if (!band || !isAuthed(band) || document.body.classList.contains('shared') || document.body.classList.contains('singlemix')) return;
   bannerBusy = true;
-  const list = (await bannerUpdates()).filter(u => bannerForBand(u, band)).slice(0, BANNER.max);
+  const list = (await bannerUpdates()).filter(bannerFor).slice(0, BANNER.max);
   bannerBusy = false;
   if (!list.length || bannerEl || bannerDone || document.body.classList.contains('locked')) return;
   bannerDone = true;

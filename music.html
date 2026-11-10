@@ -112,6 +112,17 @@
   .vlog-latest { font-size: 10px; font-weight: 700; color: var(--accent-2); }
   .vlog-bullets { margin: 5px 0 0; padding-left: 16px; color: var(--text-dim); font-size: 13px; }
   .vlog-bullets li { margin: 2px 0; }
+  /* CR-184: the "Fixed in this mix" block, shown as what it is: the comment that
+     was answered, with the answer under it, and a way back to where it was made. */
+  .fx-head { margin: 8px 0 2px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); }
+  .fx-list { list-style: none; margin: 0; padding: 0; }
+  .fx-item { margin: 3px 0; padding: 5px 8px; border-left: 2px solid var(--line); border-radius: 0 6px 6px 0; font-size: 13px; }
+  .fx-item[data-t]:not([data-t=""]) { cursor: pointer; }
+  .fx-item[data-t]:not([data-t=""]):hover { background: var(--bg-hover); }
+  .fx-orig { color: var(--text-dim); overflow-wrap: anywhere; }
+  .fx-at { margin-left: 6px; font-size: 11.5px; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+  .fx-reply { margin-top: 2px; padding-left: 12px; color: var(--text-mute); overflow-wrap: anywhere; }
+  .fx-reply::before { content: 'Reply: '; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
   .vlog-upd { display: flex; align-items: baseline; gap: 8px; padding: 6px 4px;
     border-bottom: 1px solid var(--line); font-size: 13px; }
   .vlog-upd:last-child { border-bottom: none; }
@@ -4218,6 +4229,45 @@ function toggleVerMenu(open){
 $('verBtn').onclick = (e) => { e.stopPropagation(); toggleVerMenu(); };
 document.addEventListener('click', (e) => { if (!e.target.closest('#verdrop')) toggleVerMenu(false); });
 
+// CR-184: split a changelog into the notes he typed and the generated "Fixed in
+// this mix:" block. Each item there is `- <comment> (at m:ss)`, with the reply
+// on an indented line under it. verBullets() flattens all of that, which is why
+// the reply read as a separate item and the original comment was lost in it.
+function parseFixedBlock(ver){
+  const lines = (ver.changelog || '').split('\n');
+  const at = lines.findIndex(l => /^\s*Fixed in this mix:?\s*$/i.test(l));
+  if (at < 0 || (ver.changes && ver.changes.length)) return null;
+  const clean = l => l.trim().replace(/^[-*]\s+/, '').replace(/^#+\s+/, '');
+  const pre = lines.slice(0, at).map(clean).filter(Boolean);
+  const items = [];
+  for (const raw of lines.slice(at + 1)){
+    if (!raw.trim()) continue;
+    if (/^\s+\S/.test(raw) && items.length){
+      const it = items[items.length - 1];
+      it.reply = (it.reply ? it.reply + ' ' : '') + raw.trim();
+      continue;
+    }
+    let text = clean(raw), t = null;
+    const m = text.match(/\s*\(at ([\d:]+)\)\s*$/);
+    if (m){
+      t = m[1].split(':').reduce((a, n) => a * 60 + Number(n), 0);
+      text = text.slice(0, m.index);
+    }
+    items.push({ text, t, reply: '' });
+  }
+  return { pre, items };
+}
+
+// Which mix a fixed item's original comment was made on: matched by its text
+// and time among the song's comments, else the mix being looked at.
+function fixedItemVersion(song, text, t){
+  const norm = s => String(s || '').replace(/\s+/g, ' ').trim();
+  const c = commentsFor(song.id).find(c => !c.parentId && norm(c.text) === norm(text)
+    && (t == null || Math.round(c.time) === Math.round(t)));
+  const vi = c ? song.versions.findIndex(v => v.id === c.versionId) : -1;
+  return { vi: vi >= 0 ? vi : activeVer, cid: c ? c.id : '' };
+}
+
 // A version's change notes as a bullet list: explicit `changes` array wins,
 // else each non-empty line of the changelog markdown (with -/* /# prefixes stripped).
 function verBullets(ver){
@@ -7044,6 +7094,16 @@ async function vlogPostReply(row){
 }
 $('vlogList').addEventListener('click', (e) => {
   if (e.target.closest('.vlog-more')){ vlogShown += VLOG_PAGE; renderVlog(); return; }
+  const fxi = e.target.closest('.fx-item');
+  if (fxi && activeSong && fxi.dataset.t !== ''){
+    // CR-184: a fixed item opens the mix its original comment was made on, at that time.
+    const text = fxi.querySelector('.fx-orig').textContent, t = Number(fxi.dataset.t);
+    const { vi, cid } = fixedItemVersion(activeSong, text, t);
+    if (vi !== activeVer) switchVersion(vi);
+    openDrawer(true);
+    seekWhenOn(vi, t, cid);
+    return;
+  }
   const cm = e.target.closest('.vlog-cmt[data-song]');
   if (cm && activeSong && cm.dataset.song === activeSong.id){
     // CR-174: a comment in the song's own log opens the mix it was made on, at its time.
@@ -7134,7 +7194,12 @@ async function renderVlog(){
     </div>`;
     }
     const { ver, vi } = it;
-    const bullets = verBullets(ver);
+    const fx = parseFixedBlock(ver);
+    const bullets = fx ? fx.pre : verBullets(ver);
+    const fxHtml = fx && fx.items.length ? `<div class="fx-head">Fixed in this mix</div><ul class="fx-list">${
+      fx.items.map(i => `<li class="fx-item" data-t="${i.t == null ? '' : i.t}"${i.t == null ? '' : ' title="Go to this comment in the song"'}>`
+        + `<span class="fx-orig">${esc(i.text)}</span>${i.t == null ? '' : `<span class="fx-at">${esc(fmt(i.t))}</span>`}`
+        + `${i.reply ? `<div class="fx-reply">${esc(i.reply)}</div>` : ''}</li>`).join('')}</ul>` : '';
     return `
     <div class="vlog-entry ${vi===activeVer?'current':''}" data-vi="${vi}">
       <div class="vlog-head" title="Switch to ${esc(ver.name)} — keeps the same playback position">
@@ -7145,7 +7210,7 @@ async function renderVlog(){
       <span class="vlog-copy" data-vi="${vi}" title="Share ${esc(ver.name)}: asks whether you want a public or a band link">🔗</span>
       ${bullets.length
         ? `<ul class="vlog-bullets">${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>`
-        : `<div class="vlog-none">No changelog for this version.</div>`}
+        : (fxHtml ? '' : `<div class="vlog-none">No changelog for this version.</div>`)}${fxHtml}
     </div>`;
   }).join('') + (items.length > shown.length ? vlogMoreRow(items.length - shown.length) : '');
   $('vlogList').querySelectorAll('.vlog-entry[data-vi]').forEach(el => {

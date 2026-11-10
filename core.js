@@ -482,10 +482,25 @@ function wetBeadsSVG(seed, w = 360, h = 240){
     + `<feSpecularLighting in="h" surfaceScale="6" specularConstant="1.5" specularExponent="24" lighting-color="#fff" result="s">`
     + `<feDistantLight azimuth="225" elevation="48"/></feSpecularLighting>`
     + `<feComposite in="s" in2="m" operator="in" result="sp"/>`
-    + `<feFlood flood-color="#cfe9ee" flood-opacity=".16"/><feComposite in2="m" operator="in" result="body"/>`
+    + `<feFlood flood-color="#cfe9ee" flood-opacity=".2"/><feComposite in2="m" operator="in" result="body"/>`
     + `<feOffset in="m" dx="1.2" dy="2.2" result="o"/><feGaussianBlur in="o" stdDeviation="1.3" result="ob"/>`
     + `<feFlood flood-color="#000" flood-opacity=".6"/><feComposite in2="ob" operator="in" result="sh"/>`
-    + `<feMerge><feMergeNode in="sh"/><feMergeNode in="body"/><feMergeNode in="sp"/></feMerge></filter></defs>`
+    // The lens look (CR-181). He asked for beads like a water drop on an LCD
+    // screen, which acts as a lens and splits the colours under it. A CSS
+    // overlay cannot refract what is beneath it, so this is the part of that look
+    // that can be drawn on top: the colour fringes a lens throws at its edges.
+    // Each fringe is the bead's own mask minus a copy of it nudged a pixel and a
+    // half sideways, which leaves a thin crescent on one edge only: red on the
+    // left, blue on the right, green along the foot. The true refraction is in
+    // the Materials board of the design canvas, where there is a pattern under
+    // the drops to bend.
+    + `<feOffset in="m" dx="1.6" dy="0" result="mr"/><feComposite in="m" in2="mr" operator="out" result="el"/>`
+    + `<feFlood flood-color="#ff3b30" flood-opacity=".6"/><feComposite in2="el" operator="in" result="fr"/>`
+    + `<feOffset in="m" dx="-1.6" dy="0" result="ml"/><feComposite in="m" in2="ml" operator="out" result="er"/>`
+    + `<feFlood flood-color="#3b6bff" flood-opacity=".65"/><feComposite in2="er" operator="in" result="fb"/>`
+    + `<feOffset in="m" dx="0" dy="-1.6" result="mu"/><feComposite in="m" in2="mu" operator="out" result="ef"/>`
+    + `<feFlood flood-color="#34d17a" flood-opacity=".5"/><feComposite in2="ef" operator="in" result="fg"/>`
+    + `<feMerge><feMergeNode in="sh"/><feMergeNode in="body"/><feMergeNode in="fr"/><feMergeNode in="fb"/><feMergeNode in="fg"/><feMergeNode in="sp"/></feMerge></filter></defs>`
     + `<rect width="${w}" height="${h}" filter="url(#b)"/></svg>`;
 }
 

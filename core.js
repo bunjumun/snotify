@@ -846,10 +846,13 @@ const BANNER_LOGDATE = (iso) => { const d = new Date(iso); return isNaN(d) ? '' 
 const bannerIsSong = (u, song) => (u.version_id && (song.versions || []).some(v => v.id === u.version_id))
   || String(u.song || '').toLowerCase() === String(song.title || '').toLowerCase();
 const BANNER_VERB = { song: 'new song', mix: 'new mix', comment: 'commented', resolved: 'resolved', log: 'log updated' };
-async function bannerLogItems(song){
+async function bannerLogItemsRaw(song){
   let rows = [];
-  try { rows = await libRpc('recent_updates', { lim: song ? 80 : BANNER.max }); } catch {}
-  return (rows || []).filter(u => !song || bannerIsSong(u, song)).map(u => {
+  try { rows = await libRpc('recent_updates', { lim: song ? 200 : BANNER.max }); } catch {}
+  return (rows || []).filter(u => !song || bannerIsSong(u, song));
+}
+async function bannerLogItems(song){
+  return (await bannerLogItemsRaw(song)).map(u => {
     const cmt = u.kind === 'comment' || u.kind === 'resolved';
     const verb = u.kind === 'comment' && u.parent_id ? 'replied' : (BANNER_VERB[u.kind] || 'updated');
     const on = u.song && !song && u.kind !== 'song' && u.kind !== 'mix' ? ' on ' + u.song : '';
@@ -864,10 +867,37 @@ async function bannerList(){
   if (!/music\.html$/.test(location.pathname)) return (await bannerUpdates()).slice(0, BANNER.max);
   const song = window.playerView ? window.playerView() : null;
   bannerKey = song ? song.id : '';
-  if (song) return (await bannerLogItems(song)).slice(0, BANNER.max);
+  if (song) return bannerSongItems(song);
   const site = (await bannerUpdates()).filter(bannerFor);
   const log = await bannerLogItems(null);
   return site.concat(log).sort((a, b) => String(b.d).localeCompare(String(a.d))).slice(0, BANNER.max);
+}
+// One song open: no individual comments (a roll of them is too much to read in
+// a moving strip), just a count per day of comments made and of comments
+// resolved, and one line per recent mix with how many to-do items it fixed.
+async function bannerSongItems(song){
+  const rows = (await bannerLogItemsRaw(song)).filter(u => u.kind === 'comment' || u.kind === 'resolved');
+  const per = {};
+  for (const u of rows){
+    const d = BANNER_LOGDATE(u.at); if (!d) continue;
+    const k = u.kind === 'comment' ? 'made' : 'resolved';
+    (per[d] = per[d] || { made: 0, resolved: 0 })[k]++;
+  }
+  const out = [];
+  for (const d of Object.keys(per)){
+    const p = per[d], n = (c) => `${c} comment${c === 1 ? '' : 's'}`;
+    if (p.made) out.push({ d, o: 1, t: `${n(p.made)} made` });
+    if (p.resolved) out.push({ d, o: 2, t: `${n(p.resolved)} resolved` });
+  }
+  (song.versions || []).slice().sort((a, b) => String(b.created_at || b.date).localeCompare(String(a.created_at || a.date))).slice(0, 4).forEach(v => {
+    const d = BANNER_LOGDATE(v.created_at || v.date); if (!d) return;
+    const lines = String(v.changelog || '').split('\n');
+    const at = lines.findIndex(l => /^\s*Fixed in this mix:?\s*$/i.test(l));
+    let n = 0;
+    if (at >= 0) for (const l of lines.slice(at + 1)){ if (!l.trim()) break; if (/^-/.test(l)) n++; }
+    out.push({ d, o: 0, t: n ? `${n} to-do item${n === 1 ? '' : 's'} affected in new mix ${v.name}` : `new mix ${v.name}` });
+  });
+  return out.sort((a, b) => b.d.localeCompare(a.d) || a.o - b.o).slice(0, BANNER.max);
 }
 let bannerKey = null;
 // The player's view changes under the banner (a song opens, or the list comes

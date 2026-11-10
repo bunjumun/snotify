@@ -659,13 +659,11 @@ body[data-theme="dazzle"] textarea {
   0%        { transform: translateX(100vw); }
   90%, 100% { transform: translateX(-100%); }
 }
-.dzban-ship { flex: none; filter: drop-shadow(0 2px 4px rgba(0,0,0,.85)); animation: dzban-bob 3.2s ease-in-out infinite alternate; }
-@keyframes dzban-bob { from { transform: translateY(-3px) rotate(-1deg); } to { transform: translateY(3px) rotate(1deg); } }
+.dzban-ship { flex: none; filter: drop-shadow(0 2px 4px rgba(0,0,0,.85)); }
 .dzban-tow { flex: none; }
 .dzban-strip {
   flex: none; position: relative; height: 30px; box-sizing: border-box; display: flex; align-items: center;
   padding: 0 20px; background: rgba(8,8,10,.94); border: 1px solid #fff;
-  transform-origin: left center; animation: dzban-flap 1.7s ease-in-out infinite alternate;
 }
 /* A painted band along the top and bottom edge, the hull's own, so the strip
    reads as part of the ship's livery and the words keep a dark ground. */
@@ -675,7 +673,6 @@ body[data-theme="dazzle"] textarea {
 }
 .dzban-strip::before { top: 0; }
 .dzban-strip::after  { bottom: 0; }
-@keyframes dzban-flap { from { transform: skewY(-1.4deg); } to { transform: skewY(1.4deg) translateY(1px); } }
 .dzban-text {
   white-space: nowrap; color: #f3f5f5; letter-spacing: -.02em;
   font: 700 12px/1 var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
@@ -686,7 +683,6 @@ body[data-theme="dazzle"] textarea {
 /* Reduced motion: parked at the left, one line, cut off with an ellipsis. */
 @media (prefers-reduced-motion: reduce) {
   .dzban-fly   { animation: none; transform: translateX(16px); }
-  .dzban-ship, .dzban-strip { animation: none; }
   .dzban-strip { max-width: calc(100vw - 190px); overflow: hidden; }
   .dzban-text  { display: block; overflow: hidden; text-overflow: ellipsis; }
 }

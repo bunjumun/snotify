@@ -25,6 +25,7 @@ Whatever the session is about, **read the change requests notebook at the start 
 | `interactive-music-players/lakehorse-swimulator/PROGRESS.md` | Pillars, budgets, what phase we are in, what landed, what is next. |
 | `docs/session-brief.md` | Orientation for a cold session: read order, the two directories, and what is deployed versus what is only on a branch. |
 | `vendor/` | Three.js, at the repo root and owned by neither build. Both import maps point here. |
+| `updates.json` | One-line, player-facing site updates, newest first (`d` date, `t` text, no em dashes). Feeds the ticker a spaceship tows across the login page (`syncBanner()` in `core.js`). **Add a line when something a player would notice ships**, or the ticker goes stale. |
 | `archive/game-v1/` | **V1. Frozen and off the site**, with no door. Still runs if you serve it. |
 | `docs/v1-handoff.md` | The scoped list of safe changes made to V1 before it was archived. |
 | `../games/` | **Outside this repo, and no code in it.** Art direction reference: wreck and diving-suit photography, the kelpie, cover art. Its `lakehorse lore.rtf` is stale; see the lore note below. |

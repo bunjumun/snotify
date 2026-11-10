@@ -135,6 +135,22 @@
     padding: 7px 10px 7px 17px; border-radius: 0 8px 8px 0; cursor: pointer;
   }
   .gtl-item:hover { background: var(--bg-hover); }
+  /* Rows edit in place: a tick, a date, a title and a bin. Inputs are kept
+     quiet until hovered or focused so the chart still reads as a chart. */
+  .gtl-item { align-items: center; cursor: default; flex-wrap: wrap; }
+  .gtl-item input[type="date"], .gtl-item input.gtl-title {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    color: inherit; font: inherit; padding: 3px 5px; min-width: 0;
+  }
+  .gtl-item input:hover, .gtl-item input:focus { border-color: var(--line); background: var(--bg); }
+  .gtl-item input[type="date"] { flex: 0 0 auto; width: 128px; font-size: 12px; color: var(--text-mute); }
+  .gtl-item input.gtl-title { flex: 1 1 140px; color: var(--text-dim); }
+  .gtl-item.done input.gtl-title { color: var(--text-mute); text-decoration: line-through; }
+  .gtl-item.late input.gtl-title { color: var(--err); }
+  .gtl-item.next input.gtl-title { color: var(--accent-2); font-weight: 600; }
+  .gtl-item .gck { flex: 0 0 auto; margin: 0; }
+  .gtl-item .rm { background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 14px; padding: 0 2px; }
+  .gtl-item .rm:hover { color: var(--text); }
   /* The dot straddles the spine: half its width sits either side of the 2px
      border, which is why the offset is -6px and not -5px. */
   .gtl-item .dot {
@@ -872,14 +888,15 @@ function renderGoals(){
   });
 }
 
-// ---------- Goals timeline (read-only view of the same doc) ----------
-// Two views over one JSON body: the list above, which edits, and the chart
-// below, which does not. He asked for the goals "charted", and the list could
-// not become the chart without either date-sorting it or fighting the manual
-// ▲▼ order CR-98 put there on purpose so a half-typed date never reshuffles a
-// row out from under him. So the order stays his in the list, and time orders
-// the chart. Nothing here writes: every handler either re-renders or hands
-// over to the list.
+// ---------- Goals timeline (second view of the same doc; CR-113, edits CR-183) ----------
+// Two views over one JSON body: the list above, which keeps his manual order,
+// and the chart below, which orders by time. The list could not become the
+// chart without either date-sorting it or fighting the manual ▲▼ order CR-98
+// put there on purpose. CR-113 shipped the chart read-only; CR-183 made its
+// rows editable in place (tick, date, title, bin), because he asked for an
+// edit tool on the timeline itself. Only a date or a tick re-draws the chart,
+// since those are what move or restyle a row. Typing a title writes quietly,
+// so a half-typed word never reshuffles anything under his cursor.
 //
 // Vertical spine rather than a horizontal Gantt because this is read on a
 // phone, and a horizontal time axis is the one shape that cannot survive a
@@ -906,7 +923,6 @@ function renderGoalsView(){
   $('gviewTl').classList.toggle('on', tl);
   $('gviewList').classList.toggle('on', !tl);
   $('goalsRows').style.display = tl ? 'none' : '';
-  $('addGoalBtn').style.display = tl ? 'none' : '';
   $('goalsTimeline').style.display = tl ? '' : 'none';
   // The list is rendered either way: it holds the trash count, and the
   // timeline hands focus into its rows.
@@ -955,13 +971,66 @@ function relLabel(stamp, today){
   return n > 0 ? `in ${size}` : `${size} ago`;
 }
 
+/** Edit one goal by its place in the saved order. Index, not id: a goal saved
+ *  before ids existed gets a fresh random id on every parse, so an id lookup
+ *  could miss it, while the order of the array is stable. */
+function patchGoal(idx, fn){
+  const doc = parseGoalsDoc($('body').value);
+  if (!doc.items[idx]) return;
+  fn(doc.items[idx]);
+  writeGoalsDoc(doc);
+}
+
+/** One editable row of the chart. Only a date or a done tick re-draws it,
+ *  since those are the two that move or restyle a row; typing a title writes
+ *  quietly and leaves the focus where it is. */
+function tlRow(g, cls, relText){
+  const idx = g._i;
+  const row = document.createElement('div');
+  row.className = 'gtl-item' + cls;
+  row.dataset.gid = g.id;
+
+  const dot = document.createElement('span'); dot.className = 'dot';
+
+  const ck = document.createElement('input');
+  ck.type = 'checkbox'; ck.className = 'gck'; ck.checked = g.done; ck.title = 'Done';
+  ck.addEventListener('change', () => { patchGoal(idx, x => { x.done = ck.checked; }); renderGoalsView(); });
+
+  const date = document.createElement('input');
+  date.type = 'date'; date.value = g.date; date.title = 'Date';
+  date.addEventListener('change', () => { patchGoal(idx, x => { x.date = date.value; }); renderGoalsView(); });
+
+  const title = document.createElement('input');
+  title.type = 'text'; title.className = 'gtl-title'; title.placeholder = 'Milestone';
+  title.value = g.title;
+  title.addEventListener('input', () => patchGoal(idx, x => { x.title = title.value; }));
+
+  const rel = document.createElement('span'); rel.className = 'rel'; rel.textContent = relText;
+
+  const rm = document.createElement('button');
+  rm.className = 'rm'; rm.title = 'Move this goal to the trash'; rm.textContent = '🗑';
+  rm.addEventListener('click', () => {
+    if (!confirm(`Move "${g.title || 'this goal'}" to the trash?\n\nYou can restore it from 🗑 trash.`)) return;
+    const doc = parseGoalsDoc($('body').value);
+    const [moved] = doc.items.splice(idx, 1);
+    if (!moved) return;
+    doc.trash.unshift({ ...moved, deletedAt: new Date().toISOString() });
+    writeGoalsDoc(doc);
+    renderGoalsView();
+  });
+
+  row.append(dot, ck, date, title, rel, rm);
+  return row;
+}
+
 function renderGoalsTimeline(){
-  const items = parseGoalsDoc($('body').value).items;
+  // _i remembers each goal's place in the saved order, which tlRow edits by.
+  const items = parseGoalsDoc($('body').value).items.map((g, i) => ({ ...g, _i: i }));
   const box = $('goalsTimeline');
   box.innerHTML = '';
   if (!items.length){
-    box.innerHTML = '<div class="gtl-empty">No goals yet. Switch to List and add '
-      + 'the first milestone, and it will chart itself here.</div>';
+    box.innerHTML = '<div class="gtl-empty">No goals yet. Add the first milestone below, '
+      + 'and it will chart itself here.</div>';
     return;
   }
 
@@ -1003,19 +1072,10 @@ function renderGoalsTimeline(){
     // may mean opening today's month heading first.
     if (g.date >= today) todayRule();
     month(g.date);
-    const row = document.createElement('div');
     const late = !g.done && g.date < today;
-    row.className = 'gtl-item'
-      + (g.done ? ' done' : '')
-      + (late ? ' late' : '')
-      + (g === next ? ' next' : '');
-    row.innerHTML = `<span class="dot"></span>`
-      + `<span class="gd">${esc(dayLabel(g.date))}</span>`
-      + `<span class="gt">${esc(g.title || 'Untitled')}</span>`
-      + `<span class="rel">${esc(g.done ? 'done' : relLabel(g.date, today))}</span>`;
-    row.title = 'Open this goal in the list';
-    row.addEventListener('click', () => focusGoal(g.id));
-    list.appendChild(row);
+    list.appendChild(tlRow(g,
+      (g.done ? ' done' : '') + (late ? ' late' : '') + (g === next ? ' next' : ''),
+      g.done ? 'done' : relLabel(g.date, today)));
   });
 
   // Everything already behind us: the rule still belongs at the end.
@@ -1027,15 +1087,7 @@ function renderGoalsTimeline(){
     h.textContent = 'No date yet';
     list.appendChild(h);
     undated.forEach((g) => {
-      const row = document.createElement('div');
-      row.className = 'gtl-item' + (g.done ? ' done' : '');
-      row.innerHTML = `<span class="dot"></span>`
-        + `<span class="gd">&ndash;</span>`
-        + `<span class="gt">${esc(g.title || 'Untitled')}</span>`
-        + `<span class="rel">${esc(g.done ? 'done' : 'no date')}</span>`;
-      row.title = 'Open this goal in the list';
-      row.addEventListener('click', () => focusGoal(g.id));
-      list.appendChild(row);
+      list.appendChild(tlRow(g, g.done ? ' done' : '', g.done ? 'done' : 'no date'));
     });
   }
 
@@ -1057,6 +1109,12 @@ function addGoal(){
   doc.items.push(normalizeGoal({ id: newRowId() }));
   writeGoalsDoc(doc);
   renderGoalsView();
+  // Put the cursor in the new goal, in whichever view is showing.
+  const id = doc.items[doc.items.length - 1].id;
+  const row = document.querySelector(`#goalsTimeline [data-gid="${CSS.escape(id)}"], #goalsRows [data-gid="${CSS.escape(id)}"]`);
+  const t = row && row.querySelector('input.gtl-title, input.gtitle');
+  if (row) row.scrollIntoView({ block: 'center' });
+  if (t) t.focus();
 }
 
 // ---------- Goals trash modal ----------

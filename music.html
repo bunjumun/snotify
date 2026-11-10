@@ -76,10 +76,10 @@
      icon face, and he asked for this one nearly as tall as the row. */
   .song .splay::after { content: ""; display: block; position: absolute; left: 40px; top: 50%;
     width: 38px; height: 52px; transform: translate(-50%, -50%); background: currentColor;
-    clip-path: polygon(0 0, 100% 50%, 0 100%); opacity: .85; transition: opacity .12s;
+    clip-path: polygon(0 0, 100% 50%, 0 100%); opacity: .5; transition: opacity .12s;
     filter: drop-shadow(0 0 3px var(--bg, #000)); }
-  .song:hover .splay::after, .song .splay:focus-visible::after, .song.active .splay::after { opacity: 1; }
-  .song.playing .splay::after { width: 36px; height: 46px; opacity: 1; background: currentColor;
+  .song:hover .splay::after, .song .splay:focus-visible::after, .song.active .splay::after { opacity: .8; }
+  .song.playing .splay::after { width: 36px; height: 46px; opacity: .7; background: currentColor;
     clip-path: polygon(0 0, 33% 0, 33% 100%, 0 100%, 0 0, 67% 0, 100% 0, 100% 100%, 67% 100%, 67% 0); }
   /* The play button takes the place of the track number, so there is one thing in that slot. */
   .song .idx { visibility: hidden; }

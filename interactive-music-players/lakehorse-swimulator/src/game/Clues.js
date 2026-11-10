@@ -343,7 +343,6 @@ export class Clues {
       const c = this.chest.position;
       const { landmark } = g.wreck.nearestLandmark(c);
       g.hud.say(
-        `Everything down here is talking at once, and it all agrees.<br>` +
         `The box is ${bearing(g.kelpie.position, c)}, by <b>${landmark ? landmark.name : 'the wreck'}</b>.`,
         { who, seconds: 8 });
       g.audio?.sfx('fish');

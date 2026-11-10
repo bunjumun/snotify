@@ -71,7 +71,7 @@ export class Clues {
     this._chatCd = 0;          // gap between two shoals both having something to say
     this.tellers = [];         // live guide fish, cleaned up as they expire
 
-    this.chest = new Chest(this._pickSpot(game.rng, game.wreck, game.seabed));
+    this.chest = new Chest(this._pickSpot(game.rng, game.wreck, game.seabed, game.bongs));
     game.scene.add(this.chest.group);
 
     // The band's live draft. Whatever it holds wins over the LORE table at the
@@ -85,7 +85,7 @@ export class Clues {
    * to look at anyway, so finding it reads as having explored rather than having
    * been lucky.
    */
-  _pickSpot(rng, wreck, seabed) {
+  _pickSpot(rng, wreck, seabed, game_bongs) {
     const lm = rng.pick(wreck.landmarks);
     for (let i = 0; i < 30; i++) {
       const a = rng.float(0, Math.PI * 2);
@@ -93,6 +93,9 @@ export class Clues {
       const x = lm.position.x + Math.cos(a) * r;
       const z = lm.position.z + Math.sin(a) * r;
       if (Math.hypot(x, z) > CFG.world.radius * 0.9) continue;
+      // CR-167: not on top of a bong. Bongs are placed first, and a chest dropped
+      // beside one crowds the bong's hit column and the chest's open radius.
+      if ((game_bongs || []).some((b) => Math.hypot(b.position.x - x, b.position.z - z) < 30)) continue;
       return new THREE.Vector3(x, seabed.heightAt(x, z) + 0.1, z);
     }
     const p = lm.position.clone();

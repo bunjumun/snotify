@@ -227,7 +227,7 @@ export class Game {
     this.lamp = new Lamp(this.scene, RIDERS);
     this.heldLighter = null;   // set by Intro when a fish hands it over
 
-    this.bongs = placeBongs(this.rng, this.seabed);
+    this.bongs = placeBongs(this.rng, this.seabed, undefined, this.wreck);
     for (const b of this.bongs) this.scene.add(b.group);
   }
 

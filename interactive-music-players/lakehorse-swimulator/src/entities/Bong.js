@@ -337,7 +337,9 @@ export class Bong {
  * make half the map a dead zone, and the whole point is that there's always one
  * somewhere plausible to run for.
  */
-export function placeBongs(rng, seabed, count = CFG.bong.count) {
+const BONG_WRECK_GAP = 14;
+
+export function placeBongs(rng, seabed, count = CFG.bong.count, wreck = null) {
   const out = [];
   const MIN_APART = 55;
   let guard = 0;
@@ -345,6 +347,12 @@ export function placeBongs(rng, seabed, count = CFG.bong.count) {
     const { x, z } = rng.inDisc(CFG.world.radius * 0.78);
     const pos = new THREE.Vector3(x, seabed.heightAt(x, z) + 0.1, z);
     if (out.some((b) => b.position.distanceTo(pos) < MIN_APART)) continue;
+    // CR-167: never inside or against the wreck. He reported the wreck bong as
+    // unreliable and said the clue may be that it is the one by the treasure
+    // chest. Both sit near wreck landmarks (the chest is placed 0.9-2.2 radii off
+    // one), so a bong there shares its ground with the hull, the debris and the
+    // chest's own proximity logic. Keep bongs a clear swim outside every landmark.
+    if (wreck && wreck.landmarks.some((l) => Math.hypot(l.position.x - x, l.position.z - z) < l.radius + BONG_WRECK_GAP)) continue;
     out.push(new Bong(pos, rng));
   }
   return out;

@@ -463,7 +463,8 @@ body[data-theme="dazzle"] .tool-what b { text-transform: uppercase; letter-spaci
 /* ---------- Wet hull (CR-181) ---------- */
 /* Paint, then weather. paintDazzle() in core.js lays down the stripes; this is
    what water does to them. Frames (the top band, the doors, the modal caps) get
-   the full treatment: gloss, standing beads and runs hanging off the stripes.
+   the full treatment: gloss and standing beads. (Runs of paint hanging off the
+   stripe bands were tried and taken out again: he did not want them.)
    Dense lists (song rows, comments) stay dry apart from a gloss edge, because
    beads over a column of small type read as dirt on the screen rather than as
    water on the paint, and the playing row alone is allowed its beads.
@@ -490,33 +491,18 @@ body[data-theme="dazzle"] .song.active {
 /* The thrusters of the plate you are listening to. */
 body[data-theme="dazzle"] .song.active::before { border-right-color: var(--amber); }
 
-/* Runs from the hull band across the top of every page. Shorter than the gap
-   between the band and the header (46px), so none of them ever touches text. */
-body[data-theme="dazzle"]::after {
-  content: ""; position: fixed; top: 15px; left: 0; right: 0; height: 30px;
-  z-index: 59; pointer-events: none;
-  background: var(--drips, none) 0 0 / 720px 34px repeat-x;
-}
-
-/* Doors: runs under the stripe band, beads over the plate behind the words.
-   The words sit above the water layer so they stay crisp. */
+/* Doors: beads over the plate, behind the words. The words sit above the
+   water layer so they stay crisp. */
 body[data-theme="dazzle"] .door::after {
   content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
-  background: var(--drips, none) 0 13px / 720px 34px repeat-x,
-              var(--wet-beads, none) 0 0 / 360px 240px;
+  background: var(--wet-beads, none) 0 0 / 360px 240px;
 }
 body[data-theme="dazzle"] .door > * { position: relative; z-index: 1; }
 
-/* Modal caps drip too, but only the first few pixels of a run: the heading is
-   close under the band. */
+/* Modal: the gloss lip, and a positioning context. */
 body[data-theme="dazzle"] .modal {
   position: relative;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.13), inset 0 -1px 0 rgba(0,0,0,.6), var(--shadow);
-}
-body[data-theme="dazzle"] .modal::after {
-  content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 16px;
-  pointer-events: none;
-  background: var(--drips, none) 0 0 / 720px 34px repeat-x;
 }
 
 /* The door's glyph tile is square, and it used to borrow the wide band for its

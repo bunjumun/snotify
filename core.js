@@ -450,7 +450,7 @@ const dazzleURL = (opts) =>
 // different seeds from each other, so they never fall into step — it is one
 // ship's worth of scheme, freshly painted, not four copies of one pattern.
 // ---------- The wet layer (CR-181) ----------
-// The hull is painted; this is what the weather does to it. Three textures,
+// The hull is painted; this is what the weather does to it. Two textures,
 // all generated here like the stripes and all laid on as static images, so the
 // page pays for each filter once at decode time and never again — an animated
 // SVG filter re-runs on every frame, which on a phone is exactly the sort of
@@ -458,7 +458,6 @@ const dazzleURL = (opts) =>
 // background-attachment in theme-dazzle.css).
 //   beads  water standing on the paint: a lit dome with a dark underside
 //   chop   long low wavelets that only glint where they face the light
-//   drips  paint-white runs hanging from the stripe bands
 // The beads and the chop come out of feTurbulence, tiled with stitchTiles so
 // the repeat has no visible seam. The lighting uses a gentle height map and a
 // steep shape mask, which is what makes a bead a dome and not a flat blot.
@@ -491,23 +490,6 @@ function wetChopSVG(seed, w = 480, h = 160){
     + `<rect width="${w}" height="${h}" filter="url(#c)" opacity=".5"/></svg>`;
 }
 
-// Mostly short, a few long: squaring the roll bunches the lengths near zero,
-// which is how a run actually distributes. A drip is a rounded bar with a bead
-// at its foot, and none of it is allowed to cross the tile edge, so the repeat
-// stays clean.
-function dripsSVG(seed, w = 720, h = 34){
-  const r = rng(seed);
-  let out = '', x = 8 + r() * 30;
-  while (x < w - 10){
-    const sw = 2.2 + r() * 2.6, len = 5 + Math.pow(r(), 2.2) * (h - 11);
-    out += `<rect x="${x.toFixed(1)}" y="0" width="${sw.toFixed(1)}" height="${len.toFixed(1)}" rx="${(sw / 2).toFixed(1)}"/>`
-         + `<circle cx="${(x + sw / 2).toFixed(1)}" cy="${(len + sw * 0.5).toFixed(1)}" r="${(sw * 0.62 + 0.4).toFixed(1)}"/>`;
-    x += 16 + r() * 58;
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
-       + `<g fill="#e6eaea" fill-opacity=".85">${out}</g></svg>`;
-}
-
 function paintDazzle(){
   const b = document.body.style;
   const s = () => (Math.random() * 0xffffffff) >>> 0;
@@ -537,7 +519,6 @@ function paintDazzle(){
                                             mix: { herring: .4, chevron: .2, wheel: .3, flat: .1 } }));
   b.setProperty('--wet-beads',  svgURL(wetBeadsSVG(s())));
   b.setProperty('--wet-chop',   svgURL(wetChopSVG(s())));
-  b.setProperty('--drips',      svgURL(dripsSVG(s())));
 }
 
 // ---------- Page design ----------

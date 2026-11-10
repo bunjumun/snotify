@@ -532,3 +532,5 @@ a.aprogmini:hover { background: var(--bg-hover); border-color: var(--accent); }
   .aprogmini .track { flex-basis: 100%; order: 3; }
   .aprogmini .pct { margin-left: auto; }
 }
+/* A level that belongs to one theme is hidden with the attribute, and the grid's own display on a label must not beat it. */
+.dz-grid label[hidden] { display: none; }

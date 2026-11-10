@@ -472,7 +472,7 @@ const dazzleURL = (opts) =>
 // plain paths: see wetChopSVG().
 const svgURL = (svg) => `url("data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, '%27')}")`;
 
-function wetBeadsSVG(seed, w = 360, h = 240){
+function wetBeadsSVG(seed, w = 360, h = 240, k = 1, fr = 1){
   const m = (a, b) => `0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 ${a} 0 0 0 ${b}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs>`
     + `<filter id="b" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">`
@@ -495,13 +495,13 @@ function wetBeadsSVG(seed, w = 360, h = 240){
     // the Materials board of the design canvas, where there is a pattern under
     // the drops to bend.
     + `<feOffset in="m" dx="1.6" dy="0" result="mr"/><feComposite in="m" in2="mr" operator="out" result="el"/>`
-    + `<feFlood flood-color="#ff3b30" flood-opacity=".6"/><feComposite in2="el" operator="in" result="fr"/>`
+    + `<feFlood flood-color="#ff3b30" flood-opacity="${(0.6 * fr).toFixed(3)}"/><feComposite in2="el" operator="in" result="fr"/>`
     + `<feOffset in="m" dx="-1.6" dy="0" result="ml"/><feComposite in="m" in2="ml" operator="out" result="er"/>`
-    + `<feFlood flood-color="#3b6bff" flood-opacity=".65"/><feComposite in2="er" operator="in" result="fb"/>`
+    + `<feFlood flood-color="#3b6bff" flood-opacity="${(0.65 * fr).toFixed(3)}"/><feComposite in2="er" operator="in" result="fb"/>`
     + `<feOffset in="m" dx="0" dy="-1.6" result="mu"/><feComposite in="m" in2="mu" operator="out" result="ef"/>`
-    + `<feFlood flood-color="#34d17a" flood-opacity=".5"/><feComposite in2="ef" operator="in" result="fg"/>`
+    + `<feFlood flood-color="#34d17a" flood-opacity="${(0.5 * fr).toFixed(3)}"/><feComposite in2="ef" operator="in" result="fg"/>`
     + `<feMerge><feMergeNode in="sh"/><feMergeNode in="body"/><feMergeNode in="fr"/><feMergeNode in="fb"/><feMergeNode in="fg"/><feMergeNode in="sp"/></feMerge></filter></defs>`
-    + `<rect width="${w}" height="${h}" filter="url(#b)"/></svg>`;
+    + `<rect width="${w}" height="${h}" filter="url(#b)" opacity="${k.toFixed(3)}"/></svg>`;
 }
 
 // The chop, as line art (CR-181). It began as a lit feTurbulence raster, which
@@ -532,7 +532,7 @@ function chopField(seed, w = 480, h = 168){
   const field = (x, y) => mx.reduce((v, m, i) => v + wt[i] * Math.sin(TAU * (m * x / w + my[i] * y / h) + ph[i]), 0);
   return { w, h, gap, amp, field, n: ++chopCount };
 }
-function wetChopSVG(seed, w = 480, h = 168){
+function wetChopSVG(seed, w = 480, h = 168, alpha = 0.34){
   const { gap, amp, field } = chopField(seed, w, h), step = 10;
   let d = '';
   for (let k = -1; k <= h / gap; k++){
@@ -541,7 +541,7 @@ function wetChopSVG(seed, w = 480, h = 168){
       d += (x ? 'L' : 'M') + x + ',' + (y0 + amp * field(x, y0)).toFixed(1);
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
-       + `<path d="${d}" fill="none" stroke="#d6eef2" stroke-opacity=".34" stroke-width="1" stroke-linejoin="round"/></svg>`;
+       + `<path d="${d}" fill="none" stroke="#d6eef2" stroke-opacity="${alpha}" stroke-width="1" stroke-linejoin="round"/></svg>`;
 }
 
 // The lines, drawn live, and parted by the ship. One path and one stroke for
@@ -598,9 +598,25 @@ function drawChopLines(ctx, W, H, S, k = 1){
   ctx.stroke();
 }
 
+// The seeds are drawn once per page load and then kept. paintDazzle() runs on
+// every tick of a slider in the page-design panel, and with fresh seeds each
+// time the whole scheme was re-dealt as you dragged, so you could never settle
+// a level by eye. Kept, a slider adjusts the scheme you are looking at; a new
+// scheme still arrives with each page load, as it always did.
+let dzSeeds = null;
 function paintDazzle(){
   const b = document.body.style;
-  const s = () => (Math.random() * 0xffffffff) >>> 0;
+  if (!dzSeeds){
+    const s = () => (Math.random() * 0xffffffff) >>> 0;
+    dzSeeds = { band: s(), band2: s(), narrow: s(), bg: s(), beads: s(), chop: s() };
+  }
+  const sd = dzSeeds, d = design;
+  // Plate whites (CR-181, a page-design level). The scheme is drawn from white
+  // down to the #08080a ground, so lowering how white the white is just means
+  // using a dimmer ink: every band, tile and plate follows, and the greys
+  // between them (which are interpolated from it) come down with it.
+  const pw = Math.max(0.15, Math.min(1, num(d.plateWhite, DESIGN_DEFAULTS.plateWhite)));
+  const g = Math.round(8 + (255 - 8) * pw);
   // Three tones now (white, the grey between, black) and the naval painter.
   // The bands are drawn at the shape they are shown at. The first cut of this
   // drew them ten times too tall and let the CSS squash them to a dozen pixels,
@@ -608,27 +624,30 @@ function paintDazzle(){
   // other angle into a smear of mid grey: the stripes lost their edges and the
   // band read as a washed-out strip. The pinwheel stays out of them as well,
   // since a fan of wedges is only legible with room to fan.
-  const band = { look: 'naval', tones: 3 };
-  b.setProperty('--dazzle',     dazzleURL({ ...band, w: 1440, h: 14, seed: s(), cuts: 16, scale: 0.5,
+  const band = { look: 'naval', tones: 3, ink: `rgb(${g},${g},${g})` };
+  b.setProperty('--dazzle',     dazzleURL({ ...band, w: 1440, h: 14, seed: sd.band, cuts: 16, scale: 0.5,
                                             mix: { herring: .55, chevron: .3, flat: .15 } }));
-  b.setProperty('--dazzle-2',   dazzleURL({ ...band, w: 1440, h: 12, seed: s(), cuts: 18, scale: 0.42,
+  b.setProperty('--dazzle-2',   dazzleURL({ ...band, w: 1440, h: 12, seed: sd.band2, cuts: 18, scale: 0.42,
                                             mix: { herring: .7, chevron: .3 } }));
-  b.setProperty('--dazzle-narrow', dazzleURL({ ...band, w: 40, h: 120, seed: s(), cuts: 8, scale: 0.9,
+  b.setProperty('--dazzle-narrow', dazzleURL({ ...band, w: 40, h: 120, seed: sd.narrow, cuts: 8, scale: 0.9,
                                             mix: { herring: .8, chevron: .2 } }));
   // The page-wide scheme, drawn in translucent white so the page colour carries
   // it and the surfaces stacked on top can let it through. How strong it is and
   // how big the plates are belong to the band — see the design settings. This
   // is the one surface big enough for the pinwheel to read.
-  const d = design;
-  b.setProperty('--dazzle-bg',  dazzleURL({ ...band, w: 1600, h: 1000, seed: s(), cuts: 11,
+  b.setProperty('--dazzle-bg',  dazzleURL({ ...band, w: 1600, h: 1000, seed: sd.bg, cuts: 11,
                                             scale: num(d.schemeScale, DESIGN_DEFAULTS.schemeScale),
                                             ink: `rgba(255,255,255,${num(d.schemeInk, DESIGN_DEFAULTS.schemeInk)})`,
                                             ground: 'rgba(0,0,0,0)',
                                             mix: { herring: .4, chevron: .2, wheel: .3, flat: .1 } }));
-  b.setProperty('--wet-beads',  svgURL(wetBeadsSVG(s())));
-  const chopSeed = s();
-  CHOP = chopField(chopSeed);
-  b.setProperty('--wet-chop',   svgURL(wetChopSVG(chopSeed)));
+  // The wet layer's own levels: how strong the drops are, how much colour they
+  // throw at their edges, and how strong the water lines are.
+  b.setProperty('--wet-beads',  svgURL(wetBeadsSVG(sd.beads, 360, 240,
+                                  Math.max(0, Math.min(1, num(d.beads, DESIGN_DEFAULTS.beads))),
+                                  Math.max(0, Math.min(1, num(d.fringe, DESIGN_DEFAULTS.fringe))))));
+  const alpha = +(0.34 * Math.max(0, Math.min(1, num(d.chopInk, DESIGN_DEFAULTS.chopInk)))).toFixed(3);
+  CHOP = { ...chopField(sd.chop), alpha };
+  b.setProperty('--wet-chop',   svgURL(wetChopSVG(sd.chop, 480, 168, alpha)));
   // The player's wake canvas draws the same swell live, so it repaints with it.
   window.dispatchEvent(new Event('dz-painted'));
 }
@@ -652,6 +671,10 @@ const DESIGN_DEFAULTS = {
   veil:        0.86,     // how much the song page blacks out what's behind it
   schemeInk:   0.07,     // strength of the generated background scheme
   schemeScale: 2.2,      // how big its plates and stripes are
+  plateWhite:  1,        // how white the white of the bands and plates is (dazzle theme)
+  beads:       1,        // strength of the water drops
+  fringe:      1,        // how much colour the drops throw at their edges
+  chopInk:     1,        // strength of the water lines
   accent:      '',       // '' keeps the stylesheet's own
   bgImage:     '',
   bgFit:       'cover',  // or 'tile'
@@ -1738,6 +1761,14 @@ document.body.insertAdjacentHTML('beforeend', `
           <input type="range" id="dgInk" min="0" max="30" value="7" /></label>
         <label>Pattern scale <span class="dz-val" id="dgScaleVal">2.2</span>
           <input type="range" id="dgScale" min="5" max="60" value="22" /></label>
+        <label class="dz-only" hidden>Plate whites <span class="dz-val" id="dgPlateVal">100%</span>
+          <input type="range" id="dgPlate" min="20" max="100" value="100" /></label>
+        <label class="dz-only" hidden>Water drops <span class="dz-val" id="dgBeadsVal">100%</span>
+          <input type="range" id="dgBeads" min="0" max="100" value="100" /></label>
+        <label class="dz-only" hidden>Drop colour <span class="dz-val" id="dgFringeVal">100%</span>
+          <input type="range" id="dgFringe" min="0" max="100" value="100" /></label>
+        <label class="dz-only" hidden>Water lines <span class="dz-val" id="dgChopVal">100%</span>
+          <input type="range" id="dgChop" min="0" max="100" value="100" /></label>
       </div>
 
       <label style="margin-top:12px">Background image <span class="hint">optional — an https:// address</span></label>
@@ -2184,6 +2215,10 @@ const DG = {
   veil:        ['dgVeil',      v => v / 100, v => Math.round(v * 100) + '%'],
   schemeInk:   ['dgInk',       v => v / 100, v => Math.round(v * 100) + '%'],
   schemeScale: ['dgScale',     v => v / 10,  v => v.toFixed(1)],
+  plateWhite:  ['dgPlate',     v => v / 100, v => Math.round(v * 100) + '%'],
+  beads:       ['dgBeads',     v => v / 100, v => Math.round(v * 100) + '%'],
+  fringe:      ['dgFringe',    v => v / 100, v => Math.round(v * 100) + '%'],
+  chopInk:     ['dgChop',      v => v / 100, v => Math.round(v * 100) + '%'],
   bgOpacity:   ['dgBgOpacity', v => v / 100, v => Math.round(v * 100) + '%'],
   bgBlur:      ['dgBgBlur',    v => v,       v => Math.round(v) + 'px'],
 };
@@ -2201,6 +2236,10 @@ function designToControls(d){
   $('dgVeil').value       = Math.round(num(d.veil, baseVeil()) * 100);
   $('dgInk').value        = Math.round(num(d.schemeInk, DESIGN_DEFAULTS.schemeInk) * 100);
   $('dgScale').value      = Math.round(num(d.schemeScale, DESIGN_DEFAULTS.schemeScale) * 10);
+  $('dgPlate').value      = Math.round(num(d.plateWhite, DESIGN_DEFAULTS.plateWhite) * 100);
+  $('dgBeads').value      = Math.round(num(d.beads, DESIGN_DEFAULTS.beads) * 100);
+  $('dgFringe').value     = Math.round(num(d.fringe, DESIGN_DEFAULTS.fringe) * 100);
+  $('dgChop').value       = Math.round(num(d.chopInk, DESIGN_DEFAULTS.chopInk) * 100);
   $('dgBgOpacity').value  = Math.round(num(d.bgOpacity, DESIGN_DEFAULTS.bgOpacity) * 100);
   $('dgBgBlur').value     = Math.round(num(d.bgBlur, 0));
   $('dgBgImage').value    = d.bgImage || '';
@@ -2227,6 +2266,9 @@ function openDesign(){
   designBefore = { ...design };
   designToControls(design);
   designLabels();
+  // The plate, drop and water levels belong to the dazzle theme; on any other
+  // band they would do nothing, so they stay out of the panel.
+  document.querySelectorAll('#designModal .dz-only').forEach(el => { el.hidden = document.body.dataset.theme !== 'dazzle'; });
   $('designFor').textContent = `Applies to every page of ${curBandTitle || curBand}, for everyone in the band.`;
   $('designErr').textContent = ''; $('designStatus').textContent = '';
   $('designModal').classList.add('open');
@@ -2237,7 +2279,7 @@ function closeDesign(revert){
   $('designModal').classList.remove('open');
 }
 on('adminDesignGo', 'click', () => { closeAdmin(); openDesign(); });
-['dgSurface','dgVeil','dgInk','dgScale','dgBgOpacity','dgBgBlur','dgBgImage','dgBgTile']
+['dgSurface','dgVeil','dgInk','dgScale','dgPlate','dgBeads','dgFringe','dgChop','dgBgOpacity','dgBgBlur','dgBgImage','dgBgTile']
   .forEach(id => on(id, 'input', designPreview));
 on('dgAccent', 'input', () => { $('dgAccent').dataset.unset = '0'; designPreview(); });
 on('dgAccentClear', 'click', () => {

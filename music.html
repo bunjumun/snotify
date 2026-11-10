@@ -79,8 +79,8 @@
     clip-path: polygon(0 0, 100% 50%, 0 100%); opacity: .85; transition: opacity .12s;
     filter: drop-shadow(0 0 3px var(--bg, #000)); }
   .song:hover .splay::after, .song .splay:focus-visible::after, .song.active .splay::after { opacity: 1; }
-  .song.playing .splay::after { width: 36px; height: 46px; clip-path: none; opacity: 1;
-    background: linear-gradient(90deg, currentColor 0 34%, transparent 34% 66%, currentColor 66%); }
+  .song.playing .splay::after { width: 36px; height: 46px; opacity: 1; background: currentColor;
+    clip-path: polygon(0 0, 33% 0, 33% 100%, 0 100%, 0 0, 67% 0, 100% 0, 100% 100%, 67% 100%, 67% 0); }
   /* The play button takes the place of the track number, so there is one thing in that slot. */
   .song .idx { visibility: hidden; }
   body.editing .song .splay { display: none; }

@@ -554,6 +554,13 @@ body[data-theme="dazzle"] .drawer h3 {
   word-spacing: -.12em;
 }
 body[data-theme="dazzle"] header.app h1 { font-size: 21px; letter-spacing: .02em; }
+/* Page titles only, Lakehorse only (this whole block is the dazzle theme): the
+   zebra-print face he supplied. Falls back to Orbitron until it loads. */
+@font-face { font-family: "101 Zebra Print"; font-weight: 400; font-style: normal; font-display: swap;
+  src: url("fonts/101ZebraPrint-GlGg.ttf") format("truetype"); }
+body[data-theme="dazzle"] header.app h1 {
+  font-family: "101 Zebra Print", var(--font-display); font-weight: 400; word-spacing: 0; letter-spacing: .02em; font-size: 26px;
+}
 body[data-theme="dazzle"] .door h2      { font-size: 15px; letter-spacing: .01em; line-height: 1.25; }
 body[data-theme="dazzle"] .modal h2     { font-size: 14px; letter-spacing: .02em; }
 body[data-theme="dazzle"] .drawer h3    { font-size: 13px; letter-spacing: .02em; }

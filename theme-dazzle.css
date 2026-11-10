@@ -713,3 +713,16 @@ body[data-theme="dazzle"] .song:hover .splay::after,
 body[data-theme="dazzle"] .song.playing .splay::after {
   left: calc(50% + 1px); width: 13px; height: 16px; opacity: 1; filter: none;
 }
+
+/* ---------- A camouflage of its own on every door (CR-181) ---------- */
+/* paintDoors() in core.js writes --door-band and --door-glyph on each door from
+   its name; the page-wide scheme stays as the fallback for a door it has not
+   reached. Same shapes and sizes as before, a different paint on each. */
+body[data-theme="dazzle"] .door::before {
+  background: var(--door-band, var(--dazzle)) center / 100% 100% no-repeat;
+}
+body[data-theme="dazzle"] .door .glyph {
+  background:
+    radial-gradient(circle, #08080a 0 17px, #fff 17px 18px, transparent 18.5px),
+    var(--door-glyph, var(--dazzle-narrow)) center / 100% 100% no-repeat;
+}

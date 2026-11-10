@@ -649,6 +649,7 @@ function paintDazzle(){
   CHOP = { ...chopField(sd.chop), alpha };
   b.setProperty('--wet-chop',   svgURL(wetChopSVG(sd.chop, 480, 168, alpha)));
   // The player's wake canvas draws the same swell live, so it repaints with it.
+  paintDoors();
   window.dispatchEvent(new Event('dz-painted'));
 }
 
@@ -662,7 +663,7 @@ function paintDazzle(){
 // plate, and the result is cached by name, size and that level so a re-render
 // of the list does not redraw them.
 const dzBadgeCache = new Map();
-function dazzleBadge(key, w = 56, h = 72){
+function dazzleBadge(key, w = 56, h = 72, opts = {}){
   const pw = Math.max(0.15, Math.min(1, num(design.plateWhite, DESIGN_DEFAULTS.plateWhite)));
   const g = Math.round(8 + (255 - 8) * pw);
   const ck = key + '|' + w + 'x' + h + '|' + g;
@@ -671,10 +672,29 @@ function dazzleBadge(key, w = 56, h = 72){
     let hash = 2166136261;
     for (let i = 0; i < key.length; i++){ hash ^= key.charCodeAt(i); hash = Math.imul(hash, 16777619); }
     u = dazzleURL({ look: 'naval', tones: 3, ink: `rgb(${g},${g},${g})`, w, h, seed: hash >>> 0,
-                    cuts: 5, scale: 1.1, mix: { herring: .5, chevron: .25, wheel: .2, flat: .05 } });
+                    cuts: 5, scale: 1.1, mix: { herring: .5, chevron: .25, wheel: .2, flat: .05 }, ...opts });
     dzBadgeCache.set(ck, u);
   }
   return u;
+}
+
+// Each door gets camouflage of its own (CR-181), for the band across its top and
+// for the tile its icon sits on. They used to share the page's one band and one
+// tile scheme, so five doors in a row wore the same paint. The seed is the
+// door's name, so a door keeps its look between visits and the five differ.
+// Written as custom properties on the door, which the theme's rules read with
+// the page-wide scheme as the fallback.
+function paintDoors(){
+  if (document.body.dataset.theme !== 'dazzle') return;
+  document.querySelectorAll('.door').forEach(el => {
+    const h = el.querySelector('h2');
+    const key = el.id || (h && h.textContent.trim()) || '';
+    if (!key) return;
+    el.style.setProperty('--door-band', dazzleBadge(key + '|band', 360, 14,
+      { cuts: 7, scale: 0.95, mix: { herring: .55, chevron: .3, flat: .15 } }));
+    el.style.setProperty('--door-glyph', dazzleBadge(key + '|tile', 62, 62,
+      { cuts: 6, scale: 0.6, mix: { herring: .5, chevron: .25, wheel: .2, flat: .05 } }));
+  });
 }
 
 // ---------- Page design ----------

@@ -148,10 +148,13 @@ body[data-theme="dazzle"] .todo-dot.resolved { background: #fff; border: 2px sol
 body[data-theme="dazzle"] .wavewrap {
   /* A very slight cool cast on the water, so the white linework and the
      things sailing on it read as objects ON the sea rather than as more of the
-     same ink. CR-181 laid the chop over it: long wavelets that glint only where
-     they face the light, which is what dark water looks like from above. */
+     same ink. CR-181 laid the chop over it: evenly spaced hairlines pushed up and
+     down by a swell, drawn in the manner of the Image line displacer. On the
+     player the same lines are drawn live on the wake canvas, so they can part
+     around the ship, and that sets --chop-layer: none here so they are not
+     drawn twice. */
   background:
-    var(--wet-chop, none) 0 0 / 480px 160px repeat,
+    var(--chop-layer, var(--wet-chop, none)) 0 0 / 480px 168px repeat,
     linear-gradient(180deg, rgba(88,142,196,.16) 0%, rgba(46,92,146,.10) 45%, rgba(10,26,48,.30) 100%),
     linear-gradient(180deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,.01) 45%, rgba(0,0,0,.34) 100%);
   border-radius: var(--radius);

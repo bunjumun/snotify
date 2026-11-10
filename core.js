@@ -465,10 +465,11 @@ const dazzleURL = (opts) =>
 // thing that makes iOS Safari quietly stop painting layers (see the note on
 // background-attachment in theme-dazzle.css).
 //   beads  water standing on the paint: a lit dome with a dark underside
-//   chop   long low wavelets that only glint where they face the light
-// The beads and the chop come out of feTurbulence, tiled with stitchTiles so
-// the repeat has no visible seam. The lighting uses a gentle height map and a
-// steep shape mask, which is what makes a bead a dome and not a flat blot.
+//   chop   hairlines displaced by a swell, in the manner of the line displacer
+// The beads come out of feTurbulence, tiled with stitchTiles so the repeat has
+// no visible seam. The lighting uses a gentle height map and a steep shape
+// mask, which is what makes a bead a dome and not a flat blot. The chop is
+// plain paths: see wetChopSVG().
 const svgURL = (svg) => `url("data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, '%27')}")`;
 
 function wetBeadsSVG(seed, w = 360, h = 240){
@@ -488,14 +489,98 @@ function wetBeadsSVG(seed, w = 360, h = 240){
     + `<rect width="${w}" height="${h}" filter="url(#b)"/></svg>`;
 }
 
-function wetChopSVG(seed, w = 480, h = 160){
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs>`
-    + `<filter id="c" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">`
-    + `<feTurbulence type="fractalNoise" baseFrequency=".012 .07" numOctaves="3" seed="${(seed % 997) + 1}" stitchTiles="stitch" result="n"/>`
-    + `<feColorMatrix in="n" type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1 0 0 0 0" result="h"/>`
-    + `<feSpecularLighting in="h" surfaceScale="10" specularConstant=".9" specularExponent="36" lighting-color="#d6eef2">`
-    + `<feDistantLight azimuth="270" elevation="26"/></feSpecularLighting></filter></defs>`
-    + `<rect width="${w}" height="${h}" filter="url(#c)" opacity=".5"/></svg>`;
+// The chop, as line art (CR-181). It began as a lit feTurbulence raster, which
+// read as photographic water glints; he asked for line art in the manner of his
+// Image line displacer (tools/line-displacer.html), which redraws a picture as
+// evenly spaced horizontal hairlines pushed up and down by how dark each pixel
+// is. The picture here is a swell: a smooth field of three sines in place of
+// pixel values, so the lines bunch and part the way water seen from above does,
+// in the same one-pixel pen as the rest of the look. It is plain paths with no
+// filter, so it is also cheaper than what it replaced.
+// Seamless by construction. The field is built from whole numbers of waves
+// across the width and down the height, so it repeats exactly at both edges, and
+// one line either side of the tile is drawn as well, because a line displaced
+// past the top or bottom edge is otherwise cut off where its neighbour tile
+// would have carried it on.
+// The swell is a function (chopField) so that two things can share it: the SVG
+// tile below, which is what the water looks like at rest, and drawChopLines(),
+// which draws the same lines live on the player's wake canvas so that they can
+// part around the ship (CR-181). Same seed, same field, so there is no jump
+// between the two.
+let CHOP = null;                    // the swell this page was painted with; null on a band without the theme
+let chopCount = 0;                   // which swell, so a page can tell it has been repainted with a new one
+function chopField(seed, w = 480, h = 168){
+  const r = rng(seed), gap = 6, amp = 6.4, TAU = Math.PI * 2;
+  const mx = [1 + Math.floor(r() * 2), 3 + Math.floor(r() * 2), 6 + Math.floor(r() * 3)];   // waves across w
+  const my = [1 + Math.floor(r() * 2), 1 + Math.floor(r() * 2), 1];                           // waves down h
+  const ph = mx.map(() => r() * TAU), wt = [0.5, 0.32, 0.18];
+  const field = (x, y) => mx.reduce((v, m, i) => v + wt[i] * Math.sin(TAU * (m * x / w + my[i] * y / h) + ph[i]), 0);
+  return { w, h, gap, amp, field, n: ++chopCount };
+}
+function wetChopSVG(seed, w = 480, h = 168){
+  const { gap, amp, field } = chopField(seed, w, h), step = 10;
+  let d = '';
+  for (let k = -1; k <= h / gap; k++){
+    const y0 = (k + 0.5) * gap;
+    for (let x = 0; x <= w; x += step)
+      d += (x ? 'L' : 'M') + x + ',' + (y0 + amp * field(x, y0)).toFixed(1);
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
+       + `<path d="${d}" fill="none" stroke="#d6eef2" stroke-opacity=".34" stroke-width="1" stroke-linejoin="round"/></svg>`;
+}
+
+// The lines, drawn live, and parted by the ship. One path and one stroke for
+// the whole field, because a stroke per line would be ~30 draw calls a tick.
+// The field is sampled into an array first and the ship then touches only the
+// few points near her.
+// S is null with no ship on the water, else { nose, y, pathY(x) }: the ship's
+// nose in canvas pixels, her current line, and a function giving the line she
+// was on when she passed any x behind her. k scales her parting for the deeper
+// water on a song's own page, where the ship is nearly twice the size.
+// The parting. Each line is pushed away from her line by a smooth odd bump,
+// f(u) = 1.65 u e^(-u^2/2), which is zero on the centreline and peaks at one
+// width either side. Because it is a push away from the centre it never lets
+// two lines cross (the slope of x + A f(x / s) stays positive while A / s is
+// under about .6), so the field stays a set of separate lines rather than a
+// tangle. Three zones along her track: a bow wave ahead of the nose that builds
+// as she comes on, full parting along the hull, and a wake astern that fades
+// and widens as it ages, which is the water closing back up behind her.
+// (The buoys were given a bulge and rings of their own, then taken out again:
+// he asked for them gone to save load time.)
+const bump = (u) => 1.65 * u * Math.exp(-u * u / 2);
+function drawChopLines(ctx, W, H, S, k = 1){
+  if (!CHOP) return;
+  const { gap, amp, field } = CHOP, step = 8;
+  const nx = Math.floor(W / step) + 2;
+  const rows = []; for (let y0 = -gap / 2; y0 <= H + gap; y0 += gap) rows.push(y0);
+  const ys = new Float32Array(rows.length * nx);
+  for (let li = 0; li < rows.length; li++)
+    for (let i = 0; i < nx; i++) ys[li * nx + i] = rows[li] + amp * field(i * step, rows[li]);
+
+  if (S){
+    const bow = 34 * k, hull = 44 * k, run = 150 * k, A0 = 7 * k;
+    const i0 = Math.max(0, Math.floor((S.nose - hull - run) / step)), i1 = Math.min(nx - 1, Math.ceil((S.nose + bow) / step));
+    for (let i = i0; i <= i1; i++){
+      const d = S.nose - i * step;                   // + behind the nose, - ahead of it
+      if (d <= -bow || d >= hull + run) continue;
+      let a, sig, yc = S.y;
+      if (d < 0){ a = (1 + d / bow) * (1 + d / bow); sig = 8 * k; }
+      else if (d <= hull){ a = 1; sig = 8 * k; }
+      else { const age = (d - hull) / run; a = Math.pow(1 - age, 1.6); sig = (8 + 18 * age) * k; yc = S.pathY(i * step); }
+      for (let li = 0; li < rows.length; li++){
+        const idx = li * nx + i;
+        ys[idx] += A0 * a * bump((ys[idx] - yc) / sig);
+      }
+    }
+  }
+
+  ctx.beginPath();
+  for (let li = 0; li < rows.length; li++)
+    for (let i = 0; i < nx; i++){
+      const x = i * step, y = ys[li * nx + i];
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+  ctx.stroke();
 }
 
 function paintDazzle(){
@@ -526,7 +611,11 @@ function paintDazzle(){
                                             ground: 'rgba(0,0,0,0)',
                                             mix: { herring: .4, chevron: .2, wheel: .3, flat: .1 } }));
   b.setProperty('--wet-beads',  svgURL(wetBeadsSVG(s())));
-  b.setProperty('--wet-chop',   svgURL(wetChopSVG(s())));
+  const chopSeed = s();
+  CHOP = chopField(chopSeed);
+  b.setProperty('--wet-chop',   svgURL(wetChopSVG(chopSeed)));
+  // The player's wake canvas draws the same swell live, so it repaints with it.
+  window.dispatchEvent(new Event('dz-painted'));
 }
 
 // ---------- Page design ----------

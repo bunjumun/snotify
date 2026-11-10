@@ -12,7 +12,7 @@
 <!-- Palette, page frame, modals, gate, comment drawer — shared with art.html -->
 <link rel="stylesheet" href="core.css?v=37" />
 <!-- Per-band themes, each scoped to body[data-theme=…] (see BAND_THEME in core.js) -->
-<link rel="stylesheet" href="theme-dazzle.css?v=39" />
+<link rel="stylesheet" href="theme-dazzle.css?v=40" />
 <style>
   /* Player-only surface: the song list, the version menu, the waveform dock
      and the transport. Everything this page shares with Sn'art is in core.css. */
@@ -2020,7 +2020,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=68"></script>
+<script src="core.js?v=69"></script>
 <!-- The two checklists and the arithmetic. No DOM, no network; it throws at
      load if the weights stop summing to 100, which is deliberate. -->
 <script src="progress.js?v=17"></script>
@@ -4809,12 +4809,14 @@ function steerTo(prog){
 }
 
 let wakeTrail = [];                 // recent {x, y} in wavewrap pixels
+let chopShip = null, partPath = [];  // for the water lines to part round her (CR-181)
+let chopCv = null, chopSig = '', chopLayerOff = false;   // the lines are cached: see drawWake
 let helmY = null, lastProg = null;  // the helm eases; it does not snap
 function moveRiders(w){
   const boat = $('boat'), horse = $('horse');
   if (!boat && !horse) return;
   const dur = w ? w.getDuration() : 0;
-  if (!dur){ [boat, horse].forEach(el => el && (el.style.opacity = '0')); wakeTrail = []; drawWake(); return; }
+  if (!dur){ [boat, horse].forEach(el => el && (el.style.opacity = '0')); wakeTrail = []; chopShip = null; partPath = []; drawWake(); return; }
   const prog = Math.min(1, Math.max(0, w.getCurrentTime() / dur));
   const plan = num('--wave-caps', 0) === 1;       // themed player: the view from above
   let y;
@@ -4865,8 +4867,28 @@ function moveRiders(w){
 
   if (plan){
     const wrap = $('wavewrap').getBoundingClientRect();
+    if (!wakeTrail.length) partPath = [];          // a seek: forget where she was
     wakeTrail.push({ x: prog * wrap.width, y });
     if (wakeTrail.length > 46) wakeTrail.shift();
+    // Where she has been, a point every few pixels (the wake trail above spans
+    // only a few pixels of the track, which is no use for a wake that has to
+    // reach back a hundred or more). The nose sits sixteen pixels ahead of the
+    // playhead on the small ship and thirty on the big one.
+    const sx = prog * wrap.width, kk = profiling ? 1.9 : 1;
+    const lp = partPath[partPath.length - 1];
+    if (!lp || Math.abs(sx - lp.x) >= 3){ partPath.push({ x: sx, y }); if (partPath.length > 130) partPath.shift(); }
+    chopShip = {
+      nose: sx + 16 * kk, y,
+      pathY: (x) => {
+        const p = partPath;
+        if (!p.length || x <= p[0].x) return p.length ? p[0].y : y;
+        if (x >= p[p.length - 1].x) return y;
+        let lo = 0, hi = p.length - 1;
+        while (hi - lo > 1){ const mid = (lo + hi) >> 1; if (p[mid].x <= x) lo = mid; else hi = mid; }
+        const t = (x - p[lo].x) / ((p[hi].x - p[lo].x) || 1);
+        return p[lo].y + (p[hi].y - p[lo].y) * t;
+      }
+    };
     drawWake();
   }
   hailBuoys(w.getCurrentTime());
@@ -4885,6 +4907,31 @@ function drawWake(){
   const ctx = cv.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, wrap.width, wrap.height);
+  // The water itself, when the theme has one: the line-art chop, drawn live so
+  // it can part for the ship. The CSS tile is switched off while this draws, so
+  // the same lines are never there twice.
+  // Drawn into a cache and only redrawn when something that shapes it has moved
+  // by a whole pixel or changed (the ship, the size of the water, the swell).
+  // She crosses the track at a few pixels a second, so that is a handful of
+  // redraws a second rather than one on every tick of the player, and the rest
+  // of the ticks are a plain copy of the cached image. The player must not pay
+  // for the water.
+  if (CHOP){
+    const sig = (chopShip ? Math.round(chopShip.nose) + ':' + Math.round(chopShip.y) : '-') + '|'
+              + cv.width + 'x' + cv.height + '|' + CHOP.n + '|' + (profiling ? 1 : 0);
+    if (sig !== chopSig){
+      chopSig = sig;
+      if (!chopCv) chopCv = document.createElement('canvas');
+      if (chopCv.width !== cv.width || chopCv.height !== cv.height){ chopCv.width = cv.width; chopCv.height = cv.height; }
+      const c2 = chopCv.getContext('2d');
+      c2.setTransform(dpr, 0, 0, dpr, 0, 0);
+      c2.clearRect(0, 0, wrap.width, wrap.height);
+      c2.strokeStyle = 'rgba(214,238,242,.34)'; c2.lineWidth = 1; c2.lineJoin = 'round';
+      drawChopLines(c2, wrap.width, wrap.height, chopShip, profiling ? 1.9 : 1);
+    }
+    ctx.drawImage(chopCv, 0, 0, wrap.width, wrap.height);
+    if (!chopLayerOff){ $('wavewrap').style.setProperty('--chop-layer', 'none'); chopLayerOff = true; }
+  }
   if (wakeTrail.length < 2) return;
   const n = wakeTrail.length;
   ctx.lineCap = 'round';
@@ -4901,6 +4948,11 @@ function drawWake(){
     ctx.beginPath(); ctx.moveTo(a.x, a.y + spread); ctx.lineTo(b.x, b.y + spread * 0.86); ctx.stroke();
   }
 }
+
+// The water is drawn even with nothing sailing, and again whenever the page is
+// repainted (a new swell) or the water changes size (the song page is deeper).
+window.addEventListener('dz-painted', () => { try { drawWake(); } catch (e) { /* page not up yet; the resize watcher below draws it */ } });
+if ('ResizeObserver' in window && $('wavewrap')) new ResizeObserver(() => drawWake()).observe($('wavewrap'));
 
 // As the ship reaches a buoy, the buoy says its piece for a few seconds. Only
 // on the way past — seeking backwards rearms them rather than firing them all.

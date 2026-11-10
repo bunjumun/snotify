@@ -644,12 +644,15 @@ body[data-theme="dazzle"] textarea {
    where they happen to exist (var() fallbacks). Nothing here may take a click or
    cover a control: fixed, click-through, and placed by script into free space. */
 .dzban {
-  position: fixed; left: 0; right: 0; height: 64px; z-index: 51;
-  pointer-events: none; overflow: hidden;
+  position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top, 0px) + 6px); height: 64px; z-index: 51;
+  pointer-events: none; overflow: hidden; opacity: 1;
 }
+/* Fully visible at page load, fully transparent two minutes later. */
+@keyframes dzban-fade { from { opacity: 1; } to { opacity: 0; } }
 .dzban-fly {
   position: absolute; left: 0; top: 11px; display: flex; align-items: center;
   will-change: transform; animation: dzban-fly 60s linear infinite;
+  pointer-events: auto; cursor: pointer;   /* tap the craft to dismiss */
 }
 /* Right to left, then a short pause off screen before the next pass. */
 @keyframes dzban-fly {

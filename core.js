@@ -816,59 +816,36 @@ function showGate(bandSlug, hard = true, bandTitle = null){
   syncBanner();
 }
 
-// ---------- The login banner (CR-182) ----------
-// A spaceship tows a strip of recent site updates across the gate, like a
-// banner behind a plane. Three rules shaped it, the first of which he gave
-// outright: it must not block anything.
-//   1. It is only ever painted in free space. The gate's box is measured and
-//      the banner flies below it, or above it if that is where the room is, and
-//      is hidden when neither has room (a short landscape phone) or when any
-//      other dialog is open (the admin one, say). It is re-measured on resize
-//      and whenever the box changes height, which it does between the band-name
-//      step and the password step. On top of that it is click-through
-//      (pointer-events: none), fixed (so it can never shift the layout) and
-//      aria-hidden (a moving ticker read aloud is noise).
-//   2. It flies right to left. The ship leads and the text trails behind it, so
-//      the first words go past first and the line reads in the right order.
-//      Flown left to right, the viewer would meet the END of the sentence first.
-//   3. It shows on every gate, not only a Lakehorse-themed one. On a cold load
-//      the band is not known and the theme is not applied yet, so tying it to
-//      the theme would mean no banner at page load, which is the one moment it
-//      is wanted. The ship and strip carry their own colours for that reason.
-// The updates are a static file, updates.json at the repo root, because the
-// gate is pre-login (a Supabase table would need a migration and a public
-// policy) and because a one-line file is the cheapest thing to keep current.
-// Everything from it goes in through textContent, never innerHTML.
-const BANNER = { speed: 70, max: 8, h: 64 };      // px per second, entries, box height
-let bannerEl = null, bannerBusy = false, bannerLoad = null, bannerRO = null;
+// ---------- The updates banner (CR-182, moved after login in CR-197) ----------
+// A spaceship tows a strip of recent site updates across the top of the screen,
+// like a banner behind a plane. It used to fly over the login gate; it now
+// belongs to the first page you land on once logged in (index.html) and to the
+// music player (music.html), and shows only what concerns the logged-in band.
+//   * Per band: an entry in updates.json may carry "b": "lakehorse" (or a list
+//     of slugs) and then shows only to those bands. No "b" means the whole site.
+//   * Once per page load, never on the gate, never on a shared-mix page.
+//   * Click it (any part) and it goes. Left alone it fades from fully visible at
+//     load to fully transparent at BANNER.fade ms, then removes itself.
+//   * Click-through everywhere except the craft itself, fixed, aria-hidden.
+// Everything from updates.json goes in through textContent, never innerHTML.
+const BANNER = { speed: 70, max: 8, fade: 120000 };   // px/s, entries, ms to invisible
+const BANNER_PAGES = /(^|\/)(index\.html|music\.html)?$/;
+let bannerEl = null, bannerDone = false, bannerBusy = false, bannerLoad = null, bannerT0 = performance.now();
 
 function bannerUpdates(){
   if (!bannerLoad) bannerLoad = fetch('updates.json', { cache: 'no-cache' })
     .then(r => r.ok ? r.json() : [])
-    .then(l => (Array.isArray(l) ? l : []).filter(u => u && typeof u.t === 'string' && u.t).slice(0, BANNER.max))
+    .then(l => Array.isArray(l) ? l.filter(u => u && typeof u.t === 'string' && u.t) : [])
     .catch(() => []);
   return bannerLoad;
 }
-const bannerWanted = () => {
-  const gate = $('gateModal');
-  return !!gate && gate.classList.contains('open')
-      && !document.querySelector('.modal-back.open:not(#gateModal)');
-};
-function bannerPlace(){
-  if (!bannerEl) return;
-  const m = document.querySelector('#gateModal .modal');
-  const r = m ? m.getBoundingClientRect() : { top: 0, bottom: 0 };
-  const vh = window.innerHeight, H = BANNER.h, gap = 20, hullBand = 52;
-  const below = vh - 16 - (r.bottom + gap), above = r.top - gap - hullBand;
-  let top = null;
-  if (below >= H) top = r.bottom + gap + Math.min(70, (below - H) / 2);
-  else if (above >= H) top = hullBand + (above - H) / 2;
-  bannerEl.style.display = top === null ? 'none' : '';
-  if (top !== null) bannerEl.style.top = Math.round(top) + 'px';
+const bannerForBand = (u, band) => !u.b || [].concat(u.b).map(bandSlugOf).includes(band);
+function bannerHide(){
+  bannerDone = true;
+  if (bannerEl){ bannerEl.remove(); bannerEl = null; }
 }
 function bannerTime(){
-  // Same speed whatever the length: the strip is as long as its text, so the
-  // trip is (screen + craft) / speed. A tenth of each loop is spent off screen.
+  // Same speed whatever the length: the trip is (screen + craft) / speed.
   const fly = bannerEl && bannerEl.firstChild;
   if (fly) fly.style.animationDuration = (((window.innerWidth + fly.offsetWidth) / BANNER.speed) / 0.9).toFixed(1) + 's';
 }
@@ -906,34 +883,34 @@ function bannerBuild(list){
     text.append(when, ' ' + u.t);
   });
   strip.appendChild(text); fly.appendChild(strip); el.appendChild(fly);
+  fly.addEventListener('click', bannerHide);
   return el;
 }
+// Called whenever a page unlocks or locks. Idempotent: it builds the banner at
+// most once per page load.
 async function syncBanner(){
-  if (!bannerWanted()){
-    if (bannerEl){ bannerEl.remove(); bannerEl = null; }
-    if (bannerRO){ bannerRO.disconnect(); bannerRO = null; }
-    return;
-  }
-  if (bannerEl) return bannerPlace();
-  if (bannerBusy) return;
+  if (document.body.classList.contains('locked')){ if (bannerEl) bannerHide(); bannerDone = false; bannerT0 = performance.now(); return; }
+  if (bannerEl || bannerDone || bannerBusy) return;
+  if (!BANNER_PAGES.test(location.pathname)) return;
+  const band = curBand;
+  if (!band || !isAuthed(band) || document.body.classList.contains('shared') || document.body.classList.contains('singlemix')) return;
   bannerBusy = true;
-  const list = await bannerUpdates();
+  const list = (await bannerUpdates()).filter(u => bannerForBand(u, band)).slice(0, BANNER.max);
   bannerBusy = false;
-  // The gate may have closed while the file was on its way.
-  if (!list.length || !bannerWanted() || bannerEl) return;
+  if (!list.length || bannerEl || bannerDone || document.body.classList.contains('locked')) return;
+  bannerDone = true;
   bannerEl = bannerBuild(list);
+  // Fully visible at load, fully gone BANNER.fade after it: a negative delay
+  // makes the fade count from page load, not from when the file arrived.
+  const used = performance.now() - bannerT0;
+  bannerEl.style.animation = `dzban-fade ${BANNER.fade}ms linear ${-used}ms forwards`;
   document.body.appendChild(bannerEl);
-  bannerTime(); bannerPlace();
-  const m = document.querySelector('#gateModal .modal');
-  if (m && 'ResizeObserver' in window){ bannerRO = new ResizeObserver(bannerPlace); bannerRO.observe(m); }
+  bannerTime();
+  const el = bannerEl;
+  setTimeout(() => { if (bannerEl === el) bannerHide(); }, Math.max(0, BANNER.fade - used));
   if (document.fonts) document.fonts.ready.then(() => { if (bannerEl) bannerTime(); });
 }
-window.addEventListener('resize', () => { if (bannerEl){ bannerPlace(); bannerTime(); } });
-// Dialogs open and close from a dozen places (a backdrop click, a Close
-// button, the gate itself), so rather than hook each one the banner watches
-// their class and follows whichever is open. Idempotent, so extra calls are free.
-document.querySelectorAll('.modal-back').forEach(el =>
-  new MutationObserver(() => syncBanner()).observe(el, { attributes: true, attributeFilter: ['class'] }));
+window.addEventListener('resize', () => { if (bannerEl) bannerTime(); });
 
 // Step 1: resolve the typed band name.
 async function gateNext(){
@@ -1109,8 +1086,8 @@ async function adminShowLoggedOut(){
     $('adminPass').value = ''; $('adminLoginErr').textContent = '';
   }
 }
-function openAdmin(){ $('adminModal').classList.add('open'); adminShowLoggedOut(); syncBanner(); }
-function closeAdmin(){ $('adminModal').classList.remove('open'); syncBanner(); }
+function openAdmin(){ $('adminModal').classList.add('open'); adminShowLoggedOut(); }
+function closeAdmin(){ $('adminModal').classList.remove('open'); }
 async function adminDoSetup(){
   const password = $('adminSetupPass').value;
   const question = $('adminSetupQ').value.trim();

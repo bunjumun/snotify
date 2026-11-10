@@ -811,8 +811,7 @@ function showGate(bandSlug, hard = true, bandTitle = null){
 // belongs to the first page you land on once logged in (index.html) and to the
 // music player (music.html), and shows only what concerns the logged-in band.
 //   * Landing page: every entry in updates.json. Music player: only entries
-//     tagged "p": 1 (about the player) or "s": "<song title>" (that song is in
-//     the open library).
+//     tagged "p": 1 (about the player).
 //   * Once per page load, never on the gate, never on a shared-mix page.
 //   * Click it (any part) and it goes. Left alone it fades from fully visible at
 //     load to fully transparent at BANNER.fade ms, then removes itself.
@@ -830,12 +829,12 @@ function bannerUpdates(){
   return bannerLoad;
 }
 // Landing page: every update. Music player: only the ones about the player
-// itself ("p": 1) or about a song in this library ("s": "<song title>").
+// itself ("p": 1). Interactive-player news (Jupiter Gold and so on) is not the
+// player's, so it stays on the landing page.
 const bannerFor = (u) => {
   if (!/music\.html$/.test(location.pathname)) return true;
   if (u.p) return true;
-  const have = (typeof songs !== 'undefined' && Array.isArray(songs)) ? songs : [];
-  return !!u.s && have.some(x => String(x && x.title || '').toLowerCase() === String(u.s).toLowerCase());
+  return false;
 };
 function bannerHide(){
   bannerDone = true;

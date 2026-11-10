@@ -836,6 +836,53 @@ const bannerFor = (u) => {
   if (u.p) return true;
   return false;
 };
+// The log, as the banner tells it. The music player's "What's new" drawer and
+// its per-song "Song log" are the same recent_updates feed; the banner reads it
+// too, so it can say what the drawer would.
+const BANNER_LOGDATE = (iso) => { const d = new Date(iso); return isNaN(d) ? '' :
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// The feed's song ids are database ids and the player's are path slugs, so a row
+// is matched the way the drawer does: by one of the song's version ids, else its title.
+const bannerIsSong = (u, song) => (u.version_id && (song.versions || []).some(v => v.id === u.version_id))
+  || String(u.song || '').toLowerCase() === String(song.title || '').toLowerCase();
+const BANNER_VERB = { song: 'new song', mix: 'new mix', comment: 'commented', resolved: 'resolved', log: 'log updated' };
+async function bannerLogItems(song){
+  let rows = [];
+  try { rows = await libRpc('recent_updates', { lim: song ? 80 : BANNER.max }); } catch {}
+  return (rows || []).filter(u => !song || bannerIsSong(u, song)).map(u => {
+    const cmt = u.kind === 'comment' || u.kind === 'resolved';
+    const verb = u.kind === 'comment' && u.parent_id ? 'replied' : (BANNER_VERB[u.kind] || 'updated');
+    const on = u.song && !song && u.kind !== 'song' && u.kind !== 'mix' ? ' on ' + u.song : '';
+    return { d: BANNER_LOGDATE(u.at), t: cmt
+      ? `${u.who ? u.who + ' ' : ''}${verb}${on}: ${u.label}`
+      : `${verb} ${u.label}` };
+  });
+}
+// Landing page: every update. Music player, all songs in view: the player's own
+// updates and the What's new log. One song open: only that song's log.
+async function bannerList(){
+  if (!/music\.html$/.test(location.pathname)) return (await bannerUpdates()).slice(0, BANNER.max);
+  const song = window.playerView ? window.playerView() : null;
+  bannerKey = song ? song.id : '';
+  if (song) return (await bannerLogItems(song)).slice(0, BANNER.max);
+  const site = (await bannerUpdates()).filter(bannerFor);
+  const log = await bannerLogItems(null);
+  return site.concat(log).sort((a, b) => String(b.d).localeCompare(String(a.d))).slice(0, BANNER.max);
+}
+let bannerKey = null;
+// The player's view changes under the banner (a song opens, or the list comes
+// back): re-tell it in place, keeping the same fade clock and the same craft.
+setInterval(async () => {
+  if (!bannerEl || !/music\.html$/.test(location.pathname)) return;
+  const song = window.playerView ? window.playerView() : null;
+  const key = song ? song.id : '';
+  if (key === bannerKey) return;
+  const el = bannerEl;
+  const list = await bannerList();
+  if (bannerEl !== el) return;
+  el.style.visibility = list.length ? '' : 'hidden';
+  if (list.length){ bannerFill(el.querySelector('.dzban-text'), list); bannerTime(); }
+}, 800);
 function bannerHide(){
   bannerDone = true;
   if (bannerEl){ bannerEl.remove(); bannerEl = null; }
@@ -845,8 +892,18 @@ function bannerTime(){
   const fly = bannerEl && bannerEl.firstChild;
   if (fly) fly.style.animationDuration = (((window.innerWidth + fly.offsetWidth) / BANNER.speed) / 0.9).toFixed(1) + 's';
 }
-function bannerBuild(list){
+function bannerFill(text, list){
   const MON = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  text.textContent = '';
+  list.forEach((u, i) => {
+    if (i){ const gem = document.createElement('i'); gem.className = 'dzban-gem'; text.appendChild(gem); }
+    const d = new Date(String(u.d || '') + 'T00:00:00');
+    const when = document.createElement('b');
+    when.textContent = isNaN(d) ? '' : `${d.getDate()} ${MON[d.getMonth()]}`;
+    text.append(when, ' ' + u.t);
+  });
+}
+function bannerBuild(list){
   const el = document.createElement('div');
   el.className = 'dzban'; el.setAttribute('aria-hidden', 'true');
   const fly = document.createElement('div'); fly.className = 'dzban-fly';
@@ -871,13 +928,7 @@ function bannerBuild(list){
   + `<svg class="dzban-tow" viewBox="0 0 30 30" width="30" height="30"><path d="M0 15 L30 1 M0 15 L30 29" stroke="#fff" stroke-opacity=".75" stroke-width="1" fill="none"/></svg>`;
   const strip = document.createElement('div'); strip.className = 'dzban-strip';
   const text = document.createElement('span'); text.className = 'dzban-text';
-  list.forEach((u, i) => {
-    if (i){ const gem = document.createElement('i'); gem.className = 'dzban-gem'; text.appendChild(gem); }
-    const d = new Date(String(u.d || '') + 'T00:00:00');
-    const when = document.createElement('b');
-    when.textContent = isNaN(d) ? '' : `${d.getDate()} ${MON[d.getMonth()]}`;
-    text.append(when, ' ' + u.t);
-  });
+  bannerFill(text, list);
   strip.appendChild(text); fly.appendChild(strip); el.appendChild(fly);
   fly.addEventListener('click', bannerHide);
   return el;
@@ -891,7 +942,7 @@ async function syncBanner(){
   const band = curBand;
   if (!band || !isAuthed(band) || document.body.classList.contains('shared') || document.body.classList.contains('singlemix')) return;
   bannerBusy = true;
-  const list = (await bannerUpdates()).filter(bannerFor).slice(0, BANNER.max);
+  const list = await bannerList();
   bannerBusy = false;
   if (!list.length || bannerEl || bannerDone || document.body.classList.contains('locked')) return;
   bannerDone = true;

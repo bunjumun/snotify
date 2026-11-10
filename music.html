@@ -2020,7 +2020,7 @@
 
 <!-- Shared layer: Supabase access, the band gate, routing, helpers. A classic
      script, so everything it declares is in scope for the module below. -->
-<script src="core.js?v=65"></script>
+<script src="core.js?v=67"></script>
 <!-- The two checklists and the arithmetic. No DOM, no network; it throws at
      load if the weights stop summing to 100, which is deliberate. -->
 <script src="progress.js?v=17"></script>
@@ -2084,6 +2084,7 @@ let curVolume = parseFloat(localStorage.getItem('mp_vol') ?? '0.9');
 
 // active song players
 let activeSong = null, activeSongIndex = -1, activeVer = 0;
+window.playerView = () => activeSong;   // the banner (core.js) asks which song is open
 let wsByVer = [];          // wavesurfer instance per version
 let layerByVer = [];       // container div per version
 let readyByVer = [];

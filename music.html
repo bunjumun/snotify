@@ -66,6 +66,18 @@
   .song .meta { flex: 1 1 150px; min-width: 0; }
   .song .idx, .song .sart { flex: none; }
   .song .idx { width: 30px; }
+  /* CR-192: the striped bow on the left of every row is a play button. It sits
+     over the plate the dazzle theme paints with ::before, so it needs no
+     artwork of its own: a wide, full-height hit target, with the glyph shown on
+     hover and kept while the song plays (pause). */
+  .song .splay { position: absolute; left: 0; top: 0; bottom: 0; width: 34px; z-index: 2; padding: 0; margin: 0;
+    border: 0; background: transparent; cursor: pointer; color: var(--text); font-size: 16px; line-height: 1; }
+  .song .splay::after { content: "\25B6"; opacity: 0; transition: opacity .12s;
+    text-shadow: 0 0 3px var(--bg, #000), 0 0 6px var(--bg, #000); }
+  .song:hover .splay::after, .song .splay:focus-visible::after, .song.active .splay::after { opacity: 1; }
+  .song.playing .splay::after { content: "\275A\275A"; font-size: 11px; letter-spacing: -2px; opacity: 1; }
+  body.editing .song .splay { display: none; }
+  @media (hover: none) { .song .splay::after { opacity: .85; } }
   /* The controls at the end, as one group — so adding or removing one is never
      again a matter of counting columns somewhere else. */
   .song .sacts { flex: 0 1 auto; margin-left: auto; display: flex; align-items: center; gap: 10px; }
@@ -3082,6 +3094,7 @@ function songRowHtml(s, i){
   return `
   <div class="song ${n>1?'stacked':''}" data-i="${i}">
     <canvas class="swave" data-wave="${i}" aria-hidden="true"></canvas>
+    <button type="button" class="splay" title="Play “${esc(s.title)}”" aria-label="Play ${esc(s.title)}"></button>
     <div class="idx"><span class="num">${i+1}</span><span class="bars"><span></span><span></span><span></span></span></div>
     ${(() => { const a = artOf(s); return a ? `<img class="sart" src="${esc(a.src)}" alt="" loading="lazy" title="${esc(a.title)}" />` : ''; })()}
     <div class="meta">
@@ -3213,6 +3226,7 @@ function renderList() {
         return;                         // edit mode: rows don't start playback
       }
       if (e.target.closest('.sdel')) return;
+      if (e.target.closest('.splay')){ e.stopPropagation(); return (activeSongIndex === i) ? togglePlay() : playSong(i); }
       const vp = e.target.closest('.vpick');
       if (vp){ e.stopPropagation(); openRowVersions(i, vp); return; }
       const cp = e.target.closest('.scpy');

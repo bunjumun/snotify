@@ -114,8 +114,16 @@ function publicUrl(p){
 // toolKey() IS the stored href, so changing what gets written would orphan
 // every hidden/order/edits key already pointing at the old URL. Doing it this
 // way also heals tools added before the fix without anyone re-adding them.
+//
+// Two shapes of stored href reach this (CR-184). The Storage URL is what the
+// Tools manager hands back now. The older one points at the serve-tool Edge
+// Function (`/functions/v1/serve-tool/<band>/_tools/<file>`), which was the
+// first attempt at making an uploaded tool run: a tool added then ("colsepr")
+// kept that href, still came back as text/plain under the same sandbox, and so
+// opened as its own source code while the pattern below ignored it. Both name
+// the same object path, so both go to the launcher.
 const TOOL_OBJECT_RE =
-  /^https?:\/\/[^/]+\/storage\/v1\/object\/public\/tracks\/(.+\/_tools\/.+)$/;
+  /^https?:\/\/[^/]+\/(?:storage\/v1\/object\/public\/tracks|functions\/v1\/serve-tool)\/(.+\/_tools\/.+)$/;
 function toolHref(h){
   const m = TOOL_OBJECT_RE.exec(h || '');
   if (!m) return h;

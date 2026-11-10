@@ -70,14 +70,17 @@
      over the plate the dazzle theme paints with ::before, so it needs no
      artwork of its own: a wide, full-height hit target, with the glyph shown on
      hover and kept while the song plays (pause). */
-  .song .splay { position: absolute; left: 0; top: 0; bottom: 0; width: 34px; z-index: 2; padding: 0; margin: 0;
+  .song .splay { position: absolute; left: 0; top: 0; bottom: 0; width: 56px; z-index: 2; padding: 0; margin: 0;
     border: 0; background: transparent; cursor: pointer; color: var(--text); font-size: 16px; line-height: 1; }
-  .song .splay::after { content: "\25B6"; opacity: 0; transition: opacity .12s;
+  .song .splay::after { content: "\25B6"; opacity: .8; transition: opacity .12s;
+    position: absolute; left: 24px; top: 50%; transform: translateY(-50%);
     text-shadow: 0 0 3px var(--bg, #000), 0 0 6px var(--bg, #000); }
   .song:hover .splay::after, .song .splay:focus-visible::after, .song.active .splay::after { opacity: 1; }
+  /* The play button takes the place of the track number, so there is one thing in that slot. */
+  .song .idx { visibility: hidden; }
   .song.playing .splay::after { content: "\275A\275A"; font-size: 11px; letter-spacing: -2px; opacity: 1; }
   body.editing .song .splay { display: none; }
-  @media (hover: none) { .song .splay::after { opacity: .85; } }
+
   /* The controls at the end, as one group — so adding or removing one is never
      again a matter of counting columns somewhere else. */
   .song .sacts { flex: 0 1 auto; margin-left: auto; display: flex; align-items: center; gap: 10px; }

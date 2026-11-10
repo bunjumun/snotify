@@ -319,6 +319,11 @@
   }
   .rprog .rphead .lbl { font-size: 14px; font-weight: 700; color: var(--text-dim); }
   .rprog .pacc { margin: 10px 18px 0; }
+  /* Click the head to fold the checklist away and click again to bring it back. */
+  .rprog .rphead { cursor: pointer; user-select: none; }
+  .rprog .rphead .chev { flex: none; font-size: 12px; color: var(--text-dim); transition: transform .12s; }
+  .rprog.folded .rphead .chev { transform: rotate(-90deg); }
+  .rprog.folded .pacc { display: none; }
 </style>
 </head>
 <body class="locked">
@@ -641,7 +646,8 @@ function renderReleaseProgress(list){
     const w = Math.round(PROGRESS.albumPct(PROGRESS_UI.ticksFor('album', a.slug),
       counted.map(songPctOf), PROGRESS_UI.shapeOf('album', a.slug)));
     return `<div class="rprog aprog" data-slug="${esc(a.slug)}">
-      <div class="rphead">
+      <div class="rphead" role="button" tabindex="0" aria-expanded="true" title="Show or hide the checklist">
+        <span class="chev" aria-hidden="true">▾</span>
         <span class="lbl">${esc(a.name)} — album checklist</span>
         <span class="track"><span class="fill" style="width:${w}%"></span></span>
         <span class="pct">${w}%</span>
@@ -652,6 +658,23 @@ function renderReleaseProgress(list){
   wrap.querySelectorAll('.pacc').forEach(acc => {
     PROGRESS_UI.wireAcc(acc);
     PROGRESS_UI.paintAcc(acc);
+  });
+  // Folded or open is remembered per album, on this browser only.
+  const FOLD = 'relChecklistFolded';
+  const folded = () => { try { return JSON.parse(localStorage.getItem(FOLD) || '{}'); } catch { return {}; } };
+  const fold = (el, on) => {
+    el.classList.toggle('folded', on);
+    el.querySelector('.rphead').setAttribute('aria-expanded', String(!on));
+  };
+  wrap.querySelectorAll('.rprog').forEach(el => {
+    fold(el, !!folded()[el.dataset.slug]);
+    const head = el.querySelector('.rphead');
+    const flip = () => {
+      const on = !el.classList.contains('folded'); fold(el, on);
+      try { const f = folded(); f[el.dataset.slug] = on; localStorage.setItem(FOLD, JSON.stringify(f)); } catch {}
+    };
+    head.addEventListener('click', flip);
+    head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); flip(); } });
   });
 }
 

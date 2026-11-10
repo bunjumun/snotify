@@ -1,4 +1,5 @@
 [
+  { "d": "2026-11-10", "t": "Line Displacer now takes animated GIFs: play them with the effect applied and download the result as a GIF" },
   { "d": "2026-11-10", "t": "Each song row's play button is now a camouflage cap on the left edge, with a pattern of its own" },
   { "d": "2026-11-10", "t": "Water drops on the Lakehorse pages now catch the light like drops on a screen, with colour fringes at the edges" },
   { "d": "2026-11-10", "t": "The water on the player is now drawn as fine lines that part around the ship" },

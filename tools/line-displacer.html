@@ -166,6 +166,7 @@
 <!-- Shared tool chrome: the bar across the top and one look for every control -->
 <link rel="stylesheet" href="tool.css?v=3" />
 <script src="tool.js?v=5" defer></script>
+<script src="gif-codec.js?v=1" defer></script>
 </head>
 
 <body>
@@ -180,6 +181,15 @@
                     <input type="file" id="imageUpload" accept="image/*">
                 </label>
                 <img id="imagePreview" src="#" alt="">
+                <!-- Shown only when the dropped file is an animated GIF. -->
+                <div id="gifControls" style="display:none;gap:11px">
+                    <div class="ld-row">
+                        <button class="ld-btn" id="gifPlay" style="width:auto">Pause</button>
+                        <span class="ld-note" id="gifFrameLabel"></span>
+                    </div>
+                    <input type="range" id="gifFrame" min="0" max="0" value="0" step="1">
+                    <div class="ld-note">Animated GIF: the effect runs on every frame. Playback is as fast as your settings let it render, and smooth once a frame has been drawn (frames are remembered until you change a setting). Transparent areas are flattened onto white first.</div>
+                </div>
                 <div class="ld-row">
                     <label for="bgColor">Background</label>
                     <input type="color" id="bgColor" value="#FFFFFF">
@@ -285,6 +295,8 @@
             <summary>Export</summary>
             <div class="ld-body">
                 <button class="ld-btn primary" id="generatePlotterLayers">Generate plotter layers</button>
+                <button class="ld-btn primary" id="downloadGif" style="display:none">Download animated GIF</button>
+                <div class="ld-note" id="gifStatus" style="display:none"></div>
                 <button class="ld-btn" id="downloadPreview">Download this drawing (PNG)</button>
                 <button class="ld-btn" id="drawDisplacedButton">Redraw</button>
             </div>
@@ -1303,6 +1315,7 @@
         imageUpload.addEventListener('change', (event) => {
             const file = event.target.files?.[0];
             if (file) { loadImageFile(file); return; }
+            stopGif();
             currentImage = null;
             imagePreview.style.display = 'none';
             imagePreview.src = '#';
@@ -1469,6 +1482,17 @@
         });
 
         function loadImageFile(file){
+            stopGif();
+            // A GIF is read by hand so its frames can be reached; if that fails,
+            // or it turns out to be a single frame, it is just a picture.
+            if (file.type === 'image/gif' || /\.gif$/i.test(file.name)){
+                file.arrayBuffer().then(buf => loadGif(buf, file)).catch(() => loadStillFile(file));
+                return;
+            }
+            loadStillFile(file);
+        }
+
+        function loadStillFile(file){
             const reader = new FileReader();
             reader.onload = (e) => {
                 const img = new Image();
@@ -1483,6 +1507,175 @@
             };
             reader.readAsDataURL(file);
         }
+
+        // ---------------------------------------------------------------
+        // Animated GIFs.
+        //
+        // The effect reads pixel values, so each frame is split out as a whole
+        // picture and run through the same drawDisplaced() a still goes
+        // through: `currentImage` is simply pointed at the frame being shown.
+        // That is why nothing else in the tool had to learn about animation.
+        //
+        // Drawing a frame is the expensive part, so a finished frame is kept
+        // (keyed on every control's value, so touching any setting throws the
+        // lot away) and playback after the first lap is just blitting. The
+        // cache stops growing at a memory budget instead of taking the tab
+        // down; past it, frames are drawn live every lap.
+        // ---------------------------------------------------------------
+        const gifControls  = document.getElementById('gifControls');
+        const gifPlay      = document.getElementById('gifPlay');
+        const gifFrame     = document.getElementById('gifFrame');
+        const gifFrameLabel= document.getElementById('gifFrameLabel');
+        const downloadGif  = document.getElementById('downloadGif');
+        const gifStatus    = document.getElementById('gifStatus');
+        const CACHE_BUDGET = 300 * 1024 * 1024;
+        let gif = null;          // { frames:[{canvas,delay}], i, playing, last, cache, cacheKey, bytes }
+        let gifRaf = 0, gifExporting = false, gifBlobUrl = '';
+
+        function stopGif(){
+            if (gifRaf) cancelAnimationFrame(gifRaf);
+            gifRaf = 0; gif = null;
+            gifControls.style.display = 'none';
+            downloadGif.style.display = 'none';
+            gifStatus.style.display = 'none';
+            if (gifBlobUrl){ URL.revokeObjectURL(gifBlobUrl); gifBlobUrl = ''; }
+        }
+
+        function loadGif(buf, file){
+            let g;
+            try { g = GifCodec.decode(buf); } catch (e) { loadStillFile(file); return; }
+            if (g.frames.length < 2){ loadStillFile(file); return; }
+            const raw = document.createElement('canvas');
+            raw.width = g.width; raw.height = g.height;
+            const rawCtx = raw.getContext('2d');
+            const frames = g.frames.map(f => {
+                rawCtx.putImageData(new ImageData(f.rgba, g.width, g.height), 0, 0);
+                const c = document.createElement('canvas');
+                c.width = g.width; c.height = g.height;
+                const x = c.getContext('2d');
+                x.fillStyle = '#fff'; x.fillRect(0, 0, g.width, g.height);
+                x.drawImage(raw, 0, 0);
+                return { canvas: c, delay: Math.max(20, f.delay || 100) };
+            });
+            stopGif();
+            gif = { frames, i: 0, playing: false, last: 0, cache: [], cacheKey: '', bytes: 0 };
+            gifBlobUrl = URL.createObjectURL(file);
+            imagePreview.src = gifBlobUrl;
+            imagePreview.style.display = 'block';
+            emptyHint.style.display = 'none';
+            gifControls.style.display = 'grid';
+            downloadGif.style.display = '';
+            gifFrame.max = frames.length - 1;
+            showFrame(0);
+            setPlaying(true);
+        }
+
+        function settingsKey(){
+            return Array.from(document.querySelectorAll('.ld-controls input, .ld-controls select'))
+                .filter(el => el.type !== 'file' && !el.id.startsWith('gif'))
+                .map(el => el.type === 'checkbox' ? (el.checked ? 1 : 0) : el.value).join('|');
+        }
+
+        function updateGifLabel(){
+            if (!gif) return;
+            const cached = gif.cache.filter(Boolean).length;
+            gifFrameLabel.textContent = `Frame ${gif.i + 1} / ${gif.frames.length} · drawn ${cached}`;
+            gifFrame.value = gif.i;
+        }
+
+        // Draw frame gif.i through the effect, from the cache when it can.
+        function renderGifFrame(){
+            currentImage = gif.frames[gif.i].canvas;
+            const key = settingsKey();
+            if (key !== gif.cacheKey){ gif.cache = []; gif.bytes = 0; gif.cacheKey = key; }
+            const hit = gif.cache[gif.i];
+            if (hit){
+                fitCanvasToImage();
+                interactiveCtx.drawImage(hit, 0, 0);
+                reportSize();
+            } else {
+                drawDisplaced();
+                const cost = interactiveCanvas.width * interactiveCanvas.height * 4;
+                if (gif.bytes + cost <= CACHE_BUDGET){
+                    const c = document.createElement('canvas');
+                    c.width = interactiveCanvas.width; c.height = interactiveCanvas.height;
+                    c.getContext('2d').drawImage(interactiveCanvas, 0, 0);
+                    gif.cache[gif.i] = c; gif.bytes += cost;
+                }
+            }
+            updateGifLabel();
+        }
+
+        function showFrame(i){
+            gif.i = i;
+            renderGifFrame();
+        }
+
+        function setPlaying(on){
+            if (!gif) return;
+            gif.playing = on;
+            gifPlay.textContent = on ? 'Pause' : 'Play';
+            if (gifRaf) cancelAnimationFrame(gifRaf);
+            gifRaf = 0;
+            if (on){ gif.last = performance.now(); gifRaf = requestAnimationFrame(gifTick); }
+        }
+
+        function gifTick(t){
+            if (!gif || !gif.playing || gifExporting) return;
+            if (t - gif.last >= gif.frames[gif.i].delay){
+                gif.last = t;
+                showFrame((gif.i + 1) % gif.frames.length);
+            }
+            gifRaf = requestAnimationFrame(gifTick);
+        }
+
+        gifPlay.addEventListener('click', () => setPlaying(!gif.playing));
+        gifFrame.addEventListener('input', () => {
+            if (!gif) return;
+            setPlaying(false);
+            showFrame(parseInt(gifFrame.value, 10));
+        });
+
+        // A control moved while paused: the still-image listeners redraw the
+        // frame on screen, but the drawn-frame count is stale until we render.
+        document.querySelector('.ld-controls').addEventListener('input', () => {
+            if (gif && !gif.playing && !gifExporting) requestAnimationFrame(() => { if (gif) renderGifFrame(); });
+        });
+
+        downloadGif.addEventListener('click', async () => {
+            if (!gif || gifExporting) return;
+            gifExporting = true;
+            const wasPlaying = gif.playing, resume = gif.i;
+            setPlaying(false);
+            downloadGif.disabled = true;
+            gifStatus.style.display = '';
+            try {
+                let enc = null;
+                for (let i = 0; i < gif.frames.length; i++){
+                    gifStatus.textContent = `Drawing frame ${i + 1} of ${gif.frames.length}…`;
+                    await new Promise(r => setTimeout(r, 0));
+                    gif.i = i; renderGifFrame();
+                    const w = interactiveCanvas.width, h = interactiveCanvas.height;
+                    if (!enc) enc = GifCodec.createEncoder(w, h);
+                    enc.addFrame(interactiveCtx.getImageData(0, 0, w, h).data, gif.frames[i].delay);
+                }
+                gifStatus.textContent = 'Building the GIF…';
+                await new Promise(r => setTimeout(r, 0));
+                const bytes = enc.finish();
+                const a = document.createElement('a');
+                const url = URL.createObjectURL(new Blob([bytes], { type: 'image/gif' }));
+                a.href = url;
+                a.download = `line-displacer-${interactiveCanvas.width}x${interactiveCanvas.height}.gif`;
+                document.body.appendChild(a); a.click(); a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+                gifStatus.textContent = `Saved ${(bytes.length / 1048576).toFixed(1)} MB, ${gif.frames.length} frames. A smaller output size makes a smaller file.`;
+            } catch (err) {
+                gifStatus.textContent = 'Could not build the GIF: ' + err.message;
+            }
+            gifExporting = false;
+            downloadGif.disabled = false;
+            if (gif){ showFrame(resume); setPlaying(wasPlaying); }
+        });
 
         // Save what you are looking at, at full output resolution.
         document.getElementById('downloadPreview').addEventListener('click', () => {

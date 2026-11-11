@@ -4321,7 +4321,10 @@ async function loadLinkedArt(){
   try {
     const art = await libRpc('get_library', { k: 'art' });
     ((art && art.songs) || []).forEach(a => {
-      const v = (a.versions || [])[0];
+      // CR-199: the revision he chose wins; with no choice, or one that has
+      // since been trashed, it is the newest, as it always was.
+      const vs = a.versions || [];
+      const v = vs.find(x => a.cover_version && x.id === a.cover_version) || vs[0];
       if (a.link && v && v.src) artFor[a.link] = { src: publicUrl(v.src), title: a.title, folder: a.folder };
     });
   } catch { /* no art schema, or nothing linked — tracks simply have no cover */ }

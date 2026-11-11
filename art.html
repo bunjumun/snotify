@@ -112,6 +112,13 @@
   .rev .rcpy { color: var(--text-mute); text-decoration: none; }
   .rev .rcpy:hover { color: var(--text); }
   .rev .latest { font-size: 10px; font-weight: 700; color: var(--accent-2); }
+  /* CR-199: the star that picks a revision as the track's art. */
+  .rev .rcov { color: var(--text-mute); cursor: pointer; }
+  .rev .rcov:hover { color: var(--text); }
+  .rev .rcov.on { color: var(--accent-2); }
+  .rev .rdel { color: var(--text-mute); cursor: pointer; }
+  .rev .rdel:hover { color: var(--text); }
+  .rev .trk { font-size: 10px; font-weight: 700; color: var(--accent-2); }
   .stlog { flex: 1; min-width: 180px; color: var(--text-dim); font-size: 13px; }
   .stlog ul { margin: 0; padding-left: 16px; } .stlog li { margin: 2px 0; }
   .drawhint { margin-top: 12px; }
@@ -455,6 +462,12 @@ function normalize(data){
       id: s.id || slug(s.title || filename(versions[0].src)) || 'piece-' + i,
       title: s.title || filename(versions[0].src),
       link: s.link || null,          // folder of the song this art belongs to
+      // CR-199: which revision is shown as the track's art. `coverPick` is the
+      // chosen revision id (null = none chosen, newest shows); `coverOk` is
+      // whether the database knows about the choice at all, so the star stays
+      // hidden until schema-v46 has run and never offers a button that errors.
+      coverPick: s.cover_version || null,
+      coverOk: 'cover_version' in s,
       versions,
     };
   }).filter(Boolean);
@@ -661,7 +674,10 @@ function showRevision(vi){
     <span class="rev ${i === activeRev ? 'active' : ''}" data-rev="${i}">
       <span>${esc(r.name)}</span>
       ${i === 0 ? `<span class="latest">LATEST</span>` : ''}
+      ${i === coverIndex(activePiece) && activePiece.link ? `<span class="trk" title="Shown as the track's art">TRACK ART</span>` : ''}
       ${r.date ? `<span class="rdate">${esc(r.date)}</span>` : ''}
+      ${canPickCover() ? `<span class="rcov ${i === coverIndex(activePiece) ? 'on' : ''}" data-revcov="${i}" title="${i === coverIndex(activePiece) ? 'Shown as the track\u2019s art. Click to go back to the newest revision' : 'Use this revision as the track\u2019s art'}">${i === coverIndex(activePiece) ? '★' : '☆'}</span>` : ''}
+      ${singleShare || activePiece.versions.length < 2 ? '' : `<span class="rdel" data-revdel="${i}" title="Move this revision to the trash">🗑</span>`}
       ${singleShare ? '' : `<span class="rcpy" data-revcpy="${i}" title="Copy a link to this revision">🔗</span>`}
     </span>`).join('');
 
@@ -677,7 +693,50 @@ function showRevision(vi){
 // The overlays are sized from the image's rendered rect, which isn't known
 // until the file has actually loaded.
 $('artImg').addEventListener('load', () => { renderRegions(); renderSketchView(); });
+// ---------- Choosing the track's art (CR-199) ----------
+// The player shows the newest revision of linked art unless one is chosen.
+// The star picks one; clicking the chosen one again clears the choice.
+const coverIndex = (p) => {
+  const i = p && p.coverPick ? p.versions.findIndex(v => v.id === p.coverPick) : -1;
+  return i === -1 ? 0 : i;
+};
+const canPickCover = () => !!(activePiece && activePiece.link && activePiece.coverOk
+  && activePiece.folder && !singleShare);
+async function pickCover(i){
+  const p = activePiece, v = p.versions[i];
+  if (!v || !v.id) return;
+  const clearing = i === coverIndex(p) && !!p.coverPick;
+  // Choosing the newest while nothing is chosen is a no-op in effect, but store
+  // it anyway: the choice should survive the next upload of a newer revision.
+  const vid = clearing ? null : v.id;
+  try { await libRpc('set_art_cover', { f: p.folder, vid }); }
+  catch (err){ alert('Could not set the track art: ' + (err.message || err)); return; }
+  p.coverPick = vid;
+  showRevision(activeRev);
+}
+// ---------- Removing a revision (CR-199) ----------
+// Same as trashing a mix: a timestamp, not a deletion. The revision leaves this
+// page at once and waits in the Trash on the Music page, labelled as an artwork
+// revision, where it is restored or deleted for good. The last revision has no
+// bin of its own: a piece with nothing in it is trashed whole, from its button.
+async function trashRevision(i){
+  const p = activePiece, v = p && p.versions[i];
+  if (!v || p.versions.length < 2) return;
+  if (!confirm(`Are you sure you want to remove “${v.name}” from “${p.title}”?\n\nIt goes to the trash and leaves this page now. Nothing is deleted until you confirm it in the Trash on the Music page, and you can restore it from there.`)) return;
+  try { await libRpc('trash_version', { f: p.folder, ver_name: v.name }); }
+  catch (err){ alert('Could not move to trash: ' + (err.message || err)); return; }
+  p.versions.splice(i, 1);
+  // The database keeps the chosen-cover pointer, so restoring the revision
+  // brings the choice back; until then the track falls back to the newest.
+  if (p.coverPick === v.id) p.coverPick = null;
+  renderList();
+  showRevision(Math.min(activeRev > i ? activeRev - 1 : activeRev, p.versions.length - 1));
+}
 $('revs').addEventListener('click', (e) => {
+  const del = e.target.closest('[data-revdel]');
+  if (del){ e.stopPropagation(); trashRevision(+del.dataset.revdel); return; }
+  const cov = e.target.closest('[data-revcov]');
+  if (cov){ e.stopPropagation(); pickCover(+cov.dataset.revcov); return; }
   const cpy = e.target.closest('[data-revcpy]');
   if (cpy){
     e.stopPropagation();

@@ -2,6 +2,61 @@
 
 Written 2026-09-15, updated 2026-09-16. Read this, then `README.md`.
 
+## 2026-11-21: v1 plays from an SD card (read this first; older sections below predate it)
+
+**The premise changed.** The box no longer streams the catalogue from Supabase
+to the phone. Songs live on a micro SD card in the box, and the phone plays them
+straight off it (`GET /sd/<name>`, with Range support, which iOS requires). The
+Supabase track list and "Refresh from the band library" button are gone from
+the page. The playlist API still exists but the page no longer uses it.
+
+- **Wiring (VSPI):** CS=5, MOSI=23, MISO=19, SCK=18, at 10 MHz (`cfg::SD_*`).
+- **Songs go in `/music` on the card.** Only names that pass `track_name.cpp`
+  unchanged are listed or served, which also hides macOS `._*` files.
+- **Getting songs on (v1):** `tools/song-prep.html` in Chrome or Edge. Pick the
+  card, pick songs, name each one; 24/32-bit and float WAVs become 16-bit with
+  dither (same sample rate), other files are copied. Shares
+  `data/wavconvert.js` with the box's page, so naming and conversion rules
+  cannot drift.
+- **Wi-Fi:** joined to "pifi" at 192.168.0.38, `lakehorseradio.local`.
+  `src/wifi_defaults.h` (gitignored, template `wifi_defaults.example.h`) can
+  bake credentials into a build; applied once per change of the file.
+- **A wedged SD card needs a power cycle, not a reset.** Resetting the ESP32
+  mid-write left the card failing `CMD0` until USB was unplugged. Opening the
+  serial port resets the board, so never open it during a card write.
+
+**Streaming speed: solved by sending AAC, not WAV.** The box sends songs at
+25-46 KB/s sustained (five one-minute runs from a Mac on the same Wi-Fi; even
+from RAM it never beat ~85 KB/s), and a 16-bit WAV plays at 176-192 KB/s, so
+WAV stutters however it is buffered. This is why other ESP32 audio projects
+stream MP3/AAC. `tools/song-prep.html` now encodes WAVs to **AAC 160 kbps
+(20 KB/s)** by default with Chrome's built-in WebCodecs encoder, written as a
+plain ADTS `.aac` file (no library). 16-bit WAV is still offered.
+- **Pre-buffer** (`data/buffering.js`): holds playback for 8 s of audio,
+  doubles the cushion after each stall up to 64 s. Simulated at 36 KB/s with a
+  real song: started in 6 s, played 78 s with no stall, cushion grew to 40 s.
+- **Kept:** 16 KB read-ahead per stream (card streaming went from 25-36 to
+  36-46 KB/s), Nagle off for song responses.
+- **Tried and reverted, do not retry blindly:** larger lwIP TCP buffers via
+  `custom_sdkconfig` (no gain, and it rebuilds ESP-IDF in ~20 min, needs the
+  build dir and project path free of spaces, and overwrites the shared
+  framework libs until removed); `ASYNCWEBSERVER_USE_CHUNK_INFLIGHT=0` (no
+  measurable gain). The Mac downloads from the internet at 1.3 MB/s on the
+  same Wi-Fi, so the ceiling is the ESP32's own send path on this network.
+- Not yet heard on a phone.
+
+**Built but off, for v2** (`src/config.h`):
+- `SD_UPLOAD_ENABLED` — upload songs from the page. Works as a raw-body POST
+  (`/api/sd/upload?name=`); the multipart form version dropped connections
+  because the library parses multipart one byte at a time. ~220 KB/s.
+- `SD_WRITES_NEED_KEY` — pairing key for upload/delete.
+
+**v2 list, as agreed:** page upload (above), pairing key (above), Bluetooth
+A2DP output from the box to a speaker with the page as the remote. Bluetooth
+reverses the "never plays audio itself" premise: decoding on the ESP32, Wi-Fi
+and BT sharing one radio, and the app partition (1.875 MB) is likely too small
+once the BT stack is in. Plan it before building it.
+
 ## What this is
 
 An ESP32 in the barn that serves a web player. **It never plays audio itself** —

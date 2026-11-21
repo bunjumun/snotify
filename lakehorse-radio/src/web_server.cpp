@@ -8,7 +8,11 @@
 #include <AsyncJson.h>
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
+#include <SD.h>
 #include <WiFi.h>
+
+#include <memory>
+#include <new>
 
 #include "captive_portal.h"
 #include "config.h"
@@ -16,6 +20,8 @@
 #include "net_identity.h"
 #include "playlist_store.h"
 #include "playlist_validate.h"
+#include "sd_store.h"
+#include "track_name.h"
 #include "wifi_manager.h"
 
 namespace web {
@@ -100,6 +106,9 @@ void handleStatus(AsyncWebServerRequest* request) {
   // so it can explain the right thing rather than the same thing twice.
   doc["viaAccessPoint"] = onAccessPointSubnet(request);
   doc["freeHeap"] = (uint32_t)ESP.getFreeHeap();
+  doc["rssi"] = WiFi.RSSI();
+  doc["sdNeedsKey"] = cfg::SD_WRITES_NEED_KEY;
+  doc["sdUpload"] = cfg::SD_UPLOAD_ENABLED;
 
   String out;
   serializeJson(doc, out);
@@ -278,6 +287,285 @@ void registerWifiWrite() {
   g_server.addHandler(handler);
 }
 
+// ---------- Music on the SD card ----------
+//
+// Four routes: list, upload, delete, and serve. Serving is hand-written rather
+// than serveStatic() because iOS Safari will not play an <audio> source that
+// cannot answer a Range request, and this library's static handler does not.
+// Without ranges the same files would play on a laptop and silently not on an
+// iPhone.
+
+struct UploadState {
+  int code;
+  const char* error;  // always a string literal, never freed
+  bool finished;
+  char name[cfg::TRACK_FILE_NAME_MAX_LEN + 1];
+};
+
+// _tempObject is free()d by the library when the request ends, so it has to be
+// malloc'd, not new'd.
+UploadState* uploadState(AsyncWebServerRequest* request) {
+  if (request->_tempObject == nullptr) {
+    request->_tempObject = calloc(1, sizeof(UploadState));
+  }
+  return static_cast<UploadState*>(request->_tempObject);
+}
+
+void rejectUpload(UploadState* s, int code, const char* why) {
+  if (s->error != nullptr) return;  // keep the first reason, it is the cause
+  s->code = code;
+  s->error = why;
+}
+
+// Runs once per received chunk. The checks happen on the first chunk, because
+// by then the headers are in and nothing has been written yet; later chunks of
+// a rejected upload are simply dropped, since a handler cannot answer early.
+// The one upload allowed at a time, cleared when its connection ends for any
+// reason, so a dropped phone cannot lock everyone else out.
+const AsyncWebServerRequest* g_uploadOwner = nullptr;
+
+void handleUploadChunk(AsyncWebServerRequest* request, uint8_t* data, size_t len,
+                       size_t index, size_t total) {
+  UploadState* s = uploadState(request);
+  if (s == nullptr) return;
+  const bool final = (index + len == total);
+  // The body is the raw file, not multipart: the library's multipart parser
+  // walks every byte through a state machine and measured far too slow here.
+  // The name rides in the query string instead.
+  const String filename =
+      request->hasParam("name") ? request->getParam("name")->value() : String();
+
+  if (index == 0) {
+    if (!cfg::SD_UPLOAD_ENABLED) {
+      rejectUpload(s, 403, "uploading from the page is switched off in this version");
+    } else if (cfg::SD_WRITES_NEED_KEY && !authorised(request)) {
+      rejectUpload(s, 401, "missing or wrong X-Lakehorse-Key");
+    } else if (!sdstore::mounted()) {
+      rejectUpload(s, 503, "there is no SD card in the box");
+    } else {
+      const trackname::Result verdict =
+          trackname::sanitise(filename.c_str(), s->name, cfg::TRACK_FILE_NAME_MAX_LEN);
+      if (verdict != trackname::Result::Ok) {
+        rejectUpload(s, 400, trackname::describe(verdict));
+      } else if (request->contentLength() > sdstore::freeBytes()) {
+        rejectUpload(s, 507, "not enough space left on the SD card");
+      } else if (g_uploadOwner != nullptr) {
+        rejectUpload(s, 503, "another upload is already in progress");
+      } else {
+        g_uploadOwner = request;
+        request->onDisconnect([]() {
+          g_uploadOwner = nullptr;
+        });
+        request->_tempFile = SD.open(sdstore::partPath(s->name), FILE_WRITE);
+        if (!request->_tempFile) {
+          rejectUpload(s, 500, "could not create the file on the SD card");
+        }
+      }
+    }
+  }
+
+  if (s->error != nullptr || !request->_tempFile) return;
+
+  // Writes arrive as ~1.4 KB TCP segments. Handing each straight to the card
+  // costs a partial-sector write apiece, and measured about 200 KB/s with
+  // uploads dropping mid-way; gathering them into whole blocks is what makes
+  // the card keep up. One shared block is enough because only one upload may
+  // run at a time (see g_uploadOwner).
+  static uint8_t block[cfg::SD_WRITE_BLOCK_BYTES];
+  static size_t fill = 0;
+  if (index == 0) fill = 0;
+
+  bool ok = true;
+  size_t off = 0;
+  while (ok && off < len) {
+    const size_t n = min(len - off, sizeof(block) - fill);
+    memcpy(block + fill, data + off, n);
+    fill += n;
+    off += n;
+    if (fill == sizeof(block)) {
+      ok = request->_tempFile.write(block, fill) == fill;
+      fill = 0;
+    }
+  }
+  if (ok && final && fill > 0) {
+    ok = request->_tempFile.write(block, fill) == fill;
+    fill = 0;
+  }
+  if (!ok) {
+    Serial.printf("[sd] write failed near byte %u\n", (unsigned)index);
+    request->_tempFile.close();
+    SD.remove(sdstore::partPath(s->name));
+    g_uploadOwner = nullptr;
+    rejectUpload(s, 500, "writing to the SD card failed");
+    return;
+  }
+
+  if (final) {
+    request->_tempFile.close();
+    if (sdstore::commit(s->name)) {
+      s->finished = true;
+      Serial.printf("[sd] stored %s\n", s->name);
+    } else {
+      rejectUpload(s, 500, "could not move the finished file into place");
+    }
+  }
+}
+
+void handleUploadDone(AsyncWebServerRequest* request) {
+  const UploadState* s = static_cast<UploadState*>(request->_tempObject);
+  if (s != nullptr && s->error != nullptr) {
+    sendError(request, s->code, s->error);
+    return;
+  }
+  if (s == nullptr || !s->finished) {
+    sendError(request, 400, "no file arrived");
+    return;
+  }
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["name"] = s->name;
+  String out;
+  serializeJson(doc, out);
+  sendJson(request, 200, out);
+}
+
+void handleSdList(AsyncWebServerRequest* request) {
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["mounted"] = sdstore::mounted();
+  doc["totalBytes"] = (double)sdstore::totalBytes();
+  doc["freeBytes"] = (double)sdstore::freeBytes();
+  JsonArray files = doc["files"].to<JsonArray>();
+  sdstore::list(files);
+  String out;
+  serializeJson(doc, out);
+  sendJson(request, 200, out);
+}
+
+void handleSdDelete(AsyncWebServerRequest* request) {
+  if (cfg::SD_WRITES_NEED_KEY && !authorised(request)) {
+    sendError(request, 401, "missing or wrong X-Lakehorse-Key");
+    return;
+  }
+  if (!request->hasParam("name")) {
+    sendError(request, 400, "name is required");
+    return;
+  }
+  // Re-run the filename rules on the way back in. The name comes straight off
+  // the URL, and only a name that survives sanitise() unchanged is one this box
+  // could ever have stored.
+  const String wanted = request->getParam("name")->value();
+  char safe[cfg::TRACK_FILE_NAME_MAX_LEN + 1];
+  if (trackname::sanitise(wanted.c_str(), safe, cfg::TRACK_FILE_NAME_MAX_LEN) !=
+          trackname::Result::Ok ||
+      wanted != safe) {
+    sendError(request, 400, "that is not a stored track name");
+    return;
+  }
+  if (!sdstore::remove(safe)) {
+    sendError(request, 404, "no such track");
+    return;
+  }
+  sendJson(request, 200, "{\"ok\":true}");
+}
+
+// Parses "bytes=a-b", "bytes=a-" and "bytes=-n". Returns false for anything
+// else, which the caller answers by sending the whole file.
+bool parseRange(const String& header, size_t total, size_t& first, size_t& last) {
+  if (!header.startsWith("bytes=") || total == 0) return false;
+  const String spec = header.substring(6);
+  const int dash = spec.indexOf('-');
+  if (dash < 0 || spec.indexOf(',') >= 0) return false;
+  const String a = spec.substring(0, dash);
+  const String b = spec.substring(dash + 1);
+  if (a.length() == 0) {  // suffix form: the last n bytes
+    const size_t n = (size_t)b.toInt();
+    if (n == 0) return false;
+    first = n >= total ? 0 : total - n;
+    last = total - 1;
+    return true;
+  }
+  first = (size_t)a.toInt();
+  last = b.length() == 0 ? total - 1 : (size_t)b.toInt();
+  if (last >= total) last = total - 1;
+  return first <= last;
+}
+
+// One song being sent: the open file and the block of it last read.
+struct SdStream {
+  File file;
+  std::unique_ptr<uint8_t[]> block;
+  size_t blockStart = 0;
+  size_t blockLen = 0;
+};
+
+void handleSdFile(AsyncWebServerRequest* request) {
+  if (!sdstore::mounted()) {
+    request->send(503, "text/plain", "no SD card");
+    return;
+  }
+  const String wanted = request->url().substring(strlen(cfg::SD_URL_PREFIX));
+  char safe[cfg::TRACK_FILE_NAME_MAX_LEN + 1];
+  if (trackname::sanitise(wanted.c_str(), safe, cfg::TRACK_FILE_NAME_MAX_LEN) !=
+          trackname::Result::Ok ||
+      wanted != safe) {
+    request->send(404, "text/plain", "not found");
+    return;
+  }
+  File opened = SD.open(sdstore::path(safe), FILE_READ);
+  if (!opened || opened.isDirectory()) {
+    request->send(404, "text/plain", "not found");
+    return;
+  }
+  // Bulk data: never hold a packet back waiting to coalesce it.
+  if (request->client()) request->client()->setNoDelay(true);
+
+  const size_t total = opened.size();
+  size_t first = 0;
+  size_t last = total > 0 ? total - 1 : 0;
+  const bool ranged =
+      request->hasHeader("Range") && parseRange(request->header("Range"), total, first, last);
+  const size_t length = total == 0 ? 0 : last - first + 1;
+
+  auto stream = std::make_shared<SdStream>();
+  stream->file = opened;
+  stream->block.reset(new (std::nothrow) uint8_t[cfg::SD_READ_BLOCK_BYTES]);
+  if (!stream->block) {
+    request->send(503, "text/plain", "busy, try again");
+    return;
+  }
+
+  // The filler is asked for a TCP segment's worth at a time. Reading the card
+  // that finely measured 25-36 KB/s, a fifth of what a WAV needs, so the card is
+  // read a whole block at a time and segments are cut from the block.
+  // Shared so the lambda, which outlives this function, keeps the file and the
+  // block alive exactly as long as the response is being sent.
+  AsyncWebServerResponse* response = request->beginResponse(
+      trackname::contentType(safe), length,
+      [stream, first, length](uint8_t* buffer, size_t maxLen, size_t sent) -> size_t {
+        if (sent >= length) return 0;
+        const size_t pos = first + sent;
+        if (pos < stream->blockStart || pos >= stream->blockStart + stream->blockLen) {
+          const size_t want = min((size_t)cfg::SD_READ_BLOCK_BYTES, first + length - pos);
+          if (stream->file.position() != pos) stream->file.seek(pos);
+          stream->blockStart = pos;
+          stream->blockLen = stream->file.read(stream->block.get(), want);
+          if (stream->blockLen == 0) return 0;
+        }
+        const size_t offset = pos - stream->blockStart;
+        const size_t n = min(maxLen, min(stream->blockLen - offset, length - sent));
+        memcpy(buffer, stream->block.get() + offset, n);
+        return n;
+      });
+  response->addHeader("Accept-Ranges", "bytes");
+  if (ranged) {
+    response->setCode(206);
+    response->addHeader("Content-Range",
+                        String("bytes ") + first + "-" + last + "/" + total);
+  }
+  request->send(response);
+}
+
 }  // namespace
 
 const char* defaultPlaylist() { return kDefaultPlaylist; }
@@ -304,6 +592,11 @@ void begin() {
     wifinet::forget();
     sendJson(request, 200, "{\"ok\":true}");
   });
+
+  g_server.on("/api/sd", HTTP_GET, handleSdList);
+  g_server.on("/api/sd/delete", HTTP_POST, handleSdDelete);
+  g_server.on("/api/sd/upload", HTTP_POST, handleUploadDone, nullptr, handleUploadChunk);
+  g_server.on("/sd/*", HTTP_GET, handleSdFile);
 
   registerPlaylistWrite();
   registerWifiWrite();

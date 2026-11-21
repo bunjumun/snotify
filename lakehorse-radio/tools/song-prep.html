@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<!--
+  Lakehorse Radio song prep: puts songs onto the SD card from a computer.
+
+  Why this exists: the box can take uploads over Wi-Fi, but at about 220 KB/s a
+  band master takes eight minutes, so for v1 songs go onto the card in a card
+  reader instead. Copying them by hand has two traps this page removes:
+
+    * WAV masters, which the box cannot stream. It sends songs over Wi-Fi at
+      40-85 KB/s and a 16-bit WAV plays at 176-192 KB/s, so a WAV stutters
+      however much is buffered. By default each WAV is encoded to AAC at
+      160 kbps (20 KB/s) with the browser's built-in encoder; a 16-bit WAV
+      option remains for a box on a faster network (wavconvert.js).
+    * File names the box will not serve. The firmware only plays a file whose
+      name already obeys its rules (src/track_name.cpp), so an apostrophe or a
+      '#' would leave a song on the card that never shows up. Names are cleaned
+      here with the same rules before anything is written.
+
+  Writing uses the File System Access API (showDirectoryPicker), which is in
+  Chrome and Edge but not Safari or Firefox. Those get a download button
+  instead and the files have to be dragged onto the card by hand.
+
+  Converted audio is written to the card as it is produced, a few MB at a time,
+  so a 120 MB master is never held in memory whole.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lakehorse Radio song prep</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📻</text></svg>" />
+<style>
+  :root {
+    --bg: #0e1116; --bg-row: #161b22; --line: #262d36; --text: #e6edf3;
+    --dim: #9aa6b2; --accent: #6c5ce7; --warn: #c98a2c; --err: #e0567a; --ok: #7de08a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  .muted { color: var(--dim); }
+  .step { background: var(--bg-row); border: 1px solid var(--line); border-radius: 12px;
+          padding: 14px 16px; margin: 16px 0; }
+  .step h2 { margin: 0 0 8px; font-size: 15px; }
+  .btn { background: var(--bg); color: var(--text); border: 1px solid var(--line);
+         border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn[disabled] { opacity: .5; cursor: default; }
+  .drop { border: 2px dashed var(--line); border-radius: 10px; padding: 18px; text-align: center;
+          margin-top: 10px; }
+  .drop.over { border-color: var(--accent); }
+  ul { list-style: none; margin: 10px 0 0; padding: 0; }
+  li.song { border-top: 1px solid var(--line); padding: 8px 0; display: grid;
+            grid-template-columns: 1fr auto; gap: 2px 12px; }
+  li.song .naming { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  li.song .naming input { flex: 1; min-width: 0; background: var(--bg); color: var(--text);
+                          border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; }
+  li.song .naming input.bad { border-color: var(--err); }
+  li.song .ext { color: var(--dim); }
+  li.song .from { grid-column: 1 / -1; font-size: 12px; color: var(--dim); overflow: hidden;
+                  text-overflow: ellipsis; white-space: nowrap; }
+  li.song .what, li.song .state { font-size: 13px; color: var(--dim); }
+  li.song .state { text-align: right; }
+  li.song progress { grid-column: 1 / -1; width: 100%; height: 6px; }
+  .ok { color: var(--ok) !important; } .err { color: var(--err) !important; } .warn { color: var(--warn) !important; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📻 Lakehorse Radio song prep</h1>
+  <p class="muted">Converts songs for the radio and saves them onto its SD card. Nothing leaves this computer.</p>
+
+  <div class="step">
+    <h2>1. Choose the SD card</h2>
+    <div class="row">
+      <button class="btn" id="pickCard">Choose card or folder</button>
+      <span class="muted" id="cardLine">Put the card in your computer, then choose it. Songs go into its music folder.</span>
+    </div>
+  </div>
+
+  <div class="step">
+    <h2>2. Choose songs</h2>
+    <div class="row">
+      <button class="btn" id="pickSongs">Add songs</button>
+      <input type="file" id="songFiles" accept=".wav,.mp3,.m4a,.aac,.ogg,.opus,audio/*" multiple hidden />
+      <button class="btn" id="clearSongs">Clear list</button>
+    </div>
+    <div class="drop" id="drop">or drop audio files here</div>
+    <ul id="songs"></ul>
+  </div>
+
+  <div class="step">
+    <h2>3. Format</h2>
+    <label class="row"><input type="radio" name="format" value="aac" checked />
+      <span><b>AAC, 160 kbps</b> (recommended). About a tenth the size of a WAV, so it streams
+      smoothly over the box's Wi-Fi.</span></label>
+    <label class="row"><input type="radio" name="format" value="wav16" />
+      <span><b>16-bit WAV</b>. Full quality, but the box cannot send it fast enough to play
+      without pauses.</span></label>
+  </div>
+
+  <div class="step">
+    <h2>4. Save</h2>
+    <div class="row">
+      <button class="btn primary" id="go" disabled>Convert and save to card</button>
+      <span id="summary" class="muted"></span>
+    </div>
+    <p class="muted">When it says done, eject the card before taking it out.</p>
+  </div>
+</div>
+
+<script src="../data/wavconvert.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var W = window.LakehorseWav;
+  var canWrite = typeof window.showDirectoryPicker === 'function';
+  var musicDir = null;      // FileSystemDirectoryHandle for <card>/music
+  var queue = [];           // {file, ext, input, target, problem, state, bar, done}
+  var busy = false;
+
+  function mb(n) { return (n / (1024 * 1024)).toFixed(1) + ' MB'; }
+
+  function setState(item, text, kind) {
+    item.state.textContent = text;
+    item.state.className = 'state' + (kind ? ' ' + kind : '');
+  }
+
+  function format() {
+    var picked = document.querySelector('input[name="format"]:checked');
+    return picked ? picked.value : 'aac';
+  }
+
+  function describe(file, info) {
+    var h = info.header;
+    if (!h) return mb(file.size) + ', copied as is';
+    var fmt = (h.format === 3 ? h.bits + '-bit float' : h.bits + '-bit') + ', ' +
+              (h.rate / 1000) + ' kHz, ' + (h.channels === 1 ? 'mono' : h.channels === 2 ? 'stereo' : h.channels + ' ch');
+    if (format() === 'aac') {
+      var seconds = h.dataBytes / (h.rate * h.channels * (h.bits >> 3));
+      return mb(file.size) + ', ' + fmt + ', becomes AAC (about ' +
+             mb(seconds * W.AAC_BITRATE / 8) + ')';
+    }
+    return mb(file.size) + ', ' + fmt + (info.convert ? ', becomes 16-bit (about ' +
+           mb(file.size * 16 / h.bits) + ')' : ', already fine, copied as is');
+  }
+
+  function describeAll() {
+    queue.forEach(function (q) {
+      if (q.info) q.what.textContent = describe(q.file, q.info);
+    });
+  }
+
+  /* Works out every song's final name from its name field and flags clashes.
+   * FAT on the card ignores case, so "Song.wav" and "song.wav" are the same
+   * file and the second would silently replace the first. */
+  function validate() {
+    var seen = {};
+    queue.forEach(function (q) {
+      if (q.done) return;
+      q.outExt = W.outputExtension(q.file.name, format());
+      q.extLabel.textContent = q.outExt;
+      var named = W.safeName(q.input.value.trim() + q.outExt);
+      q.target = named.ok ? named.name : null;
+      q.problem = named.ok ? '' : named.reason;
+      if (named.ok) {
+        var k = named.name.toLowerCase();
+        if (seen[k]) { q.target = null; q.problem = 'same name as another song'; }
+        seen[k] = true;
+      }
+    });
+    queue.forEach(function (q) {
+      if (q.done || busy) return;
+      q.input.classList.toggle('bad', !q.target);
+      if (!q.target) { setState(q, q.problem, 'err'); return; }
+      var typed = q.input.value.trim() + q.outExt;
+      setState(q, typed === q.target ? 'ready' : 'saves as ' + q.target, typed === q.target ? '' : 'warn');
+    });
+  }
+
+  function refresh() {
+    validate();
+    var ready = queue.filter(function (q) { return q.target && !q.done; });
+    var bad = queue.filter(function (q) { return !q.target && !q.done; }).length;
+    $('go').disabled = busy || !ready.length || !!bad || (canWrite && !musicDir);
+    $('summary').className = 'muted';
+    $('summary').textContent = !queue.length ? '' :
+      ready.length + ' to save' + (bad ? ', fix the names marked in red first' : '') +
+      (canWrite && !musicDir ? ', choose the card first' : '');
+  }
+
+  function add(files) {
+    Array.prototype.forEach.call(files, function (file) {
+      // The extension stays as the source's: the converter keeps a WAV a WAV
+      // and copies everything else as it is. Only the part before it is named.
+      var ext = (file.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+      var start = W.safeName(file.name);
+      var stem = (start.ok ? start.name : file.name).slice(0, -ext.length || undefined);
+
+      var li = document.createElement('li');
+      li.className = 'song';
+      var naming = document.createElement('label');
+      naming.className = 'naming';
+      var input = document.createElement('input');
+      input.value = stem;
+      input.spellcheck = false;
+      input.setAttribute('aria-label', 'Name on the radio');
+      var extLabel = document.createElement('span');
+      extLabel.className = 'ext';
+      extLabel.textContent = ext;
+      naming.appendChild(input);
+      naming.appendChild(extLabel);
+      var state = document.createElement('span');
+      state.className = 'state';
+      var from = document.createElement('span');
+      from.className = 'from';
+      from.textContent = 'from ' + file.name;   // textContent: a file name is data
+      var what = document.createElement('span');
+      what.className = 'what';
+      var bar = document.createElement('progress');
+      bar.max = 1; bar.value = 0; bar.hidden = true;
+      li.appendChild(naming); li.appendChild(state); li.appendChild(from);
+      li.appendChild(what); li.appendChild(bar);
+      $('songs').appendChild(li);
+
+      var item = { file: file, ext: ext, outExt: ext, extLabel: extLabel, input: input,
+                   target: null, problem: '', state: state, what: what, info: null,
+                   bar: bar, done: false };
+      queue.push(item);
+      input.addEventListener('input', refresh);
+      W.inspect(file).then(function (info) { item.info = info; what.textContent = describe(file, info); })
+        .catch(function () { what.textContent = mb(file.size); });
+    });
+    refresh();
+  }
+
+  function pickCard() {
+    window.showDirectoryPicker({ mode: 'readwrite', id: 'lakehorse-sd' })
+      .then(function (root) {
+        // Choosing the card itself is the natural thing to do; choosing its
+        // music folder works too.
+        if (root.name.toLowerCase() === 'music') return { root: root, dir: root };
+        return root.getDirectoryHandle('music', { create: true })
+          .then(function (dir) { return { root: root, dir: dir }; });
+      })
+      .then(function (r) {
+        musicDir = r.dir;
+        $('cardLine').textContent = 'Saving into ' + (r.root === r.dir ? r.dir.name : r.root.name + '/music');
+        $('cardLine').className = 'ok';
+        refresh();
+      })
+      .catch(function (e) {
+        if (e && e.name === 'AbortError') return;   // closed the picker
+        $('cardLine').textContent = 'Could not open that folder: ' + (e && e.message ? e.message : e);
+        $('cardLine').className = 'err';
+      });
+  }
+
+  /* Streams the converted file straight into the card. A writable stream
+   * writes to a temporary file and only replaces the real one on close(), so a
+   * failure part-way leaves no half-written song behind. */
+  function saveToCard(item) {
+    return musicDir.getFileHandle(item.target, { create: true })
+      .then(function (fh) { return fh.createWritable(); })
+      .then(function (out) {
+        return W.convert(item.file, function (piece) { return out.write(piece); },
+                         function (p) { item.bar.value = p; }, { format: format() })
+          .then(function (r) { return out.close().then(function () { return r; }); },
+                function (e) { return out.abort().then(function () { throw e; }); });
+      });
+  }
+
+  /* Browsers without folder access: convert in memory and download. */
+  function download(item) {
+    return W.toBlob(item.file, function (p) { item.bar.value = p; }, { format: format() }).then(function (r) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(r.blob);
+      a.download = item.target;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 60000);
+      return { converted: !!r.note, codec: /AAC/.test(r.note) ? 'aac' : '', bytes: r.blob.size };
+    });
+  }
+
+  function go() {
+    busy = true;
+    refresh();
+    var todo = queue.filter(function (q) { return q.target && !q.done; });
+    todo.reduce(function (chain, item) {
+      return chain.then(function () {
+        item.input.disabled = true;
+        setState(item, canWrite ? 'saving...' : 'converting...');
+        item.bar.hidden = false;
+        return (canWrite ? saveToCard(item) : download(item))
+          .then(function (r) {
+            item.done = true;
+            setState(item, (r.codec === 'aac' ? 'encoded, ' : r.converted ? 'converted, ' : 'copied, ') + mb(r.bytes) +
+                     (canWrite ? '' : ', downloaded'), 'ok');
+          })
+          .catch(function (e) {
+            item.input.disabled = false;
+            setState(item, 'failed: ' + (e && e.message ? e.message : e), 'err');
+          })
+          .then(function () { item.bar.hidden = true; });
+      });
+    }, Promise.resolve()).then(function () {
+      busy = false;
+      var failedStates = queue.filter(function (q) { return !q.done; })
+        .map(function (q) { return [q, q.state.textContent]; });
+      refresh();
+      // refresh() rewrites the state of every unsaved song; put the failure
+      // reasons back so they stay readable.
+      failedStates.forEach(function (f) { if (/^failed/.test(f[1])) setState(f[0], f[1], 'err'); });
+      var failed = todo.filter(function (q) { return !q.done; }).length;
+      $('summary').textContent = failed ? failed + ' failed, see the list' :
+        'Done. ' + (canWrite ? 'Eject the card and put it back in the radio.'
+                             : 'Copy the downloaded files into the card\'s music folder.');
+      $('summary').className = failed ? 'err' : 'ok';
+    });
+  }
+
+  if (!canWrite) {
+    $('pickCard').disabled = true;
+    $('cardLine').textContent = 'This browser cannot write to a folder. Use Chrome or Edge, or ' +
+      'convert here and copy the downloads into the card\'s music folder yourself.';
+    $('cardLine').className = 'warn';
+    $('go').textContent = 'Convert and download';
+  }
+
+  $('pickCard').addEventListener('click', pickCard);
+  $('pickSongs').addEventListener('click', function () { $('songFiles').click(); });
+  $('songFiles').addEventListener('change', function () { add(this.files); this.value = ''; });
+  $('clearSongs').addEventListener('click', function () {
+    if (busy) return;
+    queue = []; $('songs').textContent = ''; $('summary').textContent = ''; refresh();
+  });
+  $('go').addEventListener('click', go);
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="format"]'), function (radio) {
+    radio.addEventListener('change', function () { if (!busy) { refresh(); describeAll(); } });
+  });
+
+  var drop = $('drop');
+  drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', function () { drop.classList.remove('over'); });
+  drop.addEventListener('drop', function (e) {
+    e.preventDefault(); drop.classList.remove('over');
+    if (e.dataTransfer && e.dataTransfer.files.length) add(e.dataTransfer.files);
+  });
+})();
+</script>
+</body>
+</html>

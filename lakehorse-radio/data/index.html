@@ -20,13 +20,37 @@
          that just sees a player that will not start. -->
     <div class="banner" id="banner">Checking how you got here...</div>
 
-    <ul class="tracks" id="tracks"></ul>
-    <audio id="player" controls preload="none"></audio>
+    <audio id="player" controls preload="auto"></audio>
     <span class="status" id="playerStatus"></span>
 
-    <div class="row">
-      <button class="btn" id="refreshBtn">Refresh from the band library</button>
-    </div>
+    <hr />
+
+    <!-- Music kept on the box's own SD card. Played by the same <audio> element
+         for playback; see library.js. -->
+    <section id="sdSection">
+      <fieldset>
+        <legend>Stored on this box</legend>
+        <p class="muted" id="sdSpace">Checking the SD card...</p>
+        <ul class="tracks" id="sdList"></ul>
+
+        <div id="sdUpload" hidden>
+          <div class="row">
+            <button class="btn primary" id="sdPick">Upload songs</button>
+            <input type="file" id="sdFile" accept=".wav,.mp3,.m4a,.aac,.ogg,.opus,audio/*" multiple hidden />
+          </div>
+          <p class="muted">24-bit WAVs are converted to 16-bit in your browser before they are sent.</p>
+          <progress id="sdBar" max="1" value="0" hidden></progress>
+        </div>
+
+        <div id="sdKeyRow" hidden>
+          <label for="sdKey">Pairing key</label>
+          <input id="sdKey" placeholder="Needed once, to upload or delete" autocomplete="off" />
+          <p class="muted">Join the Lakehorse Radio hotspot and open this page: the key is filled in for you. Or paste it here.</p>
+          <button class="btn" id="sdKeySave">Save key</button>
+        </div>
+        <span class="status" id="sdStatus"></span>
+      </fieldset>
+    </section>
 
     <hr />
 
@@ -66,5 +90,8 @@
 
   <script src="dazzle.js"></script>
   <script src="app.js"></script>
+  <script src="buffering.js"></script>
+  <script src="wavconvert.js"></script>
+  <script src="library.js"></script>
 </body>
 </html>

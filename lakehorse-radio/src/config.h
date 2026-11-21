@@ -116,9 +116,59 @@ constexpr const char* PLAYLIST_PATH = "/playlist.json";
 // write leaves the previous playlist intact rather than a half-written one.
 constexpr const char* PLAYLIST_TMP_PATH = "/playlist.json.tmp";
 
+// ---------- SD card (music stored on the box) ----------
+//
+// Wiring on VSPI, proven by sd-test: CS=5, MOSI=23, MISO=19, SCK=18. GPIO12 is
+// avoided because it is a boot strapping pin, and 16/17 because the WROVER's
+// PSRAM sits on them.
+constexpr uint8_t SD_PIN_CS = 5;
+constexpr uint8_t SD_PIN_MOSI = 23;
+constexpr uint8_t SD_PIN_MISO = 19;
+constexpr uint8_t SD_PIN_SCK = 18;
+
+// sd-test mounted at 4 MHz to be safe. 10 MHz is a compromise: roughly twice
+// as fast for a 100 MB upload, and still forgiving of jumper-wire wiring.
+// Raise it only with short wires; corruption shows up as failed writes.
+constexpr uint32_t SD_SPI_HZ = 10000000;
+
+// Everything uploaded lives in one folder, so the rest of the card (macOS's
+// .Spotlight-V100 and friends) is never listed, served or deleted by the API.
+constexpr const char* SD_MUSIC_DIR = "/music";
+// Where an upload lands until it is complete. Renamed over the real name only
+// on the last byte, so a dropped connection never leaves a half-file that
+// looks like a finished track.
+constexpr const char* SD_PART_SUFFIX = ".part";
+// FAT long names allow 255, but this bounds the URL and the JSON listing.
+constexpr size_t TRACK_FILE_NAME_MAX_LEN = 100;
+// Most files a listing will report; bounds the JSON document's size.
+constexpr size_t SD_LIST_MAX_FILES = 200;
+// Uploading from the page is built and works (a raw-body POST, about 220 KB/s
+// over Wi-Fi, so a 100 MB mix takes around 8 minutes) but is off in this
+// version: songs go onto the card from a computer, in the /music folder. Turn it
+// on for the next version.
+constexpr bool SD_UPLOAD_ENABLED = false;
+// Whether uploading and deleting songs needs the pairing key. Off while the box
+// is being tried out on a home network, where anyone who can reach it is
+// someone you let in. Turn it on before the box goes anywhere shared: with it
+// off, anyone on the network can fill or empty the card.
+constexpr bool SD_WRITES_NEED_KEY = false;
+// Uploads are gathered into blocks this big before touching the card. A
+// multiple of the 512-byte sector, and big enough to amortise the card's
+// per-write overhead without costing much RAM.
+constexpr size_t SD_WRITE_BLOCK_BYTES = 16384;
+// How much of a song is read from the card at once while it is being sent.
+// Allocated per listener for the length of the song; 16 KB reads measured
+// about 1 MB/s from this card, far above what Wi-Fi can carry.
+constexpr size_t SD_READ_BLOCK_BYTES = 16384;
+// URL prefix the stored files are served under.
+constexpr const char* SD_URL_PREFIX = "/sd/";
+
 // NVS namespace holding the saved Wi-Fi credentials. Nothing else goes here.
 constexpr const char* NVS_NAMESPACE = "lakehorse";
 constexpr const char* NVS_KEY_SSID = "ssid";
 constexpr const char* NVS_KEY_PASS = "pass";
+// Fingerprint of the last wifi_defaults.h applied, so it is applied once per
+// change of that file rather than on every boot. See wifi_seed.h.
+constexpr const char* NVS_KEY_SEED = "seed";
 
 }  // namespace cfg

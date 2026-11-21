@@ -24,3 +24,11 @@ change requests/
 # flasher from the same origin as the page. The build tree itself is 100+ MB of
 # object files and is not.
 lakehorse-radio/.pio/
+
+# Wi-Fi credentials baked into a firmware build; never committed. The tracked
+# template is wifi_defaults.example.h.
+lakehorse-radio/src/wifi_defaults.h
+
+# Source masters kept beside the radio for testing; hundreds of MB, and the
+# copies that matter go onto the SD card, not into git.
+lakehorse-radio/music/

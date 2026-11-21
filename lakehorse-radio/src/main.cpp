@@ -20,8 +20,10 @@
 #include "device_key.h"
 #include "net_identity.h"
 #include "playlist_store.h"
+#include "sd_store.h"
 #include "web_server.h"
 #include "wifi_manager.h"
+#include "wifi_seed.h"
 
 void setup() {
   Serial.begin(115200);
@@ -49,6 +51,14 @@ void setup() {
   // Before WiFi: this only registers event handlers, and the GOT_IP event it
   // waits for can fire as soon as the station is started below.
   netid::begin();
+
+  // After netid (it may set the .local name) and before wifinet, which reads
+  // the saved network. A no-op unless src/wifi_defaults.h exists.
+  wifiseed::apply();
+
+  // Before the web server, so the first /api/sd request already knows whether
+  // there is a card. Not fatal if there is none.
+  sdstore::begin();
 
   wifinet::begin();
 

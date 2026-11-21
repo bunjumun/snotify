@@ -405,5 +405,5 @@
     CHUNK_FRAMES: CHUNK_FRAMES
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else root.LakehorseWav = api;
+  else root.LakehorseWavStream = api;
 })(typeof window !== 'undefined' ? window : globalThis);

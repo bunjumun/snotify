@@ -117,7 +117,7 @@
   var wavDuration = 0;
   function wavPlayer() {
     if (wav) return wav;
-    wav = window.LakehorseWav.createPlayer({
+    wav = window.LakehorseWavStream.createPlayer({
       status: playerStatus,
       ended: playNext,
       progress: function (pos, dur, playing) { wavDuration = dur; wavProgress(pos, dur, playing); }
@@ -147,7 +147,7 @@
   function play(name) {
     playingName = name;
     var url = '/sd/' + encodeURIComponent(name);
-    if (window.LakehorseWav && /\.wav$/i.test(name)) {
+    if (window.LakehorseWavStream && /\.wav$/i.test(name)) {
       var p = $('player');
       p.pause();
       p.removeAttribute('src');

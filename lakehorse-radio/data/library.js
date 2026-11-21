@@ -101,11 +101,72 @@
     el.className = 'status';
   }
 
+  // WAVs go through wavstream.js (two connections, Web Audio); everything else,
+  // and any WAV it cannot handle (not 16-bit PCM), through <audio>.
+  var wav = null;
+  function clock(s) {
+    s = Math.max(0, Math.floor(s));
+    return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+  }
+  function wavProgress(pos, dur, playing) {
+    $('wavTime').textContent = clock(pos) + ' / ' + clock(dur);
+    $('wavToggle').textContent = playing ? 'Pause' : 'Play';
+    if (!wavSeeking) $('wavSeek').value = dur ? Math.round(1000 * pos / dur) : 0;
+  }
+  var wavSeeking = false;
+  var wavDuration = 0;
+  function wavPlayer() {
+    if (wav) return wav;
+    wav = window.LakehorseWav.createPlayer({
+      status: playerStatus,
+      ended: playNext,
+      progress: function (pos, dur, playing) { wavDuration = dur; wavProgress(pos, dur, playing); }
+    });
+    $('wavToggle').addEventListener('click', function () { wav.toggle(); });
+    $('wavSeek').addEventListener('input', function () { wavSeeking = true; });
+    $('wavSeek').addEventListener('change', function () {
+      wavSeeking = false;
+      wav.seek(wavDuration * this.value / 1000);
+    });
+    return wav;
+  }
+
+  function useAudioElement(url) {
+    if (wav) wav.stop();
+    $('wavBar').hidden = true;
+    $('player').hidden = false;
+    if (!buffer) buffer = window.LakehorseBuffer.attach($('player'), playerStatus);
+    buffer.start(url);
+  }
+
+  function nextName(name) {
+    var i = files.findIndex(function (f) { return f.name === name; });
+    return i >= 0 && i + 1 < files.length ? files[i + 1].name : null;
+  }
+
   function play(name) {
     playingName = name;
-    if (!buffer) buffer = window.LakehorseBuffer.attach($('player'), playerStatus);
-    buffer.start('/sd/' + encodeURIComponent(name));
+    var url = '/sd/' + encodeURIComponent(name);
+    if (window.LakehorseWav && /\.wav$/i.test(name)) {
+      var p = $('player');
+      p.pause();
+      p.removeAttribute('src');
+      p.load();
+      p.hidden = true;
+      $('wavBar').hidden = false;
+      var w = wavPlayer();
+      var next = nextName(name);
+      w.setNext(next && /\.wav$/i.test(next) ? '/sd/' + encodeURIComponent(next) : null);
+      w.start(url).catch(function () { useAudioElement(url); });
+    } else {
+      useAudioElement(url);
+    }
     load();
+  }
+
+  function playNext() {
+    var next = nextName(playingName);
+    if (next) play(next);
   }
 
   function remove(name) {
@@ -198,10 +259,7 @@
     $('sdFile').addEventListener('change', function () {
       if (this.files.length) uploadAll(this.files);
     });
-    $('player').addEventListener('ended', function () {
-      var i = files.findIndex(function (f) { return f.name === playingName; });
-      if (i >= 0 && i + 1 < files.length) play(files[i + 1].name);
-    });
+    $('player').addEventListener('ended', playNext);
     fetch('/api/status', { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(setupKey)

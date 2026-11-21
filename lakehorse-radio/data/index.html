@@ -21,6 +21,13 @@
     <div class="banner" id="banner">Checking how you got here...</div>
 
     <audio id="player" controls preload="auto"></audio>
+    <!-- WAVs play through wavstream.js instead of the <audio> element, which
+         can only use one connection and is too slow for WAV off the box. -->
+    <div class="wavbar" id="wavBar" hidden>
+      <button class="btn" id="wavToggle" type="button">Pause</button>
+      <input id="wavSeek" type="range" min="0" max="1000" value="0" aria-label="Position" />
+      <span class="time" id="wavTime">0:00 / 0:00</span>
+    </div>
     <span class="status" id="playerStatus"></span>
 
     <hr />
@@ -91,6 +98,7 @@
   <script src="dazzle.js"></script>
   <script src="app.js"></script>
   <script src="buffering.js"></script>
+  <script src="wavstream.js"></script>
   <script src="wavconvert.js"></script>
   <script src="library.js"></script>
 </body>

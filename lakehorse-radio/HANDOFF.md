@@ -63,12 +63,29 @@ the page. The playlist API still exists but the page no longer uses it.
   dither (same sample rate), other files are copied. Shares
   `data/wavconvert.js` with the box's page, so naming and conversion rules
   cannot drift.
+  - **↳ 2026-11-21 (Module 1): song-prep's default is now "WAV 44.1 kHz
+    16-bit stereo"** (`wav44`). Any file the browser can decode (WAV, MP3,
+    M4A, AAC, Ogg) is resampled by `decodeAudioData` on a 44.1 kHz
+    `OfflineAudioContext`, mixed to stereo by Web Audio's rules (mono becomes
+    L=R), and dithered to 16-bit; a WAV already in that shape is copied. That
+    is the A2DP shape, so the box will never need a decoder or resampler. It
+    decodes the whole song in memory (~150 MB for 7 min), so it is for
+    song-prep on a computer; the box's own upload stays `wav16`. AAC is still
+    offered, labelled "browser playback only". Checked in Chrome:
+    `JupiterGold 4-26-26.wav` (48 kHz 24-bit, 307.200 s) became a 54,190,120 B
+    PCM 44100/16/2 WAV of 307.200 s in 0.6 s; a mono 48 kHz sine came out L=R
+    within dither at the same level. Tests: `node test/wavconvert.test.js`.
 - **Wi-Fi:** joined to "pifi" at 192.168.0.38, `lakehorseradio.local`.
   `src/wifi_defaults.h` (gitignored, template `wifi_defaults.example.h`) can
   bake credentials into a build; applied once per change of the file.
 - **A wedged SD card needs a power cycle, not a reset.** Resetting the ESP32
   mid-write left the card failing `CMD0` until USB was unplugged. Opening the
   serial port resets the board, so never open it during a card write.
+
+**↳ Superseded 2026-11-21 (later the same day): WAV streams fine.** The slow
+figures below were partly two sessions testing at once; one connection gives
+222-250 KB/s and `wavstream.js` plays WAV over two. AAC is no longer the
+default anywhere; see the song-prep note above.
 
 **Streaming speed: solved by sending AAC, not WAV.** The box sends songs at
 25-46 KB/s sustained (five one-minute runs from a Mac on the same Wi-Fi; even

@@ -14,9 +14,15 @@
  * handed to a sink as it goes, so a 120 MB master never sits in memory whole
  * unless the caller asks for a Blob.
  *
- * Conversion 'aac': any readable WAV is encoded to AAC at 160 kbps. This is
- * what the song-prep tool uses, because the box cannot send WAV fast enough
- * to stream it; see the AAC section below.
+ * Conversion 'wav44': any audio file the browser can decode becomes 44.1 kHz
+ * 16-bit stereo WAV, the shape a Bluetooth (A2DP) speaker takes, so the box can
+ * one day play it to a speaker with no decoder or resampler of its own. This is
+ * song-prep's default. It decodes the whole song in memory, so it is for a
+ * computer, not a phone; see the section below.
+ *
+ * Conversion 'aac': any readable WAV is encoded to AAC at 160 kbps. Small, and
+ * fine for playback in a listener's browser, but the box cannot decode it, so
+ * it will never play through a speaker attached to the box.
  *
  * Naming: safeName() mirrors src/track_name.cpp exactly. The box serves only a
  * file whose name survives those rules unchanged, so a file saved under any
@@ -114,10 +120,11 @@
 
   // ---------- AAC ----------
   //
-  // The box sends songs over Wi-Fi at 40-85 KB/s (measured), and a 16-bit WAV
-  // plays at 176-192 KB/s, so WAV cannot stream smoothly however it is buffered.
-  // AAC at 160 kbps is 20 KB/s and near-transparent; it is what other
-  // ESP32 audio projects stream for the same reason. Encoded with the browser's
+  // Written when the box seemed to send songs at only 40-85 KB/s, below the
+  // 176-192 KB/s a 16-bit WAV needs. Later measurements (2026-11-21) found
+  // 222-250 KB/s on one connection, and wavstream.js plays WAV over two, so WAV
+  // streams fine and AAC is now only the small option for browser playback.
+  // AAC at 160 kbps is 20 KB/s and near-transparent. Encoded with the browser's
   // own WebCodecs AudioEncoder in ADTS framing, which is a plain .aac file every
   // browser plays, so no encoder or muxer library is needed.
 
@@ -234,6 +241,94 @@
       });
   }
 
+  // ---------- WAV 44.1 kHz / 16-bit / stereo ("Bluetooth-ready") ----------
+  //
+  // One fixed shape for everything on the card, chosen for the box rather than
+  // the listener: an A2DP source sends 44.1 kHz 16-bit stereo, so a file
+  // already in that shape can go from the card to a speaker with no decoder,
+  // no resampler and no channel mixing on the ESP32, which has neither the RAM
+  // nor the CPU to spare for them while it is also serving Wi-Fi.
+  //
+  // The resampling is the browser's, not ours: decodeAudioData on a context
+  // running at 44.1 kHz returns the audio already resampled, and it reads MP3,
+  // M4A, AAC and Ogg as well as WAV, so every format the card accepts comes out
+  // the same. Rendering through an OfflineAudioContext with a 2-channel
+  // destination then applies the Web Audio mixing rules (mono becomes L=R,
+  // 5.1 folds down), which are better than anything worth writing here.
+  //
+  // The price is memory: the whole song is decoded at once, about 150 MB for a
+  // seven minute mix. That is fine for song-prep on a computer and is why the
+  // box's own upload page keeps 'wav16', which streams.
+  var BT_RATE = 44100;
+  var BT_CHANNELS = 2;
+  var BT_BLOCK_FRAMES = 1 << 20;   // frames converted per sink write, ~4 MB out
+
+  /* True when a WAV header is already exactly the Bluetooth shape, so it can be
+   * copied rather than decoded and dithered a second time. */
+  function isBtReady(h) {
+    return !!h && h.format === 1 && h.bits === 16 &&
+           h.rate === BT_RATE && h.channels === BT_CHANNELS;
+  }
+
+  /* Two float channels to interleaved, dithered 16-bit PCM, for `n` frames
+   * starting at `start`. */
+  function interleave16(left, right, start, n) {
+    var out = new Int16Array(n * 2);
+    for (var i = 0; i < n; i++) {
+      out[2 * i] = to16(left[start + i] * 32768);
+      out[2 * i + 1] = to16(right[start + i] * 32768);
+    }
+    return out;
+  }
+
+  /* The decoded song as a 2-channel AudioBuffer at 44.1 kHz. A stereo decode is
+   * used as it is; anything else is rendered through the mixer. */
+  function decodeToStereo(bytes) {
+    var Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (typeof Offline !== 'function') {
+      return Promise.reject(new Error('this browser cannot convert audio; use Chrome or Edge'));
+    }
+    var probe = new Offline(BT_CHANNELS, 1, BT_RATE);
+    return probe.decodeAudioData(bytes).then(function (buf) {
+      if (!buf || buf.length === 0) throw new Error('the file has no audio in it');
+      if (buf.numberOfChannels === BT_CHANNELS) return buf;
+      var mix = new Offline(BT_CHANNELS, buf.length, BT_RATE);
+      var src = mix.createBufferSource();
+      src.buffer = buf;
+      src.connect(mix.destination);
+      src.start();
+      return mix.startRendering();
+    }, function () {
+      throw new Error('this browser cannot read this file as audio');
+    });
+  }
+
+  function encodeBtWav(file, sink, onProgress) {
+    return file.arrayBuffer().then(function (bytes) {
+      onProgress(0.1);
+      return decodeToStereo(bytes);
+    }).then(function (buf) {
+      onProgress(0.5);
+      var left = buf.getChannelData(0);
+      var right = buf.getChannelData(1);
+      var frames = buf.length;
+      var dataBytes = frames * BT_CHANNELS * 2;
+      function next(at) {
+        if (at >= frames) {
+          return { converted: true, codec: 'wav44', bytes: 44 + dataBytes,
+                   header: { format: 1, bits: 16, rate: BT_RATE, channels: BT_CHANNELS } };
+        }
+        var n = Math.min(BT_BLOCK_FRAMES, frames - at);
+        return Promise.resolve(sink(interleave16(left, right, at, n))).then(function () {
+          onProgress(0.5 + 0.5 * (at + n) / frames);
+          return next(at + n);
+        });
+      }
+      return Promise.resolve(sink(header16(BT_CHANNELS, BT_RATE, dataBytes)))
+        .then(function () { return next(0); });
+    });
+  }
+
   /* Describes what convert() will do, without doing it. */
   function inspect(file) {
     if (!/\.wav$/i.test(file.name)) return Promise.resolve({ header: null, convert: false });
@@ -247,11 +342,24 @@
    * A file that needs no conversion is passed through as one Blob. Resolves
    * with {converted, codec, header, bytes}.
    *
-   * options.format: 'wav16' (default) rewrites deep WAVs as 16-bit WAV;
-   * 'aac' encodes any readable WAV to AAC. Non-WAV files are always copied. */
+   * options.format:
+   *   'wav16' (default) rewrites deep WAVs as 16-bit WAV at their own rate;
+   *   'wav44' turns any audio the browser can read into 44.1 kHz 16-bit
+   *           stereo WAV, copying a WAV that is already exactly that;
+   *   'aac'   encodes any readable WAV to AAC.
+   * Under wav16 and aac, non-WAV files are copied. */
   function convert(file, sink, onProgress, options) {
     onProgress = onProgress || function () {};
     var format = (options && options.format) || 'wav16';
+    if (format === 'wav44') {
+      return inspect(file).then(function (info) {
+        if (!isBtReady(info.header)) return encodeBtWav(file, sink, onProgress);
+        return Promise.resolve(sink(file)).then(function () {
+          onProgress(1);
+          return { converted: false, header: info.header, bytes: file.size };
+        });
+      });
+    }
     if (format === 'aac' && /\.wav$/i.test(file.name)) {
       return readHeader(file).then(function (h) {
         return canEncodeAac(h).then(function (ok) {
@@ -298,14 +406,17 @@
       var type = r.codec === 'aac' ? 'audio/aac' : 'audio/wav';
       return { blob: r.converted ? new Blob(parts, { type: type }) : file,
                note: !r.converted ? '' : r.codec === 'aac' ? 'encoded to AAC'
+                                       : r.codec === 'wav44' ? 'converted to 44.1 kHz 16-bit stereo'
                                        : 'converted from ' + r.header.bits + '-bit' };
     });
   }
 
-  /* The name a file is saved under for a given format: a WAV encoded to AAC
-   * becomes .aac, everything else keeps its extension. */
+  /* The name a file is saved under for a given format: under wav44 everything
+   * becomes .wav, a WAV encoded to AAC becomes .aac, and otherwise the
+   * extension is kept. */
   function outputExtension(name, format) {
     var ext = (String(name).match(/\.[^.]+$/) || [''])[0].toLowerCase();
+    if (format === 'wav44') return '.wav';
     return format === 'aac' && ext === '.wav' ? '.aac' : ext;
   }
 
@@ -323,7 +434,7 @@
     return { ok: true, name: clean };
   }
 
-  window.LakehorseWav = {
+  var api = {
     inspect: inspect,
     convert: convert,
     toBlob: toBlob,
@@ -331,6 +442,14 @@
     outputExtension: outputExtension,
     AAC_BITRATE: AAC_BITRATE,
     safeName: safeName,
-    NAME_MAX_LEN: NAME_MAX_LEN
+    NAME_MAX_LEN: NAME_MAX_LEN,
+    // Exposed for test/wavconvert.test.js; the pages do not use these.
+    isBtReady: isBtReady,
+    interleave16: interleave16,
+    header16: header16,
+    BT_RATE: BT_RATE
   };
+  // Node runs the tests; the browser gets the global, as before.
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else window.LakehorseWav = api;
 })();

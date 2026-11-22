@@ -6,11 +6,13 @@
   band master takes eight minutes, so for v1 songs go onto the card in a card
   reader instead. Copying them by hand has two traps this page removes:
 
-    * WAV masters, which the box cannot stream. It sends songs over Wi-Fi at
-      40-85 KB/s and a 16-bit WAV plays at 176-192 KB/s, so a WAV stutters
-      however much is buffered. By default each WAV is encoded to AAC at
-      160 kbps (20 KB/s) with the browser's built-in encoder; a 16-bit WAV
-      option remains for a box on a faster network (wavconvert.js).
+    * Songs in shapes the box cannot pass on. By default every song (WAV,
+      MP3, M4A, AAC or Ogg) becomes 44.1 kHz 16-bit stereo WAV, resampled and
+      dithered by the browser, because that is what a Bluetooth speaker takes
+      and the box has no room to decode or resample on the way. WAV streams to
+      a listener's browser fine: the box sends 222-250 KB/s on one connection
+      and a 16-bit WAV needs 176-192. AAC (small, browser playback only) and
+      16-bit WAV at the source's own rate remain as options (wavconvert.js).
     * File names the box will not serve. The firmware only plays a file whose
       name already obeys its rules (src/track_name.cpp), so an apostrophe or a
       '#' would leave a song on the card that never shows up. Names are cleaned
@@ -93,12 +95,15 @@
 
   <div class="step">
     <h2>3. Format</h2>
-    <label class="row"><input type="radio" name="format" value="aac" checked />
-      <span><b>AAC, 160 kbps</b> (recommended). About a tenth the size of a WAV, so it streams
-      smoothly over the box's Wi-Fi.</span></label>
+    <label class="row"><input type="radio" name="format" value="wav44" checked />
+      <span><b>WAV 44.1 kHz 16-bit stereo</b> (recommended). Ready for Bluetooth playback
+      from the box, and streams to phones and laptops too. Any song is converted.</span></label>
+    <label class="row"><input type="radio" name="format" value="aac" />
+      <span><b>AAC, 160 kbps, browser playback only</b>. About a tenth the size, but the box
+      cannot play it through a Bluetooth speaker.</span></label>
     <label class="row"><input type="radio" name="format" value="wav16" />
-      <span><b>16-bit WAV</b>. Full quality, but the box cannot send it fast enough to play
-      without pauses.</span></label>
+      <span><b>16-bit WAV at the song's own sample rate</b>. Deeper WAVs become 16-bit, other
+      files are copied. Not ready for Bluetooth unless the song is already 44.1 kHz stereo.</span></label>
   </div>
 
   <div class="step">
@@ -132,14 +137,25 @@
 
   function format() {
     var picked = document.querySelector('input[name="format"]:checked');
-    return picked ? picked.value : 'aac';
+    return picked ? picked.value : 'wav44';
   }
+
+  // 44.1 kHz x 2 channels x 2 bytes: what a second of the Bluetooth WAV costs.
+  var BT_BYTES_PER_SECOND = 44100 * 2 * 2;
 
   function describe(file, info) {
     var h = info.header;
-    if (!h) return mb(file.size) + ', copied as is';
+    if (!h) {
+      return mb(file.size) + (format() === 'wav44' ? ', becomes 44.1 kHz 16-bit stereo WAV' : ', copied as is');
+    }
     var fmt = (h.format === 3 ? h.bits + '-bit float' : h.bits + '-bit') + ', ' +
               (h.rate / 1000) + ' kHz, ' + (h.channels === 1 ? 'mono' : h.channels === 2 ? 'stereo' : h.channels + ' ch');
+    if (format() === 'wav44') {
+      if (W.isBtReady(h)) return mb(file.size) + ', ' + fmt + ', already Bluetooth-ready, copied as is';
+      var secs = h.dataBytes / (h.rate * h.channels * (h.bits >> 3));
+      return mb(file.size) + ', ' + fmt + ', becomes 44.1 kHz 16-bit stereo (about ' +
+             mb(secs * BT_BYTES_PER_SECOND) + ')';
+    }
     if (format() === 'aac') {
       var seconds = h.dataBytes / (h.rate * h.channels * (h.bits >> 3));
       return mb(file.size) + ', ' + fmt + ', becomes AAC (about ' +
@@ -195,8 +211,9 @@
 
   function add(files) {
     Array.prototype.forEach.call(files, function (file) {
-      // The extension stays as the source's: the converter keeps a WAV a WAV
-      // and copies everything else as it is. Only the part before it is named.
+      // Only the part before the extension is named. The extension shown is
+      // the output's, which validate() works out from the chosen format
+      // (outputExtension): .wav for everything under the default.
       var ext = (file.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
       var start = W.safeName(file.name);
       var stem = (start.ok ? start.name : file.name).slice(0, -ext.length || undefined);

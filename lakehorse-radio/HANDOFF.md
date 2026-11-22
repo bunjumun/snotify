@@ -92,8 +92,20 @@ the box. 0 underruns across every test. Board is flashed with all of this
   KB/s (needs 176). Modem sleep makes each round trip ~100 ms, and window /
   RTT caps it. Box playback is unaffected. Fix options: a "Bluetooth off"
   mode that restores Wi-Fi, or accept it (box mode is the point).
-- A Wi-Fi wedge, if it happens, needs a power cycle. A watchdog (ping the
-  gateway, reconnect after N failures) is the next robustness step.
+- ~~A Wi-Fi wedge needs a power cycle.~~ **Watchdog added (2026-11-22,
+  later):** `src/net_watchdog.*` pings the gateway every 15 s (3 pings, any
+  reply = alive). 3 silent probes in a row: rejoin Wi-Fi (Bluetooth and the
+  song keep going). Still silent 3 probes after that: `ESP.restart()`, but
+  held while a song plays. Does nothing until the gateway has answered once
+  on this network, so a router that drops ping never causes restarts. The
+  decision is `src/link_watch.*`, native-tested (test/test_linkwatch).
+  Tunables in config.h `WATCH_*`. Log prefix `[watch]`.
+  **Drill:** build with `PLATFORMIO_BUILD_FLAGS="-D LAKEHORSE_WATCHDOG_DRILL=1"`
+  and every probe after arming reads as failed. Seen on hardware: rejoin at
+  ~45 s, restart ~50 s later, clean boot, repeat; with a song playing the
+  restart was held. Never ship the drill build. Not yet seen: a real wedge
+  being caught (none has happened since the send-window fix). The ping
+  task costs ~3 KB internal RAM (idle free 50.8 KB with it).
 - The real fix for RAM is a **rev3 ESP32-WROVER-E** (no PSRAM bug, so
   everything small can live in PSRAM; 74 KB free measured that way). Must
   stay classic ESP32: S3/C3/C6 have no Bluetooth Classic, so no A2DP.

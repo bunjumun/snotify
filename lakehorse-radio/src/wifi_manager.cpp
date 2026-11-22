@@ -472,6 +472,12 @@ bool forget() {
   return true;
 }
 
+void reconnect() {
+  if (!g_haveSaved) return;
+  g_lastAttemptMs = millis();
+  g_reconnectPending = true;
+}
+
 StationState stationState() { return g_state; }
 uint8_t lastFailureReason() { return g_lastReason; }
 const char* lastFailureText() {

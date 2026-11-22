@@ -221,6 +221,25 @@ constexpr int BOX_READER_CORE = 1;
 // Reader sleep when there is nothing to do (buffer full, paused, stopped).
 constexpr uint32_t BOX_READER_IDLE_MS = 10;
 
+// ---------- Wi-Fi watchdog (net_watchdog.h, link_watch.h) ----------
+// How often the gateway is pinged. Fifteen seconds puts a deaf box back on
+// the network within about a minute and a half, for a few hundred bytes of
+// traffic a minute.
+constexpr uint32_t WATCH_PROBE_EVERY_MS = 15000;
+// One probe is this many pings; any single reply counts as alive, so one
+// dropped packet under modem sleep (RTT ~100 ms) is never mistaken for a wedge.
+constexpr uint32_t WATCH_PINGS_PER_PROBE = 3;
+constexpr uint32_t WATCH_PING_INTERVAL_MS = 300;
+constexpr uint32_t WATCH_PING_TIMEOUT_MS = 1500;
+// A probe whose end never arrives is counted as failed after this long.
+constexpr uint32_t WATCH_PROBE_DEADLINE_MS = 10000;
+// Failed probes in a row before rejoining Wi-Fi (45 s at the rate above):
+// long enough to ride out a router briefly busy, short enough to matter.
+constexpr uint8_t WATCH_FAILS_TO_RECONNECT = 3;
+// Rejoins that may go unanswered before a restart. One: rejoining is free
+// and keeps the song, but if it did not work once, a second try rarely does.
+constexpr uint8_t WATCH_RECONNECTS_BEFORE_RESTART = 1;
+
 // NVS namespace holding the saved Wi-Fi credentials. Nothing else goes here.
 constexpr const char* NVS_NAMESPACE = "lakehorse";
 constexpr const char* NVS_KEY_SSID = "ssid";

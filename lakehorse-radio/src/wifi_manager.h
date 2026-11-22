@@ -60,6 +60,10 @@ bool provision(const String& ssid, const String& password);
 // stays reachable to be re-provisioned either way.
 bool forget();
 
+// Drops and rejoins the saved network, through the same path the retry timer
+// uses. For net_watchdog.h, when the link says "connected" but is deaf.
+void reconnect();
+
 StationState stationState();
 
 // Why the last attempt failed, in words the setup page can show. Empty when

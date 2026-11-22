@@ -31,6 +31,7 @@
 #include "config.h"
 #include "device_key.h"
 #include "net_identity.h"
+#include "net_watchdog.h"
 #include "playlist_store.h"
 #include "sd_store.h"
 #include "web_server.h"
@@ -127,6 +128,7 @@ void heartbeat() {
 
 void loop() {
   wifinet::tick();
+  netwatch::tick();
   heartbeat();
 
   // DNSServer is polled rather than interrupt-driven. Stop calling this and the

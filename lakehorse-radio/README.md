@@ -38,6 +38,8 @@ and being reachable at a gig where there is no network at all.
 | `src/box_player.*` | Bluetooth playback: SD WAV to an A2DP speaker (core-2 build only). |
 | `src/pcm_format.*` | WAV headers, resampling to 44.1 kHz, volume. Pure, tested on a laptop. |
 | `src/player_api.*` | `/api/player/*`, the page's remote for box playback. |
+| `src/net_watchdog.*` | Wi-Fi watchdog: pings the gateway, rejoins, restarts as a last resort. |
+| `src/link_watch.*` | The watchdog's decision rules (native-tested). |
 | `src/send_window.*` | Per-connection TCP send cap, so page loads fit beside Bluetooth. |
 | `src/device_key.*` | Per-box pairing key, generated on first boot, handed out only over the hotspot. |
 | `src/net_identity.*` | mDNS, restarted on every reconnect because it does not survive one. |

@@ -106,12 +106,16 @@ const tests = {
     assert.match(status[0], /boom/);
   },
 
-  async 'the on-box stub fits the same shape and reports itself unavailable'() {
-    require('../data/player-box.js');
-    const box = globalThis.LakehorseBoxPlayer.create();
-    const p = P.createPlayer(box);
-    assert.strictEqual(box.available, false);
-    assert.strictEqual(await p.play('a.wav'), false);
+  async 'stop silences the backend and clears the current track'() {
+    const b = fakeBackend();
+    const seen = [];
+    const p = P.createPlayer(b, { track: (n) => seen.push(n) });
+    await p.play('a.wav');
+    p.stop();
+    assert.deepStrictEqual(b.calls.pop(), ['stop']);
+    assert.strictEqual(p.current(), null);
+    assert.strictEqual(p.isPlaying(), false);
+    assert.strictEqual(seen.pop(), null);
   }
 };
 

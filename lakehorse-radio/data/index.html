@@ -33,6 +33,14 @@
       <input id="playVolume" type="range" min="0" max="100" value="100" />
     </div>
     <span class="status" id="playerStatus"></span>
+    <!-- Shown only when the box was built with Bluetooth (player-box.js). -->
+    <p class="row" id="playOnRow" hidden>
+      <label for="playOn">Play songs on</label>
+      <select id="playOn">
+        <option value="browser">this device</option>
+        <option value="box">the box's speaker</option>
+      </select>
+    </p>
 
     <hr />
 

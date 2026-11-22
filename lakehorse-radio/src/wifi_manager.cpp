@@ -246,7 +246,12 @@ void beginStationAttempt(const String& ssid, const String& password) {
   // since this thing is mains-powered. Re-applied after every begin() because
   // the mode transition above can reset it, the same reason WLED re-applies
   // its own sleep and TX-power settings on every reconnect rather than once.
-  WiFi.setSleep(false);
+  //
+  // Except with Bluetooth in the build: IDF 4.4's Wi-Fi/BT coexistence
+  // requires modem sleep, and esp_bt_controller_enable aborts in
+  // coex_core_enable without it (seen 2026-11-22, boot loop). mDNS may get
+  // flakier there; the box's IP still works.
+  WiFi.setSleep(cfg::WIFI_MODEM_SLEEP);
 }
 
 // Reads NVS and, if anything is saved, starts (or leaves running, if one is

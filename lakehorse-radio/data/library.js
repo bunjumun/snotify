@@ -62,7 +62,8 @@
     }
 
     files.sort(function (a, b) { return a.name.localeCompare(b.name); });
-    if (player) player.setTracks(files.map(function (f) { return f.name; }));
+    trackNames = files.map(function (f) { return f.name; });
+    if (player) player.setTracks(trackNames);
     files.forEach(function (f) {
       var li = document.createElement('li');
       li.className = 'track' + (f.name === playingName ? ' playing' : '');
@@ -141,13 +142,47 @@
     } catch (e) { return 1; }
   }
 
-  function setupPlayer() {
-    var backend = window.LakehorseBrowserPlayer.create($('player'));
+  // Where songs play: this device's browser, or the box's own Bluetooth
+  // speaker. Remembered per device. Switching stops the old backend first, so
+  // the two never play at once.
+  var PLAY_ON_STORE = 'lakehorse.radio.playOn';
+  var trackNames = [];
+
+  function savedPlayOn() {
+    try { return localStorage.getItem(PLAY_ON_STORE) === 'box' ? 'box' : 'browser'; }
+    catch (e) { return 'browser'; }
+  }
+
+  function buildPlayer(kind) {
+    if (player) player.stop();
+    var backend = kind === 'box'
+      ? window.LakehorseBoxPlayer.create()
+      : window.LakehorseBrowserPlayer.create($('player'));
     player = window.LakehorsePlayer.createPlayer(backend, {
       progress: showProgress,
       status: playerStatus,
       track: showTrack
-    }, savedVolume());
+    }, player ? player.volume() : savedVolume());
+    player.setTracks(trackNames);
+  }
+
+  function setupPlayOn() {
+    window.LakehorseBoxPlayer.probe().then(function (built) {
+      if (!built) return;
+      $('playOnRow').hidden = false;
+      $('playOn').value = savedPlayOn();
+      if (savedPlayOn() === 'box') buildPlayer('box');
+      $('playOn').addEventListener('change', function () {
+        try { localStorage.setItem(PLAY_ON_STORE, this.value); } catch (e) { /* private mode */ }
+        buildPlayer(this.value);
+        playerStatus('');
+      });
+    });
+  }
+
+  function setupPlayer() {
+    buildPlayer('browser');
+    setupPlayOn();
     $('playVolume').value = Math.round(player.volume() * 100);
     $('playToggle').addEventListener('click', function () { player.toggle(); });
     $('playNext').addEventListener('click', function () { player.next(); });

@@ -163,6 +163,64 @@ constexpr size_t SD_READ_BLOCK_BYTES = 16384;
 // URL prefix the stored files are served under.
 constexpr const char* SD_URL_PREFIX = "/sd/";
 
+// ---------- Playing on the box (Bluetooth A2DP out to a speaker) ----------
+// Wi-Fi modem sleep: off for mDNS reliability (wifi_manager.cpp), but Wi-Fi
+// and Bluetooth coexistence on IDF 4.4 requires it on, so a Bluetooth build
+// has no choice.
+#if LAKEHORSE_BT
+constexpr bool WIFI_MODEM_SLEEP = true;
+#else
+constexpr bool WIFI_MODEM_SLEEP = false;
+#endif
+// Serial heartbeat interval (main.cpp): heap and Wi-Fi state, for diagnosis.
+constexpr uint32_t HEARTBEAT_MS = 2000;
+// Most unacknowledged bytes one HTTP connection may queue in a Bluetooth
+// build (send_window.h). Two segments: ESPAsyncWebServer will not send the
+// next part of a large response until it has room for two whole segments
+// (ASYNC_RESPONCE_BUFF_SIZE), so anything smaller stalls big files for good.
+constexpr uint16_t HTTP_SEND_WINDOW = 2 * 1436;
+// Bluetooth's own structures go to PSRAM, and nothing else's. While the stack
+// starts, malloc() requests of this size and up go to PSRAM first; after it,
+// the core default (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL, 4096) comes back.
+// Why so narrow, both found 2026-11-22:
+//   - with the default throughout, Bluetooth left 12 KB of internal RAM and
+//     Bluedroid asserted out of memory connecting to the speaker;
+//   - with 32 throughout, internal RAM was fine (74 KB) but the box crashed
+//     under page loads: "CORRUPT HEAP: Bad tail", a zero byte past a LittleFS
+//     file handle in PSRAM, every time. This board is ESP32 rev v1.0, the
+//     revision with the PSRAM cache bug, and the compiler workaround does not
+//     cover every case. Small, busy structures in PSRAM are not safe on it.
+// Bluetooth started this way streamed cleanly in the same tests.
+constexpr size_t BT_START_PSRAM_THRESHOLD = 32;
+// After Bluetooth is up: buffers of this size and up (lwIP send segments,
+// the web server's 2.9 KB send buffers) go to PSRAM; small structures such as
+// LittleFS file handles, the ones seen corrupted in PSRAM, stay internal.
+constexpr size_t RUNTIME_PSRAM_THRESHOLD = 1024;
+// Bluedroid finishes its profile setup on its own task after start()
+// returns; the low threshold is held this long so that lands in PSRAM too.
+constexpr uint32_t BT_START_SETTLE_MS = 1500;
+// The speaker's advertised name, exact case: ESP32-A2DP matches it with
+// strcmp, and "ml301" was never found while "ML301" was (HANDOFF.md, Module 5).
+constexpr const char* BT_SPEAKER_NAME = "ML301";
+// Name the box shows to other Bluetooth devices.
+constexpr const char* BT_LOCAL_NAME = "Lakehorse Radio";
+// PCM queued between the card and the speaker, in 44.1 kHz stereo frames,
+// held in PSRAM. Two seconds rides out a slow card read or a burst of web
+// traffic on the card's SPI bus; it costs 352 KB of the 4 MB PSRAM.
+constexpr size_t BOX_RING_FRAMES = 88200;
+// Sound starts once this much is queued, so a song does not open on a gap.
+constexpr size_t BOX_PRIME_FRAMES = 22050;
+// Bytes read from the card per pass. Internal RAM (the SD driver copies from
+// it), so kept small; 4 KB is 23 ms of 48 kHz stereo.
+constexpr size_t BOX_READ_BYTES = 4096;
+// The reader task: core 1 beside AsyncTCP, since Bluetooth and Wi-Fi share
+// core 0. Below AsyncTCP's priority so a page load is never starved.
+constexpr uint32_t BOX_READER_STACK = 4096;
+constexpr uint32_t BOX_READER_PRIORITY = 2;
+constexpr int BOX_READER_CORE = 1;
+// Reader sleep when there is nothing to do (buffer full, paused, stopped).
+constexpr uint32_t BOX_READER_IDLE_MS = 10;
+
 // NVS namespace holding the saved Wi-Fi credentials. Nothing else goes here.
 constexpr const char* NVS_NAMESPACE = "lakehorse";
 constexpr const char* NVS_KEY_SSID = "ssid";

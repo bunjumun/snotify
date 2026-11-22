@@ -23,8 +23,10 @@
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
 #include <esp_psram.h>
 #endif
+#include <WiFi.h>
 #include <esp_system.h>
 
+#include "box_player.h"
 #include "captive_portal.h"
 #include "config.h"
 #include "device_key.h"
@@ -72,6 +74,11 @@ void setup() {
                 (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getMinFreeHeap());
   reportPsram();
 
+  // First, before storage, Wi-Fi or the server exist: Bluetooth starts with
+  // its allocations steered into PSRAM (config.h, BT_START_PSRAM_THRESHOLD),
+  // and that only works while nothing else is allocating.
+  boxplayer::begin();
+
   if (!playlist::beginStorage()) {
     // Carry on regardless. Without a filesystem there is no player UI, but the
     // API and the setup page still answer, which is what someone needs in order
@@ -105,8 +112,22 @@ void setup() {
   Serial.println(F("[boot] ready"));
 }
 
+// Serial-only health line, so a box that goes quiet on the network still
+// says what its memory and Wi-Fi looked like just before. Costs nothing on
+// the network side.
+void heartbeat() {
+  static uint32_t last = 0;
+  const uint32_t now = millis();
+  if (now - last < cfg::HEARTBEAT_MS) return;
+  last = now;
+  Serial.printf("[hb] free %u largest %u min %u wifi %d rssi %d\n", (unsigned)ESP.getFreeHeap(),
+                (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getMinFreeHeap(),
+                (int)WiFi.status(), (int)WiFi.RSSI());
+}
+
 void loop() {
   wifinet::tick();
+  heartbeat();
 
   // DNSServer is polled rather than interrupt-driven. Stop calling this and the
   // captive portal silently stops capturing, which presents as "the setup page

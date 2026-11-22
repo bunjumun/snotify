@@ -35,6 +35,10 @@ and being reachable at a gig where there is no network at all.
 | `src/web_server.*` | One server, both audiences. API, static files, CORS. |
 | `src/playlist_validate.*` | Pure validation. Runs on a laptop, so it is actually tested. |
 | `src/playlist_store.*` | LittleFS, with a write-then-rename so a power cut cannot corrupt. |
+| `src/box_player.*` | Bluetooth playback: SD WAV to an A2DP speaker (core-2 build only). |
+| `src/pcm_format.*` | WAV headers, resampling to 44.1 kHz, volume. Pure, tested on a laptop. |
+| `src/player_api.*` | `/api/player/*`, the page's remote for box playback. |
+| `src/send_window.*` | Per-connection TCP send cap, so page loads fit beside Bluetooth. |
 | `src/device_key.*` | Per-box pairing key, generated on first boot, handed out only over the hotspot. |
 | `src/net_identity.*` | mDNS, restarted on every reconnect because it does not survive one. |
 | `data/` | The player page, flashed as a LittleFS image. |

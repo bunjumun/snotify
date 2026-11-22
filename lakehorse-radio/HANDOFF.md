@@ -46,7 +46,81 @@ stack takes tens of KB of internal RAM on its own) has to fit under that.
     `ESP32_ARDUINO_LIB_BUILDER`, and with that and no `BOARD_HAS_PSRAM`,
     `esp32-hal-psram.h` `#undef`s `CONFIG_SPIRAM`. The board has 4 MB.
 
-## START HERE (2026-11-22, end of session): Module 6, core 2 is slow on Wi-Fi
+## START HERE (2026-11-22, night): Module 6 WORKS, the box plays songs on ML301
+
+**Heard by ear:** WAVs from the SD card play out of ML301, 44.1 and 48 kHz
+(48 is resampled on the box). The page drives it: "Play songs on: the box's
+speaker" switch, then tap a song. Verified from the page: play, pause, resume,
+seek, end of song moves on to the next, switching back to "this device" stops
+the box. 0 underruns across every test. Board is flashed with all of this
+(`radio-core2`, firmware + LittleFS).
+
+**What was built**
+- `src/box_player.*`: SD WAV -> reader task (core 1) -> 2 s ring in PSRAM ->
+  A2DP data callback. Commands take a mutex; the BT callback only takes a
+  spinlock and plays silence when dry. `src/pcm_format.*`: WAV header parse,
+  mono->stereo, linear resampler, volume (pure, `test/test_pcm`, 18 tests).
+- `src/player_api.*`: `GET /api/player`, `POST /api/player/{play?name=&t=,
+  pause, resume, stop, seek?t=, volume?v=}`. `ended` is a counter.
+- `data/player-box.js` (real backend, polls once a second), `player.js`
+  `stop()`, `library.js` + `index.html` "Play songs on" switch, shown only
+  if `/api/player` says `built`. `test/player-box.test.js`.
+- Bluetooth only in `env:radio-core2` (`-D LAKEHORSE_BT=1`, ESP32-A2DP
+  v1.8.8). `env:radio` (core 3) still builds, without it.
+
+**The memory fight, and why the settings are what they are** (all in config.h)
+1. Wi-Fi modem sleep must be ON with BT (IDF 4.4 coex aborts in
+   `coex_core_enable` otherwise). mDNS may be flakier; the IP always works.
+2. BT costs ~87 KB internal RAM at the core's malloc threshold (4096): left
+   12 KB, Bluedroid asserted connecting. Threshold 32 for everything fixed
+   RAM (74 KB) but crashed under page loads: `CORRUPT HEAP: Bad tail`, a zero
+   byte past a LittleFS file handle in PSRAM, every time. **The chip is ESP32
+   rev v1.0** (PSRAM cache bug). So: threshold 32 only while BT starts (first
+   thing in setup), then **1024** for the rest of runtime (lwIP segments and
+   the server's 2.9 KB buffers go to PSRAM, small structs stay internal).
+3. Even then, parallel page loads during playback ate the rest and the Wi-Fi
+   driver went permanently deaf (still "connected", no ping) after a dip to
+   ~10 KB. Fixes: per-connection TCP send window capped at 2 segments
+   (`send_window.*`, middleware), AsyncTCP stack 16->8 KB.
+- Result while playing: ~55 KB free idle; one page load at 6 parallel: low
+  18.7 KB, fine; soak 325 requests at 6/12 parallel: no crash, no wedge,
+  0 underruns, 2-9 % requests failed under that abuse.
+- `[hb]` heap/Wi-Fi line on serial every 2 s (`main.cpp`), for diagnosis.
+
+**Known limits / next**
+- **Phone playback of card WAVs is too slow in this build**: 1 MB at 22-40
+  KB/s (needs 176). Modem sleep makes each round trip ~100 ms, and window /
+  RTT caps it. Box playback is unaffected. Fix options: a "Bluetooth off"
+  mode that restores Wi-Fi, or accept it (box mode is the point).
+- A Wi-Fi wedge, if it happens, needs a power cycle. A watchdog (ping the
+  gateway, reconnect after N failures) is the next robustness step.
+- The real fix for RAM is a **rev3 ESP32-WROVER-E** (no PSRAM bug, so
+  everything small can live in PSRAM; 74 KB free measured that way). Must
+  stay classic ESP32: S3/C3/C6 have no Bluetooth Classic, so no A2DP.
+- Volume resets to 1.0 on reboot (not stored). Speaker's own buttons (AVRCP)
+  are not handled: pausing on the speaker freezes position on the page.
+- `pio` lives at `~/.platformio/penv/bin/pio`. Opening the serial port on
+  this Mac resets the board (DTR/RTS held low did not help).
+- macOS blocks command-line Bluetooth (TCC kills IOBluetooth scripts), so
+  ML301 cannot be disconnected from the Mac by Claude; he has to.
+
+### Superseded: Module 6 Wi-Fi check (earlier the same night)
+
+
+Re-measured `radio-core2` on a clean link (ping 0 % loss to router and box,
+rssi -59), no firmware change: **1 MB SD range 200-270 KB/s** (core 3: ~220),
+**harness 12-par x10: 0/130 fail, 0 slow**, LittleFS `app.js` ~100 KB/s
+(small file, latency-bound). So core 2.0.17 matches core 3 on Wi-Fi and
+**the core-2 move stands**; the suspects list below is moot. The earlier
+10 KB/s run had a degraded link despite the 0 % ping at the time.
+- Board is still on `radio-core2`. `apIp` = 192.168.4.1 with the AP off is
+  cosmetic (core 2 `softAPIP()` default), not AP+STA.
+- ~~Next (Module 6 proper)~~ done, see above. Was: add the A2DP source to the radio firmware on
+  core 2 and run Wi-Fi + web serving + BT together; watch internal RAM
+  (BT costs ~85 KB; minFreeHeap under two streams is 52.6 K now, so it will
+  be tight). Then a 1-hour stream test (`tools/stream1h.sh`) with BT playing.
+
+### Superseded: "core 2 is slow on Wi-Fi" (end of earlier session)
 
 **The dilemma:** Bluetooth A2DP to ML301 works only on core 2.0.17; Wi-Fi
 file serving is fast only on core 3.3.11.

@@ -129,6 +129,14 @@
         return volume;
       },
 
+      /* Silences the backend and forgets the current track. Used when the
+       * page switches where songs play, so the old backend stops first. */
+      stop: function () {
+        playing = false;
+        backend.stop();
+        if (current) setCurrent(null);
+      },
+
       volume: function () { return volume; },
       current: function () { return current; },
       isPlaying: function () { return playing; }

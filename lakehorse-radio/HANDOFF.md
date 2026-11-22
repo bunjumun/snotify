@@ -46,7 +46,111 @@ stack takes tens of KB of internal RAM on its own) has to fit under that.
     `ESP32_ARDUINO_LIB_BUILDER`, and with that and no `BOARD_HAS_PSRAM`,
     `esp32-hal-psram.h` `#undef`s `CONFIG_SPIRAM`. The board has 4 MB.
 
-## 2026-11-22: Bluetooth brief, Module 4 IN PROGRESS (paused for usage limit)
+## START HERE (2026-11-22, end of session): Module 6, core 2 is slow on Wi-Fi
+
+**The dilemma:** Bluetooth A2DP to ML301 works only on core 2.0.17; Wi-Fi
+file serving is fast only on core 3.3.11.
+
+| | core 3.3.11 (`env:radio`) | core 2.0.17 (`env:radio-core2`) |
+|---|---|---|
+| A2DP to ML301 | pairs, then drops in ~300 ms | plays steadily |
+| 1 MB SD range | ~220 KB/s | **~10 KB/s** (clean link: 0 % loss, rssi -59) |
+| harness 12-par x10 | 0/130 fail | 9/130 fail |
+| LittleFS `app.js` | fast | ~4 KB/s (so not SD-specific) |
+
+- **Board is flashed with `radio-core2` right now.** To restore the working
+  radio: `pio run -e radio -t upload` (costs a ~35 min framework reinstall,
+  see the trap note below).
+- **Ruled out for the slowdown:** lwIP/Wi-Fi buffer settings: sdkconfig
+  TCP_SND_BUF/WND 5744-5760, MSS 1436, RX/TX buffers, BA window are the same
+  in both cores.
+- **Next suspects, test one at a time on `radio-core2`:** (1) ESP32Async
+  AsyncTCP 3.5 / ESPAsyncWebServer 3.12 on core 2. Serve one file from a
+  bare sketch, or pin older AsyncTCP; (2) Wi-Fi power save: confirm
+  `WiFi.setSleep(false)` actually took on core 2 (`esp_wifi_get_ps`); (3)
+  `apIp` reads 192.168.4.1 after join, so check the SoftAP is really off
+  (AP+STA would cut throughput).
+- **Fallback if core 2 can't be made fast:** stay on core 3 and debug the
+  IDF 5.5 A2DP drop (bluedroid trace logs / raise an upstream issue).
+- **Measuring rules:** ping the router *and* the box first; trust nothing
+  with loss > 0 %. The YouTube video and the metal drawer both cost us loss
+  today. Board now lives in the open. Tools: `tools/firstload.py`,
+  `tools/stream1h.sh`. Only one session on the serial port at a time.
+- The user's "Bluetooth output integration brief" (modules 4-10) is not in
+  the repo; ask him to re-paste it if needed.
+
+## 2026-11-22: Module 5 (A2DP spike): works on core 2.0.17, NOT on core 3.3.11
+
+Spike lives in `spike-a2dp/` (own `platformio.ini`, shares `../partitions.csv`),
+ESP32-A2DP v1.8.8 (git tag; not in the PIO registry under that name). Plays a
+quiet 440 Hz sine to the speaker **"ML301"** (MAC 70:b3:d5:91:33:88).
+
+- **Core 3.3.11 / IDF 5.5.5 (env `spike`): fails.** Pairs (`authentication
+  success`, link encrypted), then the sink closes A2DP ~100-300 ms later with
+  `disc_rsn=0` (normal), every ~10 s. The speaker's two-tone chimes are that
+  connect/disconnect loop, not our audio. Not the cause: SSP, stale bonds, a
+  second source (a Mac mini *was* also holding ML301; removing it didn't fix
+  this), missing SEP registration (internal SBC, no external codec).
+- **Core 2.0.17 / IDF 4.4 (env `spike-core2`, same sketch): works.** Paired,
+  `a2dp connected`, steady tone confirmed by ear, no drop for the rest of the
+  watch.
+- **Gotchas found:** the name match is case-sensitive (`"ML301"`, not
+  `"ml301"`). Core 3.x releases Classic BT memory at boot unless the sketch
+  defines `bool btClassicInUse(){return true;}` (core 2.x: `btInUse()`);
+  without it `esp_bt_controller_init` fails `ESP_ERR_INVALID_STATE`. ESP32-A2DP
+  defaults SSP **off**; spike turns it on.
+- **Internal RAM cost of the BT stack, idle, no Wi-Fi:** ~85-88 KB (core 3:
+  221 K → 133 K free; core 2: 237 K → 152 K). Playing on core 2: free
+  136-141 K, minFree 128 K. Wi-Fi + web server not yet combined with it.
+- `spike-a2dp/.pio/libdeps/spike/.../BluetoothA2DPSource.cpp` has a local
+  `SPIKE ... disc_rsn` log line (diagnostic only; vanishes on lib reinstall).
+  The spike also deletes all BT bonds at every boot (diagnostic).
+
+**↳ 2026-11-22, later: ESP32-A2DP v1.8.12 on core 3.3.11 fails the same way**
+(auth success, A2DP disconnected ~300 ms later). GitHub search (esp-idf,
+arduino-esp32, ESP32-A2DP issues) found no matching report or fix. **Decided:
+move the radio to core 2.0.17.** `env:radio-core2` added beside `env:radio`
+in `platformio.ini`; first build is to list what breaks.
+
+**↳ Module 6 first pass, `env:radio-core2` (core 2.0.17):** builds with one
+change (`main.cpp`: `esp_psram.h`/`esp_psram_init` guarded to core 3; core 2
+prints no reason). Flashed: boots, PSRAM 4 MB, LittleFS, SD, rejoins pifi.
+Idle internal heap 193 K (core 3: 174 K); minFreeHeap under two streams 52.6 K.
+Harness 6-par 0/130 fail. **Throughput NOT yet judged:** 12-par 5/130 fail,
+1 MB range 2-17 KB/s, but ping showed 10 % loss to the box and **20 % to the
+router**, i.e. a bad link (same trap as Module 4). Re-measure on a clean link
+before comparing with core 3's 220 KB/s. `apIp` reads 192.168.4.1 after
+joining (core 3: 0.0.0.0); probably `softAPIP()` returning the default with
+the AP off on core 2, unconfirmed. Board is on radio-core2 now.
+
+**Decision for him (Module 6 hinges on it), now settled as above:** the radio firmware is on
+pioarduino core 3.x because ESPAsyncWebServer 3.x targets it. Either move the
+radio to core 2.0.17 (older AsyncTCP/ESPAsyncWebServer, re-verify Modules 0-4),
+or keep core 3 and chase the IDF 5.5 A2DP-source drop (try ESP32-A2DP v1.8.12,
+then IDF bluedroid A2DP trace logs / upstream issue). Board has the radio
+firmware back on it as of this entry (verified: joined pifi, page 200).
+- **Trap:** `spike-core2` (espressif32 @ 6.9.0) and `radio` (pioarduino) share
+  the `framework-arduinoespressif32` package name, so building one replaces
+  the other's framework (~35 min download for 2.0.17 here; the `radio` build
+  first failed with a `NoneType` path TypeError until it reinstalled 3.3.11).
+  Expect that cost whenever you switch between them.
+
+## 2026-11-22: Module 4 CLOSED, no firmware change needed
+
+Link re-checked on pifi (box 192.168.0.38): ping 0 % loss to router and box,
+rssi -60. First-load harness, 13 resources per round: **260 requests (6 and 12
+parallel), 0 failures, 0 slower than 3 s.** So the earlier failures were the
+degraded Wi-Fi link, not the firmware; the 9-script/CSS merge is **not** done
+and not needed. Single 1 MB range: ~220 KB/s.
+
+1-hour stream test (two 256 KB Range loops on `Currency.wav`, status polled
+each minute, 60 samples): **0 failed requests**, lowest freeHeap 129,372,
+largestFreeBlock flat at 73,716, minFreeHeap 54,088 (no downward trend),
+rssi -60 to -71. Budget for Bluetooth: ~54 KB internal RAM low-water mark
+under streaming. Next: Module 5 (A2DP spike), which asks for the speaker's
+name before flashing.
+
+### Earlier notes on Module 4 (superseded by the above)
 
 Working through the "Bluetooth output integration brief" (modules 4-10). Only
 Module 4 has started; no firmware or page change made yet in it.

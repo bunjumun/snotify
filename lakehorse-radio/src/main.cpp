@@ -17,7 +17,12 @@
 // quietly rather than loudly when you get it wrong.
 //
 #include <Arduino.h>
+// esp_psram.h is IDF 5 (core 3.x). Core 2.0.17 (IDF 4.4), which the radio is
+// moving to for A2DP (HANDOFF.md, Module 5), has no public re-probe call, so
+// there the reason is simply not available.
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
 #include <esp_psram.h>
+#endif
 #include <esp_system.h>
 
 #include "captive_portal.h"
@@ -45,8 +50,12 @@ void reportPsram() {
                   (unsigned)ESP.getMaxAllocPsram());
     return;
   }
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
   const esp_err_t why = esp_psram_init();
   Serial.printf("[boot] psram not found (esp_psram_init: %s)\n", esp_err_to_name(why));
+#else
+  Serial.println(F("[boot] psram not found (core 2.x: no re-probe available)"));
+#endif
 }
 
 void setup() {

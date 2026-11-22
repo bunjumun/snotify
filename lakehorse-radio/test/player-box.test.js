@@ -31,6 +31,7 @@ function events() {
   e.progress = (p, d, playing) => e.log.push(['progress', p, d, playing]);
   e.status = (t) => e.log.push(['status', t]);
   e.ended = () => e.log.push(['ended']);
+  e.advanced = (n) => e.log.push(['advanced', n]);
   return e;
 }
 
@@ -67,6 +68,27 @@ const tests = {
     await box.tick();
     assert.strictEqual(e.log.filter((x) => x[0] === 'ended').length, 1);
     assert.strictEqual(box.timers.filter(Boolean).length, 0);
+  },
+
+  async 'an end where the box is already playing the next song is followed, not ended'() {
+    const box = fakeBox();
+    const b = B.create(box);
+    const e = events();
+    b.connect(e);
+    await b.play('a.wav');
+    box.status.ended = 1;
+    box.status.state = 'playing';
+    box.status.track = 'b.wav';
+    await box.tick();
+    await box.tick();
+    assert.deepStrictEqual(e.log.filter((x) => x[0] === 'advanced'), [['advanced', 'b.wav']]);
+    assert.strictEqual(e.log.filter((x) => x[0] === 'ended').length, 0);
+    assert.strictEqual(box.timers.filter(Boolean).length, 1, 'still polling the new song');
+    box.status.ended = 2;
+    box.status.state = 'stopped';
+    box.status.track = '';
+    await box.tick();
+    assert.strictEqual(e.log.filter((x) => x[0] === 'ended').length, 1, 'the last end still ends');
   },
 
   async 'an ended count from before play is not an end'() {

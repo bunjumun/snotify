@@ -129,8 +129,26 @@ the box. 0 underruns across every test. Board is flashed with all of this
 - The real fix for RAM is a **rev3 ESP32-WROVER-E** (no PSRAM bug, so
   everything small can live in PSRAM; 74 KB free measured that way). Must
   stay classic ESP32: S3/C3/C6 have no Bluetooth Classic, so no A2DP.
-- Volume resets to 1.0 on reboot (not stored). Speaker's own buttons (AVRCP)
-  are not handled: pausing on the speaker freezes position on the page.
+- **Box-side auto-advance + saved volume (2026-11-22, late):** when a song
+  ends the reader task starts the next WAV on the card itself (order:
+  `src/track_order.*`, case-insensitive name sort, matching the page's
+  `localeCompare` for plain names), skips up to 5 unplayable files, stops
+  after the last (no wrap, same as the page). `sdstore::nextAfter` does one
+  directory pass. Page follows via the new `advanced(name)` event
+  (player-box.js sees `ended` bump while the box is still playing).
+  Volume: saved to NVS `lh_bt`/`vol` 2 s after the last change (reader task,
+  not the request), loaded at boot; the page adopts the box's volume when it
+  takes over the box instead of pushing its own. Reader stack 4096 -> 6144.
+  **Verified on hardware:** volume 0.4 survived a reset; Mango Tree World ->
+  This Is War with no page polling, 0 underruns, `ended` 1. Not done: a page
+  opened mid-song does not pick up what the box is already playing.
+- **Speaker buttons work (2026-11-22, late):** `src/speaker_keys.*` maps AVRCP
+  passthrough keys (PLAY toggles, PAUSE/STOP pause, FORWARD = next song,
+  BACKWARD = restart); the BT callback only records the key and the reader
+  task acts under the lock (`handleSpeakerKeyLocked`). ML301 sends 0x46 on
+  pause and 0x44 on play; presses with nothing loaded do nothing. Verified by
+  him: pause/play several times from the speaker, page shows paused.
+  FORWARD/BACKWARD are mapped but not yet tried on hardware.
 - `pio` lives at `~/.platformio/penv/bin/pio`. Opening the serial port on
   this Mac resets the board (DTR/RTS held low did not help).
 - macOS blocks command-line Bluetooth (TCC kills IOBluetooth scripts), so

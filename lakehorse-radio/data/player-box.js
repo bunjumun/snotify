@@ -8,7 +8,10 @@
  * and one small GET a second is nothing next to the audio.
  *
  * The end of a song arrives as a counter, `ended`, not a flag: a poll that
- * lands late or twice can neither miss an end nor report one twice.
+ * lands late or twice can neither miss an end nor report one twice. The box
+ * moves to the next song on its own (box_player.cpp), so an end that finds
+ * the box already playing something else is reported as "advanced", not
+ * "ended".
  *
  * `opts` exists for test/player-box.test.js: { fetch, setInterval,
  * clearInterval }. The page passes nothing and gets the browser's own.
@@ -49,9 +52,16 @@
       if (!events) return;
       if (lastEnded !== null && d.ended !== lastEnded) {
         lastEnded = d.ended;
-        stopPolling();
-        events.ended();
-        return;
+        // The box starts the next song itself, so if it is already playing
+        // one, follow it. Only when it stopped does the page decide what is
+        // next, which keeps the page from skipping a song the box began.
+        if (d.state !== 'stopped' && d.track && events.advanced) {
+          events.advanced(d.track);
+        } else {
+          stopPolling();
+          events.ended();
+          return;
+        }
       }
       events.progress(d.position || 0, d.duration || 0, d.state === 'playing');
       if (d.error) say(d.error);

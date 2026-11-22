@@ -153,8 +153,13 @@
     catch (e) { return 'browser'; }
   }
 
-  function buildPlayer(kind) {
-    if (player) player.stop();
+  // The box remembers its own volume across power cuts, so when the page
+  // takes over the box it adopts that volume instead of pushing the page's.
+  // (The slider writes localStorage only when moved, so adopting is not
+  // saving.) Falls back to the page's volume if the box does not answer.
+  var buildToken = 0;
+
+  function makePlayer(kind, volume) {
     var backend = kind === 'box'
       ? window.LakehorseBoxPlayer.create()
       : window.LakehorseBrowserPlayer.create($('player'));
@@ -162,8 +167,21 @@
       progress: showProgress,
       status: playerStatus,
       track: showTrack
-    }, player ? player.volume() : savedVolume());
+    }, volume);
     player.setTracks(trackNames);
+    $('playVolume').value = Math.round(player.volume() * 100);
+  }
+
+  function buildPlayer(kind) {
+    var carried = player ? player.volume() : savedVolume();
+    if (player) player.stop();
+    var token = ++buildToken;
+    if (kind !== 'box') { makePlayer(kind, carried); return; }
+    fetch('/api/player', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { return d && d.ok && isFinite(d.volume) ? d.volume : carried; })
+      .catch(function () { return carried; })
+      .then(function (v) { if (token === buildToken) makePlayer(kind, v); });
   }
 
   // With Bluetooth switched off the box has no speaker, so "the box's

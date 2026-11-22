@@ -15,7 +15,11 @@
  *   name                     short label, e.g. 'browser'
  *   available                false if it cannot play at all on this device
  *   connect(events)          events = { progress(pos, dur, playing),
- *                                       status(text), ended() }
+ *                                       status(text), ended(),
+ *                                       advanced(name) }
+ *                            advanced: the backend moved on to `name` by
+ *                            itself (the box does, with no page open to say
+ *                            what is next), so the page only follows.
  *   play(track, nextTrack)   starts track; nextTrack (or null) may be
  *                            preloaded. Returns a Promise.
  *   pause() / resume()
@@ -69,6 +73,10 @@
       ended: function () {
         playing = false;
         if (!api.next()) setCurrent(null);
+      },
+      advanced: function (name) {
+        playing = true;
+        setCurrent(name);
       }
     });
     backend.setVolume(volume);

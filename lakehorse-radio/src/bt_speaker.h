@@ -32,6 +32,11 @@ namespace btspeaker {
 
 using FillFn = int32_t (*)(Frame* frames, int32_t count);
 
+// The speaker's own buttons. `key` is the AVRCP passthrough code and
+// `released` false for the press. Runs on the Bluetooth stack's task, so it
+// must only record the key, never do the work (see box_player.cpp).
+using KeyFn = void (*)(uint8_t key, bool released);
+
 struct Found {
   String name;
   int rssi;
@@ -49,7 +54,7 @@ struct Info {
 
 // Starts Bluetooth if the saved setting says on. First thing in setup():
 // see the file header for why it must come before everything else.
-void begin(FillFn fill);
+void begin(FillFn fill, KeyFn onKey);
 
 // From loop(): ends search windows, finishes a speaker change, and carries
 // out a restart that setEnabled() scheduled.

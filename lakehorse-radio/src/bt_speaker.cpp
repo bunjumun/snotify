@@ -8,7 +8,7 @@ namespace btspeaker {
 namespace {
 const char* const kNotBuilt = "Bluetooth is not in this firmware build";
 }
-void begin(FillFn) {}
+void begin(FillFn, KeyFn) {}
 void tick() {}
 bool enabled() { return false; }
 bool needsModemSleep() { return false; }
@@ -175,7 +175,7 @@ void saveTarget(const String& name) {
 
 }  // namespace
 
-void begin(FillFn fill) {
+void begin(FillFn fill, KeyFn onKey) {
   g_on = enabled();
   {
     Preferences prefs;
@@ -202,6 +202,9 @@ void begin(FillFn fill) {
   g_src.set_discovery_mode_callback(onDiscovery);
   g_src.set_on_connection_state_changed(onConnection);
   g_src.set_data_callback_in_frames(fill);
+  // Without this the library never starts the AVRCP target, and the speaker's
+  // buttons go nowhere.
+  g_src.set_avrc_passthru_command_callback(onKey);
   // A boot with no remembered speaker searches, but not forever.
   g_searchUntil = millis() + cfg::BT_SEARCH_MS;
   Serial.printf("[box] before bt: free %u, largest %u\n", (unsigned)ESP.getFreeHeap(),

@@ -36,6 +36,7 @@ Status status() {
 
 #else
 
+#include <Preferences.h>
 #include <SD.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -47,6 +48,7 @@ Status status() {
 #include "bt_speaker.h"
 #include "pcm_format.h"
 #include "sd_store.h"
+#include "speaker_keys.h"
 
 namespace boxplayer {
 namespace {
@@ -202,22 +204,6 @@ bool readOnceLocked() {
   return true;
 }
 
-void readerTask(void*) {
-  for (;;) {
-    bool worked = false;
-    xSemaphoreTake(g_lock, portMAX_DELAY);
-    worked = readOnceLocked();
-    if (!g_primed && (ringCount() >= cfg::BOX_PRIME_FRAMES || g_eof)) g_primed = true;
-    if (g_endedPending) {
-      Serial.printf("[box] ended \"%s\"\n", g_track.c_str());
-      closeTrackLocked();
-      g_ended++;
-    }
-    xSemaphoreGive(g_lock);
-    if (!worked) vTaskDelay(pdMS_TO_TICKS(cfg::BOX_READER_IDLE_MS));
-  }
-}
-
 // Opens `path` and positions it at `startSeconds`. Under g_lock.
 String openLocked(const String& path, float startSeconds) {
   if (g_file) g_file.close();
@@ -241,6 +227,147 @@ String openLocked(const String& path, float startSeconds) {
   return "";
 }
 
+// Starts `name` from `startSeconds`. Under g_lock. Empty string on success.
+String startLocked(const char* name, float startSeconds) {
+  const String err = openLocked(sdstore::path(name), startSeconds);
+  if (err.length()) {
+    closeTrackLocked();
+    g_error = err;
+    Serial.printf("[box] play \"%s\" failed: %s\n", name, err.c_str());
+    return err;
+  }
+  g_track = name;
+  g_error = "";
+  g_state = (int)State::Playing;
+  Serial.printf("[box] play \"%s\" at %.1f s (%u Hz, %u ch)\n", name, g_seekBase,
+                (unsigned)g_info.sampleRate, (unsigned)g_info.channels);
+  return "";
+}
+
+// After a song ends: start the next one on the card, so the box keeps
+// playing with no page open. A song that will not play is skipped (a bad
+// file must not end the run); the last song, or BOX_ADVANCE_TRIES failures
+// in a row, leaves the box stopped. Under g_lock.
+void advanceLocked(const String& finished) {
+  String candidate = finished;
+  for (int i = 0; i < cfg::BOX_ADVANCE_TRIES; i++) {
+    candidate = sdstore::nextAfter(candidate.c_str());
+    if (!candidate.length()) {
+      Serial.println(F("[box] end of the list, stopping"));
+      return;
+    }
+    if (!startLocked(candidate.c_str(), 0.0f).length()) return;
+  }
+}
+
+// ---- saved volume ----
+// Written a while after the last change (cfg::BOX_VOLUME_SAVE_DELAY_MS) from
+// the reader task, never from the web request, so a slider drag is one flash
+// write and the request does not wait on flash.
+std::atomic<bool> g_volumeDirty{false};
+std::atomic<uint32_t> g_volumeChangedAt{0};
+uint32_t g_volumeSavedMilli = 1000;  // reader task only
+
+void applyVolume(float v) {
+  if (!(v >= 0.0f)) v = 0.0f;
+  if (v > 1.0f) v = 1.0f;
+  g_volumeMilli = (uint32_t)(v * 1000.0f + 0.5f);
+  g_gain = pcm::gainFromVolume(v);
+}
+
+void loadVolume() {
+  Preferences prefs;
+  if (!prefs.begin(cfg::BT_NVS_NAMESPACE, true)) return;  // never saved: stays at full
+  const uint32_t milli = prefs.getUInt(cfg::BT_NVS_KEY_VOLUME, 1000);
+  prefs.end();
+  g_volumeSavedMilli = milli > 1000 ? 1000 : milli;
+  applyVolume(g_volumeSavedMilli / 1000.0f);
+  Serial.printf("[box] volume %u/1000 from flash\n", (unsigned)g_volumeSavedMilli);
+}
+
+void saveVolumeIfDue() {
+  if (!g_volumeDirty.load()) return;
+  if ((uint32_t)(millis() - g_volumeChangedAt.load()) < cfg::BOX_VOLUME_SAVE_DELAY_MS) return;
+  g_volumeDirty = false;
+  const uint32_t milli = g_volumeMilli.load();
+  if (milli == g_volumeSavedMilli) return;
+  Preferences prefs;
+  if (!prefs.begin(cfg::BT_NVS_NAMESPACE, false)) return;
+  prefs.putUInt(cfg::BT_NVS_KEY_VOLUME, milli);
+  prefs.end();
+  g_volumeSavedMilli = milli;
+}
+
+// ---- the speaker's own buttons ----
+// The callback runs on the Bluetooth stack's task, so it only leaves a note;
+// the reader task does the work under the lock. One slot: a second press
+// within the reader's 10 ms idle would replace the first, which no hand does.
+constexpr int kNoKey = -1;
+std::atomic<int> g_pendingKey{kNoKey};
+
+void onSpeakerKey(uint8_t key, bool released) {
+  Serial.printf("[box] speaker key 0x%02x %s\n", key, released ? "released" : "pressed");
+  if (!released) g_pendingKey = key;
+}
+
+// Under g_lock.
+void handleSpeakerKeyLocked() {
+  const int key = g_pendingKey.exchange(kNoKey);
+  if (key == kNoKey) return;
+  const State state = (State)g_state.load();
+  const speakerkeys::Action act =
+      speakerkeys::actionFor((uint8_t)key, false, state == State::Playing);
+  using speakerkeys::Action;
+  if (state == State::Stopped) return;  // nothing loaded: a button has nothing to act on
+  switch (act) {
+    case Action::Pause:
+      if (state == State::Playing) g_state = (int)State::Paused;
+      break;
+    case Action::Resume:
+      if (state == State::Paused) g_state = (int)State::Playing;
+      break;
+    case Action::Next: {
+      const String finished = g_track;
+      closeTrackLocked();
+      advanceLocked(finished);
+      g_ended++;  // the page follows the same way it follows a song's end
+      break;
+    }
+    case Action::Restart: {
+      const String err = openLocked(sdstore::path(g_track.c_str()), 0.0f);
+      if (err.length()) {
+        g_error = err;
+        closeTrackLocked();
+      } else {
+        g_state = (int)state;
+      }
+      break;
+    }
+    case Action::None:
+      break;
+  }
+}
+
+void readerTask(void*) {
+  for (;;) {
+    bool worked = false;
+    xSemaphoreTake(g_lock, portMAX_DELAY);
+    handleSpeakerKeyLocked();
+    worked = readOnceLocked();
+    if (!g_primed && (ringCount() >= cfg::BOX_PRIME_FRAMES || g_eof)) g_primed = true;
+    if (g_endedPending) {
+      const String finished = g_track;
+      Serial.printf("[box] ended \"%s\"\n", finished.c_str());
+      closeTrackLocked();
+      if (cfg::BOX_AUTO_ADVANCE) advanceLocked(finished);
+      g_ended++;  // after the advance, so a poll sees the end and the next song together
+    }
+    xSemaphoreGive(g_lock);
+    saveVolumeIfDue();
+    if (!worked) vTaskDelay(pdMS_TO_TICKS(cfg::BOX_READER_IDLE_MS));
+  }
+}
+
 class Lock {
  public:
   Lock() { xSemaphoreTake(g_lock, portMAX_DELAY); }
@@ -250,9 +377,10 @@ class Lock {
 }  // namespace
 
 void begin() {
+  loadVolume();
   if (!btspeaker::enabled()) {
     // Bluetooth switched off: no reader, no 352 KB ring. play() says why.
-    btspeaker::begin(fillFrames);
+    btspeaker::begin(fillFrames, onSpeakerKey);
     g_error = "Bluetooth is off";
     return;
   }
@@ -272,7 +400,7 @@ void begin() {
   xTaskCreatePinnedToCore(readerTask, "boxreader", cfg::BOX_READER_STACK, nullptr,
                           cfg::BOX_READER_PRIORITY, nullptr, cfg::BOX_READER_CORE);
 
-  btspeaker::begin(fillFrames);
+  btspeaker::begin(fillFrames, onSpeakerKey);
 }
 
 String play(const char* safeName, float startSeconds) {
@@ -280,19 +408,7 @@ String play(const char* safeName, float startSeconds) {
   if (!g_lock || !g_ring) return "box playback is not running";
   if (!sdstore::mounted()) return "no SD card";
   Lock lock;
-  const String err = openLocked(sdstore::path(safeName), startSeconds);
-  if (err.length()) {
-    closeTrackLocked();
-    g_error = err;
-    Serial.printf("[box] play \"%s\" failed: %s\n", safeName, err.c_str());
-    return err;
-  }
-  g_track = safeName;
-  g_error = "";
-  g_state = (int)State::Playing;
-  Serial.printf("[box] play \"%s\" at %.1f s (%u Hz, %u ch)\n", safeName, g_seekBase,
-                (unsigned)g_info.sampleRate, (unsigned)g_info.channels);
-  return "";
+  return startLocked(safeName, startSeconds);
 }
 
 void pause() {
@@ -328,10 +444,9 @@ void seek(float seconds) {
 }
 
 void setVolume(float v) {
-  if (!(v >= 0.0f)) v = 0.0f;
-  if (v > 1.0f) v = 1.0f;
-  g_volumeMilli = (uint32_t)(v * 1000.0f + 0.5f);
-  g_gain = pcm::gainFromVolume(v);
+  applyVolume(v);
+  g_volumeChangedAt = millis();
+  g_volumeDirty = true;
 }
 
 Status status() {

@@ -198,6 +198,19 @@ constexpr uint32_t BT_START_SETTLE_MS = 1500;
 constexpr const char* BT_NVS_NAMESPACE = "lh_bt";
 constexpr const char* BT_NVS_KEY_ON = "on";
 constexpr const char* BT_NVS_KEY_SPEAKER = "spk";
+// The box's volume, saved in thousandths so it survives a power cut. Same
+// namespace: it is the speaker's volume, not the page's.
+constexpr const char* BT_NVS_KEY_VOLUME = "vol";
+// The volume is written this long after the last change, so dragging the
+// slider (a request per movement) costs one flash write, not hundreds.
+constexpr uint32_t BOX_VOLUME_SAVE_DELAY_MS = 2000;
+// When a song ends, the box starts the next one on the card by itself, in
+// the page's order (track_order.h), and stops after the last. Without it the
+// box went quiet after one song unless a page was open to say what is next.
+constexpr bool BOX_AUTO_ADVANCE = true;
+// Songs tried in a row before giving up, so one unplayable file (a format
+// the box refuses) is skipped rather than ending the run.
+constexpr int BOX_ADVANCE_TRIES = 5;
 // "Find speakers" listens this long: one full inquiry (10 x 1.28 s) plus a
 // little. Inquiry slows Wi-Fi while it runs, so it is never open-ended.
 constexpr uint32_t BT_SCAN_MS = 14000;
@@ -223,7 +236,7 @@ constexpr size_t BOX_PRIME_FRAMES = 22050;
 constexpr size_t BOX_READ_BYTES = 4096;
 // The reader task: core 1 beside AsyncTCP, since Bluetooth and Wi-Fi share
 // core 0. Below AsyncTCP's priority so a page load is never starved.
-constexpr uint32_t BOX_READER_STACK = 4096;
+constexpr uint32_t BOX_READER_STACK = 6144;
 constexpr uint32_t BOX_READER_PRIORITY = 2;
 constexpr int BOX_READER_CORE = 1;
 // Reader sleep when there is nothing to do (buffer full, paused, stopped).

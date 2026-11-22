@@ -6,6 +6,7 @@
 
 #include "config.h"
 #include "track_name.h"
+#include "track_order.h"
 
 namespace sdstore {
 namespace {
@@ -97,6 +98,22 @@ void list(JsonArray out) {
     ++count;
   }
   dir.close();
+}
+
+String nextAfter(const char* name) {
+  if (!g_mounted) return "";
+  File dir = SD.open(cfg::SD_MUSIC_DIR);
+  if (!dir) return "";
+  String best;
+  for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+    const String n = baseName(f.name());
+    if (f.isDirectory() || endsWithPart(n) || !servable(n)) continue;
+    if (!n.endsWith(".wav") && !n.endsWith(".WAV")) continue;
+    if (!trackorder::before(name, n.c_str())) continue;
+    if (!best.length() || trackorder::before(n.c_str(), best.c_str())) best = n;
+  }
+  dir.close();
+  return best;
 }
 
 String path(const char* name) { return String(cfg::SD_MUSIC_DIR) + "/" + name; }

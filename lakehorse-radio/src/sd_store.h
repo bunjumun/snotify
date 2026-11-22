@@ -28,6 +28,12 @@ uint64_t freeBytes();
 // uploads and anything not a regular file.
 void list(JsonArray out);
 
+// The WAV that plays after `name`: the first stored one in play order
+// (track_order.h) that sorts after it, or an empty string when `name` is the
+// last or the card is unreadable. One pass over the folder, keeping a single
+// candidate, because it runs on the reader task's small stack.
+String nextAfter(const char* name);
+
 // `name` must already have passed trackname::sanitise.
 String path(const char* name);
 String partPath(const char* name);

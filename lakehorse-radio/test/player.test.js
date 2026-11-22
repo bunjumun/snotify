@@ -25,6 +25,20 @@ function fakeBackend({ available = true, failPlay = false } = {}) {
 }
 
 const tests = {
+  async 'the backend moving on by itself updates the current track without playing'() {
+    const b = fakeBackend();
+    const seen = [];
+    const p = P.createPlayer(b, { track: (n) => seen.push(n) });
+    p.setTracks(['a', 'b', 'c']);
+    await p.play('a');
+    b.calls.length = 0;
+    b.events.advanced('b');
+    assert.strictEqual(p.current(), 'b');
+    assert.strictEqual(p.isPlaying(), true);
+    assert.deepStrictEqual(b.calls, [], 'follows, does not issue a second play');
+    assert.deepStrictEqual(seen.slice(-1), ['b']);
+  },
+
   async 'play hands the backend the track and the one after it'() {
     const b = fakeBackend();
     const p = P.createPlayer(b);

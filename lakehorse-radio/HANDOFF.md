@@ -2,6 +2,51 @@
 
 Written 2026-09-15, updated 2026-09-16. Read this, then `README.md`.
 
+## 2026-11-21: baseline before Bluetooth work (Module 0)
+
+Measured before any Bluetooth, partition or PSRAM change, so later modules have
+something to be compared against. All heap figures are internal RAM only
+(`ESP.getFreeHeap/getMaxAllocHeap/getMinFreeHeap` on core 3.3.11 ask for
+`MALLOC_CAP_INTERNAL`), so they stay comparable once PSRAM is on.
+`/api/status` now reports `largestFreeBlock` and `minFreeHeap` alongside
+`freeHeap`, and the boot line prints all three.
+
+**Card contents** (`GET /api/sd`, headers read by a 4 KB Range request):
+
+| File | Bytes | Format |
+|---|---|---|
+| Currency.wav | 84,097,716 | PCM WAV, 48 kHz, 16-bit, stereo |
+| Jupiter Gold.wav | 58,982,444 | PCM WAV, 48 kHz, 16-bit, stereo |
+| Mango Tree World.wav | 41,621,148 | PCM WAV, 44.1 kHz, 16-bit, stereo |
+| This Is War.wav | 68,266,844 | PCM WAV, 44.1 kHz, 16-bit, stereo |
+
+Card: 31.25 GB, 29.0 GB free. The masters in `music/` are 24-bit; what is on
+the card is the converted 16-bit copies.
+
+**Heap** (bytes):
+
+| Moment | freeHeap | largestFreeBlock | minFreeHeap |
+|---|---|---|---|
+| Boot line (before Wi-Fi/web server) | 260,752 | 110,580 | 228,552 |
+| Idle, joined to pifi (before this change) | 143,284 | - | - |
+| Idle, joined to pifi | 144,024 | 94,196 | 141,920 |
+| During 2 parallel 256 KB Range streams | 79,196 | 38,900 | 60,156 |
+| After the streams ended | 140,124 | 94,196 | 60,156 |
+
+The load test mirrors `wavstream.js`: two `curl` loops fetching alternate
+256 KB ranges of `Currency.wav` for 60 s, 50 x 206, 213 KB/s combined.
+**The low-water mark under streaming load is ~60 KB of internal RAM**, and
+the largest single block falls to ~38 KB. Anything added later (a Bluetooth
+stack takes tens of KB of internal RAM on its own) has to fit under that.
+
+- **PSRAM: 0 bytes** on the boot line, although the prebuilt core-3.x libs
+  have `CONFIG_SPIRAM=y` and call `psramInit()` themselves. So either the
+  module has none or init fails quietly; Module 3 finds out.
+- **firmware.bin 1,156,544 bytes** of a 1,966,080-byte app0 (58.8 %).
+- **`reset reason 7` after a serial reset is not a fault.** Pulsing RTS gives
+  `POWERON_RESET` then `RTCWDT_RTC_RESET` on this board's reset circuit, every
+  time; a power-on boot reports 1.
+
 ## 2026-11-21: v1 plays from an SD card (read this first; older sections below predate it)
 
 **The premise changed.** The box no longer streams the catalogue from Supabase

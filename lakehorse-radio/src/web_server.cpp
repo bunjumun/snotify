@@ -105,7 +105,13 @@ void handleStatus(AsyncWebServerRequest* request) {
   // Lets the page tell a listener standing at the box from one on the network,
   // so it can explain the right thing rather than the same thing twice.
   doc["viaAccessPoint"] = onAccessPointSubnet(request);
+  // All three are internal RAM only on core 3.x (Esp.cpp), so they stay
+  // comparable whether or not PSRAM is enabled. largestFreeBlock is the
+  // biggest single allocation that can still succeed; minFreeHeap is the low
+  // water mark since boot, which is what a new feature has to fit under.
   doc["freeHeap"] = (uint32_t)ESP.getFreeHeap();
+  doc["largestFreeBlock"] = (uint32_t)ESP.getMaxAllocHeap();
+  doc["minFreeHeap"] = (uint32_t)ESP.getMinFreeHeap();
   doc["rssi"] = WiFi.RSSI();
   doc["sdNeedsKey"] = cfg::SD_WRITES_NEED_KEY;
   doc["sdUpload"] = cfg::SD_UPLOAD_ENABLED;

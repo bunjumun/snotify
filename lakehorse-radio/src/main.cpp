@@ -34,8 +34,9 @@ void setup() {
 
   Serial.println();
   Serial.printf("[boot] Lakehorse Radio %s\n", cfg::FIRMWARE_VERSION);
-  Serial.printf("[boot] reset reason %d, free heap %u\n",
-                (int)esp_reset_reason(), (unsigned)ESP.getFreeHeap());
+  Serial.printf("[boot] reset reason %d, free heap %u, largest block %u, min free %u\n",
+                (int)esp_reset_reason(), (unsigned)ESP.getFreeHeap(),
+                (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getMinFreeHeap());
   // Reported rather than assumed. The build deliberately does not enable PSRAM,
   // so this should read 0 even on a WROVER; if it ever reads non-zero, the
   // build flags changed and somebody should know.

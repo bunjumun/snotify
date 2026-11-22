@@ -103,8 +103,8 @@ the box. 0 underruns across every test. Board is flashed with all of this
   on; ping 22 ms vs ~100. That is what makes "this device" playback work.
 - Verified on hardware: scan found "bat house"; disconnect stays down
   (19 s); Connect back in 9 s; off -> restart -> on -> ML301 back 6 s after
-  boot. **Not verified:** actually switching to a second speaker (didn't
-  want to grab his other speaker's audio unasked).
+  boot. **Switching to a second speaker: verified by him on 2026-11-22**
+  ("testing and switching devices works as it should").
 - Search for the chosen speaker is bounded (60 s, `BT_SEARCH_MS`); a
   speaker that was off needs Connect pressed again after that.
 

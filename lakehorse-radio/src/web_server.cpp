@@ -582,6 +582,36 @@ void handleSdFile(AsyncWebServerRequest* request) {
   request->send(response);
 }
 
+// The page's own files are gzipped at build time (tools/gzip_data.py), so the
+// image holds app.js.gz and no app.js. serveStatic() looks for NAME.gz first
+// (ESPAsyncWebServer 3.12.1, AsyncStaticWebHandler::_searchFile), answers with
+// Content-Encoding: gzip, and takes the ETag from the CRC at the end of the
+// gzip file, so a changed file always gets a new ETag.
+//
+// Caching is split in two. index.html must be re-checked every time (one small
+// 304 when nothing changed), because it is what names the other files. The
+// build adds ?v=<hash> to each script and stylesheet reference in it, so those
+// URLs change whenever a file does and can be kept for a week without a request.
+// The handler ignores the query string when it looks the file up.
+// HEADER LENGTH MATTERS ON THIS BOARD (found 2026-11-22 on hardware). When a
+// response's header block is 2 bytes past a multiple of 4 (202 and 226 bytes
+// were seen), the last two header bytes, the blank line that ends the headers,
+// arrive as 0x00 0x00 and clients see a 200 with no body. Lengths of 0 and 1
+// past a multiple of 4 (112, 209, 233, and now 216, 241, 248) are fine. Most
+// likely the unaligned copy of the body into the PSRAM-backed TCP buffer on the
+// rev v1.0 chip. These two strings are padded with ", no-transform" (harmless,
+// and right for gzip bodies) and a longer max-age to land on good lengths for
+// the current files. Adding a file type or a file whose size has a different
+// number of digits can move a header onto a bad length again: run
+// tools/pageload.py, which checks every body, after any change here.
+constexpr const char* kPageRootCache = "no-cache, no-transform";
+constexpr const char* kPageAssetCache = "public, max-age=6048000, immutable, no-transform";
+
+bool isPageRoot(AsyncWebServerRequest* request) {
+  const String url = request->url();
+  return url == "/" || url == "/index.html";
+}
+
 }  // namespace
 
 const char* defaultPlaylist() { return kDefaultPlaylist; }
@@ -630,7 +660,13 @@ void begin() {
   registerPlaylistWrite();
   registerWifiWrite();
 
-  g_server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+  // Order matters: the first handler that accepts the request answers it, so
+  // the filtered index.html handler must come before the catch-all one.
+  AsyncStaticWebHandler& pageRoot = g_server.serveStatic("/", LittleFS, "/");
+  pageRoot.setDefaultFile("index.html").setCacheControl(kPageRootCache);
+  pageRoot.setFilter(isPageRoot);
+  g_server.serveStatic("/", LittleFS, "/")
+      .setCacheControl(kPageAssetCache);
 
   // Last, and only last. The portal's catch-all claims everything nothing
   // above wanted, so registering it earlier would swallow the API.

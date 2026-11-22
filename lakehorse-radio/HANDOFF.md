@@ -627,3 +627,115 @@ venv.
   `../docs/lakehorse-radio-integration-handoff.md`, not duplicated here.
   **Still not pushed.** `git push -u origin lakehorse-radio` is the single
   outstanding action; nothing else blocks it.
+
+## Shell Module 1: page weight and caching (2026-11-22)
+
+**Status: code done and tested off the board. Not flashed, not compiled for the
+firmware, not measured after the change.** Two things need the Mac before this
+counts as passed (below).
+
+**Findings before writing code.** ESPAsyncWebServer 3.12.1 (read from
+`.pio/libdeps/radio-core2`, plus the project docs at esp32async.github.io) does
+handle gzip siblings. `serveStatic` looks for `NAME.gz` before `NAME`
+(`setTryGzipFirst` defaults to true), sends `Content-Encoding: gzip`, takes the
+Content-Type from the name without `.gz`, and builds the ETag from the CRC in
+the gzip trailer. It answers `If-None-Match` with a 304. With no cache setting
+it sends `Cache-Control: no-cache`, so today every load revalidates every file
+(measured: all 304 in 0.13 to 0.57 s each), which costs a request per file even
+when nothing changed. The docs show `setCacheControl` and `setFilter` chained on
+`serveStatic` with LittleFS. One catch: it serves the gzip bytes to every client
+whether or not the client sent `Accept-Encoding`, which is fine for browsers.
+`playlist.json` must stay plain because `playlist_store.cpp` reads and writes it
+by that name, so the build skips it.
+
+**What changed**
+- `tools/gzip_data.py` (new, a PlatformIO `pre:` script): stages a copy of
+  `data/` under `.pio/build/<env>/data-gz/`, gzips html, js, css and json files
+  (skipping `playlist.json` and any file where gzip would not be smaller), adds
+  `?v=<hash of that file>` to the local script and stylesheet references in
+  `index.html`, and points `PROJECT_DATA_DIR` at the copy so `buildfs` and
+  `uploadfs` build from it. `data/` is never modified, so the JS tests and the
+  plain files stay as they were. Output is byte-identical between runs.
+- `platformio.ini`: `extra_scripts = pre:tools/gzip_data.py` in `env:radio` and
+  `env:radio-core2` only.
+- `src/web_server.cpp`: two `serveStatic` handlers instead of one. The first
+  answers `/` and `/index.html` only (filter `isPageRoot`) with
+  `Cache-Control: no-cache`, so a repeat visit costs one small 304. The second
+  answers everything else with `public, max-age=604800, immutable`, which is
+  safe because the hashed URLs change whenever a file does. The query string is
+  ignored by the file lookup. Nothing under `/api/*`, `/sd/*` or the captive
+  portal was touched.
+- `tools/pageload.py` (new): read-only timer that fetches the page the way a
+  browser would, prints bytes, wall time, gzip, Cache-Control and ETag per file,
+  then checks the repeat visit. Usage: `python3 tools/pageload.py HOST 5`.
+- `test/gzip_data.test.py` (new, 14 tests): file selection, deterministic gzip,
+  reference versioning, staging, stale cleanup, refusal to wipe a folder it did
+  not make. Run with `python3 test/gzip_data.test.py`.
+
+**Measured, Bluetooth on** (box at 192.168.0.38, ML301 connected, paused, read
+from a Linux VM on the Mac over Wi-Fi, before any change): `data/` is 110,089
+bytes, and the page fetches 12 files, 108,946 bytes. Per file about 0.17 s for
+a tiny file up to 0.5 s for the largest (20 KB), with an occasional 2 s stall.
+Full first load, 6 connections at a time: 2.9 to 5.0 s over 5 rounds, median
+3.6 s. Fetching in parallel was no faster than one at a time, so the box
+answers requests one by one and per-request overhead is a large share of the
+time. After gzip the page is 38,826 bytes (the image as a whole 39,489),
+about 35 percent of the original.
+
+**Expected, not measured:** 12 requests at about 0.17 s each plus 39 KB at
+roughly 60 KB/s puts a first load near 2.5 to 3 s, so the under-3-seconds
+target is likely but close. Repeat loads should make one request (index.html,
+304) and take the other 11 files from the browser cache.
+
+**Unverified, needs the Mac**
+1. Build and flash: `pio run -e radio-core2 -t buildfs`, check the staging
+   line `gzip_data: 13 files, 109730 bytes -> 39489 bytes` appears, then flash
+   the littlefs image to `0x370000` and the new firmware (the cache handlers are
+   in firmware, so both are needed). The hook was proven in a scratch native
+   project (script runs, `PROJECT_DATA_DIR` is replaced) but the real
+   `espressif32` buildfs step and the firmware compile could not be run in the
+   sandbox (the toolchain download was blocked).
+2. Measure: `python3 tools/pageload.py <box ip> 5` with Bluetooth on, then
+   again with it off, and open the page twice in a real browser (the second
+   load should show index.html 304 and the rest from cache). Also check the
+   page on the iPhone 8 and that `/api/status`, pairing and the captive portal
+   still load. If Bluetooth-on first load is over 3 s, the next lever is fewer
+   requests (bundle the scripts in the build step), not smaller files.
+
+**Next step:** flash and measure as above. Only then start Module 2. The shell
+will add fonts; subfolders in `data/` are copied through untouched, and
+`woff2` is already excluded from compression, but fonts referenced from CSS
+will need the same `?v=` treatment or a plain `no-cache` policy.
+
+### Module 1 verified on the board (2026-11-22, later): NOT yet at the 3 s target
+
+**Status: flashed (firmware + LittleFS), page/pairing/playback work, first load
+is 3.0-3.2 s median, so the under-3-seconds pass is missed by a hair.** Next lever
+(waiting on the owner's answer): bundle the scripts into one file at build time.
+
+**A real bug found on hardware, and a stopgap.** First flash of the helper's code
+served `index.html` and `style.css` as a 200 with an EMPTY body (about 5 of 6
+tries). Raw socket dump: the blank line that ends the headers arrived as
+`00 00`. It tracks header-block length: 202 and 226 bytes (2 past a multiple of
+4) fail; 112, 209, 233 (and 216, 241, 248, 224 now) are fine. Likely cause: the
+unaligned copy of the body onto the header inside the PSRAM-backed lwIP buffer on
+the rev v1.0 chip (same family as the earlier "zero byte past a handle" heap
+corruption). Stopgap in `web_server.cpp`: `kPageRootCache` / `kPageAssetCache`
+are padded (", no-transform", max-age 6048000) so every current file lands on a
+good length. **Fragile:** a new file type, or a file with a different number of
+size digits (fonts!), can land on a bad length. After ANY change that touches
+headers or the file set, run `python3 tools/pageload.py <ip> 3` (now fails loudly on
+a short or empty body). A proper fix is open: pad per response with a custom
+handler, or move the lwIP segment buffers out of PSRAM.
+Lengths 3 mod 4 are untested.
+
+**Measured** (Mac over Wi-Fi, 12 files, 38,826 bytes on the wire, was 108,946):
+- Bluetooth on: 3.22 s median (3.08 best, 8.63 worst, one stall), 5 rounds.
+- Bluetooth off: 3.01 s median (2.46 best), so bandwidth is not the limit; each
+  request costs about 0.25 s and the box answers one at a time.
+- Baseline (helper, BT on): 3.6 s median, 108,946 bytes. Gain is about 0.4 s.
+- Repeat visit: `/` answers 304 in about 0.55 s; the 11 files carry max-age and
+  are skipped. iPhone 8 reload test pending.
+- Playback to ML301 after the change: 6 s played, 0 underruns. Bluetooth left ON.
+
+**pageload.py** now gunzips index.html, flags short bodies, prints median.

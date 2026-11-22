@@ -20,14 +20,17 @@
          that just sees a player that will not start. -->
     <div class="banner" id="banner">Checking how you got here...</div>
 
-    <audio id="player" controls preload="auto"></audio>
-    <!-- WAVs play through wavstream.js instead of the <audio> element, which
-         can only use one connection and is too slow for WAV off the box. -->
-    <div class="wavbar" id="wavBar" hidden>
-      <button class="btn" id="wavToggle" type="button">Pause</button>
-      <input id="wavSeek" type="range" min="0" max="1000" value="0" aria-label="Position" />
-      <span class="time" id="wavTime">0:00 / 0:00</span>
+    <!-- No controls of its own: the bar below drives every song, whichever
+         engine plays it (player.js, player-browser.js). -->
+    <audio id="player" preload="auto"></audio>
+    <div class="playerbar" id="playerBar" hidden>
+      <button class="btn" id="playToggle" type="button">Pause</button>
+      <button class="btn" id="playNext" type="button">Next</button>
+      <input id="playSeek" type="range" min="0" max="1000" value="0" aria-label="Position" />
+      <span class="time" id="playTime">0:00 / 0:00</span>
+      <input id="playVolume" type="range" min="0" max="100" value="100" aria-label="Volume" />
     </div>
+    <p class="muted nowplaying" id="nowPlaying"></p>
     <span class="status" id="playerStatus"></span>
 
     <hr />
@@ -99,6 +102,9 @@
   <script src="app.js"></script>
   <script src="buffering.js"></script>
   <script src="wavstream.js"></script>
+  <script src="player.js"></script>
+  <script src="player-browser.js"></script>
+  <script src="player-box.js"></script>
   <script src="wavconvert.js"></script>
   <script src="library.js"></script>
 </body>

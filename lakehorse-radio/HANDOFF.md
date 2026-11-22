@@ -45,6 +45,43 @@ plain ADTS `.aac` file (no library). 16-bit WAV is still offered.
   same Wi-Fi, so the ceiling is the ESP32's own send path on this network.
 - Not yet heard on a phone.
 
+**2026-11-21 later: WAVs now play over two connections, behind a player layer.**
+- **Throughput, same method as above** (five one-minute `curl` runs of
+  `Currency.wav`, one connection, Mac on pifi), firmware unchanged:
+  **222-250 KB/s**. The 25-46 KB/s above, and 6-108 KB/s measured earlier this
+  afternoon, were partly two sessions testing the same box at once, and partly
+  the link: single runs swing 10x, so any A/B must be interleaved.
+- **Firmware: nothing kept.** Tried and reverted, none beat the shipped code:
+  - A blocking socket server on its own task and port: 135-287 KB/s against
+    the async server's 180-290, interleaved. The async server is not the limit.
+  - Widening one connection's lwIP `snd_buf` at run time (core lock, add to
+    `pcb->snd_buf`) to get past the 5744-byte TCP_SND_BUF without rebuilding
+    ESP-IDF: **harmful**, 6 KB/s and the heap stayed ~90 KB down. Do not retry.
+  - `SD_SPI_HZ` left at 10 MHz: the card reads ~1 MB/s, four times the link.
+  - Per-second serial telemetry showed 250-295 KB/s with an occasional 1 s gap
+    at zero, RSSI -54 to -59.
+- **Page: `data/wavstream.js`** (branch `radio-stream-speed`, merged): WAVs play
+  through Web Audio from 256 KB Range chunks fetched two at a time; a third
+  connection gets 503 from the box. Preloads the next song's opening.
+- **Player layer** (`data/player.js`): the page's buttons (play/pause, next,
+  seek, volume) only ever call this, and it hands each call to a backend.
+  `player-browser.js` plays in the listener's browser (wavstream for WAV,
+  `<audio>` + `buffering.js` for AAC and odd WAVs). `player-box.js` is the v2
+  on-box backend, a stub that reports itself unavailable; when it is built,
+  swapping it in is the `createPlayer` line in `library.js`. Volume is kept in
+  localStorage. Tests: `node test/player.test.js`, `node test/wavstream.test.js`.
+- **Measured in Chrome on the Mac, Mango Tree World.wav:**
+
+  | | old `<audio>` page | new page |
+  |---|---|---|
+  | to first audio | ~14 s | ~3 s |
+  | stalls | 19 s stall at 0:16 | none through a whole song |
+  | seek | - | ~4.5 s to resume |
+  | next song | wait again | starts on its own |
+
+- **Still not heard on a phone.** iOS Safari's Web Audio unlock is in the code
+  (context created inside the tap) but untested.
+
 **Built but off, for v2** (`src/config.h`):
 - `SD_UPLOAD_ENABLED` — upload songs from the page. Works as a raw-body POST
   (`/api/sd/upload?name=`); the multipart form version dropped connections

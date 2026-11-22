@@ -212,12 +212,14 @@
     var state = 'idle';         // idle | holding | playing | paused | ended
     var generation = 0;
     var timer = null;
+    var volume = 1;             // applied when the context is first made
 
     function ensureContext() {
       if (ctx) return;
       var AC = root.AudioContext || root.webkitAudioContext;
       ctx = new AC();
       out = ctx.createGain();
+      out.gain.value = volume;
       out.connect(ctx.destination);
     }
 
@@ -377,11 +379,31 @@
         var i = Math.max(0, Math.min(info.chunkCount - 1, Math.floor(seconds / info.chunkSeconds)));
         begin(dl.url, info, i, null);
       },
-      toggle: function () {
+      pause: function () {
+        if (!dl || state === 'paused' || state === 'ended') return;
+        state = 'paused';
+        ctx.suspend();
+        hooks.status('');
+        report();
+      },
+      resume: function () {
         if (!dl) return;
-        if (state === 'paused') { state = 'playing'; dl.failed = false; dl.pump(); ctx.resume(); tick(); }
-        else if (state === 'ended') { this.seek(0); }
-        else { state = 'paused'; ctx.suspend(); hooks.status(''); report(); }
+        if (state === 'ended') { this.seek(0); return; }
+        if (state !== 'paused') return;
+        state = 'playing';
+        dl.failed = false;
+        dl.pump();
+        ctx.resume();
+        tick();
+      },
+      toggle: function () {
+        if (state === 'paused' || state === 'ended') this.resume();
+        else this.pause();
+      },
+      /* 0 to 1. Kept across songs because the gain node outlives them. */
+      setVolume: function (v) {
+        volume = v;
+        if (out) out.gain.value = v;
       },
       stop: function () {
         generation++;

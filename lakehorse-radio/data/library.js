@@ -62,9 +62,11 @@
     }
 
     files.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    if (player) player.setTracks(files.map(function (f) { return f.name; }));
     files.forEach(function (f) {
       var li = document.createElement('li');
       li.className = 'track' + (f.name === playingName ? ' playing' : '');
+      li.dataset.name = f.name;
 
       var title = document.createElement('span');
       title.className = 't';
@@ -93,81 +95,73 @@
       .catch(function () { say('Could not read the box\'s storage.', 'err'); });
   }
 
-  // Starts each song behind a cushion of downloaded audio; see buffering.js.
-  var buffer = null;
+  // ---------- Playing ----------
+  //
+  // Everything goes through player.js, so these controls work the same for
+  // every song and will keep working when on-box playback (player-box.js)
+  // replaces the browser backend: that swap is the createPlayer line below.
+  var VOLUME_STORE = 'lakehorse.radio.volume';
+  var player = null;
+  var seekDragging = false;
+  var duration = 0;
+
   function playerStatus(text) {
     var el = $('playerStatus');
     el.textContent = text;
     el.className = 'status';
   }
 
-  // WAVs go through wavstream.js (two connections, Web Audio); everything else,
-  // and any WAV it cannot handle (not 16-bit PCM), through <audio>.
-  var wav = null;
   function clock(s) {
     s = Math.max(0, Math.floor(s));
     return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
   }
-  function wavProgress(pos, dur, playing) {
-    $('wavTime').textContent = clock(pos) + ' / ' + clock(dur);
-    $('wavToggle').textContent = playing ? 'Pause' : 'Play';
-    if (!wavSeeking) $('wavSeek').value = dur ? Math.round(1000 * pos / dur) : 0;
-  }
-  var wavSeeking = false;
-  var wavDuration = 0;
-  function wavPlayer() {
-    if (wav) return wav;
-    wav = window.LakehorseWavStream.createPlayer({
-      status: playerStatus,
-      ended: playNext,
-      progress: function (pos, dur, playing) { wavDuration = dur; wavProgress(pos, dur, playing); }
-    });
-    $('wavToggle').addEventListener('click', function () { wav.toggle(); });
-    $('wavSeek').addEventListener('input', function () { wavSeeking = true; });
-    $('wavSeek').addEventListener('change', function () {
-      wavSeeking = false;
-      wav.seek(wavDuration * this.value / 1000);
-    });
-    return wav;
+
+  function showProgress(pos, dur, playing) {
+    duration = dur;
+    $('playTime').textContent = clock(pos) + ' / ' + clock(dur);
+    $('playToggle').textContent = playing ? 'Pause' : 'Play';
+    if (!seekDragging) $('playSeek').value = dur ? Math.round(1000 * pos / dur) : 0;
   }
 
-  function useAudioElement(url) {
-    if (wav) wav.stop();
-    $('wavBar').hidden = true;
-    $('player').hidden = false;
-    if (!buffer) buffer = window.LakehorseBuffer.attach($('player'), playerStatus);
-    buffer.start(url);
-  }
-
-  function nextName(name) {
-    var i = files.findIndex(function (f) { return f.name === name; });
-    return i >= 0 && i + 1 < files.length ? files[i + 1].name : null;
-  }
-
-  function play(name) {
-    playingName = name;
-    var url = '/sd/' + encodeURIComponent(name);
-    if (window.LakehorseWavStream && /\.wav$/i.test(name)) {
-      var p = $('player');
-      p.pause();
-      p.removeAttribute('src');
-      p.load();
-      p.hidden = true;
-      $('wavBar').hidden = false;
-      var w = wavPlayer();
-      var next = nextName(name);
-      w.setNext(next && /\.wav$/i.test(next) ? '/sd/' + encodeURIComponent(next) : null);
-      w.start(url).catch(function () { useAudioElement(url); });
-    } else {
-      useAudioElement(url);
+  function showTrack(name) {
+    playingName = name || '';
+    $('nowPlaying').textContent = name ? 'Playing ' + name : '';
+    $('playerBar').hidden = !name;
+    var rows = $('sdList').querySelectorAll('li.track');
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].classList.toggle('playing', rows[i].dataset.name === playingName);
     }
-    load();
   }
 
-  function playNext() {
-    var next = nextName(playingName);
-    if (next) play(next);
+  function savedVolume() {
+    try {
+      var v = localStorage.getItem(VOLUME_STORE);
+      return v === null ? 1 : Number(v);
+    } catch (e) { return 1; }
   }
+
+  function setupPlayer() {
+    var backend = window.LakehorseBrowserPlayer.create($('player'));
+    player = window.LakehorsePlayer.createPlayer(backend, {
+      progress: showProgress,
+      status: playerStatus,
+      track: showTrack
+    }, savedVolume());
+    $('playVolume').value = Math.round(player.volume() * 100);
+    $('playToggle').addEventListener('click', function () { player.toggle(); });
+    $('playNext').addEventListener('click', function () { player.next(); });
+    $('playSeek').addEventListener('input', function () { seekDragging = true; });
+    $('playSeek').addEventListener('change', function () {
+      seekDragging = false;
+      player.seek(duration * this.value / 1000);
+    });
+    $('playVolume').addEventListener('input', function () {
+      var v = player.setVolume(this.value / 100);
+      try { localStorage.setItem(VOLUME_STORE, String(v)); } catch (e) { /* private mode */ }
+    });
+  }
+
+  function play(name) { player.play(name); }
 
   function remove(name) {
     if (!confirm('Delete ' + name + ' from the box?')) return;
@@ -259,7 +253,7 @@
     $('sdFile').addEventListener('change', function () {
       if (this.files.length) uploadAll(this.files);
     });
-    $('player').addEventListener('ended', playNext);
+    setupPlayer();
     fetch('/api/status', { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(setupKey)

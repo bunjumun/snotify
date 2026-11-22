@@ -79,8 +79,18 @@ plain ADTS `.aac` file (no library). 16-bit WAV is still offered.
   | seek | - | ~4.5 s to resume |
   | next song | wait again | starts on its own |
 
-- **Still not heard on a phone.** iOS Safari's Web Audio unlock is in the code
-  (context created inside the tap) but untested.
+- **iPhone 8 (iOS 16, Safari and Chrome alike): "playing" but no sound** on
+  b4c66ae. Most likely the ring/silent switch, which mutes Web Audio but not
+  `<audio>`. Fixed blind (no Xcode on this Mac, so no simulator):
+  - the `<audio>` element loops 0.1 s of silence while wavstream plays, which
+    puts iOS in playback mode and un-mutes Web Audio
+    (`navigator.audioSession` does this on iOS 17+ only);
+  - one sample of silence is started on the context inside the tap (older
+    iOS unlock);
+  - if the context is still not running 2 s after the tap, the song plays
+    through `<audio>` instead (checked on desktop by forcing the context to
+    stay suspended: fell back and played).
+  Not yet confirmed on the phone.
 
 **Built but off, for v2** (`src/config.h`):
 - `SD_UPLOAD_ENABLED` — upload songs from the page. Works as a raw-body POST

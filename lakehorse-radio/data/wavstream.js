@@ -35,6 +35,7 @@
   var LOW_WATER_SECONDS = 0.3;   // less than this scheduled = a stall
   var TICK_MS = 200;
   var RETRY_MS = 600;
+  var RUNNING_WAIT_MS = 2000;   // how long a context may take to start before we give up on it
   var MAX_RETRIES = 8;
 
   /* ---- pure helpers (tested in test/wavstream.test.js) ---- */
@@ -223,6 +224,30 @@
       out.connect(ctx.destination);
     }
 
+    /* Older iOS unlocks a context only once a sound has been started inside
+     * the tap, so start one sample of silence there. Harmless elsewhere. */
+    function unlock() {
+      try {
+        var src = ctx.createBufferSource();
+        src.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+        src.connect(out);
+        src.start(0);
+      } catch (e) { /* nothing to unlock with; whenRunning() decides */ }
+    }
+
+    /* Resolves once the context runs, rejects if it is still not running
+     * after RUNNING_WAIT_MS. resume() may return nothing on old WebKit. */
+    function whenRunning(resumed) {
+      if (ctx.state === 'running') return Promise.resolve();
+      var waited = new Promise(function (r) { setTimeout(r, RUNNING_WAIT_MS); });
+      return Promise.race([Promise.resolve(resumed), waited]).then(function () {
+        if (ctx.state === 'running') return;
+        return waited.then(function () {
+          if (ctx.state !== 'running') throw new Error('Web Audio will not start (' + ctx.state + ')');
+        });
+      });
+    }
+
     function stopSources() {
       sources.forEach(function (s) { try { s.onended = null; s.stop(); } catch (e) { /* already stopped */ } });
       sources = [];
@@ -350,27 +375,33 @@
     }
 
     return {
-      /* Call inside a tap the first time: iOS only unlocks audio there. */
+      /* Call inside a tap the first time: iOS only unlocks audio there.
+       * Rejects if the context will not run (iOS refusing it), so the caller
+       * can fall back to an <audio> element instead of playing silence. */
       start: function (url) {
         ensureContext();
-        ctx.resume();
+        unlock();
+        var resumed = ctx.resume();
         var gen = ++generation;
         stopSources();
         if (dl) dl.abort();
         dl = null;
         hooks.status('Starting...');
-        if (prefetched && prefetched.url === url && prefetched.dl) {
-          var p = prefetched;
-          prefetched = null;
-          begin(url, p.dl.info, 0, p.dl);
-          return Promise.resolve(true);
-        }
-        if (prefetched && prefetched.dl) prefetched.dl.abort();
-        prefetched = null;
-        return loadHeader(url, new AbortController().signal).then(function (info) {
+        return whenRunning(resumed).then(function () {
           if (gen !== generation) return false;
-          begin(url, info, 0, null);
-          return true;
+          if (prefetched && prefetched.url === url && prefetched.dl) {
+            var p = prefetched;
+            prefetched = null;
+            begin(url, p.dl.info, 0, p.dl);
+            return true;
+          }
+          if (prefetched && prefetched.dl) prefetched.dl.abort();
+          prefetched = null;
+          return loadHeader(url, new AbortController().signal).then(function (info) {
+            if (gen !== generation) return false;
+            begin(url, info, 0, null);
+            return true;
+          });
         });
       },
       seek: function (seconds) {

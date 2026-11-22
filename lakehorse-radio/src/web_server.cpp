@@ -112,6 +112,12 @@ void handleStatus(AsyncWebServerRequest* request) {
   doc["freeHeap"] = (uint32_t)ESP.getFreeHeap();
   doc["largestFreeBlock"] = (uint32_t)ESP.getMaxAllocHeap();
   doc["minFreeHeap"] = (uint32_t)ESP.getMinFreeHeap();
+  // External PSRAM, reported separately from the internal figures above.
+  // All three read 0 when the board has none or it failed to start; the boot
+  // log says which.
+  doc["psramSize"] = (uint32_t)ESP.getPsramSize();
+  doc["freePsram"] = (uint32_t)ESP.getFreePsram();
+  doc["largestFreePsramBlock"] = (uint32_t)ESP.getMaxAllocPsram();
   doc["rssi"] = WiFi.RSSI();
   doc["sdNeedsKey"] = cfg::SD_WRITES_NEED_KEY;
   doc["sdUpload"] = cfg::SD_UPLOAD_ENABLED;

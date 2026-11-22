@@ -42,6 +42,42 @@ stack takes tens of KB of internal RAM on its own) has to fit under that.
 - **PSRAM: 0 bytes** on the boot line, although the prebuilt core-3.x libs
   have `CONFIG_SPIRAM=y` and call `psramInit()` themselves. So either the
   module has none or init fails quietly; Module 3 finds out.
+  - **↳ Found (Module 3): it was compiled out.** pioarduino defines
+    `ESP32_ARDUINO_LIB_BUILDER`, and with that and no `BOARD_HAS_PSRAM`,
+    `esp32-hal-psram.h` `#undef`s `CONFIG_SPIRAM`. The board has 4 MB.
+
+## 2026-11-21: PSRAM on (Module 3)
+
+`-D BOARD_HAS_PSRAM` in `platformio.ini` brings up **4 MB of PSRAM** (4,194,304
+bytes, 4,128,756 largest block). The rev v1.0 cache workaround
+(`-mfix-esp32-psram-cache-issue`, MEMW) was already on the compile line from the
+framework, confirmed with `pio run -v`; nothing else was needed. `/api/status`
+adds `psramSize`, `freePsram`, `largestFreePsramBlock`; the boot line prints
+them, or the `esp_psram_init` error if none is found.
+
+Same method as the Module 0 baseline (idle x3, then two 256 KB Range loops on
+`Currency.wav` for 60 s). Internal RAM, bytes:
+
+| | Module 0 (no PSRAM) | Module 3 (PSRAM) |
+|---|---|---|
+| Boot: free / largest / min | 260,752 / 110,580 / 228,552 | 256,080 / 110,580 / 223,872 |
+| Idle: freeHeap | 144,024 | 174,204 |
+| Idle: largestFreeBlock | 94,196 | 110,580 |
+| During streams: freeHeap | 79,196 | 143,596 |
+| During streams: largestFreeBlock | 38,900 | 102,388 |
+| **minFreeHeap after streams** | **60,156** | **119,104** |
+| Stream throughput (2 connections) | 213 KB/s, 50 x 206 | 256 KB/s, 60 x 206 |
+| PSRAM free idle / during streams | - | 4,157,904 / 4,124,104 |
+| firmware.bin | 1,156,544 | 1,170,528 |
+
+Why internal RAM went up: `CONFIG_SPIRAM_USE_MALLOC` with
+`SPIRAM_MALLOC_ALWAYSINTERNAL=4096` sends any `malloc` over 4 KB to PSRAM, so
+the 16 KB SD read blocks and the web server's larger buffers moved out. The
+throughput difference is within the 10x run-to-run swing noted above, not a
+claim. **Watch for:** anything doing DMA from a buffer over 4 KB now gets a
+PSRAM buffer, which DMA cannot reach; the SPI driver copies through internal
+RAM so SD reads still work (measured above), but an I2S or Bluetooth buffer
+should be allocated with `MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA` explicitly.
 - **firmware.bin 1,156,544 bytes** of a 1,966,080-byte app0 (58.8 %).
 - **`reset reason 7` after a serial reset is not a fault.** Pulsing RTS gives
   `POWERON_RESET` then `RTCWDT_RTC_RESET` on this board's reset circuit, every
@@ -286,6 +322,8 @@ venv.
 - **`board = esp32dev`, not `esp-wrover-kit`.** The wrover-kit board file
   declares FTDI hwids and this board is a CP2102.
 - **PSRAM is deliberately off.** Nothing here needs it.
+  - **↳ 2026-11-21: on now**, 4 MB, for the Bluetooth work; see "PSRAM on
+    (Module 3)" at the top.
 - **The data partition is labelled `spiffs` though it holds LittleFS.**
   `LittleFS.begin()` looks for that label by default.
 - **`pio test` needs `test_build_src = yes`** or the sources never compile into

@@ -8,11 +8,16 @@
 // is the entire payload. An ESP32 that tried to decode the audio itself would
 // be a far harder build for a worse result.
 //
+// (2026-11-21: that premise is about to change. On-board Bluetooth playback is
+// planned, so PSRAM is now switched on in platformio.ini to give it room; the
+// box still plays nothing itself today.)
+//
 // This file does nothing but ordering, because the ordering is the part that
 // bites. Each step below depends on the one above it in a way that fails
 // quietly rather than loudly when you get it wrong.
 //
 #include <Arduino.h>
+#include <esp_psram.h>
 #include <esp_system.h>
 
 #include "captive_portal.h"
@@ -24,6 +29,25 @@
 #include "web_server.h"
 #include "wifi_manager.h"
 #include "wifi_seed.h"
+
+// PSRAM is probed by the framework before setup() runs (only when the build
+// defines BOARD_HAS_PSRAM; see platformio.ini), and when the probe fails it
+// says nothing: the prebuilt libraries only log errors, and the failure is a
+// warning. So "no PSRAM", "PSRAM failed to start" and "PSRAM compiled out"
+// all used to print "psram 0 bytes". When none was found, ask once more and
+// print the reason, so they can be told apart.
+// Retrying is harmless: the earlier failure left PSRAM uninitialised, and GPIO
+// 16/17 (the only pins it touches) are not used by this firmware.
+void reportPsram() {
+  if (psramFound()) {
+    Serial.printf("[boot] psram %u bytes, %u free, largest block %u\n",
+                  (unsigned)ESP.getPsramSize(), (unsigned)ESP.getFreePsram(),
+                  (unsigned)ESP.getMaxAllocPsram());
+    return;
+  }
+  const esp_err_t why = esp_psram_init();
+  Serial.printf("[boot] psram not found (esp_psram_init: %s)\n", esp_err_to_name(why));
+}
 
 void setup() {
   Serial.begin(115200);
@@ -37,10 +61,7 @@ void setup() {
   Serial.printf("[boot] reset reason %d, free heap %u, largest block %u, min free %u\n",
                 (int)esp_reset_reason(), (unsigned)ESP.getFreeHeap(),
                 (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getMinFreeHeap());
-  // Reported rather than assumed. The build deliberately does not enable PSRAM,
-  // so this should read 0 even on a WROVER; if it ever reads non-zero, the
-  // build flags changed and somebody should know.
-  Serial.printf("[boot] psram %u bytes\n", (unsigned)ESP.getPsramSize());
+  reportPsram();
 
   if (!playlist::beginStorage()) {
     // Carry on regardless. Without a filesystem there is no player UI, but the

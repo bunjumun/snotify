@@ -68,7 +68,11 @@ h1 { margin: 0; font-size: 22px; letter-spacing: -0.3px; }
   cursor: pointer;
   transition: background .14s, border-color .14s;
 }
-.track:hover { background: var(--bg-hover); border-color: var(--accent); }
+/* Hover only where there is a mouse: a phone keeps :hover on the last row
+   tapped, which then looks like a second song playing. */
+@media (hover: hover) {
+  .track:hover { background: var(--bg-hover); border-color: var(--accent); }
+}
 .track.playing { border-color: var(--accent); background: var(--bg-hover); }
 .track .n { color: var(--text-mute); font-variant-numeric: tabular-nums; font-size: 13px; min-width: 20px; }
 /* A track's linked art, when it has any -- pushed alongside the playlist by
@@ -117,10 +121,28 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
 progress { width: 100%; height: 10px; margin: 8px 0; }
 #sdKeyRow input { width: 100%; }
 
-/* Player bar (player.js): the one set of controls for every song. */
-.playerbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* Player bar (player.js): the one set of controls for every song. A fixed
+   grid rather than a wrapping row, because wrapping on a phone put the seek
+   and volume sliders side by side where nobody could tell them apart:
+     title
+     [Pause] [Next]        0:12 / 3:55
+     ------------- seek -------------
+     Volume  ------------------------ */
+.playerbar {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 10px;
+}
 .playerbar[hidden] { display: none; }
-.playerbar #playSeek { flex: 1; min-width: 120px; }
-.playerbar #playVolume { width: 90px; }
-.playerbar .time { font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.nowplaying { margin: 6px 0 0; }
+.playerbar .nowplaying {
+  grid-column: 1 / -1; margin: 0; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.playerbar .time {
+  justify-self: end; font-size: 13px; color: var(--text-dim);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.playerbar #playSeek { grid-column: 1 / -1; width: 100%; margin: 0; }
+.playerbar .volume { margin: 0; }
+.playerbar #playVolume { grid-column: 2 / -1; width: 100%; margin: 0; }

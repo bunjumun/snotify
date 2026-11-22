@@ -24,13 +24,14 @@
          engine plays it (player.js, player-browser.js). -->
     <audio id="player" preload="auto"></audio>
     <div class="playerbar" id="playerBar" hidden>
+      <p class="nowplaying" id="nowPlaying"></p>
       <button class="btn" id="playToggle" type="button">Pause</button>
       <button class="btn" id="playNext" type="button">Next</button>
-      <input id="playSeek" type="range" min="0" max="1000" value="0" aria-label="Position" />
       <span class="time" id="playTime">0:00 / 0:00</span>
-      <input id="playVolume" type="range" min="0" max="100" value="100" aria-label="Volume" />
+      <input id="playSeek" type="range" min="0" max="1000" value="0" aria-label="Position" />
+      <label class="volume" for="playVolume">Volume</label>
+      <input id="playVolume" type="range" min="0" max="100" value="100" />
     </div>
-    <p class="muted nowplaying" id="nowPlaying"></p>
     <span class="status" id="playerStatus"></span>
 
     <hr />

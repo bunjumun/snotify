@@ -125,7 +125,7 @@
 
   function showTrack(name) {
     playingName = name || '';
-    $('nowPlaying').textContent = name ? 'Playing ' + name : '';
+    $('nowPlaying').textContent = name || '';
     $('playerBar').hidden = !name;
     var rows = $('sdList').querySelectorAll('li.track');
     for (var i = 0; i < rows.length; i++) {

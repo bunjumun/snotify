@@ -90,7 +90,10 @@ plain ADTS `.aac` file (no library). 16-bit WAV is still offered.
   - if the context is still not running 2 s after the tap, the song plays
     through `<audio>` instead (checked on desktop by forcing the context to
     stay suspended: fell back and played).
-  Not yet confirmed on the phone.
+  Confirmed on the iPhone 8: audible, starts quickly.
+- **Player bar on a phone** is a fixed grid (title / buttons + time / seek /
+  labelled volume); a wrapping row had put both sliders side by side. Row
+  hover is mouse-only, since a phone kept the last tapped row highlighted.
 
 **Built but off, for v2** (`src/config.h`):
 - `SD_UPLOAD_ENABLED` — upload songs from the page. Works as a raw-body POST

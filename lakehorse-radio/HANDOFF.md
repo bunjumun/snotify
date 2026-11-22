@@ -168,6 +168,8 @@ A2DP output from the box to a speaker with the page as the remote. Bluetooth
 reverses the "never plays audio itself" premise: decoding on the ESP32, Wi-Fi
 and BT sharing one radio, and the app partition (1.875 MB) is likely too small
 once the BT stack is in. Plan it before building it.
+- **↳ 2026-11-21: app0 is now 3.375 MB** (LittleFS 512 KB at 0x370000); see
+  `partitions.csv`. Firmware is 1.13 MB of it, so ~2.3 MB is free for BT.
 
 ## What this is
 
@@ -258,7 +260,7 @@ cd ../firmware/lakehorse-radio
 $ESP -p /dev/cu.usbserial-0001 -b 115200 --before default-reset --after hard-reset \
   write-flash --flash-mode dio --flash-freq 40m --flash-size 4MB \
   0x1000 bootloader.bin 0x8000 partitions.bin 0xe000 boot_app0.bin \
-  0x10000 firmware.bin 0x1f0000 littlefs.bin
+  0x10000 firmware.bin 0x370000 littlefs.bin   # 0x1f0000 before 2026-11-21
 ```
 
 Read the boot log (bounded, unlike `pio device monitor`, which never returns):
@@ -278,7 +280,9 @@ venv.
   cable failed with `Invalid head of packet (0xFF)`. 115200 is clean.
 - **The LittleFS offset is never typed twice.** `tools/make_release.py` parses it
   out of `partitions.csv` into `manifest.json`, and both flashers read the
-  manifest. It is `0x1f0000`.
+  manifest. It is `0x370000` (it was `0x1f0000` until the 2026-11-21
+  repartition; a box still on the old table needs all five images flashed,
+  not just the app).
 - **`board = esp32dev`, not `esp-wrover-kit`.** The wrover-kit board file
   declares FTDI hwids and this board is a CP2102.
 - **PSRAM is deliberately off.** Nothing here needs it.

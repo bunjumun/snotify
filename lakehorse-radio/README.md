@@ -78,7 +78,7 @@ the wrong tutorial.
 | `0x8000` | partition table |
 | `0xe000` | boot_app0 |
 | `0x10000` | firmware |
-| `0x1F0000` | LittleFS, from `partitions.csv` |
+| `0x370000` | LittleFS, from `partitions.csv` (was `0x1F0000` before 2026-11-21) |
 
 ## Notes that cost time to learn
 

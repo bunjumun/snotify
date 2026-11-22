@@ -4,8 +4,8 @@
   "flashSize": "4MB",
   "flashMode": "dio",
   "flashFreq": "40m",
-  "filesystemOffset": "0x1f0000",
-  "filesystemSize": "0x200000",
+  "filesystemOffset": "0x370000",
+  "filesystemSize": "0x80000",
   "parts": [
     {
       "path": "bootloader.bin",
@@ -19,7 +19,7 @@
       "offset": 32768,
       "offsetHex": "0x8000",
       "bytes": 3072,
-      "sha256": "bb41ce1f22be278e2018cb4effc255a8b1e0b075d750c9f228f19e59ce279b26"
+      "sha256": "2203a65d058cfd26f8bca68290d846df6ab2f52a42dced23bc389efbd9aeb243"
     },
     {
       "path": "boot_app0.bin",
@@ -37,10 +37,10 @@
     },
     {
       "path": "littlefs.bin",
-      "offset": 2031616,
-      "offsetHex": "0x1f0000",
-      "bytes": 2097152,
-      "sha256": "9425ade481b3e5ccd81ac96ce785ae74856a149c2bbece3ec59668f73c1ed52c"
+      "offset": 3604480,
+      "offsetHex": "0x370000",
+      "bytes": 524288,
+      "sha256": "9e30a448fd8a91592a8da2f2647972c1dc52f75248d14eba21f18a266baffd07"
     }
   ]
 }

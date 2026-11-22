@@ -126,6 +126,7 @@
   function showTrack(name) {
     playingName = name || '';
     $('nowPlaying').textContent = name || '';
+    showProgress(0, 0, !!name);   // a new song starts at the left, not where the last one was
     $('playerBar').hidden = !name;
     var rows = $('sdList').querySelectorAll('li.track');
     for (var i = 0; i < rows.length; i++) {

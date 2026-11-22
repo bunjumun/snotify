@@ -143,6 +143,9 @@ progress { width: 100%; height: 10px; margin: 8px 0; }
   justify-self: end; font-size: 13px; color: var(--text-dim);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
+/* Sliders are not text boxes: the global input padding and border pushed
+   the ball in from the end, so it looked partway in at 0:00. */
+.playerbar input[type=range] { padding: 0; border: 0; background: transparent; }
 .playerbar #playSeek { grid-column: 1 / -1; width: 100%; margin: 0; }
 .playerbar .volume { margin: 0; }
 .playerbar #playVolume { grid-column: 2 / -1; width: 100%; margin: 0; }

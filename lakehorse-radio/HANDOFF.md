@@ -46,6 +46,41 @@ stack takes tens of KB of internal RAM on its own) has to fit under that.
     `ESP32_ARDUINO_LIB_BUILDER`, and with that and no `BOARD_HAS_PSRAM`,
     `esp32-hal-psram.h` `#undef`s `CONFIG_SPIRAM`. The board has 4 MB.
 
+## 2026-11-22: Bluetooth brief, Module 4 IN PROGRESS (paused for usage limit)
+
+Working through the "Bluetooth output integration brief" (modules 4-10). Only
+Module 4 has started; no firmware or page change made yet in it.
+
+**First-load lost responses: reproduced, cause not yet found.**
+- Harness: `<scratchpad>/firstload.py HOST ITER PARALLEL` fetches the page's
+  13 resources (11 static + /api/status + /api/sd), each on a fresh
+  connection, PARALLEL at a time. Re-create it if the scratchpad is gone.
+- First run, quiet box: 20 x 13 at 6 parallel, **0 failures**, 1 slow (>3 s).
+- Browser loop (12 parallel no-store fetches, rounds 300 ms-12 s apart)
+  plus the harness at once: requests time out at 8 s, `Failed to fetch` on
+  `wavconvert.js` after 13.9 s. **minFreeHeap fell to 39,460 and
+  largestFreeBlock to 40,948** (idle normally 174 K / 110 K), so heavy
+  parallel load does cut deep into internal RAM even with PSRAM on.
+- After that, and **even after a serial reset**: failures at 1 parallel
+  (timeouts, `IncompleteRead`), 4-7 s per small file.
+- **Ping to the box: 7.5 % loss, 5-96 ms; router 0 % loss.** RSSI -51, ch 1.
+  `WiFi.setSleep(false)` is already applied after every `begin()`, so it is
+  not modem sleep. Leading suspicion: the link itself was degraded during
+  the test (or another client was streaming), which makes this run's numbers
+  unreliable. Interrupted mid-check of single-connection throughput.
+- Every response is `Connection: close`, so a page load is 13 TCP
+  handshakes; lwIP limits are MAX_ACTIVE_TCP 16, ACCEPTMBOX 6, TCP_MSL 60 s.
+
+**Next, in order:**
+1. Re-check the link when quiet (ping loss, 1 MB range throughput). Only
+   trust failure counts from a link with ~0 % ping loss.
+2. If failures persist on a clean link: bundle the 9 scripts + CSS into one
+   file each (cuts a cold load from 13 connections to ~5), and/or add
+   keep-alive; re-run the harness at 6 and 12 parallel.
+3. Then the 1-hour streaming log (minFreeHeap/largestFreeBlock each minute)
+   on the fixed firmware, HANDOFF entry, commit.
+4. Module 5 (A2DP spike) stops to ask for the speaker's name before flashing.
+
 ## 2026-11-21: PSRAM on (Module 3)
 
 `-D BOARD_HAS_PSRAM` in `platformio.ini` brings up **4 MB of PSRAM** (4,194,304

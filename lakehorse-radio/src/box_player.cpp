@@ -37,7 +37,6 @@ Status status() {
 #else
 
 #include <SD.h>
-#include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
@@ -45,24 +44,14 @@ Status status() {
 #include <atomic>
 
 #include "BluetoothA2DPSource.h"
+#include "bt_speaker.h"
 #include "pcm_format.h"
 #include "sd_store.h"
-
-// The core frees Bluetooth Classic memory at boot unless the sketch claims it
-// (initArduino). Without this, esp_bt_controller_init fails with
-// ESP_ERR_INVALID_STATE. ESP32-A2DP releases the BLE half itself.
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-bool btClassicInUse(void) { return true; }
-#else
-bool btInUse(void) { return true; }
-#endif
 
 namespace boxplayer {
 namespace {
 
 using pcm::StereoFrame;
-
-BluetoothA2DPSource g_a2dp;
 
 // ---- ring buffer: reader task writes, Bluetooth task reads ----
 // Indices and the copy itself sit under one spinlock. Copies are at most a
@@ -258,13 +247,15 @@ class Lock {
   ~Lock() { xSemaphoreGive(g_lock); }
 };
 
-void onConnection(esp_a2d_connection_state_t state, void*) {
-  Serial.printf("[box] speaker %s\n", g_a2dp.to_str(state));
-}
-
 }  // namespace
 
 void begin() {
+  if (!btspeaker::enabled()) {
+    // Bluetooth switched off: no reader, no 352 KB ring. play() says why.
+    btspeaker::begin(fillFrames);
+    g_error = "Bluetooth is off";
+    return;
+  }
   g_lock = xSemaphoreCreateMutex();
   g_ring = static_cast<StereoFrame*>(ps_malloc(cfg::BOX_RING_FRAMES * sizeof(StereoFrame)));
   g_conv = static_cast<StereoFrame*>(
@@ -281,28 +272,11 @@ void begin() {
   xTaskCreatePinnedToCore(readerTask, "boxreader", cfg::BOX_READER_STACK, nullptr,
                           cfg::BOX_READER_PRIORITY, nullptr, cfg::BOX_READER_CORE);
 
-  g_a2dp.set_local_name(cfg::BT_LOCAL_NAME);
-  // Secure Simple Pairing. ESP32-A2DP defaults it off; without it ML301
-  // accepted the link and dropped A2DP ~6 s later (HANDOFF.md, Module 5).
-  g_a2dp.set_ssp_enabled(true);
-  // Reconnect to the last speaker by address on boot, so once paired it comes
-  // back without pairing mode. Falls back to discovery by name.
-  g_a2dp.set_auto_reconnect(true);
-  g_a2dp.set_on_connection_state_changed(onConnection);
-  g_a2dp.set_data_callback_in_frames(fillFrames);
-  Serial.printf("[box] before bt: free %u, largest %u\n", (unsigned)ESP.getFreeHeap(),
-                (unsigned)ESP.getMaxAllocHeap());
-  // See config.h: Bluedroid's structures go to PSRAM, nobody else's.
-  heap_caps_malloc_extmem_enable(cfg::BT_START_PSRAM_THRESHOLD);
-  g_a2dp.start(cfg::BT_SPEAKER_NAME);
-  delay(cfg::BT_START_SETTLE_MS);
-  heap_caps_malloc_extmem_enable(cfg::RUNTIME_PSRAM_THRESHOLD);
-  Serial.printf("[box] bluetooth up, looking for \"%s\": free %u, largest %u\n",
-                cfg::BT_SPEAKER_NAME, (unsigned)ESP.getFreeHeap(),
-                (unsigned)ESP.getMaxAllocHeap());
+  btspeaker::begin(fillFrames);
 }
 
 String play(const char* safeName, float startSeconds) {
+  if (!btspeaker::enabled()) return "Bluetooth is off";
   if (!g_lock || !g_ring) return "box playback is not running";
   if (!sdstore::mounted()) return "no SD card";
   Lock lock;
@@ -363,8 +337,8 @@ void setVolume(float v) {
 Status status() {
   Status s{};
   s.built = true;
-  s.connected = g_a2dp.is_connected();
-  s.speaker = cfg::BT_SPEAKER_NAME;
+  s.connected = btspeaker::connected();
+  s.speaker = btspeaker::info().speaker;
   s.volume = g_volumeMilli / 1000.0f;
   s.ended = g_ended;
   s.underruns = g_underruns;

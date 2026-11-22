@@ -41,6 +41,18 @@
         <option value="box">the box's speaker</option>
       </select>
     </p>
+    <!-- Bluetooth speaker controls (speaker-panel.js). Shown only when the box
+         was built with Bluetooth, whether it is switched on or off. -->
+    <div id="speakerPanel" hidden>
+      <p class="row"><span id="spkStatus"></span></p>
+      <p class="row">
+        <button class="btn" id="spkLink" type="button" hidden></button>
+        <button class="btn" id="spkFind" type="button">Find speakers</button>
+        <button class="btn" id="spkPower" type="button">Turn Bluetooth off</button>
+      </p>
+      <ul class="tracks" id="spkList"></ul>
+      <p class="muted" id="spkNote"></p>
+    </div>
 
     <hr />
 
@@ -114,6 +126,7 @@
   <script src="player.js"></script>
   <script src="player-browser.js"></script>
   <script src="player-box.js"></script>
+  <script src="speaker-panel.js"></script>
   <script src="wavconvert.js"></script>
   <script src="library.js"></script>
 </body>

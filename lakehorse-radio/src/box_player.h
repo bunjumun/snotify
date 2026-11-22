@@ -37,7 +37,7 @@ struct Status {
   uint32_t ended;  // increments each time a song plays to its end
   uint32_t underruns;
   String error;    // last play() failure, cleared by the next good play
-  const char* speaker;
+  String speaker;
 };
 
 // Starts the Bluetooth stack and the reader task. Call after the SD card is

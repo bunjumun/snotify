@@ -35,6 +35,9 @@ and being reachable at a gig where there is no network at all.
 | `src/web_server.*` | One server, both audiences. API, static files, CORS. |
 | `src/playlist_validate.*` | Pure validation. Runs on a laptop, so it is actually tested. |
 | `src/playlist_store.*` | LittleFS, with a write-then-rename so a power cut cannot corrupt. |
+| `src/bt_speaker.*` | The Bluetooth link: chosen speaker, find/connect/disconnect, Bluetooth on/off. |
+| `src/speaker_api.*` | `/api/speaker/*`, the page's Bluetooth controls. |
+| `data/speaker-panel.js` | The page's speaker panel. |
 | `src/box_player.*` | Bluetooth playback: SD WAV to an A2DP speaker (core-2 build only). |
 | `src/pcm_format.*` | WAV headers, resampling to 44.1 kHz, volume. Pure, tested on a laptop. |
 | `src/player_api.*` | `/api/player/*`, the page's remote for box playback. |

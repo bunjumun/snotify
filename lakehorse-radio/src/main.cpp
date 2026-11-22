@@ -27,6 +27,7 @@
 #include <esp_system.h>
 
 #include "box_player.h"
+#include "bt_speaker.h"
 #include "captive_portal.h"
 #include "config.h"
 #include "device_key.h"
@@ -129,6 +130,7 @@ void heartbeat() {
 void loop() {
   wifinet::tick();
   netwatch::tick();
+  btspeaker::tick();
   heartbeat();
 
   // DNSServer is polled rather than interrupt-driven. Stop calling this and the

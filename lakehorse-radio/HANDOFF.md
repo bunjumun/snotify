@@ -87,11 +87,31 @@ the box. 0 underruns across every test. Board is flashed with all of this
   0 underruns, 2-9 % requests failed under that abuse.
 - `[hb]` heap/Wi-Fi line on serial every 2 s (`main.cpp`), for diagnosis.
 
+**Speaker controls (2026-11-22, later still)**
+- Page panel under "Play songs on" (`data/speaker-panel.js`, tests in
+  `test/speaker-panel.test.js`): status line, Connect / Disconnect,
+  Find speakers (14 s inquiry, list strongest first, tap to play there),
+  Turn Bluetooth on/off.
+- Firmware: `src/bt_speaker.*` owns the A2DP link (moved out of
+  box_player.cpp); `src/speaker_api.*` is `/api/speaker/*`. Chosen speaker
+  and on/off live in NVS namespace `lh_bt` (`spk`, `on`). Library levers it
+  needs (is_end, is_target_status_active) are protected, exposed by a
+  subclass, behaviour unchanged.
+- **Bluetooth off = saved setting + restart**, not live: btInUse() returns
+  false so controller RAM is freed, modem sleep goes off, send-window cap is
+  skipped. Measured: 1 MB from the card 86-238 KB/s with it off vs 24 KB/s
+  on; ping 22 ms vs ~100. That is what makes "this device" playback work.
+- Verified on hardware: scan found "bat house"; disconnect stays down
+  (19 s); Connect back in 9 s; off -> restart -> on -> ML301 back 6 s after
+  boot. **Not verified:** actually switching to a second speaker (didn't
+  want to grab his other speaker's audio unasked).
+- Search for the chosen speaker is bounded (60 s, `BT_SEARCH_MS`); a
+  speaker that was off needs Connect pressed again after that.
+
 **Known limits / next**
-- **Phone playback of card WAVs is too slow in this build**: 1 MB at 22-40
-  KB/s (needs 176). Modem sleep makes each round trip ~100 ms, and window /
-  RTT caps it. Box playback is unaffected. Fix options: a "Bluetooth off"
-  mode that restores Wi-Fi, or accept it (box mode is the point).
+- ~~Phone playback of card WAVs is too slow in this build~~ while Bluetooth
+  is on (22-40 KB/s, needs 176). **Turn Bluetooth off on the page** for
+  phone playback (above).
 - ~~A Wi-Fi wedge needs a power cycle.~~ **Watchdog added (2026-11-22,
   later):** `src/net_watchdog.*` pings the gateway every 15 s (3 pings, any
   reply = alive). 3 silent probes in a row: rejoin Wi-Fi (Bluetooth and the

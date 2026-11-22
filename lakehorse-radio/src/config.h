@@ -164,14 +164,9 @@ constexpr size_t SD_READ_BLOCK_BYTES = 16384;
 constexpr const char* SD_URL_PREFIX = "/sd/";
 
 // ---------- Playing on the box (Bluetooth A2DP out to a speaker) ----------
-// Wi-Fi modem sleep: off for mDNS reliability (wifi_manager.cpp), but Wi-Fi
-// and Bluetooth coexistence on IDF 4.4 requires it on, so a Bluetooth build
-// has no choice.
-#if LAKEHORSE_BT
-constexpr bool WIFI_MODEM_SLEEP = true;
-#else
-constexpr bool WIFI_MODEM_SLEEP = false;
-#endif
+// Wi-Fi modem sleep is now decided at run time: btspeaker::needsModemSleep().
+// IDF 4.4 requires it whenever Bluetooth is running, and it is off otherwise
+// for mDNS reliability (wifi_manager.cpp).
 // Serial heartbeat interval (main.cpp): heap and Wi-Fi state, for diagnosis.
 constexpr uint32_t HEARTBEAT_MS = 2000;
 // Most unacknowledged bytes one HTTP connection may queue in a Bluetooth
@@ -199,7 +194,20 @@ constexpr size_t RUNTIME_PSRAM_THRESHOLD = 1024;
 // Bluedroid finishes its profile setup on its own task after start()
 // returns; the low threshold is held this long so that lands in PSRAM too.
 constexpr uint32_t BT_START_SETTLE_MS = 1500;
-// The speaker's advertised name, exact case: ESP32-A2DP matches it with
+// Bluetooth's own saved settings (bt_speaker.h), apart from the Wi-Fi ones.
+constexpr const char* BT_NVS_NAMESPACE = "lh_bt";
+constexpr const char* BT_NVS_KEY_ON = "on";
+constexpr const char* BT_NVS_KEY_SPEAKER = "spk";
+// "Find speakers" listens this long: one full inquiry (10 x 1.28 s) plus a
+// little. Inquiry slows Wi-Fi while it runs, so it is never open-ended.
+constexpr uint32_t BT_SCAN_MS = 14000;
+// How long the box looks for the chosen speaker by name before giving up
+// until asked again (a speaker not in pairing mode never answers).
+constexpr uint32_t BT_SEARCH_MS = 60000;
+// Pause between saving the Bluetooth on/off setting and restarting, so the
+// reply reaches the page first.
+constexpr uint32_t BT_RESTART_DELAY_MS = 800;
+// The default speaker's advertised name, exact case: ESP32-A2DP matches it with
 // strcmp, and "ml301" was never found while "ML301" was (HANDOFF.md, Module 5).
 constexpr const char* BT_SPEAKER_NAME = "ML301";
 // Name the box shows to other Bluetooth devices.

@@ -3,6 +3,7 @@
 #include <Preferences.h>
 #include <WiFi.h>
 
+#include "bt_speaker.h"
 #include "config.h"
 #include "net_identity.h"
 
@@ -251,7 +252,7 @@ void beginStationAttempt(const String& ssid, const String& password) {
   // requires modem sleep, and esp_bt_controller_enable aborts in
   // coex_core_enable without it (seen 2026-11-22, boot loop). mDNS may get
   // flakier there; the box's IP still works.
-  WiFi.setSleep(cfg::WIFI_MODEM_SLEEP);
+  WiFi.setSleep(btspeaker::needsModemSleep());
 }
 
 // Reads NVS and, if anything is saved, starts (or leaves running, if one is

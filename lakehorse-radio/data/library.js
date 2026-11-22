@@ -166,10 +166,23 @@
     player.setTracks(trackNames);
   }
 
+  // With Bluetooth switched off the box has no speaker, so "the box's
+  // speaker" is greyed out and anyone left on it is moved to this device.
+  function matchPlayOnToBluetooth(info) {
+    var boxOption = $('playOn').querySelector('option[value="box"]');
+    boxOption.disabled = !info.bluetooth;
+    if (!info.bluetooth && $('playOn').value === 'box') {
+      $('playOn').value = 'browser';
+      try { localStorage.setItem(PLAY_ON_STORE, 'browser'); } catch (e) { /* private mode */ }
+      buildPlayer('browser');
+    }
+  }
+
   function setupPlayOn() {
     window.LakehorseBoxPlayer.probe().then(function (built) {
       if (!built) return;
       $('playOnRow').hidden = false;
+      window.LakehorseSpeakerPanel.attach($, { onChange: matchPlayOnToBluetooth }).refresh();
       $('playOn').value = savedPlayOn();
       if (savedPlayOn() === 'box') buildPlayer('box');
       $('playOn').addEventListener('change', function () {

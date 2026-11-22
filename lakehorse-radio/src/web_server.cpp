@@ -18,7 +18,9 @@
 #include "config.h"
 #include "device_key.h"
 #include "net_identity.h"
+#include "bt_speaker.h"
 #include "player_api.h"
+#include "speaker_api.h"
 #include "send_window.h"
 #include "playlist_store.h"
 #include "playlist_validate.h"
@@ -593,11 +595,15 @@ void begin() {
   g_cors.setAllowCredentials(false);
   g_server.addMiddleware(&g_cors);
 #if LAKEHORSE_BT
-  // Before any handler writes a byte; see send_window.h for why.
-  g_server.addMiddleware([](AsyncWebServerRequest* request, ArMiddlewareNext next) {
-    sendwindow::cap(request->client());
-    next();
-  });
+  // Before any handler writes a byte; see send_window.h for why. Only while
+  // Bluetooth runs: switched off, RAM is plentiful and the cap only slows
+  // pages down.
+  if (btspeaker::enabled()) {
+    g_server.addMiddleware([](AsyncWebServerRequest* request, ArMiddlewareNext next) {
+      sendwindow::cap(request->client());
+      next();
+    });
+  }
 #endif
 
   g_server.on("/api/status", HTTP_GET, handleStatus);
@@ -619,6 +625,7 @@ void begin() {
   g_server.on("/api/sd/upload", HTTP_POST, handleUploadDone, nullptr, handleUploadChunk);
   g_server.on("/sd/*", HTTP_GET, handleSdFile);
   playerapi::attach(g_server);
+  speakerapi::attach(g_server);
 
   registerPlaylistWrite();
   registerWifiWrite();

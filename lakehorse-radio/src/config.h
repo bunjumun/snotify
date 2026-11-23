@@ -146,7 +146,7 @@ constexpr size_t SD_LIST_MAX_FILES = 200;
 // over Wi-Fi, so a 100 MB mix takes around 8 minutes) but is off in this
 // version: songs go onto the card from a computer, in the /music folder. Turn it
 // on for the next version.
-constexpr bool SD_UPLOAD_ENABLED = false;
+constexpr bool SD_UPLOAD_ENABLED = true;
 // Whether uploading and deleting songs needs the pairing key. Off while the box
 // is being tried out on a home network, where anyone who can reach it is
 // someone you let in. Turn it on before the box goes anywhere shared: with it
@@ -162,6 +162,14 @@ constexpr size_t SD_WRITE_BLOCK_BYTES = 16384;
 constexpr size_t SD_READ_BLOCK_BYTES = 16384;
 // URL prefix the stored files are served under.
 constexpr const char* SD_URL_PREFIX = "/sd/";
+// The browser game (Lakehorse Swimulator) is plain files in <SD>/game/, served
+// under /game/. Flash holds only the page; anything big lives on the card.
+constexpr const char* SD_GAME_DIR = "/game";
+constexpr const char* GAME_URL_PREFIX = "/game/";
+constexpr size_t GAME_PATH_MAX_LEN = 120;
+// Revalidate each visit: a replaced file must show up, and an ETag-less
+// stream cannot be revalidated, so keep it short rather than immutable.
+constexpr const char* GAME_CACHE_CONTROL = "public, max-age=3600";
 
 // ---------- Playing on the box (Bluetooth A2DP out to a speaker) ----------
 // Wi-Fi modem sleep is now decided at run time: btspeaker::needsModemSleep().

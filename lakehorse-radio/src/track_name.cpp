@@ -15,6 +15,7 @@ struct Ext {
 const Ext kExtensions[] = {
     {"wav", "audio/wav"},  {"mp3", "audio/mpeg"}, {"m4a", "audio/mp4"},
     {"aac", "audio/aac"},  {"ogg", "audio/ogg"},  {"opus", "audio/ogg"},
+    {"flac", "audio/flac"},
 };
 
 char lower(char c) { return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; }

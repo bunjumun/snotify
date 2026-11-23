@@ -5,19 +5,19 @@
    instead, which keeps the download under a few kilobytes. */
 
 :root {
-  --bg: #0e1116;
-  --bg-row: #161b22;
-  --bg-hover: #1c232c;
-  --line: #262d36;
-  --text: #e6edf3;
-  --text-dim: #9aa6b2;
-  --text-mute: #6b7683;
-  --accent: #6c5ce7;
-  --accent-2: #12706b;
-  --warn: #c98a2c;
-  --err: #e0567a;
-  --ok: #7de08a;
-  --radius: 12px;
+  --bg: #0c0e0d;
+  --bg-row: #121412;
+  --bg-hover: #1c1f1c;
+  --line: #3b3d39;
+  --text: #e9e5d6;
+  --text-dim: #c4c0b0;
+  --text-mute: #b0ad9d;
+  --accent: #ff6b2c;
+  --accent-2: #5fd0b0;
+  --warn: #e0b341;
+  --err: #ff8f7a;
+  --ok: #5fd0b0;
+  --radius: 0;
 }
 
 * { box-sizing: border-box; }
@@ -30,7 +30,7 @@ body {
      is drawn in translucent ink with a transparent ground (see dazzle.js). */
   background: var(--dazzle-bg, none) center / cover fixed, var(--bg);
   color: var(--text);
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -109,7 +109,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
   font: inherit; cursor: pointer;
 }
 .btn:hover { background: var(--bg-hover); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #0c0e0d; font-weight: 600; }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn[disabled] { opacity: .5; cursor: default; }
 
@@ -149,3 +149,214 @@ progress { width: 100%; height: 10px; margin: 8px 0; }
 .playerbar #playSeek { grid-column: 1 / -1; width: 100%; margin: 0; }
 .playerbar .volume { margin: 0; }
 .playerbar #playVolume { grid-column: 2 / -1; width: 100%; margin: 0; }
+
+/* ---- The shell (shell.js): ENIAS desktop. Palette follows the mockup: ink
+   #0c0e0d, bone #e9e5d6, panel #3b3d39, orange #ff6b2c, teal #5fd0b0. No
+   webfont (the box has no internet), so titles use the system monospace. ---- */
+
+body { padding-bottom: 72px; }
+.desktop {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start;
+  padding: 12px;
+}
+
+.win {
+  flex: 1 1 340px; min-width: 0; max-width: 560px;
+  background: #3b3d39;
+  border: 2px solid; border-color: #6a6c65 #0f1110 #0f1110 #6a6c65;
+  box-shadow: 0 0 0 1px #000;
+}
+.win[hidden] { display: none; }
+.win.focus { box-shadow: 0 0 0 1px #000, 0 0 0 3px var(--accent); }
+.win-title {
+  height: 36px; display: flex; align-items: center; justify-content: space-between;
+  background: #0c0e0d; color: #e9e5d6; padding: 0 4px 0 8px;
+  letter-spacing: 1px; font-weight: 600;
+}
+.win-name { display: flex; align-items: center; gap: 8px; }
+.win-name i { width: 12px; height: 12px; background: var(--accent); display: inline-block; }
+.win-x {
+  width: 44px; height: 28px; background: #3b3d39; color: #e9e5d6; cursor: pointer;
+  border: 2px solid; border-color: #6a6c65 #0f1110 #0f1110 #6a6c65;
+  font: 600 13px ui-monospace, Menlo, monospace;
+}
+.win-body { padding: 10px; }
+
+/* Inset wells, as in the mockup: sunken fields and lists. */
+.win input, .win select, .banner, .track, fieldset {
+  border: 2px solid; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110;
+}
+.banner { background: #121412; }
+.track { margin-bottom: 6px; background: #121412; }
+.track.playing { background: var(--accent); color: #0c0e0d; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; }
+.track.playing .state, .track.playing .n { color: #0c0e0d; }
+fieldset { background: transparent; }
+.win .btn {
+  min-height: 44px; background: #3b3d39; color: #e9e5d6;
+  border: 2px solid; border-color: #6a6c65 #0f1110 #0f1110 #6a6c65;
+  box-shadow: 0 0 0 1px #000;
+}
+.win .btn:hover { background: #45473f; }
+.win .btn.primary { background: var(--accent); color: #0c0e0d; }
+.win .btn[aria-pressed="true"] { background: var(--accent); color: #0c0e0d; }
+.win input[type=range], .win .playerbar input[type=range] { border: 0; background: transparent; min-height: 28px; accent-color: var(--accent); }
+.win progress { accent-color: var(--accent); }
+
+/* Windows with nothing to show say why instead of staying empty. */
+#spkNone, #setupAway { display: none; }
+#speakerPanel[hidden] + #spkNone, #setup[hidden] + #setupAway { display: block; }
+
+/* Desktop icons. */
+.icons { flex: 1 1 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; max-width: 560px; }
+.icon {
+  min-height: 92px; background: transparent; border: 0; padding: 4px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 6px; color: #e9e5d6;
+  font: 400 11px ui-monospace, Menlo, monospace;
+}
+.icon span { background: #0c0e0d; padding: 2px 6px; }
+
+/* Taskbar. */
+.taskbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; height: 52px;
+  background: #3b3d39; border-top: 2px solid #6a6c65;
+  display: flex; align-items: center; gap: 6px; padding: 0 6px;
+}
+.startbtn, .task {
+  min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: #3b3d39; color: #e9e5d6; cursor: pointer;
+  border: 2px solid; border-color: #6a6c65 #0f1110 #0f1110 #6a6c65;
+  box-shadow: 0 0 0 1px #000; font: 600 13px ui-monospace, Menlo, monospace;
+}
+.startbtn { flex: none; min-width: 92px; }
+.startbtn i {
+  width: 16px; height: 16px; border: 1px solid #0c0e0d;
+  background: repeating-linear-gradient(45deg, #0c0e0d 0 3px, #e9e5d6 3px 6px);
+}
+.tasks { flex: 1; min-width: 0; display: flex; gap: 6px; overflow: hidden; }
+.task { flex: 0 1 auto; min-width: 0; padding: 0 10px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; background: #2a2c29; box-shadow: none; }
+.task.focus { color: var(--accent); }
+.tray {
+  flex: none; min-height: 44px; display: flex; align-items: center; padding: 0 10px;
+  border: 2px solid; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; font-size: 12px;
+}
+.tray.warn { color: var(--accent); font-weight: 600; }
+
+/* Start menu and first-run callout. */
+.startmenu[hidden], .callout[hidden] { display: none; }
+.startmenu {
+  position: fixed; left: 6px; bottom: 58px; z-index: 30; width: 244px; display: flex;
+  background: #3b3d39; border: 2px solid; border-color: #6a6c65 #0f1110 #0f1110 #6a6c65; box-shadow: 0 0 0 1px #000;
+}
+.startband {
+  flex: none; width: 30px; background: #0c0e0d; color: #e9e5d6; letter-spacing: 2px; font-weight: 600;
+  writing-mode: vertical-rl; transform: rotate(180deg); text-align: left; padding: 8px 0;
+}
+.startitems { flex: 1; display: flex; flex-direction: column; }
+.startitems button {
+  min-height: 46px; display: flex; align-items: center; justify-content: space-between; text-align: left;
+  padding: 0 12px; background: transparent; border: 0; color: #e9e5d6; cursor: pointer;
+  font: 400 13px ui-monospace, Menlo, monospace;
+}
+.startitems button:hover { background: #45473f; }
+.startitems button.needs { background: var(--accent); color: #0c0e0d; font-weight: 600; }
+.startitems small { font-weight: 400; font-size: 11px; }
+.callout {
+  position: fixed; left: 258px; bottom: 80px; z-index: 30; width: 130px; padding: 8px 10px;
+  background: #f4efc8; color: #0c0e0d; border: 1px solid #0c0e0d; box-shadow: 3px 3px 0 #000;
+  font-size: 12px; line-height: 1.4;
+}
+
+/* Matrix lights (matrix-window.js). The canvas keeps its 8x8 grid square at
+   any width. Full view is a fixed overlay rather than the Fullscreen API,
+   which iPhone Safari does not offer for ordinary elements. */
+.matrixrow { align-items: center; margin: 12px 0; }
+.matrixpreview { padding: 0; border: 2px solid; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; background: #050605; cursor: pointer; line-height: 0; }
+.matrixpreview canvas { width: 40px; height: 40px; display: block; }
+.matrixwin canvas { display: block; width: 100%; max-width: 320px; aspect-ratio: 1 / 1; margin: 4px auto 8px; }
+.matrixwin .row .btn { margin-top: 8px; }
+/* Five mode buttons must fit one row on a 375 px phone. */
+.matrixwin #matrixModes { flex-wrap: nowrap; }
+.matrixwin #matrixModes .btn { flex: 1 1 auto; padding: 10px 6px; }
+.matrixwin.full {
+  position: fixed; inset: 0; z-index: 40; margin: 0; border: 0; max-width: none; box-shadow: none;
+  background: #000; display: flex; flex-direction: column; justify-content: center; align-items: center;
+}
+.matrixwin.full .win-title, .matrixwin.full #matrixModes, .matrixwin.full label,
+.matrixwin.full #matrixBright, .matrixwin.full #matrixClose, .matrixwin.full .status { display: none; }
+.matrixwin.full .win-body { width: 100%; }
+.matrixwin.full canvas { width: min(92vw, 80vh); max-width: none; }
+.matrixwin.full #matrixFull { opacity: .6; }
+
+/* Phone: windows stack full width. */
+@media (max-width: 700px) {
+  .win, .icons { flex-basis: 100%; max-width: none; }
+}
+
+/* A window is already the frame; a fieldset inside it only needs its heading. */
+.win fieldset { border: 0; padding: 0; margin: 0 0 8px; min-width: 0; }
+.win legend { padding: 0; color: var(--text); font-weight: 600; letter-spacing: 1px; text-transform: uppercase; font-size: 12px; }
+
+/* ---- Network and Speaker windows (Module 5) ---- */
+.label, .grouptitle { margin: 12px 0 6px; font-size: 11px; color: var(--text-dim); letter-spacing: 1px; }
+.netlist, .well { background: #121412; border: 2px solid; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; }
+.netlist { margin-bottom: 8px; max-height: 260px; overflow-y: auto; }
+.netlist .muted { margin: 0; padding: 14px 12px; }
+.netrow {
+  width: 100%; min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 0 12px; background: transparent; color: #e9e5d6; border: 0; border-bottom: 1px solid #3b3d39;
+  text-align: left; cursor: pointer; font: 400 13px ui-monospace, Menlo, monospace;
+}
+.netrow.on { background: var(--accent); color: #0c0e0d; font-weight: 600; }
+.bars { flex: none; display: inline-flex; align-items: flex-end; gap: 2px; height: 18px; }
+.bars i { width: 4px; background: #55574f; }
+.bars i:nth-child(1) { height: 4px; } .bars i:nth-child(2) { height: 8px; }
+.bars i:nth-child(3) { height: 12px; } .bars i:nth-child(4) { height: 16px; }
+.bars i.lit { background: #e9e5d6; }
+.netrow.on .bars i { background: #7a3a1c; }
+.netrow.on .bars i.lit { background: #0c0e0d; }
+
+.check { display: flex; align-items: center; gap: 8px; min-height: 40px; margin: 4px 0; font-size: 12px; color: var(--text); }
+.check input { width: 18px; height: 18px; flex: none; padding: 0; accent-color: var(--accent); }
+.check.big { font-size: 13px; font-weight: 600; min-height: 44px; }
+
+/* The cream callout used for first-run, here as an inline note. */
+.note {
+  margin: 10px 0 4px; padding: 8px 10px; background: #f4efc8; color: #0c0e0d;
+  border: 1px solid #0c0e0d; box-shadow: 3px 3px 0 #000; font-size: 12px; line-height: 1.4;
+}
+.note b { font-weight: 600; word-break: break-all; }
+
+.well { padding: 10px 12px; min-height: 52px; display: flex; align-items: center; margin-bottom: 4px; }
+#spkStatus { font-size: 14px; }
+#spkList .track { cursor: default; padding: 0; background: transparent; border: 0; margin: 0; }
+#spkList .btn { width: 100%; justify-content: flex-start; margin: 0 0 6px; min-height: 52px; }
+.group { position: relative; margin-top: 18px; padding: 12px 10px 4px; border: 1px solid #6a6c65; }
+.group .grouptitle { position: absolute; top: -9px; left: 10px; margin: 0; padding: 0 6px; background: #3b3d39; }
+.group .muted, .group .note { margin-top: 4px; }
+.row .btn { margin-top: 8px; }
+.netlist .muted:empty { display: none; }
+.task { justify-content: flex-start; padding: 0 8px; }
+/* Three open windows must fit the taskbar on a 375 px phone. */
+.startbtn { min-width: 76px; padding: 0 8px; }
+.task { padding: 0 5px; font-size: 10px; }
+.tray { padding: 0 6px; font-size: 11px; }
+/* A class that sets display (.btn, .row) must not beat the hidden attribute. */
+.win [hidden] { display: none !important; }
+
+/* Network window: current-network card. */
+#netCurrent { margin-bottom: 14px; }
+.headline { margin: 4px 0 8px; font-weight: 600; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 8px; }
+.facts dt { color: var(--text-dim); font-size: 12px; }
+.facts dd { margin: 0; word-break: break-all; }
+
+/* GAME.EXE launch link: dimmed until the card is confirmed to hold the game. */
+a.btn[aria-disabled="true"] { opacity: 0.4; pointer-events: none; }
+
+/* GAMES window: a folder, one icon tile per game, equal rank. */
+.pathbar { font: 400 11px ui-monospace, Menlo, monospace; color: var(--text-mute); border-bottom: 1px solid var(--line); padding: 2px 0 6px; margin-bottom: 8px; }
+.games { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; margin: 4px 0 10px; }
+a.gameicon { text-decoration: none; text-align: center; }
+a.gameicon:hover span, a.gameicon:focus-visible span { background: var(--accent); color: #0c0e0d; }
+a.gameicon[aria-disabled="true"] { opacity: .4; pointer-events: none; }

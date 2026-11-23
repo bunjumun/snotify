@@ -18,7 +18,7 @@ function fakeDom() {
       return e;
     }
   };
-  ['speakerPanel', 'spkStatus', 'spkLink', 'spkFind', 'spkPower', 'spkNote', 'spkList'].forEach((id) => {
+  ['speakerPanel', 'spkStatus', 'spkLink', 'spkFind', 'spkPower', 'spkNote', 'spkList', 'spkOptimize', 'spkOptNote'].forEach((id) => {
     const e = doc.createElement();
     e.dataset = {};
     Object.defineProperty(e, 'textContent', {
@@ -133,6 +133,59 @@ const tests = {
     const before = box.calls.length;
     await p.togglePower();
     assert.strictEqual(box.calls.length, before);
+  },
+
+  'the view says Optimize is on exactly when bluetooth is off'() {
+    assert.strictEqual(P.view(info({ bluetooth: true })).optimized, false);
+    const off = P.view(info({ bluetooth: false }));
+    assert.strictEqual(off.optimized, true);
+    assert.ok(off.optimizeNote.indexOf('Bluetooth is off') === 0);
+    assert.ok(P.view(info({})).optimizeNote.indexOf('Tick this') > 0);
+  },
+
+  async 'the Optimize box follows the box and ticking it does the bluetooth-off restart'() {
+    const box = fakeBox(info({}));
+    const dom = fakeDom();
+    const p = P.attach(dom.el, box);
+    await p.refresh();
+    assert.strictEqual(dom.els.spkOptimize.checked, false);
+    dom.els.spkOptimize.checked = true;               // the person ticks it
+    dom.els.spkOptimize.listeners.change.call(dom.els.spkOptimize);
+    await flush();
+    assert.deepStrictEqual(box.calls[box.calls.length - 1], ['POST', '/api/speaker/bluetooth?on=0']);
+    assert.strictEqual(dom.els.spkOptimize.checked, true);   // stays ticked while the box restarts
+  },
+
+  async 'declining the Optimize restart puts the box back to what the box says'() {
+    const box = fakeBox(info({}));
+    box.confirmAnswer = false;
+    const dom = fakeDom();
+    await P.attach(dom.el, box).refresh();
+    const before = box.calls.length;
+    dom.els.spkOptimize.checked = true;
+    dom.els.spkOptimize.listeners.change.call(dom.els.spkOptimize);
+    await flush();
+    assert.strictEqual(box.calls.length, before);
+    assert.strictEqual(dom.els.spkOptimize.checked, false);
+  },
+
+  async 'unticking Optimize turns bluetooth back on'() {
+    const box = fakeBox(info({ bluetooth: false }));
+    const dom = fakeDom();
+    await P.attach(dom.el, box).refresh();
+    assert.strictEqual(dom.els.spkOptimize.checked, true);
+    dom.els.spkOptimize.checked = false;
+    dom.els.spkOptimize.listeners.change.call(dom.els.spkOptimize);
+    await flush();
+    assert.deepStrictEqual(box.calls[box.calls.length - 1], ['POST', '/api/speaker/bluetooth?on=1']);
+  },
+
+  async 'older markup without the Optimize box still works'() {
+    const box = fakeBox(info({}));
+    const dom = fakeDom();
+    const el = (id) => (id === 'spkOptimize' || id === 'spkOptNote') ? undefined : dom.el(id);
+    await P.attach(el, box).refresh();
+    assert.strictEqual(dom.els.spkStatus.textContent, 'ML301 is not connected.');
   },
 
   async 'a refusal is shown, not a restart'() {

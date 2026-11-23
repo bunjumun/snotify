@@ -26,6 +26,7 @@
 #include <WiFi.h>
 #include <esp_system.h>
 
+#include "alignment_box.h"
 #include "box_player.h"
 #include "bt_speaker.h"
 #include "captive_portal.h"
@@ -99,6 +100,7 @@ void setup() {
   // Before the web server, so the first /api/sd request already knows whether
   // there is a card. Not fatal if there is none.
   sdstore::begin();
+  alignment::begin();
 
   wifinet::begin();
 

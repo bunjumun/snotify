@@ -201,6 +201,9 @@
   function createPlayer(hooks) {
     var ctx = null;
     var out = null;
+    var bus = null;             // sources play into this; see ensureContext
+    var analyser = null;
+    var spectrum = null;
     var dl = null;              // current Download
     var prefetched = null;      // { url, dl } opening of the next song
     var nextUrl = null;         // what to prefetch once dl is complete
@@ -222,6 +225,21 @@
       out = ctx.createGain();
       out.gain.value = volume;
       out.connect(ctx.destination);
+      // Every source plays into `bus`, which feeds the speakers (through the
+      // volume) and, in parallel, an analyser for the matrix window. The tap
+      // is before the volume so bars do not shrink when the volume is turned
+      // down, and it is a branch, so it cannot change what is heard.
+      bus = ctx.createGain();
+      bus.connect(out);
+      if (ctx.createAnalyser) {
+        try {
+          analyser = ctx.createAnalyser();
+          analyser.fftSize = 2048;
+          analyser.smoothingTimeConstant = 0.5;
+          bus.connect(analyser);
+          spectrum = new Float32Array(analyser.frequencyBinCount);
+        } catch (e) { analyser = null; }
+      }
     }
 
     /* Older iOS unlocks a context only once a sound has been started inside
@@ -230,7 +248,7 @@
       try {
         var src = ctx.createBufferSource();
         src.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
-        src.connect(out);
+        src.connect(bus);
         src.start(0);
       } catch (e) { /* nothing to unlock with; whenRunning() decides */ }
     }
@@ -276,7 +294,7 @@
         for (var c = 0; c < info.channels; c++) buf.getChannelData(c).set(chans[c]);
         var src = ctx.createBufferSource();
         src.buffer = buf;
-        src.connect(out);
+        src.connect(bus);
         src.start(schedTime);
         var isLast = schedIndex === info.chunkCount - 1;
         src.onended = onSourceEnded(src, isLast, generation);
@@ -430,6 +448,13 @@
       toggle: function () {
         if (state === 'paused' || state === 'ended') this.resume();
         else this.pause();
+      },
+      /* The current spectrum in dB, or null when nothing is playing or the
+       * browser has no analyser. Read by player-browser.js for the matrix. */
+      spectrum: function () {
+        if (!analyser || state !== 'playing' || !ctx || ctx.state !== 'running') return null;
+        analyser.getFloatFrequencyData(spectrum);
+        return { db: spectrum, sampleRate: ctx.sampleRate, fftSize: analyser.fftSize };
       },
       /* 0 to 1. Kept across songs because the gain node outlives them. */
       setVolume: function (v) {

@@ -8,12 +8,15 @@
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <h1>📻 Lakehorse Radio</h1>
-      <p class="tagline">Music from the band, played by your phone.</p>
-    </header>
+  <!-- The shell (shell.js): a desktop of windows, a taskbar and a Start menu
+       around the same elements the scripts already drive. Every id below is
+       unchanged from before the reskin; a window is just a .win section, and
+       it is open unless it has the hidden attribute. -->
+  <main class="desktop" id="desktop">
 
+    <section class="win" id="win-player" data-title="PLAYER.EXE">
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>PLAYER.EXE</span><button type="button" class="win-x" data-close aria-label="Close PLAYER.EXE">X</button></div>
+      <div class="win-body">
     <!-- The banner is filled in from /api/status before anything else renders.
          It is the first thing on the page because how you got here decides
          whether the audio can play at all, and a listener who does not know
@@ -41,20 +44,15 @@
         <option value="box">the box's speaker</option>
       </select>
     </p>
-    <!-- Bluetooth speaker controls (speaker-panel.js). Shown only when the box
-         was built with Bluetooth, whether it is switched on or off. -->
-    <div id="speakerPanel" hidden>
-      <p class="row"><span id="spkStatus"></span></p>
-      <p class="row">
-        <button class="btn" id="spkLink" type="button" hidden></button>
-        <button class="btn" id="spkFind" type="button">Find speakers</button>
-        <button class="btn" id="spkPower" type="button">Turn Bluetooth off</button>
-      </p>
-      <ul class="tracks" id="spkList"></ul>
-      <p class="muted" id="spkNote"></p>
-    </div>
-
-    <hr />
+    <!-- The matrix lights (matrix-window.js). The preview is the way in and
+         makes no request; the window below polls only while it is open. -->
+    <p class="row matrixrow">
+      <button class="matrixpreview" id="matrixOpen" type="button" aria-label="Matrix lights">
+        <canvas id="matrixPreview" width="64" height="64"></canvas>
+      </button>
+      <span class="muted">Matrix lights</span>
+    </p>
+        <hr />
 
     <!-- Music kept on the box's own SD card. Played by the same <audio> element
          for playback; see library.js. -->
@@ -67,7 +65,7 @@
         <div id="sdUpload" hidden>
           <div class="row">
             <button class="btn primary" id="sdPick">Upload songs</button>
-            <input type="file" id="sdFile" accept=".wav,.mp3,.m4a,.aac,.ogg,.opus,audio/*" multiple hidden />
+            <input type="file" id="sdFile" accept=".wav,.flac,.mp3,.m4a,.aac,.ogg,.opus,audio/*" multiple hidden />
           </div>
           <p class="muted">24-bit and 32-bit WAVs are converted to 16-bit in your browser before they are sent, at their own sample rate. Other files are sent as they are. For files ready for Bluetooth playback, prepare them with song prep on a computer.</p>
           <progress id="sdBar" max="1" value="0" hidden></progress>
@@ -85,48 +83,168 @@
 
     <hr />
 
+      </div>
+    </section>
+
+    <section class="win" id="win-speaker" data-title="SPEAKER.EXE" hidden>
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>SPEAKER.EXE</span><button type="button" class="win-x" data-close aria-label="Close SPEAKER.EXE">X</button></div>
+      <div class="win-body">
+    <!-- Bluetooth speaker controls (speaker-panel.js). Shown only when the box
+         was built with Bluetooth, whether it is switched on or off. -->
+    <div id="speakerPanel" hidden>
+      <div class="well"><span id="spkStatus"></span></div>
+      <p class="row">
+        <button class="btn" id="spkLink" type="button" hidden></button>
+        <button class="btn" id="spkFind" type="button">Find speakers</button>
+      </p>
+      <ul class="tracks" id="spkList"></ul>
+      <p class="muted" id="spkNote"></p>
+      <!-- Not shown: the Optimize box below does this job. Kept because
+           speaker-panel.js wires it, and its tests exercise it. -->
+      <button class="btn" id="spkPower" type="button" hidden>Turn Bluetooth off</button>
+      <div class="group">
+        <span class="grouptitle">SPEED</span>
+        <label class="check big"><input type="checkbox" id="spkOptimize" /> Optimize for this device</label>
+        <p class="muted" id="spkOptNote"></p>
+        <p class="note" id="spkRestartNote">Changing this restarts the box, about 10 seconds. The page waits and reconnects by itself.</p>
+      </div>
+    </div>
+
+        <p class="muted" id="spkNone">This box was built without Bluetooth, so there is no speaker to set up.</p>
+      </div>
+    </section>
+
+    <section class="win" id="win-network" data-title="NETWORK.EXE" hidden>
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>NETWORK.EXE</span><button type="button" class="win-x" data-close aria-label="Close NETWORK.EXE">X</button></div>
+      <div class="win-body">
     <!-- Setup is on the same page rather than behind a link, because a phone
          that arrived through the captive sheet often cannot navigate anywhere
          else. Hidden until we know whether this visitor can actually use it. -->
+    <section id="netCurrent">
+      <p class="label">THIS BOX</p>
+      <p class="headline" id="netHeadline">Checking...</p>
+      <dl class="facts" id="netFacts"></dl>
+      <div class="row">
+        <button class="btn" id="netRefresh" type="button">Refresh</button>
+        <button class="btn" id="forgetBtn" type="button" hidden>Forget network</button>
+      </div>
+      <span class="status" id="netCurrentStatus"></span>
+    </section>
+
     <section id="setup" hidden>
-      <fieldset>
-        <legend>Put this box on a network</legend>
-        <p class="muted" id="setupIntro"></p>
+      <p class="muted" id="setupIntro"></p>
 
-        <label for="ssid">Network</label>
-        <select id="ssid"><option value="">Scanning...</option></select>
+      <p class="label">NETWORKS IN RANGE</p>
+      <div class="netlist" id="netList" role="group" aria-label="Networks in range">
+        <p class="muted" id="netNote">Scanning...</p>
+      </div>
+      <!-- Holds the network picked from the list; app.js save() reads it. -->
+      <input type="hidden" id="ssid" value="" />
 
-        <label for="ssidManual">Or type the name</label>
-        <input id="ssidManual" placeholder="Network name" autocomplete="off" />
+      <label for="ssidManual">Or type the name</label>
+      <input id="ssidManual" placeholder="Network name" autocomplete="off" />
 
-        <label for="pass">Password</label>
-        <input id="pass" type="password" placeholder="Leave empty if the network is open" autocomplete="off" />
+      <label for="pass" id="passLabel">Password</label>
+      <input id="pass" type="password" placeholder="Leave empty if the network is open" autocomplete="off" />
+      <label class="check"><input type="checkbox" id="showPass" /> Show password</label>
 
-        <!-- Set here rather than on its own screen, because this is the one
-             moment anyone is thinking about how they will reach this box. -->
-        <label for="host">Name on the network</label>
-        <input id="host" placeholder="lakehorseradio" autocomplete="off" />
-        <p class="muted" id="hostHint">Letters, numbers and hyphens. You will reach the box at this name followed by .local</p>
+      <!-- Set here rather than on its own screen, because this is the one
+           moment anyone is thinking about how they will reach this box. -->
+      <label for="host">Name on the network</label>
+      <input id="host" placeholder="lakehorseradio" autocomplete="off" />
+      <p class="muted" id="hostHint">Letters, numbers and hyphens. You will reach the box at this name followed by .local</p>
 
-        <div class="row">
-          <button class="btn primary" id="saveBtn">Save and connect</button>
-          <button class="btn" id="rescanBtn">Rescan</button>
-        </div>
-        <span class="status" id="setupStatus"></span>
-      </fieldset>
+      <div class="row">
+        <button class="btn primary" id="saveBtn" type="button">Join</button>
+        <button class="btn" id="rescanBtn" type="button">Scan networks</button>
+        <button class="btn" id="cancelBtn" type="button">Cancel</button>
+      </div>
+      <p class="note" id="joinNote">The box drops its own Wi-Fi while it joins. Reconnect your phone to your home Wi-Fi, then open <b id="netHostName">lakehorseradio.local</b>.</p>
+      <span class="status" id="setupStatus"></span>
 
       <p class="muted" id="pairLine"></p>
     </section>
+        <p class="muted" id="setupAway">Changing the network needs this device to be paired with the box, so nobody else on the Wi-Fi can move it. Join the box's own hotspot, "Lakehorse Radio", once and open this page: the device is paired from then on.</p>
+      </div>
+    </section>
+
+    <section class="win matrixwin" id="matrixWindow" data-title="MATRIX.EXE" data-opener="matrixOpen" data-closer="matrixClose" hidden>
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>MATRIX.EXE</span><button type="button" class="win-x" data-close aria-label="Close MATRIX.EXE">X</button></div>
+    <div class="win-body">
+      <canvas id="matrixCanvas" width="320" height="320" aria-label="What the 8 by 8 lights show"></canvas>
+      <div class="row" id="matrixModes">
+        <button class="btn" type="button" data-mode="off" aria-pressed="false">Off</button>
+        <button class="btn" type="button" data-mode="bars" aria-pressed="false">Bars</button>
+        <button class="btn" type="button" data-mode="title" aria-pressed="false">Title</button>
+        <button class="btn" type="button" data-mode="dazzle" aria-pressed="false">Dazzle</button>
+        <button class="btn" type="button" data-mode="clock" aria-pressed="false">Clock</button>
+      </div>
+      <label for="matrixBright">Brightness</label>
+      <input id="matrixBright" type="range" min="1" max="100" value="70" />
+      <div class="row">
+        <button class="btn" id="matrixFull" type="button">Full view</button>
+        <button class="btn" id="matrixClose" type="button">Close</button>
+      </div>
+      <span class="status" id="matrixNote"></span>
+    </div>
+    </section>
+
+    <section class="win" id="win-game" data-title="GAMES" hidden>
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>GAMES</span><button type="button" class="win-x" data-close aria-label="Close GAMES">X</button></div>
+      <div class="win-body">
+    <!-- A folder of games, like a directory in an OS: one icon per game, each opens in its own tab.
+         The files live on the SD card under /game (game-window.js checks they are there). -->
+    <div class="pathbar" aria-label="Folder">SD:/game/</div>
+    <div class="games">
+      <a class="icon gameicon" id="gameLaunch" href="/game/" target="_blank" rel="noopener" aria-disabled="true"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="8" width="34" height="28" fill="#0d2b2e" stroke="#e9e5d6" stroke-width="2"/><path d="M9 28 q6-8 12 0 t12 0" fill="none" stroke="#e9e5d6" stroke-width="3"/></svg><span>Lakehorse Swimulator</span></a>
+      <a class="icon gameicon" id="guberLaunch" href="/game/guber-eats/" target="_blank" rel="noopener" aria-disabled="true"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="8" width="34" height="28" fill="#08080a" stroke="#e9e5d6" stroke-width="2"/><path d="M5 30 L20 8 M14 36 L34 8 M26 36 L39 18" stroke="#e9e5d6" stroke-width="3" fill="none"/><rect x="14" y="19" width="16" height="8" fill="#e9e5d6" stroke="#08080a" stroke-width="2"/></svg><span>Guber Eats</span></a>
+    </div>
+    <p class="muted" id="gameNote">Checking the card...</p>
+    <p class="muted">Songs on the card are the soundtrack. Stop the box speaker first for the fastest load.</p>
+      </div>
+    </section>
+
+    <nav class="icons" aria-label="Desktop">
+      <button type="button" class="icon" data-open="win-player"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="12" width="34" height="22" fill="#e9e5d6" stroke="#0c0e0d" stroke-width="2"/><rect x="9" y="26" width="14" height="3" fill="#0c0e0d"/><rect x="30" y="25" width="5" height="5" fill="#5fd0b0" stroke="#0c0e0d"/></svg><span>PLAYER</span></button>
+      <button type="button" class="icon" data-open="win-speaker"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="6" y="16" width="10" height="12" fill="#e9e5d6" stroke="#0c0e0d" stroke-width="2"/><polygon points="16,16 28,8 28,36 16,28" fill="#e9e5d6" stroke="#0c0e0d" stroke-width="2"/><path d="M32 16 q5 6 0 12" fill="none" stroke="#e9e5d6" stroke-width="3"/></svg><span>SPEAKER</span></button>
+      <button type="button" class="icon" data-open="matrixWindow"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="6" y="6" width="32" height="32" fill="#050605" stroke="#e9e5d6" stroke-width="2"/><g fill="#ff6b2c"><rect x="11" y="11" width="4" height="4"/><rect x="19" y="11" width="4" height="4"/><rect x="27" y="19" width="4" height="4"/><rect x="11" y="27" width="4" height="4"/><rect x="19" y="19" width="4" height="4"/><rect x="27" y="27" width="4" height="4"/></g></svg><span>MATRIX</span></button>
+      <button type="button" class="icon" data-open="win-network"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><path d="M6 18 q16-14 32 0" fill="none" stroke="#e9e5d6" stroke-width="4"/><path d="M12 25 q10-9 20 0" fill="none" stroke="#e9e5d6" stroke-width="4"/><rect x="19" y="30" width="6" height="6" fill="#ff6b2c" stroke="#0c0e0d"/></svg><span>NETWORK</span></button>
+      <button type="button" class="icon" data-open="win-game"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="8" width="34" height="28" fill="#0d2b2e" stroke="#e9e5d6" stroke-width="2"/><path d="M9 28 q6-8 12 0 t12 0" fill="none" stroke="#e9e5d6" stroke-width="3"/></svg><span>GAMES</span></button>
+    </nav>
+  </main>
+
+  <div class="callout" id="callout" hidden>No home Wi-Fi saved yet. Tap Network.</div>
+
+  <div class="startmenu" id="startMenu" hidden>
+    <div class="startband" aria-hidden="true">LKHRS/OS</div>
+    <div class="startitems">
+      <button type="button" data-open="win-player">Player</button>
+      <button type="button" data-open="win-network" id="startNetwork"><span>Network</span><small id="startNetworkNote"></small></button>
+      <button type="button" data-open="win-speaker">Speaker (Bluetooth)</button>
+      <button type="button" data-open="matrixWindow">Matrix lights</button>
+      <button type="button" data-open="win-game">Games</button>
+    </div>
   </div>
 
+  <footer class="taskbar">
+    <button type="button" class="startbtn" id="startBtn" aria-expanded="false" aria-controls="startMenu"><i aria-hidden="true"></i>START</button>
+    <div class="tasks" id="tasks"></div>
+    <div class="tray" id="tray">--:--</div>
+  </footer>
+
   <script src="dazzle.js"></script>
+  <script src="shell.js"></script>
+  <script src="network-window.js"></script>
   <script src="app.js"></script>
   <script src="buffering.js"></script>
+  <script src="band-meter.js"></script>
   <script src="wavstream.js"></script>
   <script src="player.js"></script>
   <script src="player-browser.js"></script>
   <script src="player-box.js"></script>
   <script src="speaker-panel.js"></script>
+  <script src="matrix-window.js"></script>
+  <script src="game-window.js"></script>
   <script src="wavconvert.js"></script>
   <script src="library.js"></script>
 </body>

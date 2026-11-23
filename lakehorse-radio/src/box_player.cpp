@@ -32,6 +32,8 @@ Status status() {
   s.speaker = cfg::BT_SPEAKER_NAME;
   return s;
 }
+bool bandsNow(uint8_t*) { return false; }
+
 }  // namespace boxplayer
 
 #else
@@ -45,6 +47,8 @@ Status status() {
 #include <atomic>
 
 #include "BluetoothA2DPSource.h"
+#include "alignment_box.h"
+#include "band_levels.h"
 #include "bt_speaker.h"
 #include "pcm_format.h"
 #include "sd_store.h"
@@ -70,6 +74,7 @@ std::atomic<int> g_state{(int)State::Stopped};
 std::atomic<bool> g_primed{false};
 std::atomic<bool> g_eof{false};
 std::atomic<bool> g_endedPending{false};
+bands::Meter g_meter;  // levels per ~23 ms of output, for the matrix (band_levels.h)
 std::atomic<uint32_t> g_played{0};  // output frames sent since the last flush
 std::atomic<uint32_t> g_underruns{0};
 std::atomic<uint32_t> g_ended{0};
@@ -139,6 +144,7 @@ void ringFlush() {
   g_head = g_tail = g_count = 0;
   portEXIT_CRITICAL(&g_ringMux);
   g_played = 0;
+  g_meter.reset();
   g_primed = false;
   g_eof = false;
   g_endedPending = false;
@@ -165,6 +171,15 @@ int32_t fillFrames(Frame* frames, int32_t count) {
   return count;
 }
 static_assert(sizeof(Frame) == sizeof(StereoFrame), "A2DP frame layout changed");
+
+// Alignment hook helper. Under g_lock, before the track's state is reset:
+// tells the counter how much of the loaded track was played since the last seek.
+void reportLeavingLocked(bool reachedEnd) {
+  if (!g_track.length() || !g_info.sampleRate || !g_info.blockAlign || !g_info.dataBytes) return;
+  const float duration = (float)g_info.dataBytes / g_info.blockAlign / g_info.sampleRate;
+  alignment::onTrackLeft(g_track.c_str(), (float)g_played.load() / pcm::kOutputRate / duration,
+                         reachedEnd);
+}
 
 void closeTrackLocked() {
   if (g_file) g_file.close();
@@ -197,6 +212,7 @@ bool readOnceLocked() {
   for (size_t off = 0; off < inFrames;) {
     size_t used = 0;
     const size_t n = g_resampler.process(g_conv + off, inFrames - off, used, g_out, kOutFrames);
+    g_meter.feed(g_out, n);
     ringPush(g_out, n);
     off += used;
     if (used == 0 && n == 0) break;  // cannot happen; guards an endless loop
@@ -229,6 +245,7 @@ String openLocked(const String& path, float startSeconds) {
 
 // Starts `name` from `startSeconds`. Under g_lock. Empty string on success.
 String startLocked(const char* name, float startSeconds) {
+  reportLeavingLocked(false);  // alignment: a loaded song is being replaced
   const String err = openLocked(sdstore::path(name), startSeconds);
   if (err.length()) {
     closeTrackLocked();
@@ -328,6 +345,7 @@ void handleSpeakerKeyLocked() {
       break;
     case Action::Next: {
       const String finished = g_track;
+      reportLeavingLocked(false);  // alignment: skipped
       closeTrackLocked();
       advanceLocked(finished);
       g_ended++;  // the page follows the same way it follows a song's end
@@ -358,6 +376,7 @@ void readerTask(void*) {
     if (g_endedPending) {
       const String finished = g_track;
       Serial.printf("[box] ended \"%s\"\n", finished.c_str());
+      reportLeavingLocked(true);  // alignment: ran to the end
       closeTrackLocked();
       if (cfg::BOX_AUTO_ADVANCE) advanceLocked(finished);
       g_ended++;  // after the advance, so a poll sees the end and the next song together
@@ -426,6 +445,7 @@ void resume() {
 void stop() {
   if (!g_lock) return;
   Lock lock;
+  reportLeavingLocked(false);  // alignment: stopped
   closeTrackLocked();
 }
 
@@ -471,6 +491,11 @@ Status status() {
     s.duration = (float)g_info.dataBytes / g_info.blockAlign / g_info.sampleRate;
   }
   return s;
+}
+
+bool bandsNow(uint8_t out[8]) {
+  if ((State)g_state.load() != State::Playing || !g_primed) return false;
+  return g_meter.levelsAt(g_played.load(), out);
 }
 
 }  // namespace boxplayer

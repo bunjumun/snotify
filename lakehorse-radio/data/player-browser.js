@@ -153,6 +153,16 @@
         if (wav) wav.setVolume(v);
       },
 
+      // Eight levels 0..8 for the sound this page is playing, or null. Only the
+      // WAV engine can be tapped: routing the <audio> element through Web Audio
+      // would mute it when its source is not same-origin, so those songs get
+      // no bars here.
+      bands: function () {
+        if (engine !== 'wav' || !wav || !wav.spectrum || !root.LakehorseBandMeter) return null;
+        var sp = wav.spectrum();
+        return sp ? root.LakehorseBandMeter.levelsFromSpectrum(sp.db, sp.sampleRate, sp.fftSize) : null;
+      },
+
       stop: function () {
         if (wav) wav.stop();
         stopElement();

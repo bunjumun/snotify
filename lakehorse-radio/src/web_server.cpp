@@ -8,15 +8,21 @@
 #include <AsyncJson.h>
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
+#include "game_files.h"
 #include <SD.h>
 #include <WiFi.h>
 
 #include <memory>
 #include <new>
 
+#include "alignment_box.h"
+#ifdef LAKEHORSE_ALIGN_TEST
+#include "alignment_test_routes.h"
+#endif
 #include "captive_portal.h"
 #include "config.h"
 #include "device_key.h"
+#include "matrix_api.h"
 #include "net_identity.h"
 #include "bt_speaker.h"
 #include "player_api.h"
@@ -125,6 +131,11 @@ void handleStatus(AsyncWebServerRequest* request) {
   doc["rssi"] = WiFi.RSSI();
   doc["sdNeedsKey"] = cfg::SD_WRITES_NEED_KEY;
   doc["sdUpload"] = cfg::SD_UPLOAD_ENABLED;
+  const alignment::Snapshot align = alignment::snapshot();
+  JsonObject alignObj = doc["alignment"].to<JsonObject>();
+  alignObj["points"] = align.points;
+  alignObj["nodes"] = align.nodes;
+  alignObj["percent"] = align.percent;
 
   String out;
   serializeJson(doc, out);
@@ -152,6 +163,60 @@ void handleGetPlaylist(AsyncWebServerRequest* request) {
     return;
   }
   sendJson(request, 200, stored);
+}
+
+// POST /api/alignment/event?source=song|level&id=...&result=full|partial|clear|attempt
+// Phone-mode songs and every level report here (ALIGNMENT-BRIEF.md). A song id
+// is accepted only if it is a title in the playlist the page plays from; a level
+// id is a number 0..31. Answers with the new total; a repeat of the same event
+// inside 10 seconds is acknowledged and not counted.
+void handleAlignmentEvent(AsyncWebServerRequest* request) {
+  if (!request->hasParam("source") || !request->hasParam("id") || !request->hasParam("result")) {
+    sendError(request, 400, "source, id and result are required");
+    return;
+  }
+  const String src = request->getParam("source")->value();
+  const String res = request->getParam("result")->value();
+  const String id = request->getParam("id")->value();
+  alignment::Source source;
+  if (src == "song") source = alignment::Source::Song;
+  else if (src == "level") source = alignment::Source::Level;
+  else { sendError(request, 400, "source must be song or level"); return; }
+  alignment::Result result;
+  if (res == "full") result = alignment::Result::Full;
+  else if (res == "partial") result = alignment::Result::Partial;
+  else if (res == "clear") result = alignment::Result::Clear;
+  else if (res == "attempt") result = alignment::Result::Attempt;
+  else { sendError(request, 400, "result must be full, partial, clear or attempt"); return; }
+  if (id.length() == 0 || id.length() > alignment::kMaxIdLength) {
+    sendError(request, 400, "id is empty or too long");
+    return;
+  }
+  if (source == alignment::Source::Song) {
+    String playlistJson = playlist::load();
+    if (playlistJson.length() == 0) playlistJson = kDefaultPlaylist;
+    if (!alignment::playlistHasTitle(playlistJson.c_str(), playlistJson.length(), id.c_str())) {
+      sendError(request, 400, "that song is not in the playlist");
+      return;
+    }
+  }
+  const alignment::EventResult r = alignment::submitEvent(source, id.c_str(), result);
+  if (r.outcome == alignment::Outcome::Invalid) {
+    sendError(request, 400, "that event does not fit (song: full or partial; level 0-31: clear or attempt)");
+    return;
+  }
+  const alignment::Snapshot snap = alignment::snapshot();
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["credited"] = r.outcome == alignment::Outcome::Credited;
+  doc["repeat"] = r.outcome == alignment::Outcome::Repeat;
+  doc["added"] = r.added;
+  doc["points"] = snap.points;
+  doc["nodes"] = snap.nodes;
+  doc["percent"] = snap.percent;
+  String out;
+  serializeJson(doc, out);
+  sendJson(request, 200, out);
 }
 
 void handleScan(AsyncWebServerRequest* request) {
@@ -445,6 +510,165 @@ void handleUploadDone(AsyncWebServerRequest* request) {
   sendJson(request, 200, out);
 }
 
+// ---------- Game files onto the SD card ----------
+//
+// Same raw-body shape as the track upload, but the name is a relative path under
+// /game/ (?path=guber-eats/index.html) checked by gamefiles::resolve, so a URL
+// can never leave that folder. Exists so the game pack can be pushed over Wi-Fi
+// (tools/push_game.py) instead of pulling the card. Shares g_uploadOwner: one
+// upload of any kind at a time.
+struct GameUploadState {
+  int code;
+  const char* error;
+  bool finished;
+  char path[cfg::GAME_PATH_MAX_LEN + 1];
+};
+
+void handleGameUploadChunk(AsyncWebServerRequest* request, uint8_t* data, size_t len,
+                           size_t index, size_t total) {
+  if (request->_tempObject == nullptr) request->_tempObject = calloc(1, sizeof(GameUploadState));
+  GameUploadState* s = static_cast<GameUploadState*>(request->_tempObject);
+  if (s == nullptr) return;
+  const bool final = (index + len == total);
+  auto reject = [s](int code, const char* why) {
+    if (s->error == nullptr) { s->code = code; s->error = why; }
+  };
+
+  if (index == 0) {
+    const String wanted = request->hasParam("path") ? request->getParam("path")->value() : String();
+    if (!cfg::SD_UPLOAD_ENABLED) {
+      reject(403, "uploading is switched off in this version");
+    } else if (cfg::SD_WRITES_NEED_KEY && !authorised(request)) {
+      reject(401, "missing or wrong X-Lakehorse-Key");
+    } else if (!sdstore::mounted()) {
+      reject(503, "there is no SD card in the box");
+    } else if (wanted.length() == 0 || wanted.endsWith("/") ||
+               gamefiles::resolve(wanted.c_str(), s->path, cfg::GAME_PATH_MAX_LEN) !=
+                   gamefiles::Result::Ok) {
+      reject(400, "not an allowed game file path");
+    } else if (request->contentLength() > sdstore::freeBytes()) {
+      reject(507, "not enough space left on the SD card");
+    } else if (g_uploadOwner != nullptr) {
+      reject(503, "another upload is already in progress");
+    } else {
+      g_uploadOwner = request;
+      request->onDisconnect([]() { g_uploadOwner = nullptr; });
+      // Make /game and each parent folder; mkdir on an existing one is harmless.
+      String dir = cfg::SD_GAME_DIR;
+      SD.mkdir(dir);
+      for (const char* c = s->path; *c; ++c) {
+        if (*c == '/') SD.mkdir(dir + "/" + String(s->path).substring(0, c - s->path));
+      }
+      const String full = String(cfg::SD_GAME_DIR) + "/" + s->path;
+      SD.remove(full + cfg::SD_PART_SUFFIX);
+      request->_tempFile = SD.open(full + cfg::SD_PART_SUFFIX, FILE_WRITE);
+      if (!request->_tempFile) reject(500, "could not create the file on the SD card");
+    }
+  }
+  if (s->error != nullptr || !request->_tempFile) return;
+
+  // Gather ~1.4 KB TCP segments into whole blocks, as handleUploadChunk does.
+  static uint8_t block[cfg::SD_WRITE_BLOCK_BYTES];
+  static size_t fill = 0;
+  if (index == 0) fill = 0;
+  bool ok = true;
+  size_t off = 0;
+  while (ok && off < len) {
+    const size_t n = min(len - off, sizeof(block) - fill);
+    memcpy(block + fill, data + off, n);
+    fill += n;
+    off += n;
+    if (fill == sizeof(block)) {
+      ok = request->_tempFile.write(block, fill) == fill;
+      fill = 0;
+    }
+  }
+  if (ok && final && fill > 0) {
+    ok = request->_tempFile.write(block, fill) == fill;
+    fill = 0;
+  }
+  const String full = String(cfg::SD_GAME_DIR) + "/" + s->path;
+  if (!ok) {
+    request->_tempFile.close();
+    SD.remove(full + cfg::SD_PART_SUFFIX);
+    g_uploadOwner = nullptr;
+    reject(500, "writing to the SD card failed");
+    return;
+  }
+  if (final) {
+    request->_tempFile.close();
+    if (SD.exists(full)) SD.remove(full);
+    if (SD.rename(full + cfg::SD_PART_SUFFIX, full)) {
+      s->finished = true;
+      Serial.printf("[game] stored %s\n", s->path);
+    } else {
+      reject(500, "could not move the finished file into place");
+    }
+  }
+}
+
+void handleGameUploadDone(AsyncWebServerRequest* request) {
+  const GameUploadState* s = static_cast<GameUploadState*>(request->_tempObject);
+  if (s != nullptr && s->error != nullptr) {
+    sendError(request, s->code, s->error);
+    return;
+  }
+  if (s == nullptr || !s->finished) {
+    sendError(request, 400, "no file arrived");
+    return;
+  }
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["path"] = s->path;
+  String out;
+  serializeJson(doc, out);
+  sendJson(request, 200, out);
+}
+
+// Removes ONE file under /game/ (?path=src/core/Game.js.gz). Same path rules as
+// the game upload, so a URL can never leave /game/, and folders are refused, so
+// this cannot wipe a tree. Exists so stale files left by an earlier pack can be cleared without a card reader.
+void handleGameDelete(AsyncWebServerRequest* request) {
+  if (cfg::SD_WRITES_NEED_KEY && !authorised(request)) {
+    sendError(request, 401, "missing or wrong X-Lakehorse-Key");
+    return;
+  }
+  if (!sdstore::mounted()) {
+    sendError(request, 503, "there is no SD card in the box");
+    return;
+  }
+  const String wanted = request->hasParam("path") ? request->getParam("path")->value() : String();
+  char safe[cfg::GAME_PATH_MAX_LEN + 1];
+  if (wanted.length() == 0 || wanted.endsWith("/") ||
+      gamefiles::resolve(wanted.c_str(), safe, cfg::GAME_PATH_MAX_LEN) != gamefiles::Result::Ok) {
+    sendError(request, 400, "not an allowed game file path");
+    return;
+  }
+  const String full = String(cfg::SD_GAME_DIR) + "/" + safe;
+  File f = SD.open(full, FILE_READ);
+  if (!f) {
+    sendError(request, 404, "no such file");
+    return;
+  }
+  const bool isDir = f.isDirectory();
+  f.close();
+  if (isDir) {
+    sendError(request, 400, "folders are not removed here");
+    return;
+  }
+  if (!SD.remove(full)) {
+    sendError(request, 500, "could not delete the file");
+    return;
+  }
+  Serial.printf("[game] removed %s\n", safe);
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["path"] = safe;
+  String out;
+  serializeJson(doc, out);
+  sendJson(request, 200, out);
+}
+
 void handleSdList(AsyncWebServerRequest* request) {
   JsonDocument doc;
   doc["ok"] = true;
@@ -515,6 +739,9 @@ struct SdStream {
   size_t blockLen = 0;
 };
 
+void sendOpenedFile(AsyncWebServerRequest* request, File opened, const char* mime,
+                    bool gzipped, const char* cacheControl);
+
 void handleSdFile(AsyncWebServerRequest* request) {
   if (!sdstore::mounted()) {
     request->send(503, "text/plain", "no SD card");
@@ -533,6 +760,13 @@ void handleSdFile(AsyncWebServerRequest* request) {
     request->send(404, "text/plain", "not found");
     return;
   }
+  sendOpenedFile(request, opened, trackname::contentType(safe), false, nullptr);
+}
+
+// Streams an open SD file, honouring Range. Shared by the song route (/sd/*)
+// and the game route (/game/*); `gzipped` adds Content-Encoding.
+void sendOpenedFile(AsyncWebServerRequest* request, File opened, const char* mime,
+                    bool gzipped, const char* cacheControl) {
   // Bulk data: never hold a packet back waiting to coalesce it.
   if (request->client()) request->client()->setNoDelay(true);
 
@@ -557,7 +791,7 @@ void handleSdFile(AsyncWebServerRequest* request) {
   // Shared so the lambda, which outlives this function, keeps the file and the
   // block alive exactly as long as the response is being sent.
   AsyncWebServerResponse* response = request->beginResponse(
-      trackname::contentType(safe), length,
+      mime, length,
       [stream, first, length](uint8_t* buffer, size_t maxLen, size_t sent) -> size_t {
         if (sent >= length) return 0;
         const size_t pos = first + sent;
@@ -574,6 +808,8 @@ void handleSdFile(AsyncWebServerRequest* request) {
         return n;
       });
   response->addHeader("Accept-Ranges", "bytes");
+  if (gzipped) response->addHeader("Content-Encoding", "gzip");
+  if (cacheControl != nullptr) response->addHeader("Cache-Control", cacheControl);
   if (ranged) {
     response->setCode(206);
     response->addHeader("Content-Range",
@@ -612,6 +848,40 @@ bool isPageRoot(AsyncWebServerRequest* request) {
   return url == "/" || url == "/index.html";
 }
 
+// The game: /game/<path> is read from <SD>/game/<path>. A pre-gzipped
+// <path>.gz beside it is preferred when the phone accepts gzip, because the
+// radio link is slow. Path rules live in game_files.h.
+void handleGameFile(AsyncWebServerRequest* request) {
+  if (!sdstore::mounted()) {
+    request->send(503, "text/plain", "no SD card");
+    return;
+  }
+  const String wanted = request->url().substring(strlen(cfg::GAME_URL_PREFIX));
+  char safe[cfg::GAME_PATH_MAX_LEN + 1];
+  if (gamefiles::resolve(wanted.c_str(), safe, cfg::GAME_PATH_MAX_LEN) !=
+      gamefiles::Result::Ok) {
+    request->send(404, "text/plain", "not found");
+    return;
+  }
+  const String base = String(cfg::SD_GAME_DIR) + "/" + safe;
+  const bool acceptsGzip = request->hasHeader("Accept-Encoding") &&
+                           request->header("Accept-Encoding").indexOf("gzip") >= 0;
+  bool gzipped = false;
+  File opened;
+  if (acceptsGzip) {
+    opened = SD.open(base + ".gz", FILE_READ);
+    gzipped = opened && !opened.isDirectory();
+  }
+  if (!gzipped) opened = SD.open(base, FILE_READ);
+  if (!opened || opened.isDirectory()) {
+    request->send(404, "text/plain", "not found");
+    return;
+  }
+  sendOpenedFile(request, opened, gamefiles::contentType(safe), gzipped,
+                 cfg::GAME_CACHE_CONTROL);
+}
+
+
 }  // namespace
 
 const char* defaultPlaylist() { return kDefaultPlaylist; }
@@ -640,6 +910,7 @@ void begin() {
   g_server.on("/api/pair", HTTP_GET, handlePair);
   g_server.on("/api/playlist", HTTP_GET, handleGetPlaylist);
   g_server.on("/api/scan", HTTP_GET, handleScan);
+  g_server.on("/api/alignment/event", HTTP_POST, handleAlignmentEvent);
 
   g_server.on("/api/wifi/forget", HTTP_POST, [](AsyncWebServerRequest* request) {
     if (!onAccessPointSubnet(request) && !authorised(request)) {
@@ -653,9 +924,19 @@ void begin() {
   g_server.on("/api/sd", HTTP_GET, handleSdList);
   g_server.on("/api/sd/delete", HTTP_POST, handleSdDelete);
   g_server.on("/api/sd/upload", HTTP_POST, handleUploadDone, nullptr, handleUploadChunk);
+  g_server.on("/api/sd/game-upload", HTTP_POST, handleGameUploadDone, nullptr, handleGameUploadChunk);
+  g_server.on("/api/sd/game-delete", HTTP_POST, handleGameDelete);
   g_server.on("/sd/*", HTTP_GET, handleSdFile);
+  // Wildcard first: the library treats the plain "/game" as a prefix too, so
+  // registered first it redirected every /game/... URL back to /game/ forever.
+  g_server.on("/game/*", HTTP_GET, handleGameFile);
+  g_server.on("/game", HTTP_GET, [](AsyncWebServerRequest* r) { r->redirect("/game/"); });
+#ifdef LAKEHORSE_ALIGN_TEST
+  aligntest::attach(g_server);
+#endif
   playerapi::attach(g_server);
   speakerapi::attach(g_server);
+  matrixapi::attach(g_server);
 
   registerPlaylistWrite();
   registerWifiWrite();

@@ -53,6 +53,11 @@ void stop();
 void seek(float seconds);
 void setVolume(float v);
 
+// Band levels (0..8) for the sound leaving the box right now, for the matrix.
+// False unless a track is playing and its levels are ready; takes no lock, so
+// it never waits on the reader.
+bool bandsNow(uint8_t out[8]);
+
 Status status();
 const char* stateName(State s);
 

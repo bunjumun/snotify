@@ -18,6 +18,17 @@
 
   var status = null;
 
+  // The pairing key library.js stores after visiting the hotspot once. It is
+  // what lets the box accept a network change from the home Wi-Fi.
+  var KEY_STORE = 'lakehorse.radio.key';
+  function pairKey() { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
+  function authHeaders(extra) {
+    var h = Object.assign({}, extra || {});
+    var k = pairKey();
+    if (k) h['X-Lakehorse-Key'] = k;
+    return h;
+  }
+
   function say(el, msg, kind) {
     el.textContent = msg || '';
     el.className = 'status' + (kind ? ' ' + kind : '');
@@ -63,47 +74,36 @@
   var SCAN_TRIES_MAX = 8;
   var scanTries = 0;
 
+  // Results go to the list in network-window.js, which also keeps the chosen
+  // network in the hidden #ssid field that save() reads.
   function loadScan(again) {
+    var list = window.LakehorseNetworkWindow;
     if (!again) scanTries = 0;
     fetch('/api/scan', { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (doc) {
-        var sel = $('ssid');
-
         if (doc.error) {
-          sel.innerHTML = '<option value="">Could not scan, type the name below</option>';
+          list.note('Could not scan. Type the name below.');
           say($('setupStatus'), doc.error, 'err');
           return;
         }
 
         if (doc.scanning) {
           if (++scanTries > SCAN_TRIES_MAX) {
-            sel.innerHTML = '<option value="">Scan did not finish, type the name below</option>';
+            list.note('The scan did not finish. Type the name below.');
             say($('setupStatus'),
                 'The box could not finish scanning, which it often cannot while it '
                 + 'is already trying to join a network. Type the name in instead.', 'err');
             return;
           }
-          sel.innerHTML = '<option value="">Scanning...</option>';
+          list.note('Scanning...');
           setTimeout(function () { loadScan(true); }, 1800);
           return;
         }
-        sel.textContent = '';
-        var blank = document.createElement('option');
-        blank.value = '';
-        blank.textContent = (doc.networks && doc.networks.length)
-          ? 'Choose a network' : 'Nothing found, type it below';
-        sel.appendChild(blank);
-
-        (doc.networks || []).forEach(function (n) {
-          var o = document.createElement('option');
-          o.value = n.ssid;
-          o.textContent = n.ssid + '  (' + n.rssi + ' dBm, ch' + n.channel + ')'
-            + (n.open ? '  open' : '');
-          sel.appendChild(o);
-        });
+        list.render(doc.networks);
       })
       .catch(function () {
+        list.note('Could not scan. Type the name below.');
         say($('setupStatus'), 'Could not scan for networks.', 'err');
       });
   }
@@ -121,7 +121,7 @@
 
     fetch('/api/wifi', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       // Only send a name if one was typed, so leaving the field alone keeps
       // whatever the box is already called rather than resetting it.
       body: JSON.stringify(host
@@ -174,6 +174,7 @@
                 'On ' + s.ssid + ' at ' + s.ip + '. Reach it at ' + mdns
                 + ' from anything on that network. Setting up a box next time '
                 + 'can also be done once over USB, with no hotspot needed.', 'ok');
+            showCurrent(s);
             return;
           }
 
@@ -208,6 +209,73 @@
     })();
   }
 
+  var NET = function () { return window.LakehorseNetworkWindow; };
+
+  function showCurrent(s) { if (NET()) NET().showCurrent(s); }
+
+  // Draws everything that depends on /api/status: banner, current-network card,
+  // and whether the join form is offered. Called at load and by Refresh.
+  function applyStatus(s) {
+    status = s;
+    describeNetwork(s);
+    showCurrent(s);
+    if (s.mdns) $('netHostName').textContent = s.mdns;
+    // The shell decides first-run from the same reply; see shell.js.
+    if (window.LakehorseShell) window.LakehorseShell.onStatus(s);
+
+    // The form is offered to whoever the firmware would accept: someone on the
+    // box's own hotspot, or a device that already holds the pairing key. Showing
+    // it to anyone else would just produce refusals.
+    var allowed = NET() && NET().canChange(s, !!pairKey());
+    $('setup').hidden = !allowed;
+    if (!allowed) return;
+    $('setupIntro').textContent = s.hasSavedNetwork
+      ? 'This box already remembers a network. Joining another replaces it.'
+      : 'This box has not been put on a network yet.';
+    // Prefill with the box's real current name, so the field shows the
+    // truth rather than a placeholder that might not match.
+    if (s.hostname && !$('host').value) $('host').value = s.hostname;
+    if (s.viaAccessPoint) {
+      if (!scanStarted) { scanStarted = true; loadScan(); }
+    } else if (!scanStarted) {
+      // Not automatic here: a scan retunes the radio, which can stutter a song
+      // playing off the box. It runs when asked.
+      NET().note('Tap Scan networks to look. Scanning can interrupt the music for a few seconds.');
+    }
+  }
+  var scanStarted = false;
+
+  function refresh() {
+    return fetch('/api/status', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(applyStatus)
+      .catch(function () {
+        $('banner').className = 'banner err';
+        $('banner').textContent = 'Could not talk to the box.';
+        showCurrent(null);
+      });
+  }
+
+  function forget() {
+    var name = (status && status.ssid) || 'this network';
+    if (!window.confirm('Forget ' + name + '? The box will leave it and start its own '
+        + '"' + ((status && status.apSsid) || 'Lakehorse Radio') + '" hotspot. '
+        + 'You will need to join that hotspot to set it up again.')) return;
+    say($('netCurrentStatus'), 'Forgetting...', '');
+    fetch('/api/wifi/forget', { method: 'POST', headers: authHeaders() })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.d.error || 'rejected');
+        say($('netCurrentStatus'),
+            'Forgotten. The box is leaving the network, so this page may stop answering. '
+            + 'Join its hotspot to set it up again.', 'ok');
+        setTimeout(refresh, 4000);
+      })
+      .catch(function (err) {
+        say($('netCurrentStatus'), 'Could not forget it. ' + (err.message || ''), 'err');
+      });
+  }
+
   function init() {
     // dazzle.js is a separate <script>, loaded before this one, and exposes
     // exactly this one global -- see its header for why it's a copy of the
@@ -215,32 +283,10 @@
     if (window.paintRadioDazzle) window.paintRadioDazzle();
 
     $('saveBtn').addEventListener('click', save);
-    $('rescanBtn').addEventListener('click', loadScan);
-
-    fetch('/api/status', { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (s) {
-        status = s;
-        describeNetwork(s);
-
-        // Setup is only offered to someone on the box's own hotspot, which is
-        // the same proximity rule the firmware enforces. Showing the form to
-        // everyone on the barn network would just produce refusals.
-        if (s.viaAccessPoint) {
-          $('setup').hidden = false;
-          $('setupIntro').textContent = s.hasSavedNetwork
-            ? 'This box already remembers a network. Saving a new one replaces it.'
-            : 'This box has not been put on a network yet.';
-          // Prefill with the box's real current name, so the field shows the
-          // truth rather than a placeholder that might not match.
-          if (s.hostname) $('host').value = s.hostname;
-          loadScan();
-        }
-      })
-      .catch(function () {
-        $('banner').className = 'banner err';
-        $('banner').textContent = 'Could not talk to the box.';
-      });
+    $('rescanBtn').addEventListener('click', function () { loadScan(); });
+    $('netRefresh').addEventListener('click', function () { say($('netCurrentStatus'), ''); refresh(); });
+    $('forgetBtn').addEventListener('click', forget);
+    refresh();
   }
 
   init();

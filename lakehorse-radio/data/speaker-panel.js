@@ -35,6 +35,10 @@
       linkAction: '',
       findLabel: info.scanning ? 'Searching...' : 'Find speakers',
       findEnabled: !!info.bluetooth && !info.scanning,
+      optimized: !info.bluetooth,
+      optimizeNote: info.bluetooth
+        ? 'Streaming to this device, not a speaker? Tick this to turn Bluetooth off. Songs load several times faster.'
+        : 'Bluetooth is off. Untick to use a speaker again.',
       speakers: [],
       note: ''
     };
@@ -97,6 +101,12 @@
       el('spkFind').disabled = !v.findEnabled;
       el('spkFind').textContent = v.findLabel;
       el('spkPower').textContent = v.powerLabel;
+      // The Optimize box is the same switch as spkPower, shown as the page's
+      // one control for it. Absent in older markup, so optional.
+      if (el('spkOptimize')) {
+        el('spkOptimize').checked = v.optimized;
+        el('spkOptNote').textContent = v.optimizeNote;
+      }
       el('spkNote').textContent = (info && info.error) ? info.error : (v.bluetooth ? v.note : '');
       var list = el('spkList');
       list.textContent = '';
@@ -141,6 +151,14 @@
     });
     el('spkFind').addEventListener('click', function () { command('/api/speaker/scan'); });
     el('spkPower').addEventListener('click', togglePower);
+    if (el('spkOptimize')) {
+      el('spkOptimize').addEventListener('change', function () {
+        var box = this;
+        // A declined confirm leaves nothing changed, so put the box back to
+        // what the box itself says rather than leaving it ticked the wrong way.
+        togglePower().then(function () { if (!restarting && bluetoothOn !== null) box.checked = !bluetoothOn; });
+      });
+    }
 
     every(refresh, POLL_MS);
     return { refresh: refresh, togglePower: togglePower };

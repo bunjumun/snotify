@@ -46,6 +46,78 @@ stack takes tens of KB of internal RAM on its own) has to fit under that.
     `ESP32_ARDUINO_LIB_BUILDER`, and with that and no `BOARD_HAS_PSRAM`,
     `esp32-hal-psram.h` `#undef`s `CONFIG_SPIRAM`. The board has 4 MB.
 
+## Shell Module 8, piece 1: alignment counter (2026-11-22/23) - BUILT, tested, verified on the box
+
+**Built (working tree, not committed)**
+- `src/alignment.{h,cpp}`: Arduino-free core. Constants block at the top of `alignment.cpp` (100/10/100/5, cap 6400, 50% half, 10 s repeat window, level ids 0..31). `Counter::submit` does the credit, cap, repeat table (8 slots, wrap-safe) and one `Storage::save` per credited event that changed something. Also `resultForLeaving`, `bandListContains`, `playlistHasTitle`.
+- `src/alignment_box.{h,cpp}`: NVS storage (`lh_align`: `pts` uint16, `lvl` uint32), one mutex around the counter, `onTrackLeft`, `snapshot`, `submitEvent`.
+- `test/test_alignment` (20 tests). Whole native suite 130/130; all JS and Python tests pass.
+- `POST /api/alignment/event?source=song|level&id=&result=full|partial|clear|attempt` returns `{ok, credited, repeat, added, points, nodes, percent}`. 400 for bad combos (song takes full/partial, level takes clear/attempt), a song not in the playlist, a level id outside 0-31 (no leading zero). A repeat answers 200 with `repeat:true`, not counted. `/api/status` gained `alignment:{points,nodes,percent}`.
+- `main.cpp`: `alignment::begin()` after `sdstore::begin()`.
+
+**The four hooks in `src/box_player.cpp`** (plus one include and a 7-line helper `reportLeavingLocked(reachedEnd)` above `closeTrackLocked`, which works out played-since-seek / duration from `g_played`, not the clock): end path in `readerTask` (true), `stop()`, speaker Next in `handleSpeakerKeyLocked`, top of `startLocked` (play replacing a loaded song). All under `g_lock`, all before the state is reset. `g_played` resets on every flush, so a seek, the speaker Restart key and a replay all restart the count (as specified).
+
+**Decisions I made**
+- Band flag = `/band-tracks.json` at the card root, `{"version":1,"tracks":["Song.wav",...]}`, exact case-sensitive match. Not cached: it is read (<=4 KB, malloc'd, freed) only after a track has played 50%, so skips under half never touch the card. Missing card, missing file, empty, over 4 KB or malformed means nothing flagged.
+- Played >= 50% is required for any credit; a track that ends having played under half (e.g. seek to 90%, let it end) earns nothing.
+- Song events from the box go through the same repeat table as the endpoint; box song ids are file names, phone ids are playlist titles.
+- Phone-mode songs checked against `playlist::load()`, falling back to the baked-in default (the same fallback `/api/playlist` uses). `playlist::validate` and `playlist.json` untouched.
+- Level `clear` sets bit `id` in `lvl`; every clear still scores (replays count, per the brief's open note).
+- A failed NVS write is logged and the total still counts until reboot.
+- The endpoint does not refuse phone song events while the box is playing; the page is meant to not report then (piece 2).
+- **Can the existing upload write band-tracks.json? No.** `/api/sd/upload` only takes audio names into `/music`; `/api/sd/game-upload` only writes under `/game/`. Future song updates need a card reader or a new small route. I did not add a permanent one.
+- Test-only firmware: `env:radio-core2-aligntest` (`-D LAKEHORSE_ALIGN_TEST`) adds `POST /api/test/align-reset` and `POST /api/test/band-tracks` (send `Content-Type: application/json`). Compiled out of `env:radio-core2`, which is the shipping build.
+- Starter list: `band-tracks.json` in the project root (all four songs on the card).
+
+**Measured / verified on the box (Mango Tree World, 236 s, via the API)**
+- Skip at 30%: +0. Seek to 60% then stop: +0. Skip at 60% (141.7 s): +10. Flagged, played to the end: +100 (total 110). The auto-advance then started This Is War (not in the test list); stopped under half: +0. Unflagged (taken off the list), played to the end: +0.
+- Endpoint: level 3 clear +100, same again inside 10 s ignored (`repeat:true`), level 3 attempt +5, playlist song "Light" full +100, repeat ignored, unknown title 400, level 40 and level+full 400. Total 315.
+- Reboot: came back as 315 points, levels 0x00000008. Total reset to 0 with the test route, then the shipping `radio-core2` firmware was flashed (test route now 404). Status shows alignment 0, speaker ML301 connected.
+- Reader-task stack spare after a credit with the card read: 3.8-4.2 KB of 6 KB, so the hook fits.
+- Heap: minFreeHeap 16,240 after the run (4 plays, ~40 requests) vs Module 6's 26,024, i.e. 9.8 KB lower. At boot with Bluetooth connected this firmware already showed min 20.8 KB before any song, and the low-water mark crept down with repeated plays (19.4 to 16.2 KB). I did not A/B against the pre-change firmware, so how much is alignment (code, one small malloc per credit, mutex) vs Bluetooth being switched on and a longer run is not known. Needs an A/B before Drive B.
+- Underruns 0 throughout. Pairing: speaker connected on boot and playback unchanged.
+
+**Hardware note:** the box rebooted twice mid-playback (and once dropped off USB) while the user's 8x8 matrix was wired to its 5V/GND/data. With the matrix unplugged, no reset in a ~12 minute run. Likely a power sag; unproven.
+
+**Not verified:** minFreeHeap A/B (above); pairing from cold (speaker was already connected); malformed or missing `band-tracks.json` on the box (covered by native tests only); phone-mode song events from a real page.
+
+**State left on the box:** shipping firmware, total 0, `/band-tracks.json` on the card with all four songs (written by the last test run), Bluetooth ON (it was off when I started). The test route is not in this firmware, so a future list change needs a card reader.
+
+## START HERE (2026-11-23, evening): Swimulator is bundled; GAMES folder; touch Guber live
+
+- **"The water would not load" fix = bundle.** `pack_game.py` now runs `esbuild` (brew, 0.28.2) on `game/src/main.js` into ONE file at `src/audio/bundle.js` (depth matters: `AudioDirector` reads `new URL('../../music.json', import.meta.url)`), Three.js stays external via the import map. Swimulator load = 3 requests (was 54), 0 failed, no console errors. Without esbuild the pack falls back to the 52 modules and says so.
+- **Card cleaned:** `tools/clean_game.py` removed the 106 stale files (old `/game/src/**` modules and top-level `bundle.js`, plain and .gz) through a new `POST /api/sd/game-delete?path=` (one file under /game/, folders refused, firmware reflashed). Empty `/game/src/<folder>/` directories remain. Songs, live bundle, index, config, music.json, vendor, guber-eats untouched and still 200. The old line below about leftovers is now out of date.
+- **Page:** GAME.EXE is now a GAMES folder window (`SD:/game/`, one icon tile per game). GAME.EXE greyed out because the probe used HEAD and the box answers `/game/*` for GET only; the probe is now a one-byte Range GET. Firmware never gained HEAD for `/game/*`.
+- **Guber Eats on the box:** gamepad + touch controls + phone layout (see `guber-eats/HANDOFF.md`), SD soundtrack with Currency first, synth muted.
+- **Stress finding:** a song stream plus 6 parallel game-file requests made the box stop answering for a while (unknown if crash). Bundling removes the 54-request case; the song-plus-game heap and stutter measurement is still not done.
+
+## START HERE (2026-11-23, later): Module 7 LIVE on the box, plus Guber Eats
+
+**Done and checked on the real box (192.168.0.38), in Chrome, cold:** Swimulator at `/game/` (54 requests, 0 failed, 0 off-origin, load 0.3 s) and Guber Eats at `/game/guber-eats/` (title screen, no console errors, Three.js 0.3-0.6 s). Guber's soundtrack on the box is the SD songs, **Currency.wav first** (then the rest, cycling): played from `/sd/Currency.wav`, 16 s in, no error. Firmware + LittleFS flashed 3 times; last firmware has the fixes below.
+- **Card fill needs no card reader now:** `python3 tools/pack_game.py && python3 tools/push_game.py [host]` pushes `build/sd-game/` to `/game/` via new `POST /api/sd/game-upload?path=` (path-checked by `gamefiles::resolve`, one upload at a time, overwrite only, never deletes). 116 files, ~40 s.
+- **Bug fixed 1:** `g_server.on("/game")` registered before `/game/*` redirected every `/game/...` URL to `/game/` forever (library treats "/game" as a prefix). Wildcard now first.
+- **Bug fixed 2:** `SD.begin` default `max_files` is 5; the browser's ~40 parallel module requests made the 6th open fail, a 404 on an existing file ("The water would not load"). Now 10 (`sd_store.cpp`).
+- Guber: `pack_game.py` copies `../guber-eats/index.html`, injects `LAKEHORSE_BOX`; its `startTheme()` reads `/api/sd` only when that flag is set, so the hosted site is unchanged. Link button in GAME.EXE.
+- **Guber synth is silent on the box:** with `LAKEHORSE_BOX`, `musicGain` and `sfxGain` are 0 (music, engine, skid, effects); only the SD song plays. Checked: gains 0, `/sd/Currency.wav` playing. If the SD song fails to load the game is now silent, not synth.
+- **Not checked:** `minFreeHeap` under game load plus a song stream (was 14 KB after the flood before fix 2; re-measure). Currency is 48 kHz = ~192 KB/s against ~220-250 KB/s card reads, so game assets loading during a song may stutter. Bluetooth on/off, mute game when box speaker plays (`/api/player`), and FEATURE-IDEAS "Browser games" PARTIAL tick are still open.
+
+## START HERE (2026-11-23): Swimulator on the SD card (Module 7), built, NOT yet tried on the box
+
+**Decision (his words):** the SD card is the go-to storage for anything big. Flash (512 KB) keeps only the page. The game is plain files in `<SD>/game/`, served at `/game/`, no Supabase, SD songs as the soundtrack.
+
+**Built and tested on the laptop**
+- Firmware `src/game_files.*` (path rules, `test/test_gamefiles`, 8 tests) + `handleGameFile` in `web_server.cpp` (serves `X.gz` when the phone accepts gzip, Range, 1 h cache); `/game` redirects to `/game/`. `sendOpenedFile()` is now shared with `/sd/*`. `env:radio-core2` builds. **Not flashed.**
+- `data/game-window.js` + GAME.EXE window, desktop icon, Start item in `index.html` (HEAD-probes `/game/index.html`; dimmed Play link if missing). `test/game-window.test.js`. FS image 50 KB gz, builds.
+- Game side: `game/src/core/Box.js` (`ON_BOX`, set by `window.LAKEHORSE_BOX`, NOT by URL, since the hosted site is also under /game/). On a box: LogFeed, LoreFeed, reward sign-up skip Supabase; `AudioDirector._liveTracks` reads `/api/sd` and plays `/sd/<name>`. `test/box.test.mjs`.
+- `tools/pack_game.py` -> `build/sd-game/` (game + vendor/three + `.gz` of every text file; 1.36 MB -> 420 KB gz). `test/pack_game.test.py`. No bundler: 52 module files.
+- Checked in the browser against a mock box (`/game/`, `/api/sd`, `/sd/`): cold load OK, DIVE IN OK, 0 requests off-origin, HUD showed SD tracks, no console errors.
+
+**Next, in order**
+1. `python3 tools/pack_game.py`, copy `build/sd-game/*` to the card as `/game/` (so `/game/index.html` exists).
+2. Flash firmware + LittleFS (`radio-core2`), open the page, GAME.EXE -> Play.
+3. Watch `/api/status` `minFreeHeap` (was ~60 KB under streaming; game load + song stream is two SD streams). Try BT on and off. 52 requests at 22-40 KB/s may be slow: if so bundle with esbuild (not installed).
+4. Remaining plan items: tick FEATURE-IDEAS "Browser games" PARTIAL (done below), mute the game when the box speaker is playing (`/api/player`), not built.
+
 ## START HERE (2026-11-22, night): Module 6 WORKS, the box plays songs on ML301
 
 **Heard by ear:** WAVs from the SD card play out of ML301, 44.1 and 48 kHz
@@ -758,3 +830,135 @@ bundle.js has a 5-digit Content-Length, header 249 bytes (1 past a multiple of 4
 a good length); recheck with `tools/pageload.py` if the headers or file set
 change (see the header-length bug above). iPhone 8 not timed by the owner (nothing
 visible to compare); Module 1 is accepted on the Mac numbers. Module 2 not started.
+
+## Shell Module 2: frame engine and endpoint (2026-11-22)
+
+**Status: native tests green (24), firmware flashed (`env:radio-core2`, firmware only, LittleFS untouched) and `/api/matrix` verified on the board. Playback with the page polling also checked (below).**
+
+**Built**
+- `src/matrix_engine.{h,cpp}`: pure engine, no Arduino. A frame is 64 hex chars (`0` dark to `f` full, row by row from top left), intensity only; colour and brightness belong to whoever draws it. `render(nowMs)` is a pure function of mode, inputs and the clock, so there is no task, timer or heap. Modes: off, bars, title (3x5 font, A-Z 0-9 and `.,!?-:'/+&()_`, scrolls in from the right), dazzle (2x2 camo blotches drifting left), clock (phone time, hours then minutes every 3 s, hours marker top right, seconds bar on the bottom row), image (64 hex chars).
+- **Audio reactivity** (added at the owner's request): `feedBands(8 levels 0..8)` is a general input, fresh for 1 s. Bars draws it; Dazzle lifts every tone by up to 4 steps with the mean level. With nothing fed, Bars runs its own test pattern and Dazzle runs unboosted. Nothing feeds it yet; Module 6 does.
+- `src/matrix_api.{h,cpp}`: `GET /api/matrix` gives `{ok, mode, title, frame}`. `POST /api/matrix` takes any of `mode`, `title`, `h`+`m`+`s`, `image`, validates all of it first, applies none on a 400. Wired in `web_server.cpp` beside the speaker API.
+- `test/test_matrix/` (24 tests: every mode renders only hex, scroll start/loop, clock wrap at midnight and millis wrap on the freshness check, stale audio falls back, bad input leaves state alone, all font glyphs distinct). Run `pio test -e native -f test_matrix`. `platformio.ini` native filter gained `matrix_engine.cpp`.
+
+**Cost:** 232 bytes of static RAM (`.bss`, internal, none from the heap), about 3 KB of flash for the engine. The API adds about 8 KB of flash. Heap per request is one small JSON document (about 200 bytes), freed after the reply.
+
+**On the board (2026-11-22):** GET and POST work; dazzle, title and bars frames returned real pixels; `h=25` rejected with 400 and state unchanged. 56 polls in 20 s (about 2.8/s) with no errors. Free heap: 55,284 right after boot, 45.5k steady after polling (min 44.2k), stable over repeated reads, so no leak seen. That is with Bluetooth on and searching, not connected; the 40,124 figure before the flash was a long-running box, so the two are not a like-for-like cost comparison. The engine itself takes no heap.
+
+**Playback check (ML301 connected):** Mango Tree World played 30 s to ML301 while `/api/matrix` (dazzle) was polled 63 times at about 2 per second: 0 failed polls, 0 underruns, no player error. Free heap while playing 38.4k (min 34,972); the same song with NO matrix polling reads 37.0 to 38.4k, so the matrix costs nothing measurable and the lower figure is playback itself on this firmware (the 50.8 KB in the plan was an older reading). Paused and matrix set to Off afterwards. Bluetooth left on.
+
+**Still to do on the board (was: Not done):** flash, then `curl http://<ip>/api/matrix`, `curl -X POST 'http://<ip>/api/matrix?mode=dazzle'`, check `/api/status` free heap before and after, and confirm playback still has 0 underruns with the page polling at about 4 per second. The `pageload.py` header-length trap (Module 1) applies to any new file type served; this adds JSON API replies only, not static files.
+
+**Next: Module 3**, the virtual matrix window. It needs one decision: colour palette and brightness live in the page.
+
+## Shell Module 3: virtual matrix window (2026-11-22)
+
+**Status: flashed (page image only, 4 files, 38,584 bytes; firmware unchanged) and verified in the in-app browser at 192.168.0.38. NOT yet checked on the iPhone 8.**
+
+**Verified on the board:** `pageload.py` 5 rounds: 3 files, 37,921 bytes, median 0.52 s, 0 failed or short bodies (header-length trap clear). Fresh load with the window closed: 0 requests to `/api/matrix`. Opened: about 2.7 per second, all 200. Dazzle, Title (LAKEHORSE) and Clock each switched through the buttons and the box reported the matching mode and lit pixels; the buttons follow the box's mode. Full view fills the viewport (519 px canvas) and a tap exits. At 375 px wide: canvas 313 px, no horizontal scroll. The console shows 4 `ERR_CONNECTION_TIMED_OUT` lines of unidentified origin (no request to any host but the box appears in resource timing, so probably left over from earlier page loads in that tab); not chased. Matrix left Off.
+
+**Built**
+- `data/matrix-window.js` (new): the window. Pure helpers (`parseFrame`, `nextDelay`, `lightAlpha`, `titleFor`, `clockQuery`, `modeRequest`) plus `attach`. Wires itself on load when `#matrixOpen` exists.
+- `data/index.html`: a small preview button under the player (the way in, painted from the last frame, never fetches) and the window itself (8x8 canvas, Off/Bars/Title/Dazzle/Clock buttons, brightness slider, Full view, Close). Script added after `speaker-panel.js`, so the build bundles it.
+- `data/style.css`: preview, window and the full-view overlay (CSS overlay plus the Fullscreen API where it exists; iPhone Safari has none for ordinary elements).
+- `test/matrix-window.test.js` (node): helpers, plus the loop with fakes: no request while closed, one in flight, next poll only after the reply, doubling when slow or failing, stops when hidden, resumes when shown, POSTs carry the playing title and the phone's time, brightness saved, full view toggles.
+
+**Decisions**
+- Opens from the preview button only. "Start > Matrix lights" does not exist until Module 4 (the shell); it will call the same `open()`.
+- Brightness is the page's own (the frame carries intensity only); it is not sent to the box.
+- Image mode has no button yet (needs a picture source); the endpoint supports it.
+- Title mode sends the playing track's name, or LAKEHORSE; Clock sends the phone's time when chosen.
+- Bars show the demo pattern until Module 6; the window says so.
+
+**Still to do for the Module 3 pass:** flash the image; `python3 tools/pageload.py 192.168.0.38 5` (header-length trap from Module 1 applies: page is now 4 files, bundle.js.gz 32,660 bytes); open the page in a browser, open the window, switch modes, try Full view; confirm in the box's request log or by `pageload`/network panel that nothing hits `/api/matrix` while the window is closed; check on the iPhone 8 (iOS 16: uses aspect-ratio, inset, canvas arc).
+
+## Shell Module 4: shell reskin (2026-11-22)
+
+**Status: built, checked in the in-app browser, and FLASHED (page image only, 43,163 bytes, was 38,649; firmware unchanged). Verified live at 192.168.0.38: `pageload.py` median 0.50 s, 0 failed or short bodies; shell loads, Start menu opens the matrix window, taskbar follows, 0 matrix requests while it is closed, no script errors. iPhone 8 checked by the owner on 2026-11-22 ("iphone tests are good"), which closes the iPhone 8 pass for Modules 3 and 4. The captive-portal sheet (iPhone and Android) is still untested.**
+
+**Built**
+- `data/index.html` restructured: every element id kept (checked against the old file; none lost), now inside `.win` windows: PLAYER.EXE (banner, player bar, play-on select, matrix preview, SD list and upload; opens first), SPEAKER.EXE, NETWORK.EXE, MATRIX.EXE (the Module 3 window as a frame). Desktop icons, a Start menu (Player, Network, Speaker, Matrix lights) and a taskbar with START, a button per open window, and a clock. The old header and tagline are gone.
+- `data/shell.js` (new): a window is any `.win` element, open unless `hidden`; the taskbar watches that attribute, so a script that opens its own window (the matrix window) needs no call into the shell. Windows that do work on open name `data-opener` / `data-closer` handles (the matrix window starts and stops polling through them). `app.js` calls `LakehorseShell.onStatus(status)` with the reply it already fetches, so the shell makes no request of its own.
+- **First run:** with `hasSavedNetwork === false` the Start menu opens, Network is orange ("needs setup"), the callout shows, the tray says NO WI-FI, and the Network window opens. An unreadable status reply is not a first run.
+- `data/style.css`: ENIAS palette (ink #0c0e0d, bone #e9e5d6, panel #3b3d39, orange #ff6b2c, teal #5fd0b0), bevelled windows and buttons, system monospace. Windows stack full width at 700 px and under, and sit side by side above it (dragging is not built). Matrix lights are now orange.
+- Windows with nothing to show say why (CSS sibling rule): Speaker "built without Bluetooth", Network "setup is only offered on the box's own hotspot".
+- `test/shell.test.js` (new). Existing node suites (player, player-box, speaker-panel, matrix-window) and `gzip_data.test.py` still pass.
+- `tools/devserver.py` (new): serves `data/` unbundled and forwards `/api/` and `/sd/` to the box, so a page change can be previewed without flashing (POSTs really reach the box). Entry `radio-page` added to the workspace `.claude/launch.json`.
+
+**Decisions**
+- No webfonts: the box has no internet, and the page-weight budget from Module 1 stands. Titles use the system monospace; VT323 / IBM Plex Mono remain an open decision (measure the subset sizes first).
+- Only working things get icons and menu items. The mockup's Drive B, Games, Links, README, Clock and alarm, Crew profiles and About are deferred and absent, not stubbed.
+- Boot splash from the mockup not built (not in the plan).
+- The wallpaper is the existing `dazzle.js` pattern, not the mockup's clip-path camo.
+
+**Not yet done:** look at it on the iPhone 8 and the captive-portal sheet on an iPhone and an Android phone. Module 5 (Network and Speaker window contents) is next.
+
+## Shell Module 5: Network and Speaker windows (2026-11-22)
+
+**Status: built and checked in the in-app browser against the real box (via `tools/devserver.py`); page image builds (45,924 bytes, was 43,163). FLASHED 2026-11-22 (page image only; firmware unchanged); live check: `pageload.py` median 0.30 s, 0 failed or short bodies; shell, network list and Optimize box load with no script errors, taskbar shows PLAYER / SPEAKER / NETWORK, Optimize shows ticked (Bluetooth is off), no hidden buttons drawn, 0 matrix requests while closed. The join itself (POST /api/wifi) was NOT exercised: it would change the box's Wi-Fi.**
+
+**Network window**
+- `data/network-window.js` (new): scan results as tappable rows with signal bars, strongest first, duplicate names (several channels) merged, hidden networks dropped. The choice goes into a hidden `#ssid` input, which `app.js` `save()` already reads, so saving is unchanged. Also a Show password box, Cancel (clears choice, typed name, password, message) and a rescan that keeps the choice if the network is still there.
+- `app.js` `loadScan` now hands results to that list instead of filling a `<select>`. The note "The box drops its own Wi-Fi while it joins. Reconnect your phone to your home Wi-Fi, then open <name>.local" sits under the buttons, with the real mDNS name from `/api/status`.
+- **Bug fixed on the way:** the Rescan button passed its click event as `loadScan`'s `again` argument, so a rescan never reset the retry count. It now calls `loadScan()`.
+- Not built: the mockup's "Add a backup network" (the firmware keeps one network).
+
+**Speaker window**
+- An "Optimize for this device" box in a SPEED group: ticked exactly when Bluetooth is off. Ticking or unticking does the existing Bluetooth switch with its existing confirm and restart (`/api/speaker/bluetooth?on=`); declining the confirm puts the box back to what the box says. Older markup without the box still works. No firmware change. The old Turn-Bluetooth button stays in the markup, hidden, because `speaker-panel.js` wires it.
+- Existing controls restyled: status well, full-width speaker rows, Find and Connect buttons.
+
+**Found in the browser, not by tests, and fixed:** (1) emptying the network list detached the note element, so the next lookup by id returned null and the first render threw. The test's fake page kept a map of elements and hid it; it now behaves like a real DOM and fails on the old code. (2) `.btn { display: ... }` beat the `hidden` attribute, so hidden buttons still drew (an empty box beside Find speakers, a stray Turn Bluetooth button; this existed in Module 4 too). Fixed with `.win [hidden] { display: none !important }`. (3) Taskbar labels clipped with three windows open on a 375 px phone; labels now drop ".EXE" and the taskbar is tighter.
+
+**Tests:** new `test/network-window.test.js`; `test/speaker-panel.test.js` gained 5 (Optimize view, tick turns Bluetooth off, decline reverts, untick turns it on, old markup). All page suites and `gzip_data.test.py` pass.
+
+**Bluetooth is OFF on the box** (`/api/speaker` `bluetooth:false`): the owner switched it off during phone testing (confirmed). Left as it was; the Speaker window correctly shows Optimize ticked. Turn it back on from the Speaker window to test Module 6 against the ML301.
+
+**Still to do:** try the Network window on the phone while on the box's own hotspot (the only place the form shows) and the Optimize box on the phone. Module 6 (audio reactivity from samples) is next.
+
+## Shell Module 6: audio reactivity from samples (2026-11-22)
+
+**Built and flashed (firmware + page).** `src/band_levels.{h,cpp}` is an Arduino-free `bands::Meter`: eight Goertzel bins (60 Hz to 8 kHz, an octave apart, +3 dB per band tilt, Welch window, -72 to -18 dBFS mapped to 0..8), one result per 1024 output frames (about 23 ms), kept on a 128-hop timeline. The reader task feeds it the resampled output (`g_meter.feed` just before `ringPush`); `ringFlush` resets it. The reader runs up to 2 s ahead of the speaker, so levels are looked up at `g_played` (`boxplayer::bandsNow()`, lock-free, peak of the last 4 hops), not at read time. `/api/matrix` GET calls it and `matrix::feedBands`; so Bars draws real levels and Dazzle brightens, and with nothing playing Bars falls back to the demo pattern after 1 s. Levels are pre-volume. Memory is about 1.1 KB static internal RAM.
+
+**Tests:** `test/test_bands` (12): silence, each band's centre tone peaks in its own band, louder reads higher and clamps at 8, DC does not light the high bands (bands 5+), chunk size makes no difference, hop boundaries, lookup refuses not-yet-analysed or overwritten frames, peak hold, reset, opposite-phase channels cancel, scale edges. All 102 native tests and all page suites pass. Page note under Bars reworded.
+
+**Hardware check (ML301 connected, Mango Tree World 236 s then This Is War to 306 s, `/api/matrix` polled at about 4 per second):** 0 underruns, 0 failed polls, 555 distinct frames in 580 polls, bars move with the music. Free heap while playing about 37k. **minFreeHeap is 26,024 after a clean reboot** (was 34,972 in Module 3 with dazzle polled): it dropped once, when matrix polling began during playback, then stayed flat through 2 more minutes of polling, a seek and a track change. The meter is static, so I did not find the cause; an earlier run with the UI open and extra status polling reached 18,824. Worth a look before adding more to this path.
+
+**Not done:** levels are only fed when something polls `/api/matrix`, which is right for the virtual window; the real matrix driver (Module 7) must call the same two functions at its own rate. Scale constants are reasoned, not tuned by ear; adjust `kFloorDb`/`kRangeDb`/`kTiltDbPerBand` in `band_levels.cpp` if the bars sit too high or low on your music. Playback stopped and matrix set to Off afterwards.
+
+### Module 6b: phone-mode bars (2026-11-22, later)
+
+**Built, tested in the local preview, page flashed to the box (pageload check clean, bundle 38.7 KB, repeat visit 304 in 0.21 s); not yet tried on a phone.** When the page itself plays the music, the box has no samples, so `data/band-meter.js` (page twin of `band_levels.cpp`, same scale) turns an `AnalyserNode` spectrum into 8 levels. `wavstream.js` now plays every source into a `bus` gain that feeds the volume gain and, in parallel, the analyser (tap is pre-volume, so bars do not shrink with the volume knob; a branch, so it cannot change the sound; skipped when the browser has no `createAnalyser`). `player-browser.js` `bands()` returns levels only while the WAV engine is playing; `library.js` publishes it as `window.LakehorsePhoneBands` (null in box mode). `matrix-window.js` runs an 80 ms local tick while open, and when levels exist and Bars is selected it draws them itself and ignores the box's frame for 400 ms; otherwise the box's frame shows as before. Virtual window only: nothing is sent to the box, and the real matrix still gets bars only in speaker mode.
+
+**Limits:** non-WAV songs (AAC through the `<audio>` element) get no phone bars: routing that element through Web Audio would mute it for any non-same-origin source. While buffering the window falls back to the box frame. The analyser offset (+6 dB) is approximate; in the preview phone bars read about 5 against the box's 6 to 7 on the same song, so raise `ANALYSER_OFFSET_DB` in `band-meter.js` if you want them to match.
+
+**Tests:** new `test/band-meter.test.js`; `test/matrix-window.test.js` gained the phone-mode case (local timer only when a provider exists, local frame drawn, box frame ignored while fresh, close cancels it). All page suites pass. `tools/devserver.py` now passes `Range`/`Content-Range`, so the preview can stream WAVs from the box.
+
+## Session log 2026-11-22: shell and virtual matrix, Modules 2 to 6b
+
+Everything below is built and on the box (firmware and page flashed after each module, each flash on the owner's explicit yes). Detail is in the module sections above; this is the one-page list.
+
+| Module | What landed | Verified |
+|---|---|---|
+| 2 Frame engine | `src/matrix_engine.{h,cpp}` (pure `render(nowMs)`, modes Off/Bars/Title/Dazzle/Clock/Image, no task or heap), `src/matrix_api.{h,cpp}` (`GET/POST /api/matrix`), 24 native tests | native tests; heap cost nil |
+| 3 Virtual matrix window | `data/matrix-window.js`: mode buttons, brightness, full view, no requests while closed, one poll at a time with back-off | iPhone tests good (owner) |
+| 4 Shell reskin | `data/shell.js` + `index.html`/`style.css`: windows, taskbar, Start menu, first-run view from `/api/status` `hasSavedNetwork` | iPhone tests good (owner) |
+| 5 Network and Speaker windows | `data/network-window.js`, Optimize-for-this-device box in `speaker-panel.js`, rescan fix, `.win [hidden]` CSS fix, taskbar label fix | page suites; Network join and Optimize on phone still untried |
+| 6 Audio reactivity (box) | `src/band_levels.{h,cpp}` 8-band Goertzel meter on a timeline keyed to the played frame, fed from the reader task, read through `boxplayer::bandsNow()` into `/api/matrix`; Bars draws it, Dazzle brightens with it; `test/test_bands` (12) | 0 underruns over Mango Tree World (236 s) and 306 s of the next track; minFreeHeap 26,024 after a clean reboot (was 34,972), flat under sustained polling, cause not found |
+| 6b Phone-mode bars | `data/band-meter.js`, analyser tap in `wavstream.js`, `bands()` in `player-browser.js`, `window.LakehorsePhoneBands` in `library.js`, local 80 ms draw in `matrix-window.js` | local preview played a WAV and drew bars; not tried on a phone |
+
+**Tooling added:** `tools/devserver.py` (local preview proxying to the box, now passes `Range`), `radio-page` entry in the workspace `launch.json`.
+
+**Test totals at the end:** 102 native C++ tests green; all page suites green (`matrix-window`, `shell`, `network-window`, `speaker-panel`, `band-meter`, plus the older ones).
+
+**Still open:** captive-portal sheet on iPhone and Android; Network form's real join; Optimize on the phone; phone-mode bars on a real phone; the minFreeHeap drop from 34,972 to 26,024 (cause unknown); band-scale tuning by ear; AAC songs get no phone bars; Module 7 (matrix hardware: GPIO 27, 330 ohm resistor, 1000 uF cap, 150 mA limit) waits until it is wired; open decisions in `SHELL-AND-MATRIX-PLAN.md` (phone-mode bars driving the real matrix, font choice, captive-portal behaviour per phone).
+
+## Network window, WLED-style (2026-11-22, late)
+
+**Status: page-only change, tested in the browser against the real box via `tools/devserver.py`; FLASHED 2026-11-22 (`pio run -e radio-core2 -t uploadfs`, page image only, hash verified); live: bundle.js carries the new code, `pageload.py` median 1.24 s, 0 failed or short responses. No firmware change.** Join (`POST /api/wifi`) and Forget were NOT exercised; they would change the box's Wi-Fi.
+
+- **Current network card** (always shown): headline "Connected to X" / "Could not join X: reason" / "Not on a network", then Network, Signal (bars + dBm, omitted at 0 dBm), Address, Name, Channel, Hotspot, from `/api/status`. Refresh button. Forget network button (confirm, `POST /api/wifi/forget`) shown only when a network is saved.
+- **Scan + join now work from the home Wi-Fi**, not only the hotspot: the form shows when `viaAccessPoint` OR this device holds the pairing key (`lakehorse.radio.key` in localStorage, stored by `library.js` the first time the page is opened on the hotspot). Mirrors the firmware rule (`/api/wifi`, `/api/wifi/forget` accept AP subnet or `X-Lakehorse-Key`), so no firmware change. `app.js` sends the key header on join and forget.
+- Off the hotspot the scan is **on demand** (button "Scan networks"), not automatic, because a scan retunes the radio and can stutter a song. Checked: 0 `/api/scan` requests at load, 2 rows after the button.
+- A device never paired still sees the explanation (`#setupAway`, reworded: join the hotspot once to pair).
+- Pure helpers `headline`, `currentRows`, `canChange` in `network-window.js`; `test/network-window.test.js` extended (incl. null reply, 0 dBm, no-ssid). All page suites green.
+- **Still to do:** try Scan/Join on the phone from home Wi-Fi; Forget and a real join from the home network are untried (a wrong join from home leaves only the hotspot to recover with). Backup network still not built (firmware keeps one).

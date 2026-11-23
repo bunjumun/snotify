@@ -56,7 +56,10 @@ bool servable(const String& name) {
 
 bool begin() {
   SPI.begin(cfg::SD_PIN_SCK, cfg::SD_PIN_MISO, cfg::SD_PIN_MOSI, cfg::SD_PIN_CS);
-  if (!SD.begin(cfg::SD_PIN_CS, SPI, cfg::SD_SPI_HZ)) {
+  // max_files 10, not the library's 5: a browser loading the game asks for ~40
+  // modules at once, and the sixth simultaneous open failed and came back as a
+  // 404 for a file that was on the card.
+  if (!SD.begin(cfg::SD_PIN_CS, SPI, cfg::SD_SPI_HZ, "/sd", 10)) {
     Serial.println(F("[sd] no card, continuing as a streaming-only radio"));
     g_mounted = false;
     return false;

@@ -89,6 +89,9 @@ void rejects_an_over_long_name() {
 void maps_extensions_to_content_types() {
   TEST_ASSERT_EQUAL_STRING("audio/wav", trackname::contentType("a.wav"));
   TEST_ASSERT_EQUAL_STRING("audio/mpeg", trackname::contentType("a.MP3"));
+  // Lossless and half the bytes of a WAV: the box's Wi-Fi sends ~100-250 KB/s,
+  // a 16-bit WAV needs 176-192.
+  TEST_ASSERT_EQUAL_STRING("audio/flac", trackname::contentType("a.flac"));
   TEST_ASSERT_EQUAL_STRING("application/octet-stream", trackname::contentType("a.bin"));
 }
 

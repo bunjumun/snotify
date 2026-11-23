@@ -168,6 +168,8 @@
       status: playerStatus,
       track: showTrack
     }, volume);
+    // The matrix window asks this for bars while this page is the one playing.
+    window.LakehorsePhoneBands = kind === 'box' ? null : function () { return backend.bands ? backend.bands() : null; };
     player.setTracks(trackNames);
     $('playVolume').value = Math.round(player.volume() * 100);
   }

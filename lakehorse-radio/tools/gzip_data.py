@@ -6,7 +6,8 @@ The text files (html, js, css, json) compress to a third or less.
 
 What it does, every time PlatformIO loads an environment that lists it:
   1. Copies data/ to <build dir>/data-gz/.
-  2. Replaces each text file with NAME.gz (deterministic bytes: no timestamp,
+  2. Joins the page's local scripts into bundle.js (one request instead of ten).
+     Replaces each text file with NAME.gz (deterministic bytes: no timestamp,
      no stored file name), unless the gzip would not be smaller.
   3. In index.html, adds ?v=<hash of that file> to the local script and
      stylesheet references. The static handler ignores query strings, so the
@@ -79,6 +80,38 @@ def version_references(html, hashes):
     return _REF.sub(swap, html)
 
 
+BUNDLE_NAME = "bundle.js"
+
+# A plain local classic script tag on its own: <script src="x.js"></script>.
+_SCRIPT = re.compile(r'[ \t]*<script src="(?P<name>[A-Za-z0-9_.\-]+\.js)"></script>[ \t]*\n?')
+
+
+def bundle_scripts(html, files):
+    """Replace the page's local script tags with one tag for a joined file.
+
+    Why: the box answers one request at a time at about 0.25 s each, so the
+    number of files costs more than their size. `files` maps name -> bytes.
+    Returns (new_html, bundle_bytes, bundled_names). The scripts are joined in
+    page order, each followed by a ';' line so a file that does not end in a
+    semicolon cannot run into the next. The one tag sits where the first script
+    was. Tags for files not in `files`, and remote scripts, are left alone.
+    """
+    names, parts = [], []
+
+    def swap(match):
+        name = match.group("name")
+        if name not in files:
+            return match.group(0)
+        names.append(name)
+        parts.append(files[name] + b"\n;\n")
+        if len(names) > 1:
+            return ""
+        return '  <script src="%s"></script>\n' % BUNDLE_NAME
+
+    new_html = _SCRIPT.sub(swap, html)
+    return new_html, b"".join(parts), names
+
+
 def stage(src_dir, dst_dir):
     """Build the staged copy. Returns a list of (name, plain_bytes, shipped_bytes, shipped_name)."""
     if os.path.exists(dst_dir):
@@ -99,6 +132,15 @@ def stage(src_dir, dst_dir):
     for name in names:
         with open(os.path.join(src_dir, name), "rb") as f:
             contents[name] = f.read()
+
+    if "index.html" in contents:
+        html, bundle, bundled = bundle_scripts(contents["index.html"].decode("utf-8"), contents)
+        if bundled:
+            contents["index.html"] = html.encode("utf-8")
+            for name in bundled:
+                del contents[name]
+            contents[BUNDLE_NAME] = bundle
+            names = sorted(contents)
 
     hashes = {n: file_hash(b) for n, b in contents.items() if n.lower().endswith((".js", ".css"))}
     if "index.html" in contents:

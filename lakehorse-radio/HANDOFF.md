@@ -739,3 +739,22 @@ Lengths 3 mod 4 are untested.
 - Playback to ML301 after the change: 6 s played, 0 underruns. Bluetooth left ON.
 
 **pageload.py** now gunzips index.html, flags short bodies, prints median.
+
+### Module 1 closed: scripts bundled, first load 1.0 s (2026-11-22)
+
+`tools/gzip_data.py` now joins the ten local scripts into one `bundle.js` at
+build time (page order, `\n;\n` between files; `bundle_scripts()`, 20 tests).
+The image holds 4 files: index.html.gz, bundle.js.gz (29,461 bytes), style.css.gz,
+playlist.json. `data/` is untouched, so the JS tests still load the separate files.
+
+**Measured, Bluetooth on, 7 rounds:** 3 requests, 34,005 bytes, median **1.02 s**
+(best 0.76, worst 3.50 once), 0 failed or short bodies. Was 3.22 s with 12
+requests. Page loaded in the in-app browser: no console errors, speaker panel
+shows ML301, 4 tracks listed. Firmware unchanged since the padding fix; only the
+LittleFS image was reflashed.
+
+**Caveats:** one script error now stops every script after it in the bundle.
+bundle.js has a 5-digit Content-Length, header 249 bytes (1 past a multiple of 4,
+a good length); recheck with `tools/pageload.py` if the headers or file set
+change (see the header-length bug above). iPhone 8 not timed by the owner (nothing
+visible to compare); Module 1 is accepted on the Mac numbers. Module 2 not started.

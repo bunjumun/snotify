@@ -1472,6 +1472,156 @@ class Input {
 }
 
 /* ======================================================================
+   Look — the dirty-world pass (2026-11-23).
+   The city was clean flat Lambert: every wall the same lit beige, every
+   road the same black, all clipped at 1.0 on screen. Two layers fix that,
+   and both are sized for the Lakehorse Radio box, which serves this one
+   file to phones over its own Wi-Fi, so nothing here adds a vendor file:
+   1. Grime, on every tier. Static city materials only (the van, traffic and
+      people move, and world-space noise would swim across them). A patch on
+      MeshLambertMaterial via onBeforeCompile: soot blotches, rain streaks
+      running down walls, a dark kick-line where walls meet the pavement,
+      and oily puddles on flat ground that go dark, reflect the sky at a
+      grazing angle and throw a sun glint. Phones get fewer noise octaves.
+   2. PostFX, desktop (quality 0) only. The scene renders into a half-float
+      4x MSAA target so lights can go past white, then: a four-level bloom
+      chain, ACES filmic tone mapping, a per-era grade (sepia moves here from
+      the old CSS filter, which cost a full-page composite every frame),
+      vignette, film grain, lens fringing at the edges and a zoom blur while
+      dashing. Phones get ACES on the renderer instead, which is free.
+   ====================================================================== */
+const LookConfig = {
+  grime: 1.0,          // overall dirt strength, 0 = the old clean city
+  wet: 0.75,           // puddle coverage strength on flat ground
+  hdrGlow: 3.2,        // additive glows and brake lights are multiplied by this under PostFX so they bloom
+  hdrPool: 1.35,       // textured additive light pools (lamps, headlights) cover a lot of screen; at 3.2 they blew out to a white disc
+  exposure: 1.0,       // into ACES; the stronger sun (key, below) already brings the brightness back
+  bloom: 0.55, bloomThreshold: 0.92,
+  vignette: 0.42, grain: 0.045, sat: 0.86,
+  lift: [0.02, 0.016, 0.012],  // brown-black floor: shadows read as soot, not void
+  gain: [1.04, 1.0, 0.93],     // warm, smoggy highlights
+  sepia: 0.72,                 // for eras with dec.sepia (40s, Depression)
+  ao: 0.75, aoRadius: 1.6,     // screen-space ambient occlusion: strength, and world radius in metres
+  fill: 0.65, key: 1.9,        // hemisphere and sun multipliers, applied on every tier
+};
+const LookUniforms = { uSkyHi: { value: new THREE.Color() }, uSkyLo: { value: new THREE.Color() }, uSunDir: { value: new THREE.Vector3(0.55, 0.78, 0.3).normalize() }, uWet: { value: LookConfig.wet }, uGrime: { value: LookConfig.grime } };
+const GRIME_HEAD = `
+varying vec3 vGW; varying vec3 vGN; float gWetM = 0.0;
+uniform vec3 uSkyHi; uniform vec3 uSkyLo; uniform vec3 uSunDir; uniform float uWet; uniform float uGrime;
+float gH(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float gN2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(gH(i), gH(i + vec2(1, 0)), f.x), mix(gH(i + vec2(0, 1)), gH(i + vec2(1, 1)), f.x), f.y); }
+float gFbm(vec2 p){ float a = .5, s = 0.0; for (int i = 0; i < GRIME_OCT; i++) { s += a * gN2(p); p = p * 2.03 + 17.1; a *= .5; } return s; }
+`;
+const GRIME_ALBEDO = `
+#include <map_fragment>
+{
+  float up = vGN.y, wall = 1.0 - abs(up), dist = length(cameraPosition - vGW);
+  float near = 1.0 - smoothstep(60.0, 220.0, dist);            // fine detail fades out before it can shimmer
+  float u = abs(vGN.x) > abs(vGN.z) ? vGW.z : vGW.x;           // running coordinate along a wall
+  vec2 pp = wall > 0.5 ? vec2(u, vGW.y) : vGW.xz;
+  float blot = gFbm(pp * 0.09), fine = gN2(pp * 1.7), grit = gN2(pp * 6.0);
+  float strip = floor(u * 1.8), lane = gH(vec2(strip, 7.0));     // one rain streak per ~55 cm strip, about half of them dirty
+  float edge = sin(fract(u * 1.8) * 3.14159);                     // soft sides, so a streak is a run, not a stripe
+  float run = smoothstep(0.35, 0.85, gN2(vec2(strip * 3.7, vGW.y * (0.05 + lane * 0.08))));
+  float streak = smoothstep(0.4, 0.9, lane) * run * edge * near * 1.3;
+  float kick = 1.0 - smoothstep(0.0, 3.6, vGW.y);                // soot splash where walls meet the pavement
+  float tone = gH(vec2(floor(u / 14.0), floor(vGW.y / 22.0) + 3.0)); // building-to-building weathering, so no two walls match
+  float dirt = clamp((blot - 0.38) * 1.9, 0.0, 1.0) * 0.6 + (streak * 0.85 + kick * 0.7 + tone * 0.25) * wall + (fine - 0.5) * 0.2 * near + (grit - 0.5) * 0.12 * near;
+  if (up > 0.9) dirt += smoothstep(0.62, 0.8, gFbm(vGW.xz * 0.35 + 9.0)) * 0.7; // oil and gum stains on flat ground
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.3, 0.26, 0.2), clamp(dirt * uGrime, 0.0, 1.0));
+  if (up > 0.9) { float pud = gFbm(vGW.xz * 0.11 + 3.1) + (grit - 0.5) * 0.08; gWetM = smoothstep(0.49, 0.555, pud) * uWet; diffuseColor.rgb *= 1.0 - gWetM * 0.7; }
+}`;
+const GRIME_WET = `
+if (gWetM > 0.0) {
+  vec3 V = normalize(cameraPosition - vGW);
+  float fr = 0.04 + 0.96 * pow(1.0 - clamp(V.y, 0.0, 1.0), 5.0);
+  vec3 refl = mix(uSkyLo, uSkyHi, clamp(V.y * 3.0, 0.0, 1.0)) * 0.85;
+  float glint = pow(max(dot(reflect(-V, vec3(0, 1, 0)), uSunDir), 0.0), 220.0) * 6.0;
+  outgoingLight = mix(outgoingLight, refl, gWetM * fr) + gWetM * glint * uSkyLo;
+}
+#include <opaque_fragment>`;
+/* Patch one static Lambert material in place. Safe to call twice; the cache key keeps phone and desktop programs apart. */
+function grimeMaterial(mat, octaves) {
+  if (!mat || !mat.isMeshLambertMaterial || mat.userData.grime) return;
+  mat.userData.grime = true;
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, LookUniforms);
+    sh.vertexShader = 'varying vec3 vGW; varying vec3 vGN;\n' + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+      vec4 gwp = vec4(transformed, 1.0); vec3 gwn = objectNormal;
+      #ifdef USE_INSTANCING
+        gwp = instanceMatrix * gwp; gwn = mat3(instanceMatrix) * gwn;
+      #endif
+      vGW = (modelMatrix * gwp).xyz; vGN = normalize(mat3(modelMatrix) * gwn);`);
+    sh.fragmentShader = `#define GRIME_OCT ${octaves}\n` + GRIME_HEAD + sh.fragmentShader.replace('#include <map_fragment>', GRIME_ALBEDO).replace('#include <opaque_fragment>', GRIME_WET);
+  };
+  mat.customProgramCacheKey = () => 'grime' + octaves;
+  mat.needsUpdate = true;
+}
+
+const FS_VERT = `varying vec2 vUv; void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+class PostFX {
+  constructor(renderer) {
+    this.r = renderer; const ext = renderer.extensions, hdr = ext.has('EXT_color_buffer_half_float') || ext.has('EXT_color_buffer_float');
+    const type = hdr ? THREE.HalfFloatType : THREE.UnsignedByteType; this.hdr = hdr;
+    this.rt = new THREE.WebGLRenderTarget(1, 1, { type, samples: 4 }); this.rt.depthTexture = new THREE.DepthTexture(1, 1); this.rt.depthTexture.type = THREE.UnsignedIntType;
+    this.levels = [0, 1, 2, 3].map(() => new THREE.WebGLRenderTarget(1, 1, { type, depthBuffer: false }));
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+    this.quad = new THREE.Mesh(g); this.quad.frustumCulled = false; this.qs = new THREE.Scene(); this.qs.add(this.quad); this.qc = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const base = { vertexShader: FS_VERT, depthTest: false, depthWrite: false, toneMapped: false };
+    this.down = new THREE.ShaderMaterial({ ...base, uniforms: { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uThresh: { value: 0 }, uFirst: { value: 0 } }, fragmentShader: `
+      uniform sampler2D tSrc; uniform vec2 uTexel; uniform float uThresh, uFirst; varying vec2 vUv;
+      void main() { vec2 o = uTexel; vec3 c = texture2D(tSrc, vUv).rgb * 4.0
+        + texture2D(tSrc, vUv + vec2(-o.x, -o.y)).rgb + texture2D(tSrc, vUv + vec2(o.x, -o.y)).rgb
+        + texture2D(tSrc, vUv + vec2(-o.x, o.y)).rgb + texture2D(tSrc, vUv + vec2(o.x, o.y)).rgb; c /= 8.0;
+        if (uFirst > 0.5) { float l = max(c.r, max(c.g, c.b)); float k = clamp(l - uThresh + 0.25, 0.0, 0.5); k = k * k * 2.0; c *= max(k, l - uThresh) / max(l, 1e-4); }
+        gl_FragColor = vec4(c, 1.0); }` });
+    this.comp = new THREE.ShaderMaterial({ ...base, uniforms: {
+      tScene: { value: null }, tDepth: { value: null }, uAO: { value: LookConfig.ao }, uAORad: { value: LookConfig.aoRadius }, uProjY: { value: 1 }, uNear: { value: 0.5 }, uFar: { value: 2400 }, tB0: { value: null }, tB1: { value: null }, tB2: { value: null }, tB3: { value: null }, uRes: { value: new THREE.Vector2() },
+      uBloom: { value: LookConfig.bloom }, uExpo: { value: LookConfig.exposure }, uTime: { value: 0 }, uDash: { value: 0 }, uSepia: { value: 0 }, uSat: { value: LookConfig.sat },
+      uVig: { value: LookConfig.vignette }, uGrain: { value: LookConfig.grain }, uLift: { value: new THREE.Vector3(...LookConfig.lift) }, uGain: { value: new THREE.Vector3(...LookConfig.gain) } }, fragmentShader: `
+      uniform sampler2D tScene, tDepth, tB0, tB1, tB2, tB3; uniform float uAO, uAORad, uProjY, uNear, uFar; uniform vec2 uRes; uniform float uBloom, uExpo, uTime, uDash, uSepia, uSat, uVig, uGrain; uniform vec3 uLift, uGain; varying vec2 vUv;
+      vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+      vec3 b4(sampler2D t, vec2 uv, vec2 p) { return 0.25 * (texture2D(t, uv + vec2(-p.x, -p.y)).rgb + texture2D(t, uv + vec2(p.x, -p.y)).rgb + texture2D(t, uv + vec2(-p.x, p.y)).rgb + texture2D(t, uv + vec2(p.x, p.y)).rgb); }
+      float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+      vec3 toSRGB(vec3 c) { return mix(1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, c * 12.92, step(c, vec3(0.0031308))); }
+      float lin(vec2 uv) { float z = texture2D(tDepth, uv).x * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear)); }
+      /* Depth-only SSAO: ten taps on a per-pixel rotated spiral, radius fixed in metres so it shrinks with distance.
+         Crude next to a normal-buffer SAO, but boxes and kerbs are exactly where it looks right, and it costs no extra scene pass. */
+      float ssao(vec2 uv) {
+        float c = lin(uv); if (c > 300.0) return 1.0;
+        float rpx = uAORad * uProjY * 0.5 * uRes.y / c, a0 = h12(gl_FragCoord.xy) * 6.2832, occ = 0.0;
+        for (int i = 0; i < 10; i++) { float t = (float(i) + 0.5) / 10.0, a = a0 + float(i) * 2.39996; vec2 o = vec2(cos(a), sin(a)) * rpx * t / uRes;
+          float dz = c - lin(uv + o); occ += smoothstep(0.05, 0.4, dz) * (1.0 - smoothstep(uAORad * 0.8, uAORad * 2.5, dz)); }
+        return 1.0 - uAO * occ / 10.0 * (1.0 - smoothstep(120.0, 300.0, c));
+      }
+      void main() {
+        vec2 uv = vUv, d = uv - 0.5; float ca = (0.0012 + uDash * 0.006) * dot(d, d) * 4.0;
+        vec3 col = vec3(texture2D(tScene, uv - d * ca).r, texture2D(tScene, uv).g, texture2D(tScene, uv + d * ca).b);
+        if (uDash > 0.01) { vec3 acc = col; for (int i = 1; i < 8; i++) acc += texture2D(tScene, 0.5 + d * (1.0 - float(i) * 0.014 * uDash)).rgb; col = acc / 8.0; }
+        col *= ssao(uv); vec2 px = 1.0 / uRes;
+        col += (b4(tB0, uv, px * 2.0) * 0.5 + b4(tB1, uv, px * 4.0) * 0.7 + b4(tB2, uv, px * 8.0) * 0.9 + b4(tB3, uv, px * 16.0) * 1.1) * uBloom;
+        col = aces(col * uExpo);
+        float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        col = mix(vec3(l), col, uSat); col = mix(col, vec3(l) * vec3(1.08, 0.93, 0.72), uSepia);
+        col = col * uGain + uLift * (1.0 - col);
+        col *= 1.0 - uVig * smoothstep(0.3, 0.95, length(d * vec2(1.15, 1.0)));
+        col = toSRGB(clamp(col, 0.0, 1.0)) + (h12(gl_FragCoord.xy + fract(uTime * 7.31) * 517.0) - 0.5) * uGrain;
+        gl_FragColor = vec4(col, 1.0); }` });
+  }
+  setSize(w, h, dpr) {
+    const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr)); this.rt.setSize(W, H); this.comp.uniforms.uRes.value.set(W, H);
+    this.levels.forEach((t, i) => t.setSize(Math.max(1, W >> (i + 1)), Math.max(1, H >> (i + 1))));
+  }
+  render(scene, camera, time, dash, sepia) {
+    const r = this.r; r.setRenderTarget(this.rt); r.clear(); r.render(scene, camera);
+    let src = this.rt; this.quad.material = this.down; const U = this.down.uniforms;
+    this.levels.forEach((t, i) => { U.tSrc.value = src.texture; U.uTexel.value.set(1 / src.width, 1 / src.height); U.uFirst.value = i === 0 ? 1 : 0; U.uThresh.value = LookConfig.bloomThreshold; r.setRenderTarget(t); r.render(this.qs, this.qc); src = t; });
+    const C = this.comp.uniforms; C.tScene.value = this.rt.texture; C.tDepth.value = this.rt.depthTexture; C.uProjY.value = camera.projectionMatrix.elements[5]; C.uNear.value = camera.near; C.uFar.value = camera.far; this.levels.forEach((t, i) => { C['tB' + i].value = t.texture; }); C.uTime.value = time; C.uDash.value = dash; C.uSepia.value = sepia;
+    this.quad.material = this.comp; r.setRenderTarget(null); r.render(this.qs, this.qc);
+  }
+}
+
+/* ======================================================================
    Game — state machine and glue
    ====================================================================== */
 class Game {
@@ -1479,10 +1629,13 @@ class Game {
     this.q = LOW ? 1 : 0; this.perf = { acc: 0, n: 0, ms: 0 }; this.portrait = false; this.inplay = false; this.ingame = false;
     this.save = Save.load(); this.state = 'title'; this.diff = Difficulties.middle; this.startIdx = 0; this.mode = 'normal';
     this.renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: true, powerPreference: 'high-performance' }); this.renderer.setPixelRatio(this.pixelRatio()); this.renderer.autoClear = false; this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = LookConfig.exposure * 1.1;
+    /* PostFX on desktop only; ?post forces it on a phone for testing, ?nopost turns it off. See Look above. */
+    this.post = (!LOW || /[?&]post\b/.test(location.search)) && !/[?&]nopost\b/.test(location.search) ? new PostFX(this.renderer) : null; this.glowScan = 0;
     this.scene = new THREE.Scene(); this.camera = new THREE.PerspectiveCamera(GameConfig.cam.fov, 1, 0.5, 2400); this.chase = new ChaseCamera(this.camera);
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0); this.sun = new THREE.DirectionalLight(0xffffff, 1.0); this.sun.position.set(0.4, 1, 0.3); this.scene.add(this.hemi, this.sun, this.sun.target);
     /* Shadows: one sun shadow map that follows the van, so the dazzle walls throw real dazzle-lit shade across the street. Desktop only (LOW skips it entirely). */
-    if (!LOW) { this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; const s = this.sun.shadow; this.sun.castShadow = true; s.mapSize.set(2048, 2048); s.camera.left = s.camera.bottom = -85; s.camera.right = s.camera.top = 85; s.camera.near = 10; s.camera.far = 420; s.bias = -0.0006; s.normalBias = 0.35; }
+    if (!LOW) { this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFShadowMap; const s = this.sun.shadow; this.sun.castShadow = true; s.mapSize.set(2048, 2048); s.camera.left = s.camera.bottom = -85; s.camera.right = s.camera.top = 85; s.camera.near = 10; s.camera.far = 420; s.bias = -0.0006; s.normalBias = 0.35; }
     this.sunDir = new THREE.Vector3(0.55, 0.78, 0.3).normalize();
     this.skyGeo = new THREE.SphereGeometry(1500, 20, 14); this.skyMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }); this.sky = new THREE.Mesh(this.skyGeo, this.skyMat); this.scene.add(this.sky);
     this.stars = null; this.audio = new SynthAudio(); this.hud = new HUD(); this.arrow = new NavArrow(); this.input = new Input(this);
@@ -1495,12 +1648,12 @@ class Game {
   /* Quality 0 is the desktop look, unchanged. See QUALITY at the top. */
   pixelRatio() { return Math.min(devicePixelRatio || 1, QUALITY[this.q].pr); }
   fogFar(dec) { return (dec.night ? 330 : 430) * QUALITY[this.q].fog; }
-  setQuality(q) { this.q = q; if (q > 0) this.sun.castShadow = false; this.renderer.setPixelRatio(this.pixelRatio()); if (this.scene.fog) this.scene.fog.far = this.fogFar(this.decade); this.resize(); console.info('[quality] level', q, 'after avg frame', this.perf.ms.toFixed(1), 'ms'); }
+  setQuality(q) { this.q = q; if (q > 0) { this.sun.castShadow = false; if (this.post) { this.post = null; $('gl').style.filter = this.decade.sepia ? 'sepia(.85) contrast(1.1) saturate(.8)' : 'none'; } } this.renderer.setPixelRatio(this.pixelRatio()); if (this.scene.fog) this.scene.fog.far = this.fogFar(this.decade); this.resize(); console.info('[quality] level', q, 'after avg frame', this.perf.ms.toFixed(1), 'ms'); }
   syncBody() {
     const c = document.body.classList; c.toggle('portrait', this.portrait); this.ingame = ['play', 'pause', 'trans', 'dead'].includes(this.state); c.toggle('ingame', this.ingame);
     const ip = this.state === 'play'; if (ip !== this.inplay) { this.inplay = ip; c.toggle('inplay', ip); if (!ip) this.input.releaseTouch(); }
   }
-  resize() { const w = innerWidth, h = innerHeight; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); const dpr = this.pixelRatio(); this.portrait = TOUCH && h > w; this.syncBody(); this.fx.width = w * dpr; this.fx.height = h * dpr; this.fxg.setTransform(dpr, 0, 0, dpr, 0, 0); this.fxW = w; this.fxH = h; }
+  resize() { const w = innerWidth, h = innerHeight; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); const dpr = this.pixelRatio(); this.portrait = TOUCH && h > w; this.syncBody(); this.fx.width = w * dpr; this.fx.height = h * dpr; this.fxg.setTransform(dpr, 0, 0, dpr, 0, 0); this.fxW = w; this.fxH = h; if (this.post) this.post.setSize(w, h, dpr); }
 
   /* ---- title / menus ---- */
   buildTitle() {
@@ -1527,7 +1680,11 @@ class Game {
     this.W = CityBuilder.build(dec, seed); this.wq = new WorldQuery(this.W); this.scene.add(this.W.group);
     const rng = mulberry32(seed * 7 + 3); this.rng = rng;
     this.scene.fog = new THREE.Fog(dec.fog, 90, this.fogFar(dec)); this.hemi.color.set(dec.sky[1]).lerp(new THREE.Color(0xffffff), 0.35); this.hemi.groundColor.set(dec.ground).lerp(new THREE.Color(0x888888), 0.4); this.hemi.intensity = dec.night ? 0.95 : 1.15; this.sun.color.set(dec.night ? '#8fa0ff' : '#fff2d8'); this.sun.intensity = dec.night ? 0.7 : 1.05;
-    this.paintSky(dec); document.body.style.setProperty('--accent', dec.accent); $('gl').style.filter = dec.sepia ? 'sepia(.85) contrast(1.1) saturate(.8)' : 'none';
+    /* Under filmic tone mapping the highlights roll off instead of clipping, so the sun can carry the scene: less flat sky fill, more key light, harder shade. */
+    this.hemi.intensity *= LookConfig.fill; this.sun.intensity *= LookConfig.key;
+    this.paintSky(dec); document.body.style.setProperty('--accent', dec.accent); $('gl').style.filter = dec.sepia && !this.post ? 'sepia(.85) contrast(1.1) saturate(.8)' : 'none';
+    LookUniforms.uWet.value = LookConfig.wet * (dec.night ? 1.3 : 1); LookUniforms.uSkyHi.value.set(dec.sky[0]); LookUniforms.uSkyLo.value.set(dec.sky[1]); LookUniforms.uSunDir.value.copy(this.sunDir);
+    this.W.group.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => grimeMaterial(m, this.q === 0 ? 3 : 2)); }); this.glowScan = 0;
     this.traffic = new Traffic(this.scene, this.W, this.q > 0 ? { ...dec, traffic: Math.ceil(dec.traffic * QUALITY[this.q].traffic) } : dec, rng); this.peds = new Pedestrians(this.scene, this.W, dec, rng, QUALITY[this.q].peds); this.targets = new TargetManager(this.scene, this.W, dec, rng); this.orders = new OrderManager(this.scene, this.W, rng);
     this.carMesh = buildVan(dec, rng); this.scene.add(this.carMesh);
     this.car.reset(this.W.cRoad(4) - GameConfig.LANE, this.W.cRoad(4) - 20, 0); this.chase.snap(this.car); this.chase.init = false;
@@ -1696,13 +1853,19 @@ class Game {
       const m = this.carMesh; m.position.set(car.x, car.y, car.z); m.rotation.set(car.pitch, car.h, car.roll, 'YXZ'); m.userData.flames.visible = car.boostT > 0; m.userData.flames.scale.z = 0.8 + Math.random() * 0.6;
       const U = m.userData, inp = this.input.state; U.wheels.forEach(w => { w.rotation.x = car.wheelSpin; });
       this.steerVis = damp(this.steerVis || 0, inp.steer * 0.45, 14, dt); U.wheels[0].rotation.y = U.wheels[1].rotation.y = this.steerVis;
-      const braking = inp.brake > 0.05 && car.vf > 1; U.tail.color.setRGB(braking ? 1 : 0.55, braking ? 0.18 : 0.07, braking ? 0.18 : 0.07);
+      const braking = inp.brake > 0.05 && car.vf > 1; U.tail.color.setRGB(braking ? 1 : 0.55, braking ? 0.18 : 0.07, braking ? 0.18 : 0.07).multiplyScalar(this.post ? LookConfig.hdrGlow : 1);
     }
     if (this.sun.castShadow) { const c = this.state === 'title' ? { x: 0, z: 0 } : car; this.sun.target.position.set(c.x, 0, c.z); this.sun.position.set(c.x, 0, c.z).addScaledVector(this.sunDir, 220); }
     if (this.clouds) { this.clouds.position.copy(this.camera.position); this.clouds.position.y = 0; this.clouds.rotation.y += dt * 0.004; }
     this.sky.position.copy(this.camera.position); if (this.stars) this.stars.position.copy(this.camera.position);
     this.sparks.update(dt); this.smoke.update(dt); this.fumes.update(dt);
-    r.setScissorTest(false); r.setViewport(0, 0, innerWidth, innerHeight); r.clear(); r.render(this.scene, this.camera);
+    r.setScissorTest(false); r.setViewport(0, 0, innerWidth, innerHeight);
+    if (this.post) {
+      /* Additive glows (pillars, beams, flames, lamp pools, sparks) are pushed past white once each so the bloom finds them; rescanned each second because orders and particles bring new ones. */
+      this.glowScan -= dt; if (this.glowScan <= 0) { this.glowScan = 1; this.scene.traverse(o => { const m = o.material; if (m && !Array.isArray(m) && m.blending === THREE.AdditiveBlending && m.color && !m.userData.hdr) { m.userData.hdr = true; m.color.multiplyScalar(m.map ? LookConfig.hdrPool : LookConfig.hdrGlow); } }); }
+      const dash = this.state === 'play' ? clamp(car.boostT / GameConfig.car.boostTime, 0, 1) : 0;
+      this.post.render(this.scene, this.camera, this.time, dash, this.decade.sepia ? LookConfig.sepia : 0); r.setViewport(0, 0, innerWidth, innerHeight);
+    } else { r.clear(); r.render(this.scene, this.camera); }
     if (this.state !== 'title' && this.arrow.visible && this.hudVisible()) {
       const rc = $('navwrap').getBoundingClientRect(); r.setScissorTest(true); r.setViewport(rc.left, innerHeight - rc.bottom, rc.width, rc.height); r.setScissor(rc.left, innerHeight - rc.bottom, rc.width, rc.height); r.clearDepth(); r.render(this.arrow.scene, this.arrow.cam); r.setScissorTest(false);
     }

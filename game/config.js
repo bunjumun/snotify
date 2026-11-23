@@ -1249,10 +1249,19 @@ export const CFG = {
   quality: {
     default: 'auto',
     dprClamp: 2,
+    // `dpr` caps the pixel ratio per level. The final pass runs a bloom shader on
+    // every screen pixel, so on a 2x phone (iPhone 8: ~1M pixels) it is the cost
+    // that frame time scales with; 'min' is where the sampler below ends up when
+    // 'low' still is not enough.
     levels: {
-      low:  { postScale: 0.5, particleScale: 0.4, godrays: false, fishScale: 0.5 },
-      high: { postScale: 1.0, particleScale: 1.0, godrays: true,  fishScale: 1.0 },
+      min:  { postScale: 0.5, particleScale: 0.25, godrays: false, fishScale: 0.5, dpr: 1.0 },
+      low:  { postScale: 0.5, particleScale: 0.4, godrays: false, fishScale: 0.5, dpr: 1.5 },
+      high: { postScale: 1.0, particleScale: 1.0, godrays: true,  fishScale: 1.0, dpr: 2.0 },
     },
+    // Frame sampler: mean frame time over `windowSec` above `slowMs` steps one
+    // level down (high > low > min). Never steps back up, so it cannot oscillate.
+    // Frames over `ignoreMs` are a backgrounded tab or a load hitch, not a rate.
+    adapt: { windowSec: 3, slowMs: 26, ignoreMs: 250 },
   },
 
   // ---------- Palette ----------

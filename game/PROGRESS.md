@@ -160,3 +160,8 @@ already in people's hands open it with no hop and nothing to go stale.
 ## House style, non-negotiable
 
 Every module opens with a prose header explaining why it is shaped the way it is, often naming what was tried and what broke. Comment density is high, spelling is British, comments justify rather than restate. Every tunable lives in `config.js` with its own rationale. Frame-rate independence via `1 - Math.exp(-rate * dt)`. Shaders inline, always paired with `customProgramCacheKey`. **No em dashes in player-facing copy:** rewrite the sentence, do not swap in a comma.
+
+## Phone performance pass (2026-11-23, on the box SD, not committed, not tried on an iPhone 8)
+- Reported laggy on iPhone 8. Found: no frame sampler existed (only a comment), final bloom pass ran at 2x DPR, canvas MSAA on though the scene renders to Post's offscreen target.
+- Now: `CFG.quality.levels` has `dpr` per level (high 2, low 1.5, new `min` 1) and `CFG.quality.adapt` (mean frame over 3 s above 26 ms steps down high > low > min, never up; frames over 250 ms ignored). `Game._adaptQuality`, `_pixelRatio`; `antialias:false`. Checked by driving `_adaptQuality` with 40 ms frames: high > low > min, dpr 1. `Game.perfMs` is the last window mean.
+- Untested on a real phone. If still laggy at min: next suspects are the HalfFloat render target and the bloom shader's per-pixel cost (Post.js FRAG).

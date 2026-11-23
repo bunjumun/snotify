@@ -105,7 +105,9 @@ export class Game {
   _initRenderer() {
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: true,
+      // Off: the scene is drawn into Post's offscreen target (no MSAA there), so canvas
+      // antialiasing would only smooth one fullscreen triangle, at 2x DPR, for nothing.
+      antialias: false,
       powerPreference: 'high-performance',
       stencil: false,
     });
@@ -113,6 +115,7 @@ export class Game {
     // times the pixels of a 1x screen, which no amount of shader thrift survives.
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, CFG.quality.dprClamp));
     this.renderer.setSize(innerWidth, innerHeight);
+    this.perfAcc = 0; this.perfN = 0;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = CFG.lights.exposure;
@@ -466,8 +469,27 @@ export class Game {
    * fixed when the world is built, so changing quality mid-run affects the
    * picture immediately and the population on the next load.
    */
+  /** Pixel ratio for the current level, never above the global clamp. */
+  _pixelRatio() {
+    const cap = CFG.quality.levels[this.quality]?.dpr ?? CFG.quality.dprClamp;
+    return Math.min(devicePixelRatio, CFG.quality.dprClamp, cap);
+  }
+
+  /** Step down one level when the recent mean frame time is too slow. Call once per frame with the raw dt. */
+  _adaptQuality(dt) {
+    const A = CFG.quality.adapt;
+    if (dt * 1000 > A.ignoreMs) return;
+    this.perfAcc += dt; this.perfN++;
+    if (this.perfAcc < A.windowSec) return;
+    const meanMs = (this.perfAcc / this.perfN) * 1000;
+    this.perfAcc = 0; this.perfN = 0; this.perfMs = meanMs;
+    const next = { high: 'low', low: 'min' }[this.quality];
+    if (meanMs > A.slowMs && next) { this.setQuality(next); this.resize(); }
+  }
+
   setQuality(level) {
     this.quality = level;
+    this.renderer.setPixelRatio(this._pixelRatio());
     this.post.setQuality(level);
     this.particles.setQuality(level);
     this.smoke.setQuality(level);
@@ -477,7 +499,7 @@ export class Game {
 
   resize() {
     const w = innerWidth, h = innerHeight;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, CFG.quality.dprClamp));
+    this.renderer.setPixelRatio(this._pixelRatio());
     this.renderer.setSize(w, h);
     this.rig.resize(w / h);
     this.post.resize();
@@ -496,6 +518,7 @@ export class Game {
       return;
     }
 
+    this._adaptQuality(dt);
     this.input.update(dt);
     // During the cinematic the player is a passenger — the orbit is the payoff
     // for the run, and fighting the camera through it would spoil it.

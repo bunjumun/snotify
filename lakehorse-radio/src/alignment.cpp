@@ -10,6 +10,8 @@ const uint16_t kPointsFull = 100;
 const uint16_t kPointsPartial = 10;
 const uint16_t kPointsClear = 100;
 const uint16_t kPointsAttempt = 5;
+const uint16_t kPointsDemoClear = 10;   // 10% of a clear. Demo never sets the level's cleared bit.
+const uint16_t kPointsDemoAttempt = 1;  // 10% of 5 is 0.5; counters are integers, so it rounds up to 1
 const uint16_t kNodePoints = 100;
 const uint16_t kNodeCount = 64;
 const uint16_t kMaxPoints = kNodePoints * kNodeCount;  // 6400
@@ -27,13 +29,15 @@ uint16_t pointsFor(Result r) {
     case Result::Partial: return kPointsPartial;
     case Result::Clear: return kPointsClear;
     case Result::Attempt: return kPointsAttempt;
+    case Result::DemoClear: return kPointsDemoClear;
+    case Result::DemoAttempt: return kPointsDemoAttempt;
   }
   return 0;
 }
 
 bool resultFitsSource(Source s, Result r) {
   if (s == Source::Song) return r == Result::Full || r == Result::Partial;
-  return r == Result::Clear || r == Result::Attempt;
+  return r == Result::Clear || r == Result::Attempt || r == Result::DemoClear || r == Result::DemoAttempt;
 }
 
 // Strict 0..kMaxLevelId, digits only.

@@ -72,6 +72,34 @@ void twenty_attempts_land_on_100() {
   TEST_ASSERT_EQUAL_UINT16(100, c.points());
 }
 
+void demo_play_earns_a_tenth_and_never_ticks_the_level() {
+  Counter c; FakeStorage s; Clock k; c.begin(&s);
+  TEST_ASSERT_EQUAL_UINT16(10, level(c, k, "6", Result::DemoClear).added);
+  TEST_ASSERT_EQUAL_HEX32(0, c.levelsCleared());
+  TEST_ASSERT_EQUAL_UINT16(1, level(c, k, "6", Result::DemoAttempt).added);
+  TEST_ASSERT_EQUAL_UINT16(11, c.points());
+  TEST_ASSERT_EQUAL_UINT16(10, level(c, k, "6", Result::DemoClear).added);  // replays count, like a real clear
+  TEST_ASSERT_EQUAL_HEX32(0, s.levels);
+}
+
+void demo_results_only_fit_levels() {
+  Counter c; FakeStorage s; Clock k; c.begin(&s);
+  TEST_ASSERT_EQUAL(Outcome::Invalid, song(c, k, "A.wav", Result::DemoClear).outcome);
+  TEST_ASSERT_EQUAL(Outcome::Invalid, song(c, k, "A.wav", Result::DemoAttempt).outcome);
+  TEST_ASSERT_EQUAL_UINT16(0, c.points());
+}
+
+void demo_repeat_inside_the_window_is_ignored_and_does_not_block_a_real_clear() {
+  Counter c; FakeStorage s;
+  c.begin(&s);
+  TEST_ASSERT_EQUAL(Outcome::Credited, c.submit(Source::Level, "2", Result::DemoClear, 1000).outcome);
+  TEST_ASSERT_EQUAL(Outcome::Repeat, c.submit(Source::Level, "2", Result::DemoClear, 2000).outcome);
+  const EventResult real = c.submit(Source::Level, "2", Result::Clear, 2001);
+  TEST_ASSERT_EQUAL(Outcome::Credited, real.outcome);
+  TEST_ASSERT_EQUAL_UINT16(100, real.added);
+  TEST_ASSERT_EQUAL_HEX32(1u << 2, c.levelsCleared());
+}
+
 void a_clear_is_100_not_105_and_sets_its_bit() {
   Counter c; FakeStorage s; Clock k; c.begin(&s);
   const EventResult r = level(c, k, "5", Result::Clear);
@@ -265,6 +293,9 @@ int main(int, char**) {
   RUN_TEST(a_bad_save_starts_at_zero_and_a_huge_one_is_clamped);
   RUN_TEST(a_failed_write_still_counts_in_memory);
   RUN_TEST(works_without_storage);
+  RUN_TEST(demo_play_earns_a_tenth_and_never_ticks_the_level);
+  RUN_TEST(demo_results_only_fit_levels);
+  RUN_TEST(demo_repeat_inside_the_window_is_ignored_and_does_not_block_a_real_clear);
   RUN_TEST(leaving_rules);
   RUN_TEST(unflagged_or_unreadable_band_list_never_flags);
   RUN_TEST(phone_songs_must_match_a_playlist_title);

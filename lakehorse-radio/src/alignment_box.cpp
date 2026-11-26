@@ -85,6 +85,8 @@ const char* resultName(Result r) {
     case Result::Partial: return "partial";
     case Result::Clear: return "clear";
     case Result::Attempt: return "attempt";
+    case Result::DemoClear: return "demo-clear";
+    case Result::DemoAttempt: return "demo-attempt";
   }
   return "?";
 }

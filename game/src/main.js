@@ -134,6 +134,8 @@ let audio = null;
 audioReady.then((a) => { audio = a; });
 
 let started = false;
+// Leaving mid-run (tab closed, demo exited by reload) is an attempt if it lasted ten seconds.
+addEventListener('pagehide', () => { if (started && game.state === 'play') game.reportAttempt(); });
 /**
  * Demo: the autopilot plays on the easy tank with the lighter already in hand and the tutorial skipped, and nothing it
  * does is saved. Started from the button (sound unlocks on that tap) or by ?demo (sound waits for the first gesture).

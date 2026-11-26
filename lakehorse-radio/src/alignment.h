@@ -20,6 +20,8 @@ extern const uint16_t kPointsFull;      // flagged song played to the end
 extern const uint16_t kPointsPartial;   // flagged song left after passing the half
 extern const uint16_t kPointsClear;     // level cleared
 extern const uint16_t kPointsAttempt;   // level attempt that ended without a clear
+extern const uint16_t kPointsDemoClear;    // a level cleared by the demo autopilot: a tenth of kPointsClear
+extern const uint16_t kPointsDemoAttempt;  // a demo attempt: a tenth of kPointsAttempt, rounded up to one point
 extern const uint16_t kNodePoints;      // points per node
 extern const uint16_t kMaxPoints;       // the full bar (64 nodes)
 extern const uint16_t kNodeCount;
@@ -29,7 +31,7 @@ extern const uint8_t kMaxLevelId;       // level ids are 0..kMaxLevelId (bit in 
 extern const size_t kMaxIdLength;
 
 enum class Source : uint8_t { Song, Level };
-enum class Result : uint8_t { Full, Partial, Clear, Attempt };
+enum class Result : uint8_t { Full, Partial, Clear, Attempt, DemoClear, DemoAttempt };
 enum class Outcome : uint8_t { Credited, Repeat, Invalid };
 
 struct EventResult {

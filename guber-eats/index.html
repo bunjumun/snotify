@@ -275,6 +275,13 @@ function money(n, signed = false) {
   return s + '$' + body;
 }
 const $ = (id) => document.getElementById(id);
+/* Alignment points (lakehorse-radio/ALIGNMENT-BRIEF.md). Only on the box, which sets window.LAKEHORSE_BOX. Level ids: the decades 0..8 in order,
+   the Depression is Decades.list.length (9); the Swimulator is 16. A demo run sends demo=1: a tenth of the credit, and it never ticks the level. */
+const Align = {
+  url(id, result, demo) { return `/api/alignment/event?source=level&id=${id}&result=${result}${demo ? '&demo=1' : ''}`; },
+  post(id, result, demo) { if (!window.LAKEHORSE_BOX) return; try { fetch(this.url(id, result, demo), { method: 'POST', keepalive: true }).catch(() => {}); } catch (e) { /* never touch the game */ } },
+};
+const ATTEMPT_MIN_S = 10;
 const IDLE_INPUT = Object.freeze({ throttle: 0, brake: 0, steer: 0, hand: false });
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
 
@@ -1837,6 +1844,7 @@ class Game {
     $('btnDemo').onclick = () => this.startDemo(true); $('btnStart').onclick = () => this.startRun('normal'); $('btnResume').onclick = () => this.pause(false); $('btnQuit').onclick = () => this.toTitle();
   }
   toTitle() {
+    this.endAttempt();
     this.state = 'title'; this.hud.show(false); ['scPause', 'scOver'].forEach(i => $(i).classList.add('hide')); $('scTitle').classList.remove('hide'); $('slot').classList.add('hide'); this.audio.stopAll(); this.save = Save.load(); this.buildTitle();
     this.clearRun(); this.loadDecade(Decades.list[0], 1940);
   }
@@ -1881,20 +1889,21 @@ class Game {
   startRun(mode) {
     this.audio.init(); this.mode = mode; const dec = mode === 'depression' ? Decades.depression : Decades.list[this.startIdx]; this.delivered = 0; this.runDecadeIdx = mode === 'depression' ? -1 : this.startIdx;
     this.eco = new Economy(this.diff, dec); this.loadDecade(dec, mode === 'depression' ? 1930 : dec.year); this.car.health = 100; this.car.reset(this.W.cRoad(4) - GameConfig.LANE, this.W.cRoad(4) - 20, 0); this.chase.snap(this.car);
-    $('scTitle').classList.add('hide'); $('scOver').classList.add('hide'); $('scPause').classList.add('hide'); this.hud.show(true); this.state = 'play'; this.audio.setDecade(dec); this.last = performance.now(); this.hud.lastWorth = null; this.stats = { smashed: 0, tickets: 0 };
+    $('scTitle').classList.add('hide'); $('scOver').classList.add('hide'); $('scPause').classList.add('hide'); this.hud.show(true); this.state = 'play'; this.audio.setDecade(dec); this.last = performance.now(); this.levelT = 0; this.hud.lastWorth = null; this.stats = { smashed: 0, tickets: 0 };
     this.hud.banner(dec.id, dec.tag + (mode === 'depression' ? ' · SURVIVE' : ' · ' + GameConfig.order.quota + ' DELIVERIES'), 3000);
   }
   nextDecade() {
-    this.state = 'trans'; this.transT = 4.2; const idx = this.runDecadeIdx + 1; this.save.maxDecade = Math.max(this.save.maxDecade, Math.min(idx, Decades.list.length - 1)); Save.write(this.save);
+    this.clearLevel(); this.state = 'trans'; this.transT = 4.2; const idx = this.runDecadeIdx + 1; this.save.maxDecade = Math.max(this.save.maxDecade, Math.min(idx, Decades.list.length - 1)); Save.write(this.save);
     if (idx >= Decades.list.length) { this.victory(); return; }
     this.hud.banner(this.decade.id + ' COMPLETE', 'NEXT: ' + Decades.list[idx].id + ': ' + Decades.list[idx].tag, 3800); this.audio.arpeggio(true); this.pendingIdx = idx;
   }
   applyPending() {
-    const idx = this.pendingIdx, dec = Decades.list[idx]; this.runDecadeIdx = idx; this.delivered = 0; this.eco.setDecade(dec); this.loadDecade(dec, dec.year); this.car.health = Math.min(100, this.car.health + 30);
+    const idx = this.pendingIdx, dec = Decades.list[idx]; this.runDecadeIdx = idx; this.levelT = 0; this.delivered = 0; this.eco.setDecade(dec); this.loadDecade(dec, dec.year); this.car.health = Math.min(100, this.car.health + 30);
     this.car.reset(this.W.cRoad(4) - GameConfig.LANE, this.W.cRoad(4) - 20, 0); this.chase.snap(this.car); this.audio.setDecade(dec); this.state = 'play'; this.last = performance.now();
     this.hud.banner(dec.id, dec.tag, 3000);
   }
   victory(survived) {
+    if (survived) this.clearLevel();
     this.state = 'over'; this.audio.stopAll(); this.hud.show(false); const e = this.eco.estate(); const unlocked = !survived && !this.save.depressionUnlocked;
     if (!survived) { this.save.depressionUnlocked = true; this.save.maxDecade = Decades.list.length - 1; }
     this.save.bestWorth = Math.max(this.save.bestWorth, Math.round(this.eco.worth)); Save.write(this.save);
@@ -1906,7 +1915,7 @@ class Game {
     $('scOver').classList.remove('hide'); const d = $('oDep'); if (d) d.onclick = () => this.startRun('depression'); $('oMenu').onclick = () => this.toTitle(); this.audio.arpeggio(true);
   }
   die(cause) {
-    if (this.state !== 'play') return; this.state = 'dead'; this.deadT = 2.0; this.car.dead = true; this.car.health = 0; this.audio.explosion(); this.audio.stopAll(); this.hud.flash(); this.carMesh.visible = false; this.orders.cancel();
+    if (this.state !== 'play') return; this.endAttempt(); this.state = 'dead'; this.deadT = 2.0; this.car.dead = true; this.car.health = 0; this.audio.explosion(); this.audio.stopAll(); this.hud.flash(); this.carMesh.visible = false; this.orders.cancel();
     const c = this.carMesh.position; for (let i = 0; i < 80; i++) { const a = Math.random() * 6.28, s = 4 + Math.random() * 16; this.sparks.emit(c.x, c.y + 1, c.z, Math.cos(a) * s, 4 + Math.random() * 12, Math.sin(a) * s, 0.8 + Math.random(), i % 3 ? 0xffa530 : 0xffffff, 12); }
     for (let i = 0; i < 30; i++) this.smoke.emit(c.x, c.y + 1, c.z, (Math.random() - .5) * 6, 2 + Math.random() * 5, (Math.random() - .5) * 6, 1.8, 0x888888, -1);
     this.causeText = cause;
@@ -1947,6 +1956,10 @@ class Game {
     if (full && before < GameConfig.doink.needed) { this.hud.callout('DOINK READY', 'gold'); this.hud.banner('DOINK READY', 'Drive into a giant DOINK (green beam)', 3200); this.audio.arpeggio(true); }
   }
   /** The hit: pull (van stops), rise (camera lifts, world starts to bend), hold (full effect), taper (control back, effect fades). Order timers and money drain are frozen until the taper. */
+  /** Alignment: the level id of the run in progress, and a clear or an attempt (10 s or more, no clear) reported to the box. */
+  levelId() { return this.mode === 'depression' ? Decades.list.length : this.runDecadeIdx; }
+  clearLevel() { this.levelT = 0; Align.post(this.levelId(), 'clear', !!this.demo); }
+  endAttempt() { if (this.levelT >= ATTEMPT_MIN_S && this.mode) Align.post(this.levelId(), 'attempt', !!this.demo); this.levelT = 0; }
   startTrip(d) {
     const K = GameConfig.doink; this.trip = { ph: 'pull', t: 0, d }; this.chase.orbit = true; this.audio.doinkHit(); this.hud.flash(); this.chase.shake = 0.5;
     this.hud.callout(Math.random() < 0.25 ? "HONKIN' DOINK!" : 'DOINK!', 'gold'); this.hud.banner('DOINK', 'Hold on.', (K.pull + K.rise) * 1000);
@@ -1970,7 +1983,7 @@ class Game {
   startDemo(armed) {
     this.demo = new Autopilot(armed); Save.noWrite = true; this.startRun('normal'); this.hud.banner('DEMO', armed ? 'Any key or touch to exit' : 'Tap or press a key to start the sound', 4000);
   }
-  exitDemo() { this.demo = null; Save.noWrite = false; this.toTitle(); }
+  exitDemo() { this.endAttempt(); this.demo = null; Save.noWrite = false; this.toTitle(); }
   onPickup(o) { this.hud.callout('GOT ' + o.item + '!', 'gold'); this.hud.banner('PICKED UP: ' + o.item, 'For ' + o.who + ' · ' + Math.round(o.total) + 's', 2600); this.audio.arpeggio(true); }
   onDeliver(r) {
     this.eco.earn(r.total); this.delivered++; this.car.health = Math.min(100, this.car.health + this.diff.heal); this.audio.ding(true);
@@ -1994,6 +2007,7 @@ class Game {
   /* ---- per-frame ---- */
   update(dt) {
     if (this.demo) { this.demo.think(this, dt); if (this.demo.dash) this.doBoost(); }
+    this.levelT = (this.levelT || 0) + dt;
     const lock = !!this.trip && this.trip.ph !== 'taper', inp = lock ? IDLE_INPUT : this.input.state, car = this.car, G = this; this.billCd = Math.max(0, (this.billCd || 0) - dt);
     const sub = Math.ceil(dt / 0.0167), sdt = dt / sub;
     for (let i = 0; i < sub; i++) {

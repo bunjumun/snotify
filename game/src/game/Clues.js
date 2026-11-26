@@ -38,6 +38,7 @@ import { CFG } from '../../config.js';
 import { GuideFish } from '../entities/Fish.js';
 import { Chest } from '../entities/Chest.js';
 import { LoreFeed } from './LoreFeed.js';
+import { reportLevel, SWIM_LEVEL_ID } from '../core/Box.js';
 
 // Public by design — see supabase/schema-v19.sql. lore_active() serves only the
 // draft the band deliberately promoted, which is why it needs no password.
@@ -408,6 +409,7 @@ export class Clues {
     const g = this.game;
 
     g.progress.markChestFound(g.runSeconds);
+    if (!g.levelDone) { g.levelDone = true; reportLevel(SWIM_LEVEL_ID, 'clear', !!g.demo); }
     g.audio?.sfx('chest');
     g.rig.addShake(0.3);
     g.bubbles.burst(this.chest.position.x, this.chest.position.y + 1, this.chest.position.z, 30, 1.2);

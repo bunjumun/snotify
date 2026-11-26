@@ -189,7 +189,7 @@ void handleGetPlaylist(AsyncWebServerRequest* request) {
   sendJson(request, 200, stored);
 }
 
-// POST /api/alignment/event?source=song|level&id=...&result=full|partial|clear|attempt
+// POST /api/alignment/event?source=song|level&id=...&result=full|partial|clear|attempt[&demo=1]
 // Phone-mode songs and every level report here (ALIGNMENT-BRIEF.md). A song id
 // is accepted only if it is a title in the playlist or a band-list file on the card; a level
 // id is a number 0..31. Answers with the new total; a repeat of the same event
@@ -212,6 +212,12 @@ void handleAlignmentEvent(AsyncWebServerRequest* request) {
   else if (res == "clear") result = alignment::Result::Clear;
   else if (res == "attempt") result = alignment::Result::Attempt;
   else { sendError(request, 400, "result must be full, partial, clear or attempt"); return; }
+  // demo=1: the autopilot played. A tenth of the credit, and a clear never ticks the level.
+  if (request->hasParam("demo") && request->getParam("demo")->value() == "1") {
+    if (result == alignment::Result::Clear) result = alignment::Result::DemoClear;
+    else if (result == alignment::Result::Attempt) result = alignment::Result::DemoAttempt;
+    else { sendError(request, 400, "demo only applies to level clear or attempt"); return; }
+  }
   if (id.length() == 0 || id.length() > alignment::kMaxIdLength) {
     sendError(request, 400, "id is empty or too long");
     return;

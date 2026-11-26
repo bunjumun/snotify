@@ -40,6 +40,7 @@ import { Post } from '../fx/Post.js';
 
 import { Difficulty } from '../game/Difficulty.js';
 import { Progress } from '../game/Progress.js';
+import { reportLevel, SWIM_LEVEL_ID } from './Box.js';
 import { Breath, BreathState } from '../game/Breath.js';
 import { Stash } from '../game/Stash.js';
 import { Trip, TripPhase } from '../game/Trip.js';
@@ -410,6 +411,13 @@ export class Game {
     return { position: pos, yaw: Math.atan2(-dx, -dz) };
   }
 
+  /** An attempt of at least ten seconds that did not clear is worth a little to the box's alignment counter. Demo play counts a tenth. */
+  reportAttempt() {
+    if (this.levelDone || this.runSeconds < 10) return;
+    this.levelDone = true;
+    reportLevel(SWIM_LEVEL_ID, 'attempt', !!this.demo);
+  }
+
   respawn() {
     const spawn = this._spawnPose();
     this.kelpie.reset(spawn.position, spawn.yaw);
@@ -426,6 +434,7 @@ export class Game {
     this.post.trip = 0;
     this.post.panic = 0;
     this.runSeconds = 0;      // what markChestFound() records as a best time
+    this.levelDone = false;   // a clear was reported this run, so leaving is not also an attempt
     this.progress.countRun();
   }
 
@@ -441,6 +450,7 @@ export class Game {
   die() {
     if (this.state === State.DEAD) return;
     this.state = State.DEAD;
+    this.reportAttempt();
     this.trip.cancel();
     // Dying mid-pull is near impossible (the hit refills the tank), but the
     // death screen watches her sink for as long as he leaves it there, and a

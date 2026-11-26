@@ -123,3 +123,13 @@ All edits live in the main folders (`guber-eats/`, `game/`), so the site copy ca
 
 ## Next-of-kin gift card on death (2026-11-25)
 - `showEstate()`: when the final balance is positive, the estate screen's satire block now opens with "You died with $X ... enter your next of kin's name and address so we can send them a Guber Eats gift card for that amount", two `data-joke` inputs (name, address). Same satire rules as the card fields: read by nothing, stored nowhere, sent nowhere, wiped on Retry / Main menu. A negative balance is unchanged (no kin block).
+
+## NPC vehicles + faster demo (2026-11-26)
+- Why: the player drove minutes without meeting another vehicle. The old fleet was one kind of car seeded uniformly over the whole map (about one car per km of lane). `Traffic` is rewritten; every number is in `GameConfig.npc`.
+- Kinds: car, bus, truck (heavy: shove you below `heavyWreck` m/s instead of wrecking), moto (fast, weaves in its lane), parked (curb obstacles), cop, rival. About 40 per run on desktop (14 cars, 3 bus, 3 truck, 4 moto, 11 parked, 3 cop, 2 rival); `?low`/q>0 gets 1 cop, 1 rival, half the parked.
+- Density: the fleet is seeded around the start and any vehicle more than `recycleDist` (280 m) away is re-seeded 45 to 230 m out, so encounters are constant. Beyond `drawDist` (240 m) meshes are hidden.
+- Cops: `Game.heat` rises on hitting vehicles over 8 m/s (+0.45) and pedestrians (+0.6), decays 0.035/s. Above 0.25 cops within 250 m chase along the street grid (`steerLane`, no building clipping); contact is a BUSTED fine (`eco.wage * 40`, heat reset), not a wreck.
+- Rivals: Guber vans that go for the pickup nearest the player when you hold no order and take it within 18 m (`OrderManager.steal`, 30 s cooldown per rival). Ramming one pays a stunt.
+- Bug fixed on the way: the collision normal in `Traffic.update` pointed the wrong way (pushed car and van together, threw the wreck at the player).
+- Demo autopilot: cruise 48 (was 42), brakes late for pickups/drops on a stopping curve (it crawled the last 40 m at dT*0.2) and for street corners, steers round vehicles and slows only to what the gap needs (was a crawl to 4 m/s), dashes more often, drops a stuck optional goal for 20 s. Demo damage is x0.4. Headless 180 s run: avg 25.7 m/s (was 14.7), 2 deliveries, health 85, no errors.
+- Not checked: how it looks with sound, cops' siren (silent), real phone, the box under the heavier scene (heap before/after not measured), long soak. Demo can still die on a bad street; it auto-restarts.

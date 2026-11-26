@@ -301,6 +301,17 @@ const GameConfig = {
   car: { radius: 1.45, accel: 30, brake: 46, drag: 0.32, maxSpeed: 40, boostMax: 62, reverseMax: 12,
          steer: 2.5, gripNormal: 10, gripDrift: 1.05, gravity: 24, boostImpulse: 16, boostTime: 0.9, boostCd: 2.2 },
   cam: { dist: 11.5, height: 4.8, fov: 62, lag: 9 },
+  /* NPC fleet (2026-11-25). Counts are multiples of the decade's `traffic` figure (the old single-kind fleet, which was too
+     sparse to ever meet). `r` is the contact radius, `mass` scales crash damage and wreck throw; mass above 1.4 means a shove
+     rather than a wreck below `heavyWreck` m/s. The fleet is kept within `recycleDist` of the player, `drawDist` is the cull. */
+  npc: {
+    car: 1.2, bus: .18, truck: .18, moto: .3, parked: .9, cops: 3, rivals: 2,
+    speed: { car: [10, 16], bus: [7, 10], truck: [8, 12], moto: [17, 23], cop: [12, 15], rival: [21, 25] },
+    r: { car: 3.1, bus: 4.4, truck: 3.9, moto: 2.1, cop: 3.1, rival: 3.4, parked: 3.1 },
+    mass: { car: 1, bus: 2.4, truck: 1.9, moto: .45, cop: 1.15, rival: 1.2, parked: 1 },
+    heavyWreck: 20, spawnMin: 45, spawnMax: 230, recycleDist: 280, drawDist: 240,
+    copHeat: .25, chaseRange: 250, copTop: 38, heatPerHit: .45, heatPerPed: .6, heatDecay: .035, fine: 40, stealCd: 30, stealRadius: 18,
+  },
   /* 20 min of play = 1 year (to be tuned by play). Month = seconds/12 (rent due), quarter = seconds/4 (insurance premium billed), year = tax return. */
   year: { seconds: 1200, months: 12 },
   rentShare: 0.45, // the share of the cost-of-living burn that is rent: charged as a lump each month instead of trickling
@@ -957,7 +968,21 @@ const CAR_STYLES = {
   suv: { len: 4.7, wid: 2.1, hgt: 1.05, cl: 2.9, ch: .85, co: -.4, wr: .52, fins: false },
   crossover: { len: 4.5, wid: 2.0, hgt: .95, cl: 2.6, ch: .8, co: -.3, wr: .48, fins: false },
   ev: { len: 4.7, wid: 2.0, hgt: .8, cl: 2.5, ch: .7, co: -.3, wr: .46, fins: false },
+  bus: { len: 10.5, wid: 2.6, hgt: 2.0, cl: 8.6, ch: .7, co: 0, wr: .55, fins: false },
+  truck: { len: 8, wid: 2.4, hgt: 2.3, cl: 1.9, ch: .9, co: 2.8, wr: .55, fins: false },
+  van: { len: 5.2, wid: 2.1, hgt: 1.45, cl: 2.3, ch: .6, co: 1.2, wr: .5, fins: false },
 };
+/** A motorbike with rider: two wheels, a frame, a hunched accent-coloured rider. Same userData contract as buildCar. */
+function buildMoto(skinTex, accent) {
+  const g = new THREE.Group(), own = [], frame = new THREE.MeshLambertMaterial({ map: skinTex }), dark = new THREE.MeshLambertMaterial({ color: 0x0b0b0d }), rider = new THREE.MeshLambertMaterial({ color: accent }), skin = new THREE.MeshLambertMaterial({ color: 0xd8b49a });
+  own.push(frame, dark, rider, skin);
+  const box = (w, h, l, m, x, y, z) => { const geo = new THREE.BoxGeometry(w, h, l); own.push(geo); const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); g.add(o); return o; };
+  box(.4, .45, 1.5, frame, 0, .7, 0); box(.5, .35, .7, frame, 0, .98, .25); box(.55, .8, .4, rider, 0, 1.4, -.25);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.22, 8, 6), skin); head.position.set(0, 1.95, -.1); g.add(head); own.push(head.geometry);
+  const wg = new THREE.CylinderGeometry(.38, .38, .18, 12); wg.rotateZ(Math.PI / 2); own.push(wg); const wheels = [];
+  for (const z of [.85, -.85]) { const w = new THREE.Mesh(wg, dark); w.position.set(0, .38, z); g.add(w); wheels.push(w); }
+  g.userData = { wheels, flames: new THREE.Group(), own, S: { wid: .7, len: 2.1, hgt: 1, wr: .38, ch: 0, co: 0 } }; return g;
+}
 function buildCar(styleName, skinTex, accent, isPlayer) {
   const S = CAR_STYLES[styleName] || CAR_STYLES.coupe, g = new THREE.Group(), own = [];
   const bodyMat = new THREE.MeshLambertMaterial({ map: skinTex }), glass = new THREE.MeshLambertMaterial({ color: 0x14161c, emissive: 0x05060a }), tire = new THREE.MeshLambertMaterial({ color: 0x0b0b0d });
@@ -1278,57 +1303,130 @@ class Particles {
 }
 
 /* ======================================================================
-   Traffic — lane followers that honk, brake and swerve; get wrecked when hit.
+   Traffic — the NPC fleet. Lane followers that honk, brake and swerve; get wrecked when hit.
+   2026-11-25: it used to be one kind of car, seeded uniformly over the whole map, so a player who drove for minutes could
+   meet none (about one car per kilometre of lane). Now there are seven kinds (see GameConfig.npc) and the fleet is kept
+   near the player: anything that falls more than `recycleDist` behind is re-seeded 45..230 m out, and the whole fleet is
+   seeded around the start. The sign of the collision normal was also backwards (it pushed car and van together and threw
+   the wreck at the player); it is the car-to-player direction now.
+   Kinds: car, bus and truck (heavy: shove you instead of wrecking at low speed), moto (fast, weaves inside its lane),
+   parked (curb-side obstacles), cop (patrols; chases along the street grid while `heat` is up; contact = fined),
+   rival (a Guber van that races you to the pickups and takes one when it gets close).
    ====================================================================== */
 class Traffic {
-  constructor(scene, W, dec, rng) {
-    this.scene = scene; this.W = W; this.rng = rng; this.cars = []; this.group = new THREE.Group(); scene.add(this.group); this.ext = W.E - 6; this.skins = [];
+  constructor(scene, W, dec, rng, home, lite) {
+    this.scene = scene; this.W = W; this.rng = rng; this.cars = []; this.group = new THREE.Group(); scene.add(this.group); this.ext = W.E - 6; this.skins = []; this.t = 0; this.home = home;
     const pal = [[dec.light, dec.dark], [dec.dark, dec.light], [dec.accent, dec.dark], [dec.light, dec.accent]];
     for (const [l, d] of pal) this.skins.push(makeTexture(dazzleCanvas(128, 128, { light: l, dark: d, panelMin: .18, panelMax: .4, bandMin: 6, bandMax: 14, rng })));
+    this.copSkin = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); g.fillStyle = '#0d0d11'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#f0f0f0'; g.fillRect(0, 22, 64, 24); return makeTexture(c); })();
     this.styles = dec.id === '2020s' || dec.id === '2010s' ? ['crossover', 'suv', 'ev', 'hatch'] : [dec.style, dec.style, dec.style === 'coupe' ? 'wagon' : dec.style];
-    const lanes = []; for (let i = 0; i <= W.N; i++) { const c = W.cRoad(i); lanes.push({ axis: 'z', dir: 1, fixed: c - GameConfig.LANE }, { axis: 'z', dir: -1, fixed: c + GameConfig.LANE }, { axis: 'x', dir: 1, fixed: c + GameConfig.LANE }, { axis: 'x', dir: -1, fixed: c - GameConfig.LANE }); }
-    lanes.forEach(l => l.speed = 10 + rng() * 6); this.lanes = lanes;
-    for (let n = 0; n < dec.traffic; n++) {
-      const lane = lanes[Math.floor(rng() * lanes.length)], mesh = buildCar(this.styles[n % this.styles.length], this.skins[n % this.skins.length], dec.accent, false); this.group.add(mesh); mesh.traverse(o => { if (o.isMesh && o.material.blending !== THREE.AdditiveBlending) o.castShadow = true; });
-      this.cars.push({ mesh, lane, s: (rng() * 2 - 1) * this.ext, lat: 0, tlat: 0, speed: lane.speed, state: 'drive', honkCd: 0, nearCd: 0, vx: 0, vz: 0, spin: 0, wreckT: 0, x: 0, z: 0, yaw: 0 });
+    const lanes = [], N = GameConfig.npc; this.laneKey = new Map();
+    for (let i = 0; i <= W.N; i++) { const c = W.cRoad(i); lanes.push({ axis: 'z', dir: 1, fixed: c - GameConfig.LANE, c, i }, { axis: 'z', dir: -1, fixed: c + GameConfig.LANE, c, i }, { axis: 'x', dir: 1, fixed: c + GameConfig.LANE, c, i }, { axis: 'x', dir: -1, fixed: c - GameConfig.LANE, c, i }); }
+    for (const l of lanes) this.laneKey.set(l.axis + l.dir + ':' + l.i, l);
+    this.lanes = lanes;
+    const base = dec.traffic, plan = [], add = (kind, n) => { for (let k = 0; k < n; k++) plan.push(kind); };
+    add('car', Math.round(base * N.car)); add('bus', Math.ceil(base * N.bus)); add('truck', Math.ceil(base * N.truck)); add('moto', Math.ceil(base * N.moto));
+    add('parked', Math.round(base * N.parked * (lite ? .5 : 1))); add('cop', lite ? 1 : N.cops); add('rival', lite ? 1 : N.rivals);
+    plan.forEach((kind, n) => {
+      const mesh = this.build(kind, n, dec); this.group.add(mesh); mesh.traverse(o => { if (o.isMesh && o.material.blending !== THREE.AdditiveBlending) o.castShadow = true; });
+      const c = { kind, mesh, r: N.r[kind], mass: N.mass[kind], lane: lanes[0], s: 0, lat: 0, tlat: 0, speed: 0, cruise: 0, state: 'drive', honkCd: 0, nearCd: 0, hitCd: 0, turnCd: 0, stealCd: 6 + rng() * 10, hold: 0, phase: rng() * 6.28, vx: 0, vz: 0, spin: 0, wreckT: 0, x: 0, z: 0, yaw: 0, vyaw: 0, chasing: false, idle: null };
+      this.cars.push(c); this.respawn(c, null, true);
+    });
+  }
+  build(kind, n, dec) {
+    const sk = this.skins[n % this.skins.length];
+    if (kind === 'moto') return buildMoto(sk, dec.accent);
+    if (kind === 'bus' || kind === 'truck') return buildCar(kind, sk, dec.accent, false);
+    if (kind === 'rival') return buildCar('van', this.skins[2], dec.accent, true);
+    if (kind === 'cop') {
+      const m = buildCar(this.styles[0], this.copSkin, dec.accent, false), S = m.userData.S, own = m.userData.own, y = S.wr + S.hgt + S.ch + .1;
+      const red = new THREE.MeshBasicMaterial({ color: 0x300808 }), blue = new THREE.MeshBasicMaterial({ color: 0x080830 }), bg = new THREE.BoxGeometry(.55, .16, .3); own.push(red, blue, bg);
+      const a = new THREE.Mesh(bg, red), b = new THREE.Mesh(bg, blue); a.position.set(-.3, y, S.co); b.position.set(.3, y, S.co); m.add(a, b); m.userData.bar = [red, blue]; return m;
     }
-    this.cars.forEach(c => this.place(c));
+    return buildCar(this.styles[n % this.styles.length], sk, dec.accent, false);
   }
   place(c) {
     const l = c.lane; if (l.axis === 'z') { c.x = l.fixed + c.lat; c.z = c.s; c.yaw = l.dir > 0 ? 0 : Math.PI; } else { c.z = l.fixed + c.lat; c.x = c.s; c.yaw = l.dir > 0 ? Math.PI / 2 : -Math.PI / 2; }
   }
-  respawn(c, avoid) {
-    c.lane = this.lanes[Math.floor(this.rng() * this.lanes.length)]; c.speed = c.lane.speed; c.lat = c.tlat = 0; c.state = 'drive'; c.spin = 0;
-    for (let tries = 0; tries < 8; tries++) { c.s = (this.rng() * 2 - 1) * this.ext; this.place(c); if (!avoid || Math.hypot(c.x - avoid.x, c.z - avoid.z) > 90) break; }
+  /** Put a vehicle back on a random lane 45..230 m from `around` (the player; the start point when there is none). */
+  respawn(c, around, first) {
+    const N = GameConfig.npc, ctr = around && around.x < 9e4 ? around : this.home, k = c.kind;
+    c.state = k === 'parked' ? 'parked' : 'drive'; c.spin = 0; c.lat = c.tlat = 0; c.hold = 0; c.chasing = false; c.idle = null; c.hitCd = 0; c.turnCd = 0;
+    const sp = N.speed[k] || [0, 0]; c.cruise = sp[0] + this.rng() * (sp[1] - sp[0]); c.speed = c.cruise;
+    for (let tries = 0; tries < 16; tries++) {
+      c.lane = this.lanes[Math.floor(this.rng() * this.lanes.length)]; c.lat = c.tlat = 0;
+      const along = c.lane.axis === 'z' ? ctr.z : ctr.x; c.s = clamp(along + (this.rng() * 2 - 1) * N.spawnMax, -this.ext, this.ext); this.place(c);
+      const d = Math.hypot(c.x - ctr.x, c.z - ctr.z); if (d > N.spawnMin && d < N.spawnMax) break;
+    }
+    if (k === 'parked') { c.lat = Math.sign(c.lane.fixed - c.lane.c) * (GameConfig.ROAD / 2 - 1.9 - GameConfig.LANE); c.speed = 0; this.place(c); }
+    c.vyaw = c.yaw; if (first) { c.mesh.position.set(c.x, 0, c.z); c.mesh.rotation.set(0, c.yaw, 0); }
+  }
+  roadIndex(v) { return clamp(Math.round(v / this.W.P + this.W.N / 2), 0, this.W.N); }
+  /** Grid pursuit: at each intersection pick the street that closes the gap to (tx, tz), or turn round if it is behind. */
+  steerLane(c, tx, tz) {
+    if (c.turnCd > 0) return; const l = c.lane, z = l.axis === 'z', along = z ? c.z : c.x, j = this.roadIndex(along);
+    if (Math.abs(along - this.W.cRoad(j)) > 3.2) return;
+    const offAlong = z ? tz - c.z : tx - c.x, offCross = z ? tx - c.x : tz - c.z; let next = null;
+    if (Math.abs(offCross) > 10 && Math.abs(offCross) > Math.abs(offAlong) * 0.6) next = this.laneKey.get((z ? 'x' : 'z') + Math.sign(offCross) + ':' + j);
+    else if (Math.abs(offAlong) > 14 && Math.sign(offAlong) !== l.dir) next = this.laneKey.get(l.axis + (-l.dir) + ':' + l.i);
+    if (!next) return;
+    if (next.axis !== l.axis) { c.s = next.axis === 'x' ? c.x : c.z; c.lat = (next.axis === 'x' ? c.z : c.x) - next.fixed; } else c.lat = (z ? c.x : c.z) - next.fixed;
+    c.lane = next; c.tlat = 0; c.turnCd = 1.5;
+  }
+  /** What a rival van is after: the pickup the player would take, once its steal cooldown is up. Null goal = idle wander. */
+  rivalGoal(c, player, hooks, dt) {
+    const N = GameConfig.npc, list = hooks.pickups ? hooks.pickups() : null; c.stealCd = Math.max(0, c.stealCd - dt);
+    if (!list || !list.length || c.stealCd > 0 || player.x > 9e4) {
+      if (!c.idle || Math.hypot(c.idle.x - c.x, c.idle.z - c.z) < 30) c.idle = this.W.spots[Math.floor(this.rng() * this.W.spots.length)];
+      c.hold = 0; return { x: c.idle.x, z: c.idle.z, cruise: c.cruise };
+    }
+    let best = null, bd = 1e9; for (const r of list) { const d = Math.hypot(r.x - player.x, r.z - player.z); if (d < bd) { bd = d; best = r; } }
+    const d = Math.hypot(best.x - c.x, best.z - c.z);
+    if (d < N.stealRadius) { c.hold += dt; if (c.hold > .4 && hooks.steal && hooks.steal(best, c)) { c.stealCd = N.stealCd; c.hold = 0; } return { x: best.x, z: best.z, cruise: Math.max(5, d * .6) }; }
+    c.hold = 0; return { x: best.x, z: best.z, cruise: N.speed.rival[1] + 3 };
   }
   update(dt, player, hooks) {
+    this.t += dt; const N = GameConfig.npc, far = player.x > 9e4, heat = hooks.heat ? hooks.heat() : 0;
     for (const c of this.cars) {
-      c.honkCd = Math.max(0, c.honkCd - dt); c.nearCd = Math.max(0, c.nearCd - dt);
+      c.honkCd = Math.max(0, c.honkCd - dt); c.nearCd = Math.max(0, c.nearCd - dt); c.hitCd = Math.max(0, c.hitCd - dt); c.turnCd = Math.max(0, c.turnCd - dt);
       if (c.state === 'wreck') {
         c.x += c.vx * dt; c.z += c.vz * dt; c.vx *= Math.exp(-1.6 * dt); c.vz *= Math.exp(-1.6 * dt); c.yaw += c.spin * dt; c.spin *= Math.exp(-1.2 * dt); c.wreckT -= dt;
-        if (c.wreckT <= 0) this.respawn(c, player); c.mesh.rotation.set(0, c.yaw, 0.0); c.mesh.position.set(c.x, 0, c.z); continue;
+        if (c.wreckT <= 0) this.respawn(c, far ? null : player); c.mesh.rotation.set(0, c.yaw, 0.0); c.mesh.position.set(c.x, 0, c.z); continue;
       }
-      const l = c.lane, fwdX = l.axis === 'x' ? l.dir : 0, fwdZ = l.axis === 'z' ? l.dir : 0, rx = player.x - c.x, rz = player.z - c.z, d = Math.hypot(rx, rz);
-      let target = l.speed;
-      const ahead = rx * fwdX + rz * fwdZ, side = l.axis === 'z' ? rx : rz;
-      if (d < 26 && ahead > -4 && ahead < 22 && Math.abs(side) < 5) { target = player.speed > 6 ? Math.min(target, Math.max(0, ahead - 6)) : 0; if (c.honkCd <= 0) { hooks.honk(clamp(1 - d / 30, .2, 1)); c.honkCd = 3 + Math.random() * 2; } }
-      if (d < 20 && Math.abs(side) < 7 && player.speed > 12) { const sg = side > 0 ? -1 : 1; c.tlat = clamp(sg * 2.6, -3, 3) * (ahead > -2 ? 1 : 0.4); } else c.tlat = 0;
-      for (const o of this.cars) { if (o === c || o.lane !== l || o.state !== 'drive') continue; const gap = (o.s - c.s) * l.dir; if (gap > 0 && gap < 11) target = Math.min(target, o.speed * 0.8); }
-      c.speed = damp(c.speed, target, target < c.speed ? 4 : 1.2, dt); c.lat = damp(c.lat, c.tlat, 4, dt); c.s += c.speed * l.dir * dt;
-      if (c.s > this.ext) c.s = -this.ext; if (c.s < -this.ext) c.s = this.ext; this.place(c);
-      c.mesh.rotation.set(0, c.yaw + clamp(c.tlat - c.lat, -1, 1) * -0.12 * l.dir, 0); c.mesh.position.set(c.x, 0, c.z);
+      let d = far ? 1e5 : Math.hypot(player.x - c.x, player.z - c.z);
+      if (!far && d > N.recycleDist && !c.chasing) { this.respawn(c, player); d = Math.hypot(player.x - c.x, player.z - c.z); }
+      const rx = player.x - c.x, rz = player.z - c.z; let fwdX = 0, fwdZ = 0, ahead = 0, side = 0;
+      if (c.state === 'drive') {
+        c.chasing = c.kind === 'cop' && heat > N.copHeat && !far && d < N.chaseRange;
+        let goal = null; if (c.chasing) goal = { x: player.x, z: player.z, cruise: clamp(player.speed * 1.05 + 4, 20, N.copTop) }; else if (c.kind === 'rival') goal = this.rivalGoal(c, player, hooks, dt);
+        if (goal) this.steerLane(c, goal.x, goal.z);
+        const l = c.lane; fwdX = l.axis === 'x' ? l.dir : 0; fwdZ = l.axis === 'z' ? l.dir : 0; ahead = rx * fwdX + rz * fwdZ; side = l.axis === 'z' ? rx : rz;
+        let target = goal ? goal.cruise : c.cruise; c.tlat = c.kind === 'moto' ? Math.sin(this.t * .9 + c.phase) * 2.3 : 0;
+        if (!c.chasing) {
+          if (d < 26 && ahead > -4 && ahead < 22 && Math.abs(side) < 5) { target = player.speed > 6 ? Math.min(target, Math.max(0, ahead - 6)) : 0; if (c.honkCd <= 0) { hooks.honk(clamp(1 - d / 30, .2, 1)); c.honkCd = 3 + Math.random() * 2; } }
+          if (d < 20 && Math.abs(side) < 7 && player.speed > 12) { const sg = side > 0 ? -1 : 1; c.tlat = clamp(sg * 2.6, -3, 3) * (ahead > -2 ? 1 : 0.4); }
+        }
+        for (const o of this.cars) { if (o === c || o.lane !== l || o.state !== 'drive') continue; const gap = (o.s - c.s) * l.dir; if (gap > 0 && gap < 6 + c.r * 1.4) target = Math.min(target, o.speed * 0.8); }
+        c.speed = damp(c.speed, target, target < c.speed ? 4 : 1.2, dt); c.lat = damp(c.lat, c.tlat, 4, dt); c.s += c.speed * l.dir * dt;
+        if (c.s > this.ext) c.s = -this.ext; if (c.s < -this.ext) c.s = this.ext;
+      }
+      this.place(c); c.vyaw = dampAngle(c.vyaw, c.yaw, 10, dt);
+      c.mesh.rotation.set(0, c.vyaw + clamp(c.tlat - c.lat, -1, 1) * -0.12 * (c.lane.dir || 1), 0); c.mesh.position.set(c.x, 0, c.z); c.mesh.visible = d < N.drawDist;
+      if (c.mesh.userData.bar) { const on = c.chasing && Math.floor(this.t * 8) % 2 === 0, bar = c.mesh.userData.bar; bar[0].color.setHex(c.chasing ? (on ? 0xff2020 : 0x300808) : 0x300808); bar[1].color.setHex(c.chasing ? (on ? 0x080830 : 0x2060ff) : 0x080830); }
       // near miss: close pass at speed without touching
-      if (c.nearCd <= 0 && d < 3.9 && d > 2.6 && Math.hypot(player.vx - fwdX * c.speed, player.vz - fwdZ * c.speed) > 14 && player.grounded) { c.nearCd = 2; hooks.nearMiss(); }
+      if (c.nearCd <= 0 && d < c.r + .8 && d > c.r - .5 && Math.hypot(player.vx - fwdX * c.speed, player.vz - fwdZ * c.speed) > 14 && player.grounded) { c.nearCd = 2; hooks.nearMiss(); }
       // collision
-      if (d < 3.1 && player.grounded) {
-        const nx = rx !== 0 || rz !== 0 ? -rx / d : 1, nz = d > 0 ? -rz / d : 0, rel = Math.hypot(player.vx - (c.state === 'drive' ? fwdX * c.speed : 0), player.vz - (c.state === 'drive' ? fwdZ * c.speed : 0));
-        const push = 3.1 - d; player.x += nx * push * 0.8; player.z += nz * push * 0.8; c.x -= nx * push * 0.2; c.z -= nz * push * 0.2;
+      if (d < c.r && player.grounded) {
+        const nx = d > 1e-6 ? rx / d : 1, nz = d > 1e-6 ? rz / d : 0, rel = Math.hypot(player.vx - fwdX * c.speed, player.vz - fwdZ * c.speed); // n: from the other vehicle to the player
+        const push = c.r - d; player.x += nx * push * 0.8; player.z += nz * push * 0.8; c.x -= nx * push * 0.2; c.z -= nz * push * 0.2;
         const pn = player.vx * nx + player.vz * nz; if (pn < 0) { player.vx -= 1.5 * pn * nx; player.vz -= 1.5 * pn * nz; }
-        c.state = 'wreck'; c.vx = -nx * rel * 0.8 + fwdX * c.speed * 0.5; c.vz = -nz * rel * 0.8 + fwdZ * c.speed * 0.5; c.spin = (Math.random() - .5) * 6; c.wreckT = 3; hooks.hit(rel, c.x, c.z, nx, nz);
+        if (c.chasing && hooks.bust) { hooks.bust(c); c.speed *= .3; if (c.hitCd <= 0) { c.hitCd = .7; hooks.hit(rel * .3, c.x, c.z, -nx, -nz, c); } continue; } // a bust is a fine, not a wreck
+        if (c.mass > 1.4 && rel < N.heavyWreck) { c.speed *= 0.5; if (c.hitCd <= 0) { c.hitCd = .7; hooks.hit(rel * (1 + (c.mass - 1) * .5), c.x, c.z, -nx, -nz, c); } }
+        else { c.state = 'wreck'; c.vx = nx * -rel * 0.8 / c.mass + fwdX * c.speed * 0.5; c.vz = nz * -rel * 0.8 / c.mass + fwdZ * c.speed * 0.5; c.spin = (Math.random() - .5) * 6; c.wreckT = 3; hooks.hit(rel * c.mass, c.x, c.z, -nx, -nz, c); }
       }
     }
   }
-  dispose() { this.scene.remove(this.group); this.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); this.cars.forEach(c => c.mesh.userData.own.forEach(d => d.dispose && d.dispose())); this.skins.forEach(t => t.dispose()); }
+  dispose() { this.scene.remove(this.group); this.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); this.cars.forEach(c => c.mesh.userData.own.forEach(d => d.dispose && d.dispose())); this.skins.forEach(t => t.dispose()); this.copSkin.dispose(); }
 }
 
 /* ======================================================================
@@ -1506,6 +1604,8 @@ class OrderManager {
     G.onDeliver({ pay, bonus, tips, total, order: o });
   }
   fail(G) { const o = this.order; this.order = null; this.drop.g.visible = false; this.avail.forEach(a => { const bb = this.beacons.get(a); if (bb) bb.g.visible = true; }); this.refill(); G.onOrderFail(o); }
+  /** A rival van takes a pickup. Only while the player is free to take it; the beacon goes and a new one is drawn. */
+  steal(r) { if (this.order || !this.avail.includes(r)) return false; this.avail = this.avail.filter(a => a !== r); const b = this.beacons.get(r); if (b) { b.dispose(); this.beacons.delete(r); } this.refill(); return true; }
   cancel() { this.order = null; this.drop.g.visible = false; }
   dispose() { for (const b of this.beacons.values()) b.dispose(); this.drop.dispose(); }
 }
@@ -1624,11 +1724,12 @@ class Doinks {
    drive the roads to it, cut in on the last stretch. Goals: a ready DOINK first, a nearby baggie if there is time, else the order.
    ====================================================================== */
 class Autopilot {
-  constructor(armed) { this.armed = armed; this.inp = { throttle: 0, brake: 0, steer: 0, hand: false }; this.dash = false; this.stuck = 0; this.over = 0; this.goalKind = ''; }
+  constructor(armed) { this.armed = armed; this.inp = { throttle: 0, brake: 0, steer: 0, hand: false }; this.dash = false; this.stuck = 0; this.over = 0; this.goalKind = ''; this.clock = 0; this.skip = 0; }
   goal(G) {
     const car = G.car, D = G.doinks, o = G.orders.order, need = GameConfig.doink.needed;
-    if (D && D.ready && (!o || o.time > 25)) { const d = D.nearest(car); if (d) return { x: d.x, z: d.z, kind: 'doink' }; }
-    if (D && D.stash < need && (!o || o.time > 30)) { let best = null, bd = 60; for (const b of D.bags) { if (b.gone > 0) continue; const k = Math.hypot(b.sp.x - car.x, b.sp.z - car.z); if (k < bd) { bd = k; best = b; } } if (best) return { x: best.sp.x, z: best.sp.z, kind: 'bag' }; }
+    const skip = this.clock < this.skip; // after a stuck reset, give up on optional goals for a while
+    if (!skip && D && D.ready && (!o || o.time > 25)) { const d = D.nearest(car); if (d) return { x: d.x, z: d.z, kind: 'doink' }; }
+    if (!skip && D && D.stash < need && (!o || o.time > 30)) { let best = null, bd = 60; for (const b of D.bags) { if (b.gone > 0) continue; const k = Math.hypot(b.sp.x - car.x, b.sp.z - car.z); if (k < bd) { bd = k; best = b; } } if (best) return { x: best.sp.x, z: best.sp.z, kind: 'bag' }; }
     const t = G.orders.target(car); return t ? { x: t.x, z: t.z, kind: t.kind } : null;
   }
   /** The point to steer at right now: along the grid roads toward the road the goal sits on, then straight in. */
@@ -1648,16 +1749,20 @@ class Autopilot {
     const ca = clamp(fx >= 0 ? Math.ceil(car.x / P + N / 2) : Math.floor(car.x / P + N / 2), 0, N); return [c(ca), c(cj)];
   }
   think(G, dt) {
-    const car = G.car, T = this.goal(G), inp = this.inp; this.dash = false;
+    this.clock += dt; const car = G.car, T = this.goal(G), inp = this.inp; this.dash = false;
     if (!T || car.dead) { inp.throttle = 0; inp.brake = 0; inp.steer = 0; return inp; }
     this.goalKind = T.kind; const [ax, az] = this.aim(G, T), want = Math.atan2(ax - car.x, az - car.z), err = angDiff(car.h, want), ae = Math.abs(err), dT = Math.hypot(T.x - car.x, T.z - car.z);
     inp.steer = clamp(err * 2.6, -1, 1);
-    let vt = lerp(42, 10, clamp(ae / 0.8, 0, 1)); if (T.kind === 'bag') vt = Math.min(vt, 34);
-    if (T.kind === 'pickup' || T.kind === 'drop') vt = Math.min(vt, Math.max(5.5, dT * 0.2));
-    const fx = Math.sin(car.h), fz = Math.cos(car.h); for (const t of G.traffic.cars) { const dx = t.x - car.x, dz = t.z - car.z, ah = dx * fx + dz * fz, lat = dx * fz - dz * fx; if (ah > 3 && ah < 16 && Math.abs(lat) < 3.4) vt = Math.min(vt, 4 + (ah - 3) * 0.6); }
+    let vt = lerp(48, 14, clamp(ae / 0.55, 0, 1)); if (T.kind === 'bag') vt = Math.min(vt, 40);
+    if (ax !== T.x || az !== T.z) vt = Math.min(vt, 14 + Math.sqrt(2 * 20 * Math.max(0, Math.hypot(ax - car.x, az - car.z) - 4))); // a street corner ahead: brake for it along a stopping curve, so the straights can stay fast
+    if (T.kind === 'pickup' || T.kind === 'drop') vt = Math.min(vt, 8 + Math.sqrt(2 * 22 * Math.max(0, dT - 9))); // brake late along a real stopping curve (it was dT * 0.2: a crawl for the last 40 m)
+    /* Other vehicles: steer round them and slow only as far as the gap needs (it used to crawl to 4 m/s behind anything within 16 m,
+       which with a real fleet on the road made the demo stop-start). Parked cars sit off the lane and are ignored unless close. */
+    const fx = Math.sin(car.h), fz = Math.cos(car.h); let avoid = 0; for (const t of G.traffic.cars) { if (!t.mesh.visible) continue; const dx = t.x - car.x, dz = t.z - car.z, ah = dx * fx + dz * fz, lat = dx * fz - dz * fx, half = t.r * 0.55 + 1.5; if (ah > 1 && ah < 30 && Math.abs(lat) < half + 1.3) { vt = Math.min(vt, 7 + Math.max(0, ah - 4) * 1.4); avoid -= Math.sign(lat || 1) * clamp((30 - ah) / 30, 0.3, 1) * 1.2; } }
+    inp.steer = clamp(inp.steer + clamp(avoid, -1, 1), -1, 1);
     inp.throttle = clamp((vt - car.speed) * 0.25, 0, 1); inp.brake = car.speed > vt + 4 && car.vf > 2 ? clamp((car.speed - vt) * 0.1, 0, 1) : 0; inp.hand = false;
-    if (ae < 0.08 && dT > 70 && T.kind !== 'bag' && car.boostCd <= 0 && car.speed > 20 && Math.random() < dt * 0.9) this.dash = true;
-    this.stuck = car.speed < 1.5 && inp.throttle > 0.3 ? this.stuck + dt : 0; if (this.stuck > 2.2) { this.stuck = 0; G.resetCar(); }
+    if (ae < 0.12 && dT > 55 && T.kind !== 'bag' && car.boostCd <= 0 && car.speed > 20 && Math.random() < dt * 1.8) this.dash = true;
+    this.stuck = car.speed < 1.5 && inp.throttle > 0.3 ? this.stuck + dt : 0; if (this.stuck > 2.2) { this.stuck = 0; this.skip = this.clock + 20; G.resetCar(); }
     return inp;
   }
 }
@@ -1999,7 +2104,7 @@ class Game {
     this.paintSky(dec); document.body.style.setProperty('--accent', dec.accent); $('gl').style.filter = dec.sepia && !this.post ? 'sepia(.85) contrast(1.1) saturate(.8)' : 'none';
     LookUniforms.uWet.value = LookConfig.wet * (dec.night ? 1.3 : 1); LookUniforms.uSkyHi.value.set(dec.sky[0]); LookUniforms.uSkyLo.value.set(dec.sky[1]); LookUniforms.uSunDir.value.copy(this.sunDir);
     this.W.group.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => grimeMaterial(m, this.q === 0 ? 3 : 2)); }); this.glowScan = 0;
-    this.traffic = new Traffic(this.scene, this.W, this.q > 0 ? { ...dec, traffic: Math.ceil(dec.traffic * QUALITY[this.q].traffic) } : dec, rng); this.peds = new Pedestrians(this.scene, this.W, dec, rng, QUALITY[this.q].peds); this.targets = new TargetManager(this.scene, this.W, dec, rng); this.orders = new OrderManager(this.scene, this.W, rng); this.doinks = new Doinks(this.scene, this.W, rng); this.car.drive = this.diff.drive;
+    this.heat = 0; this.traffic = new Traffic(this.scene, this.W, this.q > 0 ? { ...dec, traffic: Math.ceil(dec.traffic * QUALITY[this.q].traffic) } : dec, rng, { x: this.W.cRoad(4) - GameConfig.LANE, z: this.W.cRoad(4) - 20 }, this.q > 0); this.peds = new Pedestrians(this.scene, this.W, dec, rng, QUALITY[this.q].peds); this.targets = new TargetManager(this.scene, this.W, dec, rng); this.orders = new OrderManager(this.scene, this.W, rng); this.doinks = new Doinks(this.scene, this.W, rng); this.car.drive = this.diff.drive;
     this.carMesh = buildVan(dec, rng, this.diff.id); this.scene.add(this.carMesh);
     this.car.reset(this.W.cRoad(4) - GameConfig.LANE, this.W.cRoad(4) - 20, 0); this.chase.snap(this.car); this.chase.init = false;
   }
@@ -2131,7 +2236,7 @@ class Game {
   }
   onOrderFail(o) { const pen = o.base * 0.3; this.eco.earn(-pen); this.hud.callout('TOO LATE! ' + money(-pen), 'bad'); this.audio.arpeggio(false); }
   damage(amount) {
-    if (this.car.dead || amount <= 0 || (this.trip && this.trip.ph !== 'taper')) return; this.car.health -= amount * this.diff.dmg; this.hud.flash(); this.chase.shake = Math.min(0.8, 0.2 + amount * 0.02);
+    if (this.car.dead || amount <= 0 || (this.trip && this.trip.ph !== 'taper')) return; if (this.demo) amount *= 0.4; /* the autopilot drives fast through a busy street; crashes still happen and show, but a demo should not wreck itself every minute */ this.car.health -= amount * this.diff.dmg; this.hud.flash(); this.chase.shake = Math.min(0.8, 0.2 + amount * 0.02);
     if (this.car.health <= 0) this.die(this.lastCause || 'Wrecked');
   }
   ticketHit(pos) {
@@ -2146,7 +2251,7 @@ class Game {
   update(dt) {
     if (this.demo) { this.demo.think(this, dt); if (this.demo.dash) this.doBoost(); }
     this.levelT = (this.levelT || 0) + dt;
-    const lock = !!this.trip && this.trip.ph !== 'taper', inp = lock ? IDLE_INPUT : this.input.state, car = this.car, G = this; this.billCd = Math.max(0, (this.billCd || 0) - dt);
+    const lock = !!this.trip && this.trip.ph !== 'taper', inp = lock ? IDLE_INPUT : this.input.state, car = this.car, G = this; this.billCd = Math.max(0, (this.billCd || 0) - dt); this.busted = Math.max(0, (this.busted || 0) - dt); this.heat = Math.max(0, (this.heat || 0) - GameConfig.npc.heatDecay * dt);
     const sub = Math.ceil(dt / 0.0167), sdt = dt / sub;
     for (let i = 0; i < sub; i++) {
       const evs = car.step(sdt, inp, this.wq);
@@ -2157,7 +2262,15 @@ class Game {
     }
     const hooks = {
       honk: (v) => this.audio.honk(v), nearMiss: () => this.stunt('NEAR MISS!', GameConfig.stunt.nearMiss, ''),
-      hit: (rel, x, z, nx, nz) => { this.lastCause = 'Totalled by traffic'; this.audio.crash(clamp(rel / 30, 0, 1)); this.sparkBurst(x, 1, z, rel, nx, nz); this.damage(Math.max(0, (rel - 7) * 1.0)); this.bill('traffic', rel); },
+      hit: (rel, x, z, nx, nz, c) => {
+        const K = c ? c.kind : 'car'; this.lastCause = K === 'cop' ? 'Shot by a cop you rammed' : K === 'bus' ? 'Flattened by a bus' : K === 'truck' ? 'Flattened by a truck' : K === 'moto' ? 'Took out a biker and lost anyway' : K === 'rival' ? 'Lost a turf war to a rival van' : 'Totalled by traffic';
+        this.audio.crash(clamp(rel / 30, 0, 1)); this.sparkBurst(x, 1, z, rel, nx, nz); this.damage(Math.max(0, (rel - 7) * 1.0)); this.bill('traffic', rel);
+        if (rel > 8 && K !== 'rival' && K !== 'parked') this.addHeat(GameConfig.npc.heatPerHit);
+        if (K === 'rival') this.stunt('RIVAL WRECKED!', GameConfig.stunt.smash * 6, 'gold');
+      },
+      heat: () => this.heat, pickups: () => (this.state === 'play' && !this.orders.order ? this.orders.avail : []),
+      steal: (r) => { if (!this.orders.steal(r)) return false; this.hud.callout('RIVAL TOOK AN ORDER', 'sm bad'); return true; },
+      bust: (cop) => { if (this.busted > 0 || this.car.dead) return; this.busted = 4; const fine = this.eco.wage * GameConfig.npc.fine; this.eco.earn(-fine); this.heat = 0; this.hud.banner('BUSTED', 'The officer fines you ' + money(fine) + ' and lets you go.', 2400); this.audio.arpeggio(false); },
       ped: (p, speed) => this.pedHit(p, speed),
     };
     this.traffic.update(dt, car, hooks); this.peds.update(dt, car, this.wq, hooks);
@@ -2182,9 +2295,10 @@ class Game {
   bill(kind, speed, flat) {
     if (this.trip && this.trip.ph !== 'taper') return; const r = this.eco.charge(kind, speed, flat); if (!r) return; this.hud.callout('REPAIRS ' + money(-r.paid), 'sm bad'); if (r.covered > 0.5) this.hud.callout('INSURANCE COVERED ' + money(r.covered), 'sm');
   }
+  addHeat(v) { const was = this.heat || 0; this.heat = Math.min(1, was + v); if (was <= GameConfig.npc.copHeat && this.heat > GameConfig.npc.copHeat) this.hud.callout('COPS ON YOU!', 'bad'); }
   pedHit(p, speed) {
     if (p.ceo) { this.eco.premiumFreeUntil = this.eco.totalTime + GameConfig.ceo.waiveSeconds; this.audio.ding(true); this.stunt('CEO DOWN!', GameConfig.stunt.smash * 4, 'gold'); this.hud.banner('PREMIUMS WAIVED', 'His lawyers have it covered. 2:00 of free insurance.', 2600); return; }
-    this.lastCause = 'Hit a pedestrian'; this.audio.crash(0.5); this.chase.shake = Math.max(this.chase.shake, 0.4); this.bill('ped', speed); this.damage(Math.max(0, (speed - 10) * 0.6));
+    this.lastCause = 'Hit a pedestrian'; this.audio.crash(0.5); this.chase.shake = Math.max(this.chase.shake, 0.4); this.bill('ped', speed); this.damage(Math.max(0, (speed - 10) * 0.6)); this.addHeat(GameConfig.npc.heatPerPed);
   }
   carEvent(ev) {
     const car = this.car;

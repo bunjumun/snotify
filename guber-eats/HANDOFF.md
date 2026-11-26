@@ -114,3 +114,9 @@ All edits live in the main folders (`guber-eats/`, `game/`), so the site copy ca
 - Heap before: free ~81 KB, largest block 69.6 KB, min 52,152. After: free ~80 KB, largest 65.5-69.6 KB, min unchanged.
 - Cold load of `/game/guber-eats/?mute`: starts by itself, `LAKEHORSE_BOX` true, error panel hidden, 0 console errors, three vendor files 200. `startRun('normal')` for middle / nepo / struggle: state `play`, vans build (tier matches, 40 / 45 / 35 meshes, 4 wheels, roof speakers present).
 - Not checked: looks on screen, sound, phone.
+
+## Bigger, more frequent baggies + faster demo (2026-11-25, pushed to box 192.168.0.15)
+- `GameConfig.doink`: `baggies` 14 → 32, `bagRespawn` 45 → 18 s, new `bagScale` 3.4, `bagRadius` 4 → 7. `Doinks.sizeBag()` sizes each bag (eighth ≈ van length, half ≈ 1.6x that) and lifts it by its size; ring 3.6–5.0.
+- Autopilot: cruise `vt` 32 → 42 (turn taper over 0.8 rad instead of 0.9), bag approach cap 24 → 34, dash chance 0.4 → 0.9/s past 70 m.
+- Box: plain and gz read-back byte-identical, Swimulator untouched, heap 64 KB free / 51 KB block before, 72 / 53 KB after, min unchanged. Cold load clean, 32 bags, scales 3.4 / 4.1 / 5.5 for eighth / quarter / half.
+- Demo stepped headlessly (1800 x 1/30 s, `?demo`): avg speed 14.7, peak 49 (dash), 3 pickups, health 93 after 60 s, no crash or console errors. **Not measured:** old-vs-new speed A/B, how the big bags look on screen (preview pane renders ~1 fps), phone.

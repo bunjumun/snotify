@@ -106,3 +106,11 @@ Wired in `index.html` and checked in the browser (muted): cold load, console cle
 Box was unreachable from here (no ping to 192.168.0.38). Playback is a single `<audio>` streaming `/sd/*.wav` over the box's Wi-Fi. After a gap, run `GuberEats.game.audio.stalls` in the console: `waiting`/`stalled` entries mean the box ran dry (network or firmware: see the lakehorse-radio PSRAM note in its HANDOFF); no entries means the page main thread. The DOINK build is NOT on the box yet.
 ## Web site
 All edits live in the main folders (`guber-eats/`, `game/`), so the site copy can be updated later from the `lakehorse-radio` branch once site access returns.
+
+## Box sync of van-per-difficulty build (2026-11-25, eb7f707, DONE)
+- Box DHCP address moved: now **192.168.0.15** (was .38; .38 no longer answers). Found by probing `/api/status` on the ARP neighbours; `lakehorse.local` did not resolve.
+- Packed with `pack_game.py <scratch dir>` (not `build/sd-game`), copied only `guber-eats/` into a one-folder source, `push_game.py 192.168.0.15 <that dir>`: 2 files, 0 failed. `/game/index.html` still the Swimulator.
+- Read back: plain and gz copies byte-identical to the pack (LAKEHORSE_BOX injected once, gz decompresses to the plain).
+- Heap before: free ~81 KB, largest block 69.6 KB, min 52,152. After: free ~80 KB, largest 65.5-69.6 KB, min unchanged.
+- Cold load of `/game/guber-eats/?mute`: starts by itself, `LAKEHORSE_BOX` true, error panel hidden, 0 console errors, three vendor files 200. `startRun('normal')` for middle / nepo / struggle: state `play`, vans build (tier matches, 40 / 45 / 35 meshes, 4 wheels, roof speakers present).
+- Not checked: looks on screen, sound, phone.

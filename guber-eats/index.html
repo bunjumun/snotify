@@ -204,6 +204,9 @@ body.touch .panel::before{height:5px;margin-bottom:5px}
     <div class="row" style="margin-top:6px"><span class="lbl">Tip pot</span><span class="mono" id="hPot">$0</span></div>
     <div class="row" style="margin-top:6px"><span class="lbl">Dash</span><span class="small" id="hSpeed">0 km/h</span></div>
     <div class="bar thin"><i id="hBoost"></i></div>
+    <div class="row" style="margin-top:6px"><span class="lbl">DOINK stash</span><span class="mono" id="hStash">0/8</span></div>
+    <div class="bar thin"><i id="hStashBar" style="background:#5dff7a"></i></div>
+    <div class="small" id="hDoink"></div>
   </div>
 </div>
 <div id="tc">
@@ -232,6 +235,7 @@ body.touch .panel::before{height:5px;margin-bottom:5px}
     <div class="btns">
       <button class="btn primary" id="btnStart">Start shift (Enter)</button>
       <button class="btn" id="btnDep" disabled>The Great Depression (locked)</button>
+      <button class="btn" id="btnDemo">Demo: watch it play</button>
     </div>
     <h3>Controls</h3>
     <div class="keys"><b>Controller</b>: stick steer &middot; <b>RT</b> gas &middot; <b>LT</b> brake &middot; <b>A</b> drift &middot; <b>X</b>/<b>RB</b> dash &middot; <b>Y</b> reset &middot; <b>Start</b> pause (press a button once so the browser sees it)<br><b>W A S D</b> / <b>Arrows</b> drive &middot; <b>Space</b> drift &middot; <b>Shift</b> or double-tap <b>W</b> crazy dash &middot; <b>R</b> reset &middot; <b>P</b> pause &middot; <b>M</b> mute</div>
@@ -271,13 +275,15 @@ function money(n, signed = false) {
   return s + '$' + body;
 }
 const $ = (id) => document.getElementById(id);
+const IDLE_INPUT = Object.freeze({ throttle: 0, brake: 0, steer: 0, hand: false });
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
 
 const Save = {
   key: 'guberEats.v1',
-  defaults() { return { depressionUnlocked: false, maxDecade: 0, bestWorth: 0 }; },
+  defaults() { return { depressionUnlocked: false, maxDecade: 0, bestWorth: 0, doinkTutorial: false }; },
+  noWrite: false, // demo mode: watching must never change what the player has unlocked
   load() { try { return Object.assign(this.defaults(), JSON.parse(localStorage.getItem(this.key) || '{}')); } catch (e) { return this.defaults(); } },
-  write(d) { try { localStorage.setItem(this.key, JSON.stringify(d)); } catch (e) { /* storage blocked: the run still plays, it just will not remember */ } },
+  write(d) { if (this.noWrite) return; try { localStorage.setItem(this.key, JSON.stringify(d)); } catch (e) { /* storage blocked: the run still plays, it just will not remember */ } },
 };
 
 /* ======================================================================
@@ -1092,9 +1098,9 @@ class ChaseCamera {
     const k = GameConfig.cam, sp = car.speed, fwdSpeed = car.vf;
     let target = car.h;
     if (sp > 6 && fwdSpeed > 0) target = car.h + clamp(angDiff(car.h, Math.atan2(car.vx, car.vz)), -0.9, 0.9) * 0.55; // lean toward travel in a drift
-    this.yaw = dampAngle(this.yaw, target, sp > 8 ? 3.4 : 1.6, dt);
-    const dist = k.dist + clamp(sp / 40, 0, 1) * 2.5 + (car.boostT > 0 ? 2 : 0);
-    const des = new THREE.Vector3(car.x - Math.sin(this.yaw) * dist, car.y + k.height + clamp(sp / 40, 0, 1) * 0.8, car.z - Math.cos(this.yaw) * dist);
+    if (!this.orbit) this.yaw = dampAngle(this.yaw, target, sp > 8 ? 3.4 : 1.6, dt);
+    const lift = this.lift = damp(this.lift || 0, this.liftTo || 0, 3, dt), dist = k.dist + clamp(sp / 40, 0, 1) * 2.5 + (car.boostT > 0 ? 2 : 0) + lift * 5;
+    const des = new THREE.Vector3(car.x - Math.sin(this.yaw) * dist, car.y + k.height + clamp(sp / 40, 0, 1) * 0.8 + lift * 5, car.z - Math.cos(this.yaw) * dist);
     const carP = new THREE.Vector3(car.x, car.y + 1.5, car.z);
     if (!this.init) { this.pos.copy(des); this.look.copy(carP); this.init = true; }
     this.roll = damp(this.roll || 0, clamp(car.yawRate * car.vf * 0.0035, -0.07, 0.07), 5, dt); // lean the view into the corner
@@ -1473,6 +1479,51 @@ class Doinks {
   dispose() { this.scene.remove(this.g); this.own.forEach(o => o.dispose && o.dispose()); }
 }
 
+
+/* ======================================================================
+   Autopilot — demo mode. It drives through the same input fields as the keyboard and pad (throttle, brake, steer, hand), so
+   the physics, traffic and economy cannot tell it from a person. Routing is by the street grid: pick the road the goal sits on,
+   drive the roads to it, cut in on the last stretch. Goals: a ready DOINK first, a nearby baggie if there is time, else the order.
+   ====================================================================== */
+class Autopilot {
+  constructor(armed) { this.armed = armed; this.inp = { throttle: 0, brake: 0, steer: 0, hand: false }; this.dash = false; this.stuck = 0; this.over = 0; this.goalKind = ''; }
+  goal(G) {
+    const car = G.car, D = G.doinks, o = G.orders.order, need = GameConfig.doink.needed;
+    if (D && D.ready && (!o || o.time > 25)) { const d = D.nearest(car); if (d) return { x: d.x, z: d.z, kind: 'doink' }; }
+    if (D && D.stash < need && (!o || o.time > 30)) { let best = null, bd = 60; for (const b of D.bags) { if (b.gone > 0) continue; const k = Math.hypot(b.sp.x - car.x, b.sp.z - car.z); if (k < bd) { bd = k; best = b; } } if (best) return { x: best.sp.x, z: best.sp.z, kind: 'bag' }; }
+    const t = G.orders.target(car); return t ? { x: t.x, z: t.z, kind: t.kind } : null;
+  }
+  /** The point to steer at right now: along the grid roads toward the road the goal sits on, then straight in. */
+  aim(G, T) {
+    const W = G.W, car = G.car, P = W.P, N = W.N, c = W.cRoad, ix = (v) => clamp(Math.round(v / P + N / 2), 0, N);
+    if (Math.hypot(T.x - car.x, T.z - car.z) < 22) return [T.x, T.z];
+    const ci = ix(car.x), cj = ix(car.z), ti = ix(T.x), tj = ix(T.z), onV = Math.abs(car.x - c(ci)) < 7, onH = Math.abs(car.z - c(cj)) < 7;
+    if (!onV && !onH) { const p = G.wq.nearestRoad(car.x, car.z); return [p.x, p.z]; }
+    const goalOnCol = Math.abs(T.x - c(ti)) <= Math.abs(T.z - c(tj)), fx = Math.sin(car.h), fz = Math.cos(car.h);
+    if (goalOnCol) {
+      if (onV && ci === ti) return [T.x, T.z];
+      if (onH) return [c(ti), c(cj)];
+      const ra = clamp(fz >= 0 ? Math.ceil(car.z / P + N / 2) : Math.floor(car.z / P + N / 2), 0, N); return [c(ci), c(ra)];
+    }
+    if (onH && cj === tj) return [T.x, T.z];
+    if (onV) return [c(ci), c(tj)];
+    const ca = clamp(fx >= 0 ? Math.ceil(car.x / P + N / 2) : Math.floor(car.x / P + N / 2), 0, N); return [c(ca), c(cj)];
+  }
+  think(G, dt) {
+    const car = G.car, T = this.goal(G), inp = this.inp; this.dash = false;
+    if (!T || car.dead) { inp.throttle = 0; inp.brake = 0; inp.steer = 0; return inp; }
+    this.goalKind = T.kind; const [ax, az] = this.aim(G, T), want = Math.atan2(ax - car.x, az - car.z), err = angDiff(car.h, want), ae = Math.abs(err), dT = Math.hypot(T.x - car.x, T.z - car.z);
+    inp.steer = clamp(err * 2.6, -1, 1);
+    let vt = lerp(32, 8, clamp(ae / 0.9, 0, 1)); if (T.kind === 'bag') vt = Math.min(vt, 24);
+    if (T.kind === 'pickup' || T.kind === 'drop') vt = Math.min(vt, Math.max(5.5, dT * 0.2));
+    const fx = Math.sin(car.h), fz = Math.cos(car.h); for (const t of G.traffic.cars) { const dx = t.x - car.x, dz = t.z - car.z, ah = dx * fx + dz * fz, lat = dx * fz - dz * fx; if (ah > 3 && ah < 16 && Math.abs(lat) < 3.4) vt = Math.min(vt, 4 + (ah - 3) * 0.6); }
+    inp.throttle = clamp((vt - car.speed) * 0.25, 0, 1); inp.brake = car.speed > vt + 4 && car.vf > 2 ? clamp((car.speed - vt) * 0.1, 0, 1) : 0; inp.hand = false;
+    if (ae < 0.08 && dT > 90 && T.kind !== 'bag' && car.boostCd <= 0 && car.speed > 20 && Math.random() < dt * 0.4) this.dash = true;
+    this.stuck = car.speed < 1.5 && inp.throttle > 0.3 ? this.stuck + dt : 0; if (this.stuck > 2.2) { this.stuck = 0; G.resetCar(); }
+    return inp;
+  }
+}
+
 /* ======================================================================
    HUD
    ====================================================================== */
@@ -1502,6 +1553,8 @@ class HUD {
       this.set('hOrderLbl', 'Carrying: ' + o.item); this.set('hOrderSub', 'For ' + o.who + ' · base ' + money(o.base) + ' · slow to stop in the zone');
     } else { $('hTimer').classList.add('hide'); $('hTimerBarW').classList.add('hide'); this.set('hOrderLbl', G.orders.hold > 0 ? 'Grabbing order…' : 'No order. Find a glowing pickup'); this.set('hOrderSub', 'Blue / orange pillars = pick-up'); }
     const cm = o ? 1 + o.combo * 0.1 : 1; this.set('hCombo', 'x' + cm.toFixed(1)); $('hComboBar').style.width = (o ? clamp(o.comboT / GameConfig.stunt.comboWindow, 0, 1) * 100 : 0) + '%'; this.set('hPot', money(o ? o.pot : 0));
+    { const D = G.doinks; if (D) { this.set('hStash', D.frac() + (car.dashBank >= 1 ? ' · +' + Math.floor(car.dashBank) + ' dash' : '')); $('hStashBar').style.width = (D.stash / GameConfig.doink.needed * 100) + '%';
+      const d = D.nearest(car), km = d ? Math.round(Math.hypot(d.x - car.x, d.z - car.z)) : 0; this.set('hDoink', G.trip ? (G.trip.ph === 'taper' ? 'Coming down…' : 'DOINK') : D.ready ? 'DOINK READY: ' + km + ' m to the nearest' : 'Fill the stash with baggies (green)'); } }
     this.set('hSpeed', Math.round(car.speed * 3.6) + ' km/h'); $('hBoost').style.width = (car.boostCd <= 0 ? 100 : clamp(100 - (car.boostCd / (GameConfig.car.boostCd + GameConfig.car.boostTime)) * 100, 0, 100)) + '%';
   }
   callout(text, kind = '') { const d = document.createElement('div'); d.className = 'co ' + kind; d.textContent = text; d.style.marginLeft = ((Math.random() - .5) * 22) + '%'; $('callouts').appendChild(d); setTimeout(() => d.remove(), 1600); }
@@ -1525,6 +1578,7 @@ class Input {
     addEventListener('pointerdown', () => game.audio.init());
   }
   get state() {
+    if (this.game.demo) return this.game.demo.inp;
     const k = this.keys, p = this.pad, t = this.touch, kb = (a, b) => (k.has(a) || k.has(b)) ? 1 : 0;
     return { throttle: Math.max(kb('KeyW', 'ArrowUp'), p.throttle, t.throttle), brake: Math.max(kb('KeyS', 'ArrowDown'), p.brake, t.brake),
       steer: clamp(kb('KeyA', 'ArrowLeft') - kb('KeyD', 'ArrowRight') + p.steer + t.steer, -1, 1), hand: k.has('Space') || p.hand || t.hand };
@@ -1693,9 +1747,9 @@ class PostFX {
         gl_FragColor = vec4(c, 1.0); }` });
     this.comp = new THREE.ShaderMaterial({ ...base, uniforms: {
       tScene: { value: null }, tDepth: { value: null }, uAO: { value: LookConfig.ao }, uAORad: { value: LookConfig.aoRadius }, uProjY: { value: 1 }, uNear: { value: 0.5 }, uFar: { value: 2400 }, tB0: { value: null }, tB1: { value: null }, tB2: { value: null }, tB3: { value: null }, uRes: { value: new THREE.Vector2() },
-      uBloom: { value: LookConfig.bloom }, uExpo: { value: LookConfig.exposure }, uTime: { value: 0 }, uDash: { value: 0 }, uSepia: { value: 0 }, uSat: { value: LookConfig.sat },
+      uBloom: { value: LookConfig.bloom }, uExpo: { value: LookConfig.exposure }, uTime: { value: 0 }, uDash: { value: 0 }, uTrip: { value: 0 }, uSepia: { value: 0 }, uSat: { value: LookConfig.sat },
       uVig: { value: LookConfig.vignette }, uGrain: { value: LookConfig.grain }, uLift: { value: new THREE.Vector3(...LookConfig.lift) }, uGain: { value: new THREE.Vector3(...LookConfig.gain) } }, fragmentShader: `
-      uniform sampler2D tScene, tDepth, tB0, tB1, tB2, tB3; uniform float uAO, uAORad, uProjY, uNear, uFar; uniform vec2 uRes; uniform float uBloom, uExpo, uTime, uDash, uSepia, uSat, uVig, uGrain; uniform vec3 uLift, uGain; varying vec2 vUv;
+      uniform sampler2D tScene, tDepth, tB0, tB1, tB2, tB3; uniform float uAO, uAORad, uProjY, uNear, uFar; uniform vec2 uRes; uniform float uBloom, uExpo, uTime, uDash, uTrip, uSepia, uSat, uVig, uGrain; uniform vec3 uLift, uGain; varying vec2 vUv;
       vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
       vec3 b4(sampler2D t, vec2 uv, vec2 p) { return 0.25 * (texture2D(t, uv + vec2(-p.x, -p.y)).rgb + texture2D(t, uv + vec2(p.x, -p.y)).rgb + texture2D(t, uv + vec2(-p.x, p.y)).rgb + texture2D(t, uv + vec2(p.x, p.y)).rgb); }
       float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -1711,14 +1765,17 @@ class PostFX {
         return 1.0 - uAO * occ / 10.0 * (1.0 - smoothstep(120.0, 300.0, c));
       }
       void main() {
-        vec2 uv = vUv, d = uv - 0.5; float ca = (0.0012 + uDash * 0.006) * dot(d, d) * 4.0;
+        vec2 uv = vUv + uTrip * 0.005 * vec2(sin(vUv.y * 17.0 + uTime * 1.9), cos(vUv.x * 13.0 + uTime * 1.6)), d = uv - 0.5; float ca = (0.0012 + uDash * 0.006 + uTrip * 0.012) * dot(d, d) * 4.0;
         vec3 col = vec3(texture2D(tScene, uv - d * ca).r, texture2D(tScene, uv).g, texture2D(tScene, uv + d * ca).b);
         if (uDash > 0.01) { vec3 acc = col; for (int i = 1; i < 8; i++) acc += texture2D(tScene, 0.5 + d * (1.0 - float(i) * 0.014 * uDash)).rgb; col = acc / 8.0; }
         col *= ssao(uv); vec2 px = 1.0 / uRes;
         col += (b4(tB0, uv, px * 2.0) * 0.5 + b4(tB1, uv, px * 4.0) * 0.7 + b4(tB2, uv, px * 8.0) * 0.9 + b4(tB3, uv, px * 16.0) * 1.1) * uBloom;
         col = aces(col * uExpo);
         float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
-        col = mix(vec3(l), col, uSat); col = mix(col, vec3(l) * vec3(1.08, 0.93, 0.72), uSepia);
+        col = mix(vec3(l), col, uSat + uTrip * 0.7);
+        if (uTrip > 0.001) { float ang = uTrip * (1.1 + 1.6 * sin(uTime * 0.55)), cs = cos(ang), sn = sin(ang); vec3 yiq = vec3(dot(col, vec3(0.299, 0.587, 0.114)), dot(col, vec3(0.596, -0.274, -0.322)), dot(col, vec3(0.211, -0.523, 0.312)));
+          yiq.yz = mat2(cs, -sn, sn, cs) * yiq.yz; col = clamp(vec3(yiq.x + 0.956 * yiq.y + 0.621 * yiq.z, yiq.x - 0.272 * yiq.y - 0.647 * yiq.z, yiq.x - 1.106 * yiq.y + 1.703 * yiq.z), 0.0, 1.0) * (1.0 + uTrip * 0.12); }
+        col = mix(col, vec3(l) * vec3(1.08, 0.93, 0.72), uSepia);
         col = col * uGain + uLift * (1.0 - col);
         col *= 1.0 - uVig * smoothstep(0.3, 0.95, length(d * vec2(1.15, 1.0)));
         col = toSRGB(clamp(col, 0.0, 1.0)) + (h12(gl_FragCoord.xy + fract(uTime * 7.31) * 517.0) - 0.5) * uGrain;
@@ -1728,11 +1785,11 @@ class PostFX {
     const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr)); this.rt.setSize(W, H); this.comp.uniforms.uRes.value.set(W, H);
     this.levels.forEach((t, i) => t.setSize(Math.max(1, W >> (i + 1)), Math.max(1, H >> (i + 1))));
   }
-  render(scene, camera, time, dash, sepia) {
+  render(scene, camera, time, dash, sepia, trip = 0) {
     const r = this.r; r.setRenderTarget(this.rt); r.clear(); r.render(scene, camera);
     let src = this.rt; this.quad.material = this.down; const U = this.down.uniforms;
     this.levels.forEach((t, i) => { U.tSrc.value = src.texture; U.uTexel.value.set(1 / src.width, 1 / src.height); U.uFirst.value = i === 0 ? 1 : 0; U.uThresh.value = LookConfig.bloomThreshold; r.setRenderTarget(t); r.render(this.qs, this.qc); src = t; });
-    const C = this.comp.uniforms; C.tScene.value = this.rt.texture; C.tDepth.value = this.rt.depthTexture; C.uProjY.value = camera.projectionMatrix.elements[5]; C.uNear.value = camera.near; C.uFar.value = camera.far; this.levels.forEach((t, i) => { C['tB' + i].value = t.texture; }); C.uTime.value = time; C.uDash.value = dash; C.uSepia.value = sepia;
+    const C = this.comp.uniforms; C.tScene.value = this.rt.texture; C.tDepth.value = this.rt.depthTexture; C.uProjY.value = camera.projectionMatrix.elements[5]; C.uNear.value = camera.near; C.uFar.value = camera.far; this.levels.forEach((t, i) => { C['tB' + i].value = t.texture; }); C.uTime.value = time; C.uDash.value = dash; C.uTrip.value = trip; C.uSepia.value = sepia;
     this.quad.material = this.comp; r.setRenderTarget(null); r.render(this.qs, this.qc);
   }
 }
@@ -1756,7 +1813,7 @@ class Game {
     this.skyGeo = new THREE.SphereGeometry(1500, 20, 14); this.skyMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }); this.sky = new THREE.Mesh(this.skyGeo, this.skyMat); this.scene.add(this.sky);
     this.stars = null; this.audio = new SynthAudio(); this.hud = new HUD(); this.arrow = new NavArrow(); this.input = new Input(this);
     this.sparks = new Particles(this.scene, 500, 0.7, 1); this.smoke = new Particles(this.scene, 300, 2.4, 0.35); this.fumes = new Particles(this.scene, 120, 1.7, 0.4); this.fx = $('fx'); this.fxg = this.fx.getContext('2d');
-    this.car = new VehiclePhysics(); this.carMesh = null; this.W = null; this.wq = null; this.traffic = null; this.peds = null; this.targets = null; this.orders = null; this.eco = new Economy(this.diff, Decades.list[0]); this.decade = Decades.list[0];
+    this.car = new VehiclePhysics(); this.trip = null; this.tripV = 0; this.doinks = null; this.demo = null; this.carMesh = null; this.W = null; this.wq = null; this.traffic = null; this.peds = null; this.targets = null; this.orders = null; this.eco = new Economy(this.diff, Decades.list[0]); this.decade = Decades.list[0];
     this.time = 0; this.title = { a: 0 }; this.last = performance.now(); this.deadT = 0; this.transT = 0;
     addEventListener('resize', () => this.resize()); this.resize(); this.buildTitle(); this.loadDecade(Decades.list[0], 1940); this.audio.setDecade(null);
     requestAnimationFrame((t) => this.frame(t));
@@ -1777,7 +1834,7 @@ class Game {
     Object.values(Difficulties).forEach(d => { const b = document.createElement('button'); b.className = 'opt' + (d === this.diff ? ' sel' : ''); b.innerHTML = `${d.label}<small>${d.sub}<br>${d.desc}</small>`; b.onclick = () => { this.diff = d; this.buildTitle(); }; od.appendChild(b); });
     const sel = $('selDecade'); sel.innerHTML = ''; Decades.list.forEach((d, i) => { if (i <= this.save.maxDecade) { const o = document.createElement('option'); o.value = i; o.textContent = d.id + ' / ' + d.tag; sel.appendChild(o); } }); sel.value = this.startIdx; sel.onchange = () => { this.startIdx = +sel.value; };
     const dep = $('btnDep'); dep.disabled = !this.save.depressionUnlocked; dep.textContent = this.save.depressionUnlocked ? 'The Great Depression (bonus)' : 'The Great Depression (locked until you beat the 2020s)'; dep.onclick = () => this.startRun('depression');
-    $('btnStart').onclick = () => this.startRun('normal'); $('btnResume').onclick = () => this.pause(false); $('btnQuit').onclick = () => this.toTitle();
+    $('btnDemo').onclick = () => this.startDemo(true); $('btnStart').onclick = () => this.startRun('normal'); $('btnResume').onclick = () => this.pause(false); $('btnQuit').onclick = () => this.toTitle();
   }
   toTitle() {
     this.state = 'title'; this.hud.show(false); ['scPause', 'scOver'].forEach(i => $(i).classList.add('hide')); $('scTitle').classList.remove('hide'); $('slot').classList.add('hide'); this.audio.stopAll(); this.save = Save.load(); this.buildTitle();
@@ -1787,7 +1844,7 @@ class Game {
 
   /* ---- world per decade ---- */
   clearRun() {
-    for (const k of ['traffic', 'peds', 'targets', 'orders']) { if (this[k]) { this[k].dispose(); this[k] = null; } }
+    this.endTrip(); for (const k of ['traffic', 'peds', 'targets', 'orders', 'doinks']) { if (this[k]) { this[k].dispose(); this[k] = null; } }
     if (this.carMesh) { this.scene.remove(this.carMesh); this.carMesh.userData.own.forEach(d => d.dispose && d.dispose()); this.carMesh.traverse(o => { if (o.geometry && !this.carMesh.userData.own.includes(o.geometry)) o.geometry.dispose(); }); this.carMesh = null; }
     this.sparks.clear(); this.smoke.clear(); this.fumes.clear();
   }
@@ -1801,7 +1858,7 @@ class Game {
     this.paintSky(dec); document.body.style.setProperty('--accent', dec.accent); $('gl').style.filter = dec.sepia && !this.post ? 'sepia(.85) contrast(1.1) saturate(.8)' : 'none';
     LookUniforms.uWet.value = LookConfig.wet * (dec.night ? 1.3 : 1); LookUniforms.uSkyHi.value.set(dec.sky[0]); LookUniforms.uSkyLo.value.set(dec.sky[1]); LookUniforms.uSunDir.value.copy(this.sunDir);
     this.W.group.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => grimeMaterial(m, this.q === 0 ? 3 : 2)); }); this.glowScan = 0;
-    this.traffic = new Traffic(this.scene, this.W, this.q > 0 ? { ...dec, traffic: Math.ceil(dec.traffic * QUALITY[this.q].traffic) } : dec, rng); this.peds = new Pedestrians(this.scene, this.W, dec, rng, QUALITY[this.q].peds); this.targets = new TargetManager(this.scene, this.W, dec, rng); this.orders = new OrderManager(this.scene, this.W, rng);
+    this.traffic = new Traffic(this.scene, this.W, this.q > 0 ? { ...dec, traffic: Math.ceil(dec.traffic * QUALITY[this.q].traffic) } : dec, rng); this.peds = new Pedestrians(this.scene, this.W, dec, rng, QUALITY[this.q].peds); this.targets = new TargetManager(this.scene, this.W, dec, rng); this.orders = new OrderManager(this.scene, this.W, rng); this.doinks = new Doinks(this.scene, this.W, rng); this.car.drive = this.diff.drive;
     this.carMesh = buildVan(dec, rng); this.scene.add(this.carMesh);
     this.car.reset(this.W.cRoad(4) - GameConfig.LANE, this.W.cRoad(4) - 20, 0); this.chase.snap(this.car); this.chase.init = false;
   }
@@ -1885,15 +1942,45 @@ class Game {
     if (o) { o.pot += a; o.combo = Math.min(o.combo + 1, 30); o.comboT = GameConfig.stunt.comboWindow; } else this.eco.earn(a * 0.6);
     this.hud.callout(`${label} ${money(a, true)}`, kind || ''); this.audio.ding(false);
   }
+  onBaggie(worth, stash, before) {
+    const full = stash >= GameConfig.doink.needed; this.audio.ding(full); this.hud.callout(`+${EIGHTHS[worth]} · ${EIGHTHS[stash]} of a DOINK`, full ? 'gold' : 'sm');
+    if (full && before < GameConfig.doink.needed) { this.hud.callout('DOINK READY', 'gold'); this.hud.banner('DOINK READY', 'Drive into a giant DOINK (green beam)', 3200); this.audio.arpeggio(true); }
+  }
+  /** The hit: pull (van stops), rise (camera lifts, world starts to bend), hold (full effect), taper (control back, effect fades). Order timers and money drain are frozen until the taper. */
+  startTrip(d) {
+    const K = GameConfig.doink; this.trip = { ph: 'pull', t: 0, d }; this.chase.orbit = true; this.audio.doinkHit(); this.hud.flash(); this.chase.shake = 0.5;
+    this.hud.callout(Math.random() < 0.25 ? "HONKIN' DOINK!" : 'DOINK!', 'gold'); this.hud.banner('DOINK', 'Hold on.', (K.pull + K.rise) * 1000);
+  }
+  tickTrip(dt) {
+    const T = this.trip, K = GameConfig.doink; if (!T) return; T.t += dt;
+    if (T.ph === 'pull') { if (T.t >= K.pull) { T.ph = 'rise'; T.t = 0; this.chase.liftTo = 1; } }
+    else if (T.ph === 'rise') { const u = clamp(T.t / K.rise, 0, 1); this.tripV = u * u * (3 - 2 * u); if (T.t >= K.rise) { T.ph = 'hold'; T.t = 0; } }
+    else if (T.ph === 'hold') {
+      this.tripV = 1; if (Math.random() < dt * 14) this.smoke.emit(this.car.x + (Math.random() - .5) * 3, 2 + Math.random() * 2, this.car.z + (Math.random() - .5) * 3, 0, 1.5, 0, 2.4, 0xd8ffd8, -0.3);
+      if (T.t >= K.hold) {
+        const car = this.car, gain = Math.min(K.dashBankMax, car.dashBank + K.dashBank) - car.dashBank, cash = K.cash * this.eco.wage * this.decade.payMul; car.dashBank += gain; this.eco.earn(cash); this.doinks.stash = 0;
+        this.hud.callout(`+${gain} DASH · ${money(cash, true)}`, 'gold'); this.hud.banner('COMING DOWN', gain > 0 ? 'Banked dash ready (dash key). Cash in.' : 'Dash bank full. Cash in.', 2600); this.audio.arpeggio(true);
+        T.ph = 'taper'; T.t = 0; this.chase.orbit = false; this.chase.liftTo = 0;
+      }
+    } else { const u = clamp(T.t / K.taper, 0, 1); this.tripV = Math.pow(1 - u, 1.6); if (T.t >= K.taper) { this.endTrip(); return; } }
+    if (T.ph !== 'taper') this.chase.yaw += dt * (0.3 + 0.5 * this.tripV);
+    this.audio.trip(this.tripV);
+  }
+  endTrip() { this.trip = null; this.tripV = 0; if (this.chase) { this.chase.orbit = false; this.chase.liftTo = 0; } if (this.audio) this.audio.trip(0); }
+  startDemo(armed) {
+    this.demo = new Autopilot(armed); Save.noWrite = true; this.startRun('normal'); this.hud.banner('DEMO', armed ? 'Any key or touch to exit' : 'Tap or press a key to start the sound', 4000);
+  }
+  exitDemo() { this.demo = null; Save.noWrite = false; this.toTitle(); }
   onPickup(o) { this.hud.callout('GOT ' + o.item + '!', 'gold'); this.hud.banner('PICKED UP: ' + o.item, 'For ' + o.who + ' · ' + Math.round(o.total) + 's', 2600); this.audio.arpeggio(true); }
   onDeliver(r) {
     this.eco.earn(r.total); this.delivered++; this.car.health = Math.min(100, this.car.health + this.diff.heal); this.audio.ding(true);
     this.hud.callout('DELIVERED ' + money(r.total, true), 'gold'); this.hud.banner('DELIVERED', `Fare ${money(r.pay)} · Tips ${money(r.tips)}`, 2000);
+    if (!this.demo && !this.save.doinkTutorial) { this.save.doinkTutorial = true; Save.write(this.save); setTimeout(() => { if (this.state === 'play') this.hud.banner('MEET THE DOINK', 'Drive through green baggies (1/8, 1/4, 1/2) until the stash reads 8/8. Then hit a giant DOINK: a few seconds out of it, then a banked dash and cash.', 9000); }, 2300); }
     if (this.mode === 'normal' && this.delivered >= GameConfig.order.quota) this.nextDecade();
   }
   onOrderFail(o) { const pen = o.base * 0.3; this.eco.earn(-pen); this.hud.callout('TOO LATE! ' + money(-pen), 'bad'); this.audio.arpeggio(false); }
   damage(amount) {
-    if (this.car.dead || amount <= 0) return; this.car.health -= amount * this.diff.dmg; this.hud.flash(); this.chase.shake = Math.min(0.8, 0.2 + amount * 0.02);
+    if (this.car.dead || amount <= 0 || (this.trip && this.trip.ph !== 'taper')) return; this.car.health -= amount * this.diff.dmg; this.hud.flash(); this.chase.shake = Math.min(0.8, 0.2 + amount * 0.02);
     if (this.car.health <= 0) this.die(this.lastCause || 'Wrecked');
   }
   ticketHit(pos) {
@@ -1906,12 +1993,14 @@ class Game {
 
   /* ---- per-frame ---- */
   update(dt) {
-    const inp = this.input.state, car = this.car, G = this; this.billCd = Math.max(0, (this.billCd || 0) - dt);
+    if (this.demo) { this.demo.think(this, dt); if (this.demo.dash) this.doBoost(); }
+    const lock = !!this.trip && this.trip.ph !== 'taper', inp = lock ? IDLE_INPUT : this.input.state, car = this.car, G = this; this.billCd = Math.max(0, (this.billCd || 0) - dt);
     const sub = Math.ceil(dt / 0.0167), sdt = dt / sub;
     for (let i = 0; i < sub; i++) {
       const evs = car.step(sdt, inp, this.wq);
       for (const ev of evs) this.carEvent(ev);
       // drift tips
+      if (lock) { const k = Math.exp(-5 * sdt); car.vx *= k; car.vz *= k; }
       if (car.drifting && car.driftT > 1.2 + car.driftPaid * 1.5) { car.driftPaid++; this.stunt('CRAZY DRIFT!', GameConfig.stunt.drift + car.driftPaid * 2, ''); }
     }
     const hooks = {
@@ -1921,23 +2010,25 @@ class Game {
     };
     this.traffic.update(dt, car, hooks); this.peds.update(dt, car, this.wq, hooks);
     this.targets.update(dt, car, { ticket: (p) => this.ticketHit(p), smash: (p) => { this.stats.smashed++; this.bill(p.type, car.speed, true); this.audio.crash(0.15); this.stunt('SMASH!', GameConfig.stunt.smash, 'sm'); for (let i = 0; i < 10; i++) this.sparks.emit(p.x, 1, p.z, (Math.random() - .5) * 10, 2 + Math.random() * 5, (Math.random() - .5) * 10, 0.5, 0xffffff, 10); } }, this.time);
-    this.orders.update(dt, car, this); const o = this.orders.order; if (o) { o.comboT = Math.max(0, o.comboT - dt); if (o.comboT <= 0) o.combo = 0; }
+    if (!lock) this.orders.update(dt, car, this); const o = this.orders.order; if (o) { o.comboT = Math.max(0, o.comboT - dt); if (o.comboT <= 0) o.combo = 0; }
     // economy
-    for (const ev of this.eco.tick(dt)) {
+    const hit = this.doinks.update(dt, car, this, !this.trip && !car.dead); if (hit) this.startTrip(hit);
+    for (const ev of (lock ? [] : this.eco.tick(dt))) {
       if (ev.type === 'tax') { if (ev.delayed) { this.hud.banner('TAX RETURN FILED', 'Refund of ' + money(ev.amount) + ' is processing…', 3200); } else { this.hud.banner('TAX RETURN DEPOSITED!', money(ev.amount, true), 3400); this.audio.ding(true); } this.afterTaxYear(ev.year); }
       else if (ev.type === 'taxPaid') { this.hud.banner('TAX RETURN DEPOSITED!', money(ev.amount, true) + ' (finally)', 3400); this.audio.ding(true); }
       else if (ev.type === 'month') { this.hud.callout('RENT DUE ' + money(-ev.rent), 'sm bad'); }
       else if (ev.type === 'premium') { this.hud.banner('INSURANCE PREMIUM', money(-ev.amount) + (ev.surcharge > 0 ? ' · claims surcharge +' + Math.round(ev.surcharge * 100) + '%' : ''), 2800); }
     }
-    if (this.eco.worth < -3000 * this.eco.wage - 2000 * this.eco.wage) { this.lastCause = 'Died of expenses'; this.die('Died of expenses'); }
+    if (!lock && this.eco.worth < -3000 * this.eco.wage - 2000 * this.eco.wage) { this.lastCause = 'Died of expenses'; this.die('Died of expenses'); }
     // exhaust / smoke / flames
     this.carFx(dt);
     this.audio.engine(car.speed, inp.throttle, car.drifting && car.grounded, car.boostT > 0);
+    this.tickTrip(dt);
   }
   afterTaxYear(doneYear) { if (this.mode === 'depression' && doneYear >= GameConfig.depressionYears) this.victory(true); }
   /** Bill a crash through the economy and tell the player what it cost and what insurance took. */
   bill(kind, speed, flat) {
-    const r = this.eco.charge(kind, speed, flat); if (!r) return; this.hud.callout('REPAIRS ' + money(-r.paid), 'sm bad'); if (r.covered > 0.5) this.hud.callout('INSURANCE COVERED ' + money(r.covered), 'sm');
+    if (this.trip && this.trip.ph !== 'taper') return; const r = this.eco.charge(kind, speed, flat); if (!r) return; this.hud.callout('REPAIRS ' + money(-r.paid), 'sm bad'); if (r.covered > 0.5) this.hud.callout('INSURANCE COVERED ' + money(r.covered), 'sm');
   }
   pedHit(p, speed) {
     if (p.ceo) { this.eco.premiumFreeUntil = this.eco.totalTime + GameConfig.ceo.waiveSeconds; this.audio.ding(true); this.stunt('CEO DOWN!', GameConfig.stunt.smash * 4, 'gold'); this.hud.banner('PREMIUMS WAIVED', 'His lawyers have it covered. 2:00 of free insurance.', 2600); return; }
@@ -1980,14 +2071,23 @@ class Game {
       /* Additive glows (pillars, beams, flames, lamp pools, sparks) are pushed past white once each so the bloom finds them; rescanned each second because orders and particles bring new ones. */
       this.glowScan -= dt; if (this.glowScan <= 0) { this.glowScan = 1; this.scene.traverse(o => { const m = o.material; if (m && !Array.isArray(m) && m.blending === THREE.AdditiveBlending && m.color && !m.userData.hdr) { m.userData.hdr = true; m.color.multiplyScalar(m.map ? LookConfig.hdrPool : LookConfig.hdrGlow); } }); }
       const dash = this.state === 'play' ? clamp(car.boostT / GameConfig.car.boostTime, 0, 1) : 0;
-      this.post.render(this.scene, this.camera, this.time, dash, this.decade.sepia ? LookConfig.sepia : 0); r.setViewport(0, 0, innerWidth, innerHeight);
-    } else { r.clear(); r.render(this.scene, this.camera); }
+      this.post.render(this.scene, this.camera, this.time, dash, this.decade.sepia ? LookConfig.sepia : 0, this.tripV); r.setViewport(0, 0, innerWidth, innerHeight);
+    } else {
+      r.clear(); r.render(this.scene, this.camera); const v = this.tripV, base = this.decade.sepia ? 'sepia(.85) contrast(1.1) saturate(.8) ' : '';
+      if (v > 0.01) { this.tripFiltered = true; $('gl').style.filter = `${base}hue-rotate(${Math.round(v * (200 + 160 * Math.sin(this.time * 0.55)))}deg) saturate(${(1 + v * 0.9).toFixed(2)}) contrast(${(1 + v * 0.1).toFixed(2)})`; }
+      else if (this.tripFiltered) { this.tripFiltered = false; $('gl').style.filter = base ? base.trim() : 'none'; }
+    }
     if (this.state !== 'title' && this.arrow.visible && this.hudVisible()) {
       const rc = $('navwrap').getBoundingClientRect(); r.setScissorTest(true); r.setViewport(rc.left, innerHeight - rc.bottom, rc.width, rc.height); r.setScissor(rc.left, innerHeight - rc.bottom, rc.width, rc.height); r.clearDepth(); r.render(this.arrow.scene, this.arrow.cam); r.setScissorTest(false);
     }
     // 2-D overlay: speed lines while dashing
     const g = this.fxg, W = this.fxW, H = this.fxH; g.clearRect(0, 0, W, H);
     const k = this.state === 'play' || this.state === 'dead' ? clamp(car.boostT / GameConfig.car.boostTime, 0, 1) : 0, sp = this.state === 'play' ? clamp((car.speed - 30) / 30, 0, 1) : 0, a = Math.max(k, sp * 0.4);
+    if (this.tripV > 0.01) {
+      const v = this.tripV, cx = W / 2, cy = H / 2, R = Math.hypot(W, H) / 2, hue = (this.time * 45) % 360, gr = g.createRadialGradient(cx, cy, R * 0.3, cx, cy, R);
+      gr.addColorStop(0, 'hsla(' + hue + ',90%,60%,0)'); gr.addColorStop(1, 'hsla(' + hue + ',90%,55%,' + (0.38 * v).toFixed(3) + ')'); g.fillStyle = gr; g.fillRect(0, 0, W, H); g.lineWidth = 3;
+      for (let k = 0; k < 4; k++) { const u = (this.time * 0.22 + k / 4) % 1; g.strokeStyle = 'hsla(' + ((hue + k * 70) % 360) + ',90%,70%,' + ((1 - u) * 0.3 * v).toFixed(3) + ')'; g.beginPath(); g.arc(cx, cy, u * R, 0, 6.283); g.stroke(); }
+    }
     if (a > 0.02) { g.strokeStyle = `rgba(255,255,255,${a * 0.55})`; g.lineWidth = 2; g.beginPath(); const cx = W / 2, cy = H * 0.52, R = Math.hypot(W, H) / 2; for (let i = 0; i < 46; i++) { const an = Math.random() * 6.283, r0 = R * (0.45 + Math.random() * 0.25), r1 = r0 + R * (0.12 + Math.random() * 0.25 * a); g.moveTo(cx + Math.cos(an) * r0, cy + Math.sin(an) * r0); g.lineTo(cx + Math.cos(an) * r1, cy + Math.sin(an) * r1); } g.stroke(); }
   }
   hudVisible() { return this.state === 'play' || this.state === 'pause' || this.state === 'trans'; }
@@ -2002,6 +2102,7 @@ class Game {
         this.update(dt); this.chase.update(dt, this.car, this.wq); this.hud.update(this); this.arrow.update(dt, this.car, this.chase.yaw, this.orders.target(this.car));
       } else if (this.state === 'dead') {
         this.deadT -= dt; this.traffic.update(dt, { x: 1e5, z: 1e5, speed: 0, vx: 0, vz: 0, grounded: false }, { honk() {}, nearMiss() {}, hit() {} }); this.chase.yaw += dt * 0.4; this.chase.update(dt, Object.assign(Object.create(this.car), { speed: 0, boostT: 0 }), this.wq); if (this.deadT <= 0) this.showEstate();
+      } else if (this.state === 'over' && this.demo) { this.demo.over += dt; if (this.demo.over > 5) { this.demo.over = 0; this.startRun('normal'); }
       } else if (this.state === 'trans') { this.transT -= dt; this.chase.yaw += dt * 0.3; if (this.transT <= 0) this.applyPending(); }
       else if (this.state === 'title') { this.title.a += dt * 0.08; const R = 220, ax = Math.sin(this.title.a) * R, az = Math.cos(this.title.a) * R; this.camera.position.set(ax, 70, az); this.camera.lookAt(0, 10, 0); this.traffic.update(dt, { x: 1e5, z: 1e5, speed: 0, vx: 0, vz: 0, grounded: false }, { honk() {}, nearMiss() {}, hit() {} }); this.peds.update(dt, { x: 1e5, z: 1e5, speed: 0 }, this.wq); this.carMesh.visible = false; }
       if (this.state !== 'title' && this.state !== 'dead') this.carMesh.visible = true;
@@ -2022,6 +2123,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) game.
 addEventListener('pageshow', wake);
 /* iOS only starts or resumes audio inside a tap: any touch, click or key retries the soundtrack until it is actually playing. */
 ['pointerdown', 'touchend', 'keydown'].forEach(t => addEventListener(t, () => { const a = game.audio; if (!a.ctx) return; if (a.ctx.state !== 'running') a.ctx.resume(); if (!a.muted && a.themeEl && a.themeEl.paused) a.themeEl.play().catch(() => {}); }, { passive: true }));
+/* Demo: the first gesture on an auto-started demo only unlocks sound; after that any key or touch hands the game back. */
+['keydown', 'pointerdown'].forEach(t => addEventListener(t, (e) => { const d = game.demo; if (!d || e.repeat) return; if (!d.armed) { d.armed = true; game.audio.init(); wake(); game.hud.banner('DEMO', 'Any key or touch to exit', 2500); return; } game.exitDemo(); }, true));
+if (/[?&]demo\b/.test(location.search)) game.startDemo(false);
 window.GuberEats = { game, Game, Economy, Decades, Difficulties, GameConfig, money }; // handle for console checks
 </script>
 </body>

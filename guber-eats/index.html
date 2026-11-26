@@ -193,7 +193,7 @@ body.touch .panel::before{height:5px;margin-bottom:5px}
     <div class="months" id="hMonths"></div>
   </div>
   <div class="panel" id="pnlOrder">
-    <div class="lbl" id="hOrderLbl">No order. Find a glowing restaurant</div>
+    <div class="lbl" id="hOrderLbl">No order. Find a glowing pickup</div>
     <div id="hTimer" class="hide">0</div>
     <div class="bar thin hide" id="hTimerBarW"><i id="hTimerBar"></i></div>
     <div class="small" id="hOrderSub"></div>
@@ -309,6 +309,17 @@ const GameConfig = {
   depressionYears: 1, // was 3 when a year was 3 minutes; a year is now ~20
   funeral2020s: 9400,
   stunt: { nearMiss: 2, drift: 5, air: 8, smash: 0.5, comboWindow: 4.5 },
+  /* Driving assists (2026-11-25, "easier on all modes, scaled up from easy"). These are shared; the per-difficulty half is
+     Difficulties[x].drive. lowSteer: steering authority floor at crawling speed (it was zero, so tight turns in traffic
+     needed a run-up). alignWindow: within this many radians of a street axis, letting go of the stick straightens the van
+     onto the grid, at the difficulty's `align` rate. */
+  drive: { lowSteer: 0.4, alignWindow: 0.45, alignMinSpeed: 6 },
+  /* Doinks: the Swimulator's bong and baggie loop, for the van. Drive through baggies (worth an eighth, a quarter or a half,
+     dealt from a shuffled bag so every run sees all three), roll a full eight eighths, then hit a giant doink. You lose the
+     wheel for the pull, rise and hold while the camera circles the van, the world goes strange for the taper, and you get
+     a banked dash and some cash. Order timers stop while you are not driving. */
+  doink: { count: 4, baggies: 14, needed: 8, bagDeck: [1, 1, 1, 2, 2, 4], bagRadius: 4, radius: 6, height: 15, minApart: 150,
+           pull: 0.6, rise: 1.5, hold: 8, taper: 30, dashBank: 1, dashBankMax: 3, cash: 70, bagRespawn: 45, nagCd: 3 },
 };
 
 /* ======================================================================
@@ -357,13 +368,13 @@ const Decades = {
    ====================================================================== */
 const Difficulties = {
   nepo: { id: 'nepo', label: 'Nepo', sub: 'Easy · trust fund', desc: 'Big cushion, cheap rent, generous write-offs, kind odds.',
-    start: 25000, drain: .5, tipBase: 1.4, pay: 1.2, timer: 1.5, dmg: .75, insurance: { cover: .85, deductible: 15, premium: 45 }, taxRate: .35, taxFlat: 600, taxDelay: 0, heal: 16,
+    drive: { steer: 1.18, grip: 17, wall: 1.0, align: 3.2, speed: 0.92 }, start: 25000, drain: .5, tipBase: 1.4, pay: 1.2, timer: 1.5, dmg: .75, insurance: { cover: .85, deductible: 15, premium: 45 }, taxRate: .35, taxFlat: 600, taxDelay: 0, heal: 16,
     lottery: [ { w: 30, kind: 'mult', v: 1.25 }, { w: 22, kind: 'mult', v: 1.5 }, { w: 10, kind: 'mult', v: 2, jackpot: true }, { w: 14, kind: 'pct', v: .15, label: 'SCRATCH-OFF LOSS' }, { w: 8, kind: 'flat', v: 250, label: 'BAD ODDS' } ] },
   middle: { id: 'middle', label: 'Middle Class', sub: 'Medium · paycheck to paycheck', desc: 'Some savings, standard bills, modest refunds.',
-    start: 3000, drain: 1, tipBase: 1, pay: 1, timer: 1, dmg: 1, insurance: { cover: .55, deductible: 25, premium: 30 }, taxRate: .12, taxFlat: 80, taxDelay: 0, heal: 12,
+    drive: { steer: 1.1, grip: 14, wall: 1.08, align: 1.8, speed: 0.96 }, start: 3000, drain: 1, tipBase: 1, pay: 1, timer: 1, dmg: 1, insurance: { cover: .55, deductible: 25, premium: 30 }, taxRate: .12, taxFlat: 80, taxDelay: 0, heal: 12,
     lottery: [ { w: 24, kind: 'mult', v: 1.25 }, { w: 14, kind: 'mult', v: 1.5 }, { w: 6, kind: 'mult', v: 2, jackpot: true }, { w: 22, kind: 'pct', v: .25, label: 'SCRATCH-OFF LOSS' }, { w: 14, kind: 'flat', v: 500, label: 'BAD ODDS' } ] },
   struggle: { id: 'struggle', label: 'Struggle Mode', sub: 'Hard · no safety net', desc: 'Almost no cash, brutal bills, tiny delayed refunds, cruel odds.',
-    start: 250, drain: 1.6, tipBase: .7, pay: .8, timer: .78, dmg: 1.25, insurance: { cover: 0, deductible: 0, premium: 0 }, taxRate: .03, taxFlat: 0, taxDelay: 25, heal: 8,
+    drive: { steer: 1.04, grip: 12, wall: 1.15, align: 0.8, speed: 1.0 }, start: 250, drain: 1.6, tipBase: .7, pay: .8, timer: .78, dmg: 1.25, insurance: { cover: 0, deductible: 0, premium: 0 }, taxRate: .03, taxFlat: 0, taxDelay: 25, heal: 8,
     lottery: [ { w: 18, kind: 'mult', v: 1.25 }, { w: 9, kind: 'mult', v: 1.5 }, { w: 3, kind: 'mult', v: 2, jackpot: true }, { w: 26, kind: 'pct', v: .35, label: 'SCRATCH-OFF LOSS' }, { w: 18, kind: 'flat', v: 900, label: 'BAD ODDS' } ] },
 };
 
@@ -510,6 +521,11 @@ class SynthAudio {
     this.themeHp = c.createBiquadFilter(); this.themeHp.type = 'highpass'; this.themeHp.frequency.value = 20;
     this.themeLp = c.createBiquadFilter(); this.themeLp.type = 'lowpass'; this.themeLp.frequency.value = 20000;
     this.themeGain = c.createGain(); this.themeGain.gain.value = 0.85; this.themeHp.connect(this.themeLp).connect(this.themeGain).connect(this.master);
+    /* Doink trip, after the Swimulator's AudioDirector: four swept allpass stages mixed in parallel (a phaser whose wet level IS
+       the trip value) plus a lowpass that closes in, so picture and sound move on one number. Silent when not tripping. */
+    let ph = this.themeLp; this.phLfo = c.createOscillator(); this.phLfo.frequency.value = 0.22; this.phDepth = c.createGain(); this.phDepth.gain.value = 700; this.phLfo.connect(this.phDepth); this.phLfo.start();
+    for (let i = 0; i < 4; i++) { const a = c.createBiquadFilter(); a.type = 'allpass'; a.frequency.value = 500 + i * 350; a.Q.value = 0.8; this.phDepth.connect(a.frequency); ph.connect(a); ph = a; }
+    this.phWet = c.createGain(); this.phWet.gain.value = 0; ph.connect(this.phWet).connect(this.themeGain); this.tripV = 0;
     if (!this.timer) this.timer = setInterval(() => this.schedule(), 25);
     this.startTheme(); this.applyEra();
   }
@@ -560,9 +576,16 @@ class SynthAudio {
   applyEra() {
     if (!this.ctx || !this.themeHp) return; const t = this.ctx.currentTime, id = this.dec ? this.dec.id : '1940s';
     const E = GameConfig.theme.era[id] || GameConfig.theme.era.full;
-    this.themeHp.frequency.setTargetAtTime(E.hp, t, 0.4); this.themeLp.frequency.setTargetAtTime(E.lp, t, 0.4); this.themeGain.gain.setTargetAtTime(0.85, t, 0.3);
+    this.eraLp = E.lp; this.themeHp.frequency.setTargetAtTime(E.hp, t, 0.4); this.themeLp.frequency.setTargetAtTime(E.lp * (1 - (this.tripV || 0) * 0.85), t, 0.4); this.themeGain.gain.setTargetAtTime(0.85, t, 0.3);
     if (this.themeEl) this.themeEl.playbackRate = E.rate;
   }
+  /** v is the trip value 0..1. Phaser wet and the lowpass both follow it; called every frame only while it is moving. */
+  trip(v) {
+    if (!this.ctx || !this.phWet) return; this.tripV = v; const t = this.ctx.currentTime;
+    this.phWet.gain.setTargetAtTime(v * 0.9, t, 0.08); this.themeLp.frequency.setTargetAtTime(Math.max(500, (this.eraLp || 20000) * (1 - v * 0.85)), t, 0.12);
+  }
+  /** The hit itself: a low thump with a long noise exhale, the doink's version of the bong sound. */
+  doinkHit() { if (!this.ctx) return; const t = this.ctx.currentTime; this.tone(t, 55, 0.6, 'sine', 0.35); this.tone(t, 82, 0.4, 'triangle', 0.18); this.burst(t, 1.8, 0.28, 900, 'lowpass'); this.arpeggio(true); }
   setMuted(m) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 0.6; if (!m) { if (this.ctx) this.ctx.resume(); this.startTheme(); if (this.themeEl) this.themeEl.play().catch(() => {}); } else if (this.themeEl) this.themeEl.pause(); }
   setDecade(dec) { this.dec = dec; this.music = dec ? dec.music : null; this.step = 0; if (this.ctx) { this.nextT = this.ctx.currentTime + 0.1; this.applyEra(); } }
   stopAll() { this.music = null; if (this.engG) this.engG.gain.value = 0; if (this.skidG) this.skidG.gain.value = 0; if (this.themeGain) this.themeGain.gain.setTargetAtTime(0.18, this.ctx.currentTime, 0.3); /* duck, don't cut: the record keeps playing under the menus */ }
@@ -998,31 +1021,33 @@ function buildVan(dec, rng) {
 class VehiclePhysics {
   constructor() { this.reset(0, 0, 0); }
   reset(x, z, heading) {
-    Object.assign(this, { x, z, y: 0, vx: 0, vz: 0, vy: 0, h: heading, grounded: true, airTime: 0, health: this.health ?? 100, boostT: 0, boostCd: 0, driftT: 0, driftPaid: 0, drifting: false,
+    Object.assign(this, { x, z, y: 0, vx: 0, vz: 0, vy: 0, h: heading, grounded: true, airTime: 0, health: this.health ?? 100, dashBank: this.dashBank ?? 0, boostT: 0, boostCd: 0, driftT: 0, driftPaid: 0, drifting: false,
       yawRate: 0, vyPrev: 0, pitch: 0, roll: 0, dead: false, vf: 0, vl: 0, speed: 0, wheelSpin: 0 });
   }
   get forward() { return [Math.sin(this.h), Math.cos(this.h)]; }
-  tryBoost() { if (this.boostCd > 0 || this.dead) return false; this.boostT = GameConfig.car.boostTime; this.boostCd = GameConfig.car.boostCd + GameConfig.car.boostTime; const [fx, fz] = this.forward; this.vx += fx * GameConfig.car.boostImpulse; this.vz += fz * GameConfig.car.boostImpulse; return true; }
+  tryBoost() { if (this.dead) return false; if (this.boostCd > 0) { if (this.dashBank < 1) return false; this.dashBank -= 1; } /* a banked dash (from a doink) fires through the recharge */ this.boostT = GameConfig.car.boostTime; this.boostCd = GameConfig.car.boostCd + GameConfig.car.boostTime; const [fx, fz] = this.forward; this.vx += fx * GameConfig.car.boostImpulse; this.vz += fz * GameConfig.car.boostImpulse; return true; }
   /** Returns events for the game: impacts, landing, drift ticks. */
   step(dt, inp, wq) {
-    const c = GameConfig.car, ev = [], s = this;
+    const c = GameConfig.car, ev = [], s = this, d = s.drive || Difficulties.middle.drive, D = GameConfig.drive;
     s.boostT = Math.max(0, s.boostT - dt); if (s.boostT <= 0) s.boostCd = Math.max(0, s.boostCd - dt);
     let fx = Math.sin(s.h), fz = Math.cos(s.h);
     if (s.grounded) {
       // 1. throttle/brake act along the OLD heading, straight on the world velocity
-      let vf = s.vx * fx + s.vz * fz; const v0 = vf, boosting = s.boostT > 0, maxF = boosting ? c.boostMax : c.maxSpeed;
+      let vf = s.vx * fx + s.vz * fz; const v0 = vf, boosting = s.boostT > 0, topSpeed = c.maxSpeed * d.speed, maxF = boosting ? c.boostMax : topSpeed;
       const steerIn = inp.steer;
       if (inp.throttle > 0.05) { vf += (vf < 0 ? c.brake : c.accel * (1 - clamp(vf / maxF, 0, 1) * 0.85) * (boosting ? 2.4 : 1) * inp.throttle) * dt; }
       else if (inp.brake > 0.05) { vf -= (vf > 1 ? c.brake : c.accel * 0.55) * inp.brake * dt; vf = Math.max(vf, -c.reverseMax); }
       else if (vf !== 0) vf -= Math.sign(vf) * Math.min(Math.abs(vf), (c.drag * Math.abs(vf) + 3) * dt);
-      if (!boosting && vf > c.maxSpeed) vf -= 16 * dt;
+      if (!boosting && vf > topSpeed) vf -= 16 * dt;
       s.vx += fx * (vf - v0); s.vz += fz * (vf - v0);
       // 2. steering: authority builds with speed, fades a little at the top end; handbrake adds bite
-      const sf = clamp(Math.abs(vf) / 8, 0, 1) * (1 - clamp(Math.abs(vf) / (c.maxSpeed * 1.8), 0, 0.45));
-      s.yawRate = steerIn * c.steer * sf * (vf >= 0 ? 1 : -1) * (inp.hand ? 1.4 : 1); s.h += s.yawRate * dt;
+      const sf = Math.max(D.lowSteer * clamp(Math.abs(vf) / 2, 0, 1), clamp(Math.abs(vf) / 8, 0, 1)) * (1 - clamp(Math.abs(vf) / (c.maxSpeed * 1.8), 0, 0.45));
+      s.yawRate = steerIn * c.steer * d.steer * sf * (vf >= 0 ? 1 : -1) * (inp.hand ? 1.4 : 1); s.h += s.yawRate * dt;
+      // lane assist: hands off near a street axis and the van settles onto it (the city is a grid, so every street is one)
+      if (!inp.hand && Math.abs(steerIn) < 0.12 && Math.abs(vf) > D.alignMinSpeed) { const ax = Math.round(s.h / (Math.PI / 2)) * (Math.PI / 2); if (Math.abs(angDiff(s.h, ax)) < D.alignWindow) s.h = dampAngle(s.h, ax, d.align, dt); }
       fx = Math.sin(s.h); fz = Math.cos(s.h); const lx = Math.cos(s.h), lz = -Math.sin(s.h);
       // 3. the velocity kept its old direction, so against the NEW heading part of it is sideways; grip bleeds that off
-      let vF = s.vx * fx + s.vz * fz, vL = s.vx * lx + s.vz * lz; const grip = inp.hand ? c.gripDrift : c.gripNormal, lost = vL * (1 - Math.exp(-grip * dt));
+      let vF = s.vx * fx + s.vz * fz, vL = s.vx * lx + s.vz * lz; const grip = inp.hand ? c.gripDrift : d.grip, lost = vL * (1 - Math.exp(-grip * dt));
       vL -= lost; if (!inp.hand) vF += Math.sign(vF || 1) * Math.abs(lost) * 0.75; else vF *= Math.exp(-0.28 * dt);
       s.vx = fx * vF + lx * vL; s.vz = fz * vF + lz * vL; s.vf = vF; s.vl = vL;
       const was = s.drifting; s.drifting = Math.abs(vL) > 5 && Math.abs(vF) > 12;
@@ -1035,7 +1060,7 @@ class VehiclePhysics {
     const p = { x: s.x, z: s.z }, hits = wq.collide(p, c.radius, s.y);
     if (hits.length) {
       s.x = p.x; s.z = p.z; let worst = 0, wn = null;
-      for (const hh of hits) { const vn = s.vx * hh.nx + s.vz * hh.nz; if (vn < 0) { s.vx -= (1.3) * vn * hh.nx; s.vz -= (1.3) * vn * hh.nz; if (-vn > worst) { worst = -vn; wn = hh; } } }
+      for (const hh of hits) { const vn = s.vx * hh.nx + s.vz * hh.nz; if (vn < 0) { s.vx -= d.wall * vn * hh.nx; s.vz -= d.wall * vn * hh.nz; if (-vn > worst) { worst = -vn; wn = hh; } } }
       const sp = Math.hypot(s.vx, s.vz); if (sp > 2) s.h = dampAngle(s.h, Math.atan2(s.vx, s.vz), 6, dt); // nudge along the wall so it never wedges
       s.vx *= 0.985; s.vz *= 0.985;
       if (wn) ev.push({ type: 'impact', speed: worst, nx: wn.nx, nz: wn.nz });
@@ -1283,7 +1308,8 @@ class TargetManager {
 /* ======================================================================
    OrderManager — restaurant pickups, customer drop-offs, per-order timer, tips.
    ====================================================================== */
-const DISHES = ['Chili dogs', 'Burger & shake', 'Pad thai', 'Pepperoni pie', 'Fish tacos', 'Ramen', 'Hot chicken', 'Falafel wrap', 'Pancake stack', 'Dumplings', 'Curry & naan', 'Bao buns'];
+/* What you are fetching: trivial things somebody could have walked to the shop for (2026-11-25, at his word). Timeless on purpose, so none of them breaks a decade. */
+const ITEMS = ['A lighter', 'A pair of underwear', '2 AAA batteries', 'One sock', 'A single egg', 'Chapstick', 'A spoon', 'A bag of rubber bands', 'A shoelace', 'Bobby pins', 'Toothpicks', 'A roll of mints', 'A paperclip', 'Half a roll of tape', 'A birthday candle', 'One AA battery', 'A bag of ice', 'A pencil stub'];
 const NAMES = ['Mrs. Alvarez', 'Big Dave', 'The Kowalskis', 'Dr. Okafor', 'Room 4B', 'Lil Tim', 'Ms. Nakamura', 'The Night Shift', 'Grandpa Joe', 'Penthouse C', 'Coach Reyes', 'Sleepy Pat'];
 class Beacon {
   constructor(scene, colorA, colorB) {
@@ -1328,7 +1354,7 @@ class OrderManager {
     const E = G.eco, dec = G.decade, diff = G.diff, W = this.W, spots = W.spots.filter(s => { const d = Math.hypot(s.x - r.x, s.z - r.z); return d > 110 && d < 440; });
     const to = spots.length ? spots[Math.floor(this.rng() * spots.length)] : W.spots[Math.floor(this.rng() * W.spots.length)], dist = Math.hypot(to.x - r.x, to.z - r.z) + Math.hypot(r.x - G.car.x, r.z - G.car.z) * 0.3;
     const base = (14 + dist * 0.11) * E.wage * dec.payMul * diff.pay, total = Math.max(24 / (1 / diff.timer), dist / GameConfig.order.avgSpeed + 14) * diff.timer * (dec.sepia ? .85 : 1);
-    this.order = { from: r, to, base, total, time: total, dish: pick(this.rng, DISHES), who: pick(this.rng, NAMES), pot: 0, combo: 0, comboT: 0, mult: diff.tipBase * dec.tipMul, dist };
+    this.order = { from: r, to, base, total, time: total, item: pick(this.rng, ITEMS), who: pick(this.rng, NAMES), pot: 0, combo: 0, comboT: 0, mult: diff.tipBase * dec.tipMul, dist };
     this.avail = this.avail.filter(a => a !== r); const b = this.beacons.get(r); if (b) { b.dispose(); this.beacons.delete(r); } this.avail.forEach(a => { const bb = this.beacons.get(a); if (bb) bb.g.visible = false; });
     this.drop.at(to.x, to.z); this.drop.g.visible = true; G.onPickup(this.order);
   }
@@ -1364,6 +1390,90 @@ class NavArrow {
 }
 
 /* ======================================================================
+   Doinks — the Swimulator's bong loop, carried over to the van (2026-11-25).
+   Baggies sit on the pavement; each is worth an eighth, a quarter or a half,
+   dealt from a shuffled bag rather than rolled one at a time, because a run
+   only sees a dozen or so and independent rolls left whole runs without a
+   half (the jar lesson in the playbook). Eight eighths roll a DOINK. The
+   DOINKs are giant lit joints standing on corners across the city, tall
+   enough to steer at from blocks away; one with a full stash in the van
+   lights a green column so it reads as usable, and a dark one just smokes.
+   Driving into a lit one hands control to Game.trip.
+   ====================================================================== */
+const EIGHTHS = ['', '1/8', '1/4', '3/8', '1/2', '5/8', '3/4', '7/8', '8/8'];
+class Doinks {
+  constructor(scene, W, rng) {
+    const K = GameConfig.doink; this.scene = scene; this.rng = rng; this.g = new THREE.Group(); scene.add(this.g); this.own = [];
+    this.stash = 0; this.deck = []; this.nag = 0; this.t = 0;
+    const taken = new Set(W.restaurants), free = W.spots.filter(sp => !taken.has(sp)).sort(() => rng() - 0.5);
+    // DOINKs first, spread out so there is always one within a few blocks
+    this.list = []; for (const sp of free) { if (this.list.length >= K.count) break; if (this.list.every(d => Math.hypot(d.x - sp.x, d.z - sp.z) > K.minApart)) this.list.push({ x: sp.x, z: sp.z, sp }); }
+    const used = new Set(this.list.map(d => d.sp)); this.free = free.filter(sp => !used.has(sp));
+    this.buildDoinks(); this.buildBags();
+  }
+  dealWorth() { if (!this.deck.length) { this.deck = GameConfig.doink.bagDeck.slice(); for (let i = this.deck.length - 1; i > 0; i--) { const j = Math.floor(this.rng() * (i + 1)); [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]]; } } return this.deck.pop(); }
+  buildDoinks() {
+    const K = GameConfig.doink, H = K.height, own = this.own;
+    // paper: a cone that widens toward the lit end, with a faint spiral seam painted on so it reads as rolled, not a pipe
+    const pc = document.createElement('canvas'); pc.width = 64; pc.height = 256; const pg = pc.getContext('2d'); pg.fillStyle = '#ece6d6'; pg.fillRect(0, 0, 64, 256);
+    pg.strokeStyle = 'rgba(120,100,70,.35)'; pg.lineWidth = 3; for (let y = -64; y < 320; y += 40) { pg.beginPath(); pg.moveTo(0, y); pg.lineTo(64, y + 26); pg.stroke(); }
+    const ptex = new THREE.CanvasTexture(pc); ptex.wrapS = THREE.RepeatWrapping; ptex.colorSpace = THREE.SRGBColorSpace;
+    const paper = new THREE.MeshLambertMaterial({ map: ptex }), crutch = new THREE.MeshLambertMaterial({ color: 0xc9a46a }), ash = new THREE.MeshLambertMaterial({ color: 0x5a5852 });
+    const ember = new THREE.MeshBasicMaterial({ color: 0xff6a1a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0x5dff7a, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const gP = new THREE.CylinderGeometry(1.7, 1.0, H, 20, 1, true), gC = new THREE.CylinderGeometry(1.02, 1.02, 2.2, 20), gA = new THREE.CylinderGeometry(1.75, 1.7, 0.9, 20), gE = new THREE.SphereGeometry(1.55, 16, 8), gB = new THREE.CylinderGeometry(3.4, 3.4, 220, 18, 1, true);
+    own.push(ptex, paper, crutch, ash, ember, beamMat, gP, gC, gA, gE, gB);
+    for (const d of this.list) {
+      const g = new THREE.Group(), lean = new THREE.Group(); g.position.set(d.x, 0, d.z); lean.rotation.set((this.rng() - .5) * 0.25, this.rng() * 6.283, (this.rng() - .5) * 0.25);
+      const p = new THREE.Mesh(gP, paper); p.position.y = H / 2 + 1.6; const c = new THREE.Mesh(gC, crutch); c.position.y = 1.1; const a = new THREE.Mesh(gA, ash); a.position.y = H + 1.6 + 0.4;
+      const e = new THREE.Mesh(gE, ember); e.scale.y = 0.45; e.position.y = H + 1.6 + 0.9; [p, c, a].forEach(m => { m.castShadow = true; }); lean.add(p, c, a, e); g.add(lean);
+      const beam = new THREE.Mesh(gB, beamMat); beam.position.y = 110; beam.visible = false; g.add(beam);
+      d.g = g; d.lean = lean; d.ember = e; d.beam = beam; d.tip = new THREE.Vector3(); this.g.add(g);
+    }
+    this.beamMat = beamMat; this.emberMat = ember;
+  }
+  buildBags() {
+    const K = GameConfig.doink, own = this.own;
+    const bagMat = new THREE.MeshLambertMaterial({ color: 0x7dff8a, emissive: 0x1d5a26, transparent: true, opacity: 0.85 }), budMat = new THREE.MeshLambertMaterial({ color: 0x3c8a2e, emissive: 0x0d2a08 });
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0x5dff7a, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const gBag = new THREE.BoxGeometry(1.0, 1.3, 0.25), gBud = new THREE.IcosahedronGeometry(0.32, 0), gRing = new THREE.RingGeometry(1.4, 2.0, 24); gRing.rotateX(-Math.PI / 2);
+    own.push(bagMat, budMat, glowMat, gBag, gBud, gRing);
+    this.bags = []; const spots = this.free.slice(0, K.baggies);
+    for (const sp of spots) {
+      const g = new THREE.Group(), body = new THREE.Group(); g.position.set(sp.x, 0, sp.z);
+      const bag = new THREE.Mesh(gBag, bagMat), bud = new THREE.Mesh(gBud, budMat); bud.position.y = -0.2; body.add(bag, bud); const ring = new THREE.Mesh(gRing, glowMat); ring.position.y = 0.06; g.add(body, ring); this.g.add(g);
+      this.bags.push({ g, body, sp, worth: this.dealWorth(), gone: 0, ph: this.rng() * 6 });
+    }
+    // a half is visibly bigger than an eighth, so what you are steering at says what it is worth
+    for (const b of this.bags) b.body.scale.setScalar(0.85 + b.worth * 0.22);
+  }
+  get ready() { return this.stash >= GameConfig.doink.needed; }
+  frac() { return EIGHTHS[Math.min(8, this.stash)] || '0/8'; }
+  nearest(car) { let best = null, bd = 1e9; for (const d of this.list) { const k = Math.hypot(d.x - car.x, d.z - car.z); if (k < bd) { bd = k; best = d; } } return best; }
+  update(dt, car, G, live) {
+    const K = GameConfig.doink; this.t += dt; this.nag = Math.max(0, this.nag - dt);
+    const pulse = 0.18 + 0.1 * Math.sin(this.t * 3); this.beamMat.opacity = pulse;
+    for (const d of this.list) {
+      d.beam.visible = this.ready; d.ember.scale.set(1 + Math.sin(this.t * 2.3 + d.x) * 0.06, 0.45, 1 + Math.cos(this.t * 2.1) * 0.06);
+      d.ember.getWorldPosition(d.tip); if (Math.random() < dt * 9) G.smoke.emit(d.tip.x + (Math.random() - .5), d.tip.y + 1, d.tip.z + (Math.random() - .5), (Math.random() - .5) * 1.5, 4 + Math.random() * 3, (Math.random() - .5) * 1.5, 3.2, 0xd8d4c8, -0.4);
+    }
+    for (const b of this.bags) {
+      if (b.gone > 0) { b.gone -= dt; if (b.gone <= 0) { b.g.visible = true; b.worth = this.dealWorth(); b.body.scale.setScalar(0.85 + b.worth * 0.22); } continue; }
+      b.ph += dt; b.body.position.y = 1.3 + Math.sin(b.ph * 2.2) * 0.25; b.body.rotation.y += dt * 1.6;
+      if (live && Math.hypot(b.sp.x - car.x, b.sp.z - car.z) < K.bagRadius && car.y < 3) {
+        b.g.visible = false; b.gone = K.bagRespawn; const before = this.stash; this.stash = Math.min(K.needed, this.stash + b.worth); G.onBaggie(b.worth, this.stash, before);
+      }
+    }
+    if (!live) return null;
+    const d = this.nearest(car); if (!d || Math.hypot(d.x - car.x, d.z - car.z) > K.radius) return null;
+    if (this.ready) return d;
+    if (this.nag <= 0) { this.nag = K.nagCd; G.hud.callout(`Need 8/8 for a DOINK · you have ${this.frac()}`, 'sm'); }
+    return null;
+  }
+  dispose() { this.scene.remove(this.g); this.own.forEach(o => o.dispose && o.dispose()); }
+}
+
+/* ======================================================================
    HUD
    ====================================================================== */
 class HUD {
@@ -1389,8 +1499,8 @@ class HUD {
     const t = G.orders.target(car); if (t) { this.set('navDist', Math.round(Math.hypot(t.x - car.x, t.z - car.z)) + ' m'); this.set('navLabel', t.kind === 'drop' ? 'DROP-OFF' : 'PICK-UP'); } else { this.set('navDist', '--'); this.set('navLabel', 'NO ORDERS'); }
     if (o) {
       $('hTimer').classList.remove('hide'); $('hTimerBarW').classList.remove('hide'); const tm = Math.max(0, o.time); this.set('hTimer', tm.toFixed(1)); $('hTimer').classList.toggle('warn', tm < 8); $('hTimerBar').style.width = (clamp(tm / o.total, 0, 1) * 100) + '%';
-      this.set('hOrderLbl', o.dish + ' → ' + o.who); this.set('hOrderSub', 'Base ' + money(o.base) + ' · hold the zone, slow to stop');
-    } else { $('hTimer').classList.add('hide'); $('hTimerBarW').classList.add('hide'); this.set('hOrderLbl', G.orders.hold > 0 ? 'Grabbing order…' : 'No order. Find a glowing restaurant'); this.set('hOrderSub', 'Blue / orange pillars = pick-up'); }
+      this.set('hOrderLbl', 'Carrying: ' + o.item); this.set('hOrderSub', 'For ' + o.who + ' · base ' + money(o.base) + ' · slow to stop in the zone');
+    } else { $('hTimer').classList.add('hide'); $('hTimerBarW').classList.add('hide'); this.set('hOrderLbl', G.orders.hold > 0 ? 'Grabbing order…' : 'No order. Find a glowing pickup'); this.set('hOrderSub', 'Blue / orange pillars = pick-up'); }
     const cm = o ? 1 + o.combo * 0.1 : 1; this.set('hCombo', 'x' + cm.toFixed(1)); $('hComboBar').style.width = (o ? clamp(o.comboT / GameConfig.stunt.comboWindow, 0, 1) * 100 : 0) + '%'; this.set('hPot', money(o ? o.pot : 0));
     this.set('hSpeed', Math.round(car.speed * 3.6) + ' km/h'); $('hBoost').style.width = (car.boostCd <= 0 ? 100 : clamp(100 - (car.boostCd / (GameConfig.car.boostCd + GameConfig.car.boostTime)) * 100, 0, 100)) + '%';
   }
@@ -1775,13 +1885,13 @@ class Game {
     if (o) { o.pot += a; o.combo = Math.min(o.combo + 1, 30); o.comboT = GameConfig.stunt.comboWindow; } else this.eco.earn(a * 0.6);
     this.hud.callout(`${label} ${money(a, true)}`, kind || ''); this.audio.ding(false);
   }
-  onPickup(o) { this.hud.callout('ORDER UP!', 'gold'); this.hud.banner('ORDER UP', o.dish + ' → ' + o.who + ' · ' + Math.round(o.total) + 's', 2200); this.audio.arpeggio(true); }
+  onPickup(o) { this.hud.callout('GOT ' + o.item + '!', 'gold'); this.hud.banner('PICKED UP: ' + o.item, 'For ' + o.who + ' · ' + Math.round(o.total) + 's', 2600); this.audio.arpeggio(true); }
   onDeliver(r) {
     this.eco.earn(r.total); this.delivered++; this.car.health = Math.min(100, this.car.health + this.diff.heal); this.audio.ding(true);
     this.hud.callout('DELIVERED ' + money(r.total, true), 'gold'); this.hud.banner('DELIVERED', `Fare ${money(r.pay)} · Tips ${money(r.tips)}`, 2000);
     if (this.mode === 'normal' && this.delivered >= GameConfig.order.quota) this.nextDecade();
   }
-  onOrderFail(o) { const pen = o.base * 0.3; this.eco.earn(-pen); this.hud.callout('ORDER COLD! ' + money(-pen), 'bad'); this.audio.arpeggio(false); }
+  onOrderFail(o) { const pen = o.base * 0.3; this.eco.earn(-pen); this.hud.callout('TOO LATE! ' + money(-pen), 'bad'); this.audio.arpeggio(false); }
   damage(amount) {
     if (this.car.dead || amount <= 0) return; this.car.health -= amount * this.diff.dmg; this.hud.flash(); this.chase.shake = Math.min(0.8, 0.2 + amount * 0.02);
     if (this.car.health <= 0) this.die(this.lastCause || 'Wrecked');

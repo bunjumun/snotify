@@ -14,6 +14,8 @@ import { Game } from './core/Game.js';
 import { CFG } from '../config.js';
 import { KEYS } from './core/Keys.js';
 import { PadMenu } from './input/PadMenu.js';
+import { Autopilot } from './game/Autopilot.js';
+import { Progress } from './game/Progress.js';
 
 const canvas = document.getElementById('c');
 
@@ -132,6 +134,29 @@ let audio = null;
 audioReady.then((a) => { audio = a; });
 
 let started = false;
+/**
+ * Demo: the autopilot plays on the easy tank with the lighter already in hand and the tutorial skipped, and nothing it
+ * does is saved. Started from the button (sound unlocks on that tap) or by ?demo (sound waits for the first gesture).
+ * Once sound is running, any key or touch leaves: it reloads this page without the flag.
+ */
+function beginDemo() {
+  Progress.noWrite = true;
+  game.progress.data.hasLighter = true;
+  game.progress.data.introStep = 4;
+  game.difficulty.name = 'easy';
+  game.breath.reset();
+  game.demo = new Autopilot(game);
+  const leave = (e) => {
+    if (e.repeat) return;
+    const ctx = audio?.ctx;
+    if (!ctx || ctx.state !== 'running') return;   // this gesture is the one that turns the sound on
+    const q = new URLSearchParams(location.search); q.delete('demo');
+    location.replace(location.pathname + (q.toString() ? '?' + q : ''));
+  };
+  addEventListener('keydown', leave); addEventListener('pointerdown', leave);
+  setTimeout(() => game.hud.say('DEMO · any key or touch to exit', { seconds: 4 }), 1200);
+}
+document.getElementById('demoBtn').addEventListener('click', () => { if (!started) { beginDemo(); diveBtn.click(); } });
 diveBtn.addEventListener('click', () => {
   if (started) return;
   started = true;
@@ -150,6 +175,8 @@ diveBtn.addEventListener('click', () => {
   startEl.classList.add('hide');
   game.start();
 });
+
+if (new URLSearchParams(location.search).has('demo')) { beginDemo(); diveBtn.click(); }
 
 async function bootAudio() {
   try {

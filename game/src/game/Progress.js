@@ -38,6 +38,7 @@ export class Progress {
   }
 
   save() {
+    if (Progress.noWrite) return;   // demo mode: watching must not change what a player has earned
     try { localStorage.setItem(KEY, JSON.stringify(this.data)); } catch { /* ignore */ }
   }
 
@@ -92,3 +93,6 @@ export class Progress {
     this.save();
   }
 }
+
+/** Demo mode sets this so the autopilot never writes a save. */
+Progress.noWrite = false;

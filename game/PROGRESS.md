@@ -165,3 +165,7 @@ Every module opens with a prose header explaining why it is shaped the way it is
 - Reported laggy on iPhone 8. Found: no frame sampler existed (only a comment), final bloom pass ran at 2x DPR, canvas MSAA on though the scene renders to Post's offscreen target.
 - Now: `CFG.quality.levels` has `dpr` per level (high 2, low 1.5, new `min` 1) and `CFG.quality.adapt` (mean frame over 3 s above 26 ms steps down high > low > min, never up; frames over 250 ms ignored). `Game._adaptQuality`, `_pixelRatio`; `antialias:false`. Checked by driving `_adaptQuality` with 40 ms frames: high > low > min, dpr 1. `Game.perfMs` is the last window mean.
 - Untested on a real phone. If still laggy at min: next suspects are the HalfFloat render target and the bloom shader's per-pixel cost (Post.js FRAG).
+
+
+## Demo mode (2026-11-25)
+`?demo` or the start-screen "Demo" button. `src/game/Autopilot.js` feeds the InputBus intent shape (swim at baggies until the bowl packs, then a bong). Easy tank, lighter given, intro skipped, `Progress.noWrite` blocks saves. Exit: any key/touch once sound is running (reloads without `?demo`). Checked 60 s in a browser; box copy not updated.

@@ -386,6 +386,7 @@ export class Game {
   // ------------------------------------------------------------------ public
 
   start() {
+    this.demo = this.demo || null;   // set by main.js before start() for ?demo
     this.state = State.PLAY;
     this.respawn();
     this.loop.start();
@@ -513,6 +514,7 @@ export class Game {
     if (this.state === State.PAUSED) return;
 
     if (this.state === State.DEAD) {
+      if (this.demo && (this._demoDead = (this._demoDead || 0) + dt) > 3) { this._demoDead = 0; this.retry(); return; }
       this.kelpie.sink(dt);
       this._followEntities(dt);
       return;
@@ -522,7 +524,7 @@ export class Game {
     this.input.update(dt);
     // During the cinematic the player is a passenger — the orbit is the payoff
     // for the run, and fighting the camera through it would spoil it.
-    const intent = this.trip.cinematic ? IDLE_INTENT : this.input.intent;
+    const intent = this.trip.cinematic ? IDLE_INTENT : this.demo ? this.demo.think(dt) : this.input.intent;
 
     this.weather.update(dt);
     this.thermocline.update(dt);

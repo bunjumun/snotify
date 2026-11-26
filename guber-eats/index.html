@@ -494,6 +494,36 @@ function paintDazzle(g, W, H, o) {
   }
 }
 function dazzleCanvas(W, H, o) { const c = document.createElement('canvas'); c.width = W; c.height = H; paintDazzle(c.getContext('2d'), W, H, o); return c; }
+/* Buildings read as high-tech left to rot (2026-11-25, at the user's word): the era palette is pulled almost to neutral grey (still
+   slightly cold, never warm), then a decay pass is painted over the dazzle. The van and the road keep the era's colour, so the
+   van is what stands out. `sat` and `lum` scale the colour's saturation and lightness in sRGB, so greys stay perceptually even. */
+function greyDecay(hex, sat, lum) {
+  const c = new THREE.Color(hex), h = {}; c.getHSL(h, THREE.SRGBColorSpace);
+  c.setHSL(0.55, Math.min(0.12, h.s * sat), Math.min(0.82, h.l * lum), THREE.SRGBColorSpace); return '#' + c.getHexString(THREE.SRGBColorSpace);
+}
+/* Curtain-wall glazing that has gone dead: grey wash, a glass grid with most panes black, some smashed, a few still lit cold cyan,
+   frame seams, rust runs, soot from the base, torn cladding and sagging cables. Seeded from its own rng so the city layout is unchanged. */
+function decayOverlay(cv, rng) {
+  const g = cv.getContext('2d'), W = cv.width, H = cv.height, cw = 32, ch = 48;
+  g.fillStyle = 'rgba(84,90,94,.36)'; g.fillRect(0, 0, W, H);
+  for (let y = 0; y < H; y += ch) for (let x = 0; x < W; x += cw) {
+    const r = rng();
+    if (r < 0.55) { g.fillStyle = 'rgba(12,16,20,.6)'; g.fillRect(x + 3, y + 4, cw - 6, ch - 8); }
+    else if (r < 0.63) {
+      g.fillStyle = 'rgba(5,7,9,.9)'; g.fillRect(x + 3, y + 4, cw - 6, ch - 8); g.strokeStyle = 'rgba(190,200,205,.5)'; g.lineWidth = 1; g.beginPath();
+      g.moveTo(x + 3 + rng() * (cw - 6), y + 4); g.lineTo(x + cw / 2, y + ch / 2); g.lineTo(x + 3 + rng() * (cw - 6), y + ch - 4);
+      g.moveTo(x + cw / 2, y + ch / 2); g.lineTo(x + 3, y + ch / 2 + rng() * 10 - 5); g.stroke();
+    } else if (r < 0.67) { g.fillStyle = 'rgba(130,205,230,.5)'; g.fillRect(x + 3, y + 4, cw - 6, ch - 8); } // the last lights still on
+  }
+  g.fillStyle = 'rgba(18,20,22,.6)'; for (let x = 0; x < W; x += cw) g.fillRect(x, 0, 2, H); for (let y = 0; y < H; y += ch) g.fillRect(0, y, W, 2);
+  for (let i = 0; i < 22; i++) { const x = rng() * W, y = rng() * H * 0.7, w = 2 + rng() * 5, len = 40 + rng() * 200, gr = g.createLinearGradient(0, y, 0, y + len); gr.addColorStop(0, 'rgba(118,62,30,.55)'); gr.addColorStop(1, 'rgba(118,62,30,0)'); g.fillStyle = gr; g.fillRect(x, y, w, len); } // rust runs
+  const soot = g.createLinearGradient(0, H * 0.55, 0, H); soot.addColorStop(0, 'rgba(10,10,10,0)'); soot.addColorStop(1, 'rgba(10,10,10,.5)'); g.fillStyle = soot; g.fillRect(0, H * 0.55, W, H * 0.45);
+  for (let i = 0; i < 6; i++) { // cladding torn off to bare concrete
+    const x = rng() * W, y = rng() * H, s = 30 + rng() * 60; g.fillStyle = 'rgba(96,98,96,.7)'; g.strokeStyle = 'rgba(30,30,30,.7)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y);
+    for (let k = 1; k < 7; k++) { const a = k / 7 * 6.283; g.lineTo(x + Math.cos(a) * s * (0.5 + rng() * 0.7), y + Math.sin(a) * s * (0.4 + rng() * 0.6)); } g.closePath(); g.fill(); g.stroke();
+  }
+  g.strokeStyle = 'rgba(8,8,8,.75)'; g.lineWidth = 2; for (let i = 0; i < 4; i++) { const y = rng() * H * 0.8; g.beginPath(); g.moveTo(0, y); g.quadraticCurveTo(W / 2, y + 30 + rng() * 40, W, y + rng() * 20); g.stroke(); }
+}
 function paintPageChrome() {
   const rng = mulberry32(1917), b = document.body.style;
   const mk = (W, H, o) => `url(${dazzleCanvas(W, H, Object.assign({ light: '#fff', dark: '#08080a', rng }, o)).toDataURL()})`;
@@ -534,6 +564,9 @@ class SynthAudio {
     this.themeHp = c.createBiquadFilter(); this.themeHp.type = 'highpass'; this.themeHp.frequency.value = 20;
     this.themeLp = c.createBiquadFilter(); this.themeLp.type = 'lowpass'; this.themeLp.frequency.value = 20000;
     this.themeGain = c.createGain(); this.themeGain.gain.value = 0.85; this.themeHp.connect(this.themeLp).connect(this.themeGain).connect(this.master);
+    /* The van's roof speakers pulse to what you hear: a silent tap on both music paths (the synth sequencer and the SD song), read by level(). Routed through a zero gain so every browser keeps pulling it. */
+    this.an = c.createAnalyser(); this.an.fftSize = 256; this.an.smoothingTimeConstant = 0.5; this.anBuf = new Uint8Array(this.an.frequencyBinCount);
+    const anSink = c.createGain(); anSink.gain.value = 0; this.an.connect(anSink).connect(this.master); this.musicGain.connect(this.an); this.themeGain.connect(this.an);
     /* Doink trip, after the Swimulator's AudioDirector: four swept allpass stages mixed in parallel (a phaser whose wet level IS
        the trip value) plus a lowpass that closes in, so picture and sound move on one number. Silent when not tripping. */
     let ph = this.themeLp; this.phLfo = c.createOscillator(); this.phLfo.frequency.value = 0.22; this.phDepth = c.createGain(); this.phDepth.gain.value = 700; this.phLfo.connect(this.phDepth); this.phLfo.start();
@@ -600,6 +633,8 @@ class SynthAudio {
   /** The hit itself: a low thump with a long noise exhale, the doink's version of the bong sound. */
   doinkHit() { if (!this.ctx) return; const t = this.ctx.currentTime; this.tone(t, 55, 0.6, 'sine', 0.35); this.tone(t, 82, 0.4, 'triangle', 0.18); this.burst(t, 1.8, 0.28, 900, 'lowpass'); this.arpeggio(true); }
   setMuted(m) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 0.6; if (!m) { if (this.ctx) this.ctx.resume(); this.startTheme(); if (this.themeEl) this.themeEl.play().catch(() => {}); } else if (this.themeEl) this.themeEl.pause(); }
+  /** Loudness of the music right now, 0..1 (mean of the low bins, where kick and bass live). 0 until audio has started. */
+  level() { if (!this.an) return 0; this.an.getByteFrequencyData(this.anBuf); let s = 0; for (let i = 1; i < 8; i++) s += this.anBuf[i]; return s / (7 * 255); }
   setDecade(dec) { this.dec = dec; this.music = dec ? dec.music : null; this.step = 0; if (this.ctx) { this.nextT = this.ctx.currentTime + 0.1; this.applyEra(); } }
   stopAll() { this.music = null; if (this.engG) this.engG.gain.value = 0; if (this.skidG) this.skidG.gain.value = 0; if (this.themeGain) this.themeGain.gain.setTargetAtTime(0.18, this.ctx.currentTime, 0.3); /* duck, don't cut: the record keeps playing under the menus */ }
   freq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
@@ -699,12 +734,14 @@ class CityBuilder {
     const W = { group, N, P, E, cRoad, cBlock, buildings: [], buckets: new Map(), edgeWalls: [], ramps: [], spots: [], restaurants: [], ticketSpots: [], propSpots: [], disposables: [] };
 
     // dazzle variants for walls: light/dark swaps, accent panels, fat vs narrow stripes
+    const gL = greyDecay(dec.light, 0.1, 0.72), gD = greyDecay(dec.dark, 0.1, 0.8), gA = greyDecay(dec.accent, 0.45, 0.6), decayRng = mulberry32(seed * 13 + 5);
     const V = [
-      { l: dec.light, d: dec.dark, bmin: 14, bmax: 34 }, { l: dec.dark, d: dec.light, bmin: 14, bmax: 34 }, { l: dec.light, d: dec.dark, a: dec.accent, e: 5, bmin: 16, bmax: 40 },
-      { l: dec.light, d: dec.dark, bmin: 8, bmax: 18 }, { l: dec.dark, d: dec.light, a: dec.accent, e: 6, bmin: 22, bmax: 48 }, { l: dec.light, d: dec.dark, bmin: 30, bmax: 60 },
+      { l: gL, d: gD, bmin: 14, bmax: 34 }, { l: gD, d: gL, bmin: 14, bmax: 34 }, { l: gL, d: gD, a: gA, e: 5, bmin: 16, bmax: 40 },
+      { l: gL, d: gD, bmin: 8, bmax: 18 }, { l: gD, d: gL, a: gA, e: 6, bmin: 22, bmax: 48 }, { l: gL, d: gD, bmin: 30, bmax: 60 },
     ];
     const batches = V.map(() => new BoxBatch()), mats = V.map((v) => {
       const cv = dazzleCanvas(512, 512, { light: v.l, dark: v.d, accent: v.a, every: v.e, panelMin: .09, panelMax: .24, bandMin: v.bmin, bandMax: v.bmax, rng });
+      decayOverlay(cv, decayRng);
       const tx = makeTexture(cv); W.disposables.push(tx); const m = new THREE.MeshLambertMaterial({ map: tx }); W.disposables.push(m); return m;
     });
     W.rampMat = mats[2];
@@ -945,87 +982,179 @@ function buildCar(styleName, skinTex, accent, isPlayer) {
 }
 
 /* ======================================================================
-   Band van — the delivery vehicle in every era. A tall box on four wheels,
-   dazzle-painted like everything else, with LAKEHORSE across both flanks and
-   the back doors, an amp on the roof rack and the GUBER topper. Era only
-   changes the proportions (short and upright in the 40s, long and tall by now).
-   Face order for a BoxGeometry is +x, -x, +y, -y, +z, -z. The nose is +z, so
-   the +x flank has the front at the LEFT of its texture and the -x flank has
-   it at the RIGHT; the painter takes a flag for that so the lettering never
-   runs into the windscreen.
+   Band van — the delivery vehicle in every era, one body style per difficulty.
+   Era changes the proportions (short and upright in the 40s, long and tall by
+   now); difficulty changes the body, paint, lettering and roof speakers.
    ====================================================================== */
-/* Faded black cargo van (the dazzle stays on the world, not on the band's own van): sun-bleached black paint with dust,
-   scuffs and rust streaks, "lakehorse" sprayed on both flanks, plate LKEHRSE. All painted from a seeded rng. */
-function fadedBlack(W, H, rng) {
-  const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
-  g.fillStyle = '#17171a'; g.fillRect(0, 0, W, H);
-  for (let i = 0; i < 26; i++) { g.fillStyle = `rgba(${90 + rng() * 40|0},${88 + rng() * 40|0},${86 + rng() * 40|0},${0.04 + rng() * 0.08})`; g.fillRect(rng() * W, rng() * H * 0.7, 40 + rng() * W * 0.35, 12 + rng() * H * 0.25); } // sun fade
-  for (let i = 0; i < 14; i++) { const x = rng() * W, y0 = H * (0.3 + rng() * 0.4); g.fillStyle = `rgba(110,62,32,${0.12 + rng() * 0.14})`; g.fillRect(x, y0, 2 + rng() * 5, 20 + rng() * H * 0.25); } // rust runs
-  for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(150,150,150,${0.08 + rng() * 0.12})`; g.fillRect(rng() * W, rng() * H, 3 + rng() * 22, 1 + rng() * 2); } // scuffs
-  const dust = g.createLinearGradient(0, H * 0.6, 0, H); dust.addColorStop(0, 'rgba(120,110,95,0)'); dust.addColorStop(1, 'rgba(120,110,95,.22)'); g.fillStyle = dust; g.fillRect(0, H * 0.6, W, H * 0.4);
-  return c;
-}
-function sprayText(g, text, cx, cy, size, rng) {
+/* The van is no longer one faded-black box (2026-11-25, designed with the user on a canvas, then ported). It follows the family
+   income the player picked: Struggle Mode drives an Econoline-style cargo van, Middle Class a family minivan, Nepo a Mercedes-style
+   luxury van. Every tier shares one look: black above a belt line, the tier's own light paint below it (the old all-black body was
+   nearly the road colour, so the van disappeared), dazzle stripes that flip angle and colour across the flank, and a speaker on the
+   roof that pulses and rings to whatever music you can hear (`SynthAudio.level()`, read in `Game.render`).
+   How it is built: a side profile per tier (the polygons below, in the 450x167 frame the design was drawn in) is extruded into the
+   body, and each flank gets a flat decal cut to the same profile so the painted canvas can never spill past the silhouette. The nose
+   and tail are plain planes. Face handedness: the nose is +z, so the +x flank has the front at the LEFT of its texture and the -x
+   flank at the RIGHT; the painter mirrors the shapes but never the lettering, so it reads correctly from outside on both sides. */
+function sprayText(g, text, cx, cy, size, rng, outline) {
   g.save(); g.font = `900 ${size}px "Marker Felt","Chalkboard SE","Comic Sans MS",-apple-system,Helvetica,Arial,sans-serif`; g.textAlign = 'left'; g.textBaseline = 'middle';
-  const widths = [...text].map(ch => g.measureText(ch).width * 0.98), total = widths.reduce((a, b) => a + b, 0); let x = cx - total / 2; g.rotate(-0.025); 
+  const widths = [...text].map(ch => g.measureText(ch).width * 0.98), total = widths.reduce((a, b) => a + b, 0); let x = cx - total / 2; g.rotate(-0.025);
   [...text].forEach((ch, i) => {
     const jy = (rng() - 0.5) * size * 0.1, jr = (rng() - 0.5) * 0.12; g.save(); g.translate(x + widths[i] / 2, cy + jy); g.rotate(jr);
+    if (outline) { g.lineWidth = size * 0.17; g.lineJoin = 'round'; g.strokeStyle = outline; g.textAlign = 'center'; g.strokeText(ch, 0, 0); }
     g.shadowColor = 'rgba(240,236,224,.9)'; g.shadowBlur = size * 0.09; g.fillStyle = '#efece0'; g.textAlign = 'center'; g.fillText(ch, 0, 0); g.shadowBlur = 0; g.restore();
     if (rng() < 0.45) { const dx = x + widths[i] * (0.25 + rng() * 0.5), dy = cy + size * 0.32, len = size * (0.15 + rng() * 0.45); g.fillStyle = '#efece0'; g.fillRect(dx, dy, size * 0.035, len); g.beginPath(); g.arc(dx + size * 0.0175, dy + len, size * 0.03, 0, 7); g.fill(); } // drip
     x += widths[i];
   });
   g.restore();
 }
-function vanSideCanvas(dec, rng, frontLeft) {
-  const W = 1024, H = 384, c = fadedBlack(W, H, rng), g = c.getContext('2d'), fx = (a, b) => frontLeft ? [a * W, (b - a) * W] : [(1 - b) * W, (b - a) * W];
-  for (const f of [0.18, 0.82]) { const x = (frontLeft ? f : 1 - f) * W; g.fillStyle = '#050506'; g.beginPath(); g.arc(x, H, 70, Math.PI, 0); g.fill(); }
-  let [x, w] = fx(0.03, 0.27); g.fillStyle = '#0a0c10'; g.fillRect(x, 34, w, 116); g.strokeStyle = '#050506'; g.lineWidth = 8; g.strokeRect(x, 34, w, 116); g.fillStyle = '#030304'; g.fillRect(x, 34, w, 62); g.fillStyle = '#0a0c10'; g.fillRect(x, 96, w, 54); g.fillStyle = '#2a2d33'; g.fillRect(x, 92, w, 6); /* window rolled down partway: dark open gap above the glass */ 
-  g.fillStyle = 'rgba(180,190,200,.07)'; g.beginPath(); g.moveTo(x + 8, 150); g.lineTo(x + w * 0.4, 100); g.lineTo(x + w * 0.6, 100); g.lineTo(x + w * 0.2, 150); g.fill(); // glass glare
-  [x, w] = fx(0.31, 0.97); g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(x, 160, w, 3); g.fillRect(x, 292, w, 3); // door/panel seams
-  g.fillStyle = '#050506'; g.fillRect(0, H - 34, W, 34);
-  sprayText(g, 'lakehorse', x + w / 2, 226, 118, rng);
-  return c;
-}
 function plateCanvas() {
   const c = document.createElement('canvas'); c.width = 256; c.height = 128; const g = c.getContext('2d'); g.fillStyle = '#e6e2cc'; g.fillRect(0, 0, 256, 128); g.strokeStyle = '#2a2a30'; g.lineWidth = 6; g.strokeRect(5, 5, 246, 118);
   g.fillStyle = '#16161a'; g.font = '900 56px "Courier New",monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('LKEHRSE', 128, 66, 226); /* maxWidth: 7 Courier glyphs at 66px (277px) overran the 256px plate and clipped the L and E */ return c;
 }
-function vanEndCanvas(dec, rng, back) {
-  const W = 256, H = 384, c = fadedBlack(W, H, rng), g = c.getContext('2d');
-  g.fillStyle = '#0a0c10'; g.fillRect(14, 30, W - 28, 120); g.strokeStyle = '#050506'; g.lineWidth = 8; g.strokeRect(14, 30, W - 28, 120);
-  if (back) { g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(W / 2 - 2, 30, 4, 300); g.fillRect(14, 160, W - 28, 3); }
-  else { g.fillStyle = '#26262b'; g.fillRect(24, 190, W - 48, 10); g.fillStyle = '#5a5a60'; for (let i = 0; i < 6; i++) g.fillRect(24 + i * 36, 208, 22, 60); }
-  g.fillStyle = '#050506'; g.fillRect(0, H - 40, W, 40);
+/* Profiles are [x, y] in the design frame: x 55..505 is nose to tail, y 89..256 is roof to sill. `flat` is where the roof levels out
+   (0..1 from the nose), `arch` the wheel-arch radius there, `rackZ` the roof rack's centre. `body` is the paint below the belt line. */
+const VAN_TIERS = {
+  struggle: { body: '#cdc4a6', stripe: '#17171a', sill: '#4a4538', glass: '#1a2028', trim: '#8a867a', rack: '#cfc9b8', wr: 0.5, lenK: 0.97, hgtK: 1.06, flat: 0.25, arch: 52, rackZ: -0.5, hub: 'plain',
+    profile: [[55, 256], [55, 192], [58, 184], [63, 182], [112, 172], [152, 100], [158, 90], [168, 89], [497, 89], [505, 97], [505, 256]] },
+  middle: { body: '#9fb4c6', stripe: '#243b55', sill: '#2c3a47', glass: '#26323f', trim: '#c3c8cf', rack: '#c3c8cf', wr: 0.44, lenK: 0.96, hgtK: 0.94, flat: 0.37, arch: 46, rackZ: -0.7, hub: 'bolts',
+    profile: [[55, 256], [55, 206], [58, 198], [68, 192], [124, 178], [140, 135], [160, 108], [196, 94], [206, 91], [220, 90], [462, 90], [485, 98], [500, 118], [505, 136], [505, 256]] },
+  nepo: { body: '#e8eaee', stripe: '#17171a', sill: '#8f949c', glass: '#12161c', trim: '#c9ccd2', rack: '#c9ccd2', wr: 0.49, lenK: 1.04, hgtK: 0.92, flat: 0.43, arch: 50, rackZ: -0.8, hub: 'star',
+    profile: [[55, 256], [55, 204], [58, 196], [70, 188], [140, 170], [160, 142], [190, 114], [220, 98], [235, 93], [250, 92], [452, 92], [480, 97], [498, 115], [505, 142], [505, 256]] },
+};
+const VAN_SANS = 'Inter,-apple-system,Helvetica,Arial,sans-serif';
+/* Dazzle stripes, three sections whose slant flips: [section x, width, slant, [[offset, width, isAccent]...]], design frame. */
+const VAN_STRIPES = [[55, 140, 70, [[-40, 16, 0], [10, 26, 0], [70, 12, 1], [110, 22, 0]]], [195, 180, -70, [[30, 14, 1], [80, 28, 0], [140, 12, 0], [190, 20, 1]]], [375, 130, 70, [[-30, 20, 0], [30, 12, 1], [80, 26, 0]]]];
+const VAN_BELT = 174; // design-frame y of the accent belt line; stripes are cream above it and the tier's dark below it
+
+function vanFlankCanvas(T, id, dec, S, rng, frontLeft) {
+  const W = 1024, H = Math.round(W * S.hgt / S.len), sx = W / 450, sy = H / 167, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  const X = (x) => frontLeft ? (x - 55) * sx : W - (x - 55) * sx, Y = (y) => (y - 89) * sy;
+  const poly = (pts, fill, stroke, lw) => { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))); g.closePath(); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw * sx; g.stroke(); } };
+  const rect = (x, y, w, h, fill) => poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], fill);
+  const stripes = (y0, y1, base) => VAN_STRIPES.forEach(([x0, w, slant, list]) => {
+    g.save(); g.beginPath(); [[x0, y0], [x0 + w, y0], [x0 + w, y1], [x0, y1]].forEach(([x, y], i) => i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))); g.closePath(); g.clip();
+    list.forEach(([lx, sw, acc]) => poly([[x0 + lx, 89], [x0 + lx + sw, 89], [x0 + lx + sw + slant, 256], [x0 + lx + slant, 256]], acc ? dec.accent : base)); g.restore();
+  });
+  const label = (text, cx, cy, size, fill, stroke, sw, sp, weight) => {
+    g.save(); g.font = `${weight} ${size * sx}px ${VAN_SANS}`; g.textBaseline = 'alphabetic'; g.textAlign = 'left'; g.lineJoin = 'round';
+    const ws = [...text].map(ch => g.measureText(ch).width), total = ws.reduce((a, b) => a + b, 0) + sp * sx * (ws.length - 1), x0 = X(cx) - total / 2;
+    for (const pass of stroke ? [0, 1] : [1]) { let x = x0; [...text].forEach((ch, i) => { if (pass === 0) { g.strokeStyle = stroke; g.lineWidth = sw * sx; g.strokeText(ch, x, Y(cy)); } else { g.fillStyle = fill; g.fillText(ch, x, Y(cy)); } x += ws[i] + sp * sx; }); }
+    g.restore();
+  };
+  rect(55, 89, 450, 167, T.body); rect(55, 89, 450, VAN_BELT - 89, '#17171a');
+  stripes(89, VAN_BELT, '#efece0'); stripes(VAN_BELT, 256, T.stripe); rect(55, VAN_BELT, 450, 8, dec.accent);
+  rect(55, 246, 450, 10, T.sill);
+  if (id === 'struggle') {
+    poly([[122, 166], [152, 108], [192, 108], [192, 166]], T.glass, T.trim, 2.5); poly([[122, 166], [152, 108], [192, 108], [192, 132], [134, 132]], '#07080a'); // cab window, rolled part way down
+    rect(200, 100, 2, 150, 'rgba(0,0,0,.35)'); rect(318, 192, 4, 44, 'rgba(138,74,36,.4)'); rect(440, 186, 3, 30, 'rgba(138,74,36,.35)'); rect(55, 226, 450, 30, 'rgba(120,112,95,.3)');
+    for (let i = 0; i < 26; i++) rect(55 + rng() * 440, 180 + rng() * 60, 3 + rng() * 14, 1 + rng() * 2, `rgba(${rng() < 0.5 ? '30,28,24' : '240,236,220'},${0.06 + rng() * 0.12})`); // scuffs
+  } else if (id === 'middle') {
+    poly([[138, 172], [176, 112], [184, 104], [198, 102], [320, 102], [320, 168], [138, 168]], T.glass, T.trim, 2.5);
+    poly([[332, 102], [448, 102], [466, 105], [480, 120], [488, 150], [488, 168], [332, 168]], T.glass, T.trim, 2.5); rect(326, 100, 2, 150, 'rgba(0,0,0,.3)');
+  } else {
+    poly([[150, 166], [186, 120], [196, 108], [210, 103], [226, 102], [446, 102], [466, 105], [480, 120], [488, 152], [488, 166]], T.glass, T.trim, 2); rect(258, 102, 4, 64, '#17171a'); rect(378, 102, 4, 64, '#17171a');
+  }
+  for (const ax of [55 + 0.18 * 450, 55 + 0.82 * 450]) { g.fillStyle = '#050506'; g.beginPath(); g.arc(X(ax), Y(256), T.arch * sx, Math.PI, 0); g.fill(); } // arches
+  if (id === 'struggle') { sprayText(g, 'lakehorse', X(350), Y(154), 56 * sx, rng, '#17171a'); label('GUBER EATS', 277, 232, 24, '#17171a', T.body, 5, 3, 900); }
+  else if (id === 'middle') { label('lakehorse', 410, 143, 29, '#f4f5f7', null, 0, 1.5, 800); rect(352, 151, 116, 2.5, dec.accent); label('GUBER EATS', 282, 230, 24, '#17171a', T.body, 5, 3, 900); }
+  else { label('lakehorse', 280, 218, 35, '#17171a', '#f4f5f7', 7, 1.5, 800); rect(198, 225, 164, 2.5, dec.accent); label('GUBER EATS', 280, 238, 14, '#17171a', '#f4f5f7', 4, 2, 900); }
   return c;
 }
-function buildVan(dec, rng) {
-  const g = new THREE.Group(), own = [], tex = (cv) => { const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; own.push(t); return t; };
+/* The nose and tail faces: tier paint, a grille at the front, a dark window and door seam at the back above the belt line. */
+function vanEndFaceV(T, back) { const p = T.profile, n = p.length; return (256 - (back ? p[n - 2][1] : p[1][1])) / 167; }
+function vanEndCanvas(T, dec, S, back) {
+  const faceV = vanEndFaceV(T, back), W = 256, H = Math.max(32, Math.round(W * faceV * S.hgt / S.wid)), c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  g.fillStyle = T.body; g.fillRect(0, 0, W, H);
+  if (back) {
+    const belt = H * (1 - Math.min(1, 0.49 / faceV));
+    if (belt > 8) { g.fillStyle = '#17171a'; g.fillRect(0, 0, W, belt); g.fillStyle = dec.accent; g.fillRect(0, belt, W, Math.max(4, H * 0.05)); g.fillStyle = T.glass; g.fillRect(16, 14, W - 32, Math.max(8, belt - 28)); }
+    g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(W / 2 - 2, 0, 4, H);
+  } else { g.fillStyle = '#17171a'; g.fillRect(24, H * 0.42, W - 48, H * 0.2); g.fillStyle = T.trim; for (let i = 0; i < 7; i++) g.fillRect(30 + i * 30, H * 0.46, 14, H * 0.12); }
+  g.fillStyle = T.sill; g.fillRect(0, H * 0.88, W, H * 0.12); return c;
+}
+function hubCanvas(kind) {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); g.translate(64, 64); const disc = (r, f) => { g.fillStyle = f; g.beginPath(); g.arc(0, 0, r, 0, 7); g.fill(); };
+  if (kind === 'plain') { disc(62, '#8a867a'); g.strokeStyle = '#5a574d'; g.lineWidth = 5; g.beginPath(); g.arc(0, 0, 40, 0, 7); g.stroke(); disc(14, '#26262b'); }
+  else if (kind === 'bolts') { disc(62, '#c3c8cf'); g.strokeStyle = '#8f969e'; g.lineWidth = 5; g.beginPath(); g.arc(0, 0, 44, 0, 7); g.stroke(); for (let i = 0; i < 5; i++) { const a = i / 5 * 6.283; g.fillStyle = '#0b0b0d'; g.beginPath(); g.arc(Math.cos(a) * 28, Math.sin(a) * 28, 6, 0, 7); g.fill(); } disc(10, '#0b0b0d'); }
+  else { disc(62, '#0b0b0d'); disc(56, '#b8bcc4'); g.strokeStyle = '#0b0b0d'; g.lineWidth = 11; for (let i = 0; i < 5; i++) { const a = i / 5 * 6.283 + 0.3; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a) * 52, Math.sin(a) * 52); g.stroke(); } disc(14, '#0b0b0d'); }
+  return c;
+}
+/* Side profile to world metres (z forward, y up from the sill), and the two geometries built from it. */
+function vanProfilePoints(T, S, y0) { return T.profile.map(([x, y]) => [S.len * (0.5 - (x - 55) / 450), y0 + (256 - y) / 167 * S.hgt]); }
+function vanBodyGeometry(T, S, y0) {
+  const sh = new THREE.Shape(); vanProfilePoints(T, S, y0).forEach(([z, y], i) => i ? sh.lineTo(-z, y) : sh.moveTo(-z, y));
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: S.wid, bevelEnabled: false }); geo.rotateY(Math.PI / 2); geo.translate(-S.wid / 2, 0, 0); return geo; // shape x is -z, so the quarter turn lands the nose on +z
+}
+function vanFlankGeometry(T, S, y0, side) {
+  const sh = new THREE.Shape(); vanProfilePoints(T, S, y0).forEach(([z, y], i) => i ? sh.lineTo(z, y) : sh.moveTo(z, y));
+  const geo = new THREE.ShapeGeometry(sh), p = geo.attributes.position, n = p.count, uv = new Float32Array(n * 2), nr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { const z = p.getX(i), y = p.getY(i); p.setXYZ(i, side * (S.wid / 2 + 0.006), y, z); uv[i * 2] = side > 0 ? (S.len / 2 - z) / S.len : (z + S.len / 2) / S.len; uv[i * 2 + 1] = (y - y0) / S.hgt; nr[i * 3] = side; }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setAttribute('normal', new THREE.BufferAttribute(nr, 3)); p.needsUpdate = true; return geo;
+}
+/* Roof speakers: cones that thump and rings that spread to the music. `update(level 0..1, seconds)` is the only thing the game calls.
+   Struggle: two taped-up cabinets on the rack. Middle: a plain speaker bar. Nepo: a gold-trimmed pod with chrome-ringed cones. */
+function buildVanSpeakers(T, id, dec, roofY, rackZ, own, parent) {
+  const cones = [], rings = [], accent = new THREE.Color(dec.accent).multiplyScalar(0.55);
+  const mat = (color) => { const m = new THREE.MeshLambertMaterial({ color }); own.push(m); return m; }, box = (w, h, d, m, x, y, z) => { const geo = new THREE.BoxGeometry(w, h, d); own.push(geo); const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); parent.add(o); return o; };
+  const ringGeo = new THREE.RingGeometry(0.9, 1.0, 40); ringGeo.rotateY(Math.PI / 2); own.push(ringGeo);
+  const cone = (side, x, y, z, r, rim, core) => {
+    const grp = new THREE.Group(); grp.position.set(side * x, y, z); const cg = new THREE.CylinderGeometry(r, r, 0.06, 18); cg.rotateZ(Math.PI / 2); own.push(cg);
+    grp.add(new THREE.Mesh(cg, mat(0x0b0b0d))); const rg = new THREE.CylinderGeometry(r * 0.42, r * 0.42, 0.08, 14); rg.rotateZ(Math.PI / 2); own.push(rg); grp.add(new THREE.Mesh(rg, core));
+    if (rim) { const tg = new THREE.TorusGeometry(r, r * 0.16, 8, 22); tg.rotateY(Math.PI / 2); own.push(tg); grp.add(new THREE.Mesh(tg, rim)); }
+    parent.add(grp); cones.push(grp);
+    for (const off of [0, 0.5]) { const m = new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }); own.push(m); const ring = new THREE.Mesh(ringGeo, m); ring.position.copy(grp.position); ring.position.x += side * 0.05; parent.add(ring); rings.push({ ring, m, off, r: r * 2.2 }); }
+  };
+  const dark = mat(0x2a2a2e), light = mat(T.rack), chrome = mat(0xc9ccd2), gold = mat(0xc9a24b), accentM = new THREE.MeshBasicMaterial({ color: dec.accent }); own.push(accentM);
+  if (id === 'struggle') {
+    for (const sx of [-1, 1]) { box(0.7, 0.6, 0.5, dark, sx * 0.4, roofY + 0.45, rackZ - 0.5); box(0.72, 0.07, 0.52, mat(0x9a9a96), sx * 0.4, roofY + 0.5, rackZ - 0.5); cone(sx, 0.755, roofY + 0.36, rackZ - 0.5, 0.19, null, light); }
+  } else if (id === 'middle') {
+    box(0.42, 0.24, 1.25, mat(0x17171a), 0, roofY + 0.26, rackZ - 0.4);
+    for (const sx of [-1, 1]) for (const dz of [-0.3, 0.3]) cone(sx, 0.225, roofY + 0.26, rackZ - 0.4 + dz, 0.095, null, light);
+  } else {
+    box(0.46, 0.3, 1.45, mat(0x12161c), 0, roofY + 0.28, rackZ - 0.4); box(0.48, 0.04, 1.47, gold, 0, roofY + 0.15, rackZ - 0.4);
+    for (const sx of [-1, 1]) for (const dz of [-0.36, 0.36]) cone(sx, 0.235, roofY + 0.28, rackZ - 0.4 + dz, 0.115, chrome, accentM);
+  }
+  return { update(level, t) {
+    const s = 1 + 0.24 * level; cones.forEach(c => c.scale.set(1 + 0.7 * level, s, s));
+    rings.forEach(({ ring, m, off, r }) => { const ph = (t * (0.9 + level * 1.1) + off) % 1; ring.scale.set(1, r * (0.4 + ph * 1.8), r * (0.4 + ph * 1.8)); m.opacity = Math.pow(1 - ph, 1.5) * (0.08 + 0.92 * level) * 0.8; });
+  } };
+}
+function buildVan(dec, rng, tierId) {
+  const id = VAN_TIERS[tierId] ? tierId : 'middle', T = VAN_TIERS[id], g = new THREE.Group(), own = [], tex = (cv) => { const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; own.push(t); return t; };
   const era = dec.year < 1970 ? { len: 4.5, hgt: 1.55 } : dec.year < 2000 ? { len: 4.8, hgt: 1.7 } : { len: 5.0, hgt: 1.85 };
-  const S = { len: era.len, wid: 2.0, hgt: era.hgt, wr: 0.5, ch: 0, co: 0, cl: 0, fins: false }, y0 = 0.38;
-  const mat = (cv) => { const m = new THREE.MeshLambertMaterial({ map: tex(cv) }); own.push(m); return m; };
-  const mats = [mat(vanSideCanvas(dec, rng, true)), mat(vanSideCanvas(dec, rng, false)), mat(fadedBlack(512, 512, rng)), mat(fadedBlack(64, 64, rng)), mat(vanEndCanvas(dec, rng, false)), mat(vanEndCanvas(dec, rng, true))];
-  const bg = new THREE.BoxGeometry(S.wid, S.hgt, S.len); own.push(bg); const body = new THREE.Mesh(bg, mats); body.position.y = y0 + S.hgt / 2; g.add(body);
-  const dark = new THREE.MeshLambertMaterial({ color: 0x0b0b0d }); own.push(dark);
-  const wg = new THREE.CylinderGeometry(S.wr, S.wr, .4, 14); wg.rotateZ(Math.PI / 2); own.push(wg); const wheels = [];
-  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) { const w = new THREE.Mesh(wg, dark); w.rotation.order = 'YXZ'; w.position.set(sx * (S.wid / 2 - .02), S.wr, sz * S.len * .32); g.add(w); wheels.push(w); } // first two are the front pair: steered in Game.render
+  const S = { len: era.len * T.lenK, wid: 2.0, hgt: era.hgt * T.hgtK, wr: T.wr, ch: 0, co: 0, cl: 0, fins: false }, y0 = 0.38;
+  const mat = (opts) => { const m = new THREE.MeshLambertMaterial(opts); own.push(m); return m; }, geom = (geo) => { own.push(geo); return geo; };
+  const wall = mat({ color: 0x17171a }), dark = mat({ color: 0x0b0b0d });
+  g.add(new THREE.Mesh(geom(vanBodyGeometry(T, S, y0)), wall));
+  for (const side of [1, -1]) g.add(new THREE.Mesh(geom(vanFlankGeometry(T, S, y0, side)), mat({ map: tex(vanFlankCanvas(T, id, dec, S, rng, side > 0)), side: THREE.DoubleSide })));
+  for (const back of [false, true]) {
+    const fh = vanEndFaceV(T, back) * S.hgt, m = new THREE.Mesh(geom(new THREE.PlaneGeometry(S.wid, fh)), mat({ map: tex(vanEndCanvas(T, dec, S, back)) }));
+    m.position.set(0, y0 + fh / 2, (back ? -1 : 1) * (S.len / 2 + 0.006)); if (back) m.rotation.y = Math.PI; g.add(m);
+  }
+  const hubTex = tex(hubCanvas(T.hub)), hubMat = [mat({ color: 0x8a867a }), mat({ map: hubTex }), mat({ map: hubTex })], hubR = S.wr * 0.62;
+  const wg = geom(new THREE.CylinderGeometry(S.wr, S.wr, 0.4, 14)); wg.rotateZ(Math.PI / 2); const hg = geom(new THREE.CylinderGeometry(hubR, hubR, 0.06, 20)); hg.rotateZ(Math.PI / 2); const wheels = [];
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    const w = new THREE.Mesh(wg, dark); w.rotation.order = 'YXZ'; w.position.set(sx * (S.wid / 2 - 0.02), S.wr, sz * S.len * 0.32);
+    const h = new THREE.Mesh(hg, hubMat); h.position.x = sx * 0.2; w.add(h); g.add(w); wheels.push(w); // first two are the front pair: steered in Game.render
+  }
   if (dec.night) { // headlight pool on the road ahead
     const pc = document.createElement('canvas'); pc.width = pc.height = 64; const pg = pc.getContext('2d'), gr = pg.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,240,190,.5)'); gr.addColorStop(1, 'rgba(255,240,190,0)'); pg.fillStyle = gr; pg.fillRect(0, 0, 64, 64);
     const pm = new THREE.MeshBasicMaterial({ map: tex(pc), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), pgeo = new THREE.PlaneGeometry(11, 20); pgeo.rotateX(-Math.PI / 2); own.push(pm, pgeo);
     const pool = new THREE.Mesh(pgeo, pm); pool.position.set(0, 0.1, S.len / 2 + 8); g.add(pool);
   }
-  const lg = new THREE.BoxGeometry(.4, .22, .08); own.push(lg); const head = new THREE.MeshBasicMaterial({ color: 0xfff6c0 }), tail = new THREE.MeshBasicMaterial({ color: 0xff2a2a }); own.push(head, tail);
-  for (const sx of [-1, 1]) { const h = new THREE.Mesh(lg, head); h.position.set(sx * S.wid * .34, y0 + .5, S.len / 2 + .02); g.add(h); const t = new THREE.Mesh(lg, tail); t.position.set(sx * S.wid * .34, y0 + .5, -S.len / 2 - .02); g.add(t); }
-  const plateT = tex(plateCanvas()), plateM = new THREE.MeshBasicMaterial({ map: plateT }), plateG = new THREE.BoxGeometry(.62, .31, .03); own.push(plateM, plateG);
-  for (const [pz, py] of [[S.len / 2 + .03, y0 + .22], [-S.len / 2 - .03, y0 + .22]]) { const p = new THREE.Mesh(plateG, plateM); p.position.set(0, py, pz); if (pz < 0) p.rotation.y = Math.PI; g.add(p); }
-  const top = y0 + S.hgt;
-  const rg = new THREE.BoxGeometry(1.7, .08, 2.3); own.push(rg); const rack = new THREE.Mesh(rg, dark); rack.position.set(0, top + .08, -.5); g.add(rack);
-  const ag = new THREE.BoxGeometry(.7, .6, .5); own.push(ag); for (const [x, z] of [[-.4, -1.0], [.4, -1.0]]) { const a = new THREE.Mesh(ag, dark); a.position.set(x, top + .45, z); g.add(a); }
+  const lg = geom(new THREE.BoxGeometry(0.4, 0.22, 0.08)), head = new THREE.MeshBasicMaterial({ color: 0xfff6c0 }), tail = new THREE.MeshBasicMaterial({ color: 0xff2a2a }); own.push(head, tail);
+  for (const sx of [-1, 1]) { const h = new THREE.Mesh(lg, head); h.position.set(sx * S.wid * 0.34, y0 + 0.5, S.len / 2 + 0.02); g.add(h); const t = new THREE.Mesh(lg, tail); t.position.set(sx * S.wid * 0.34, y0 + 0.5, -S.len / 2 - 0.02); g.add(t); }
+  const plateT = tex(plateCanvas()), plateM = new THREE.MeshBasicMaterial({ map: plateT }), plateG = geom(new THREE.BoxGeometry(0.62, 0.31, 0.03)); own.push(plateM);
+  for (const [pz, py] of [[S.len / 2 + 0.03, y0 + 0.22], [-S.len / 2 - 0.03, y0 + 0.22]]) { const p = new THREE.Mesh(plateG, plateM); p.position.set(0, py, pz); if (pz < 0) p.rotation.y = Math.PI; g.add(p); }
+  const roofY = y0 + S.hgt * (256 - Math.min(...T.profile.map(p => p[1]))) / 167, rackM = mat({ color: T.rack });
+  const rack = new THREE.Mesh(geom(new THREE.BoxGeometry(1.7, 0.08, 2.3)), rackM); rack.position.set(0, roofY + 0.08, T.rackZ); g.add(rack);
   const sc = document.createElement('canvas'); sc.width = 256; sc.height = 96; const sg = sc.getContext('2d'); sg.fillStyle = '#08080a'; sg.fillRect(0, 0, 256, 96); sg.fillStyle = dec.accent; sg.fillRect(0, 0, 256, 10); sg.fillRect(0, 86, 256, 10); sg.fillStyle = '#fff'; sg.font = '800 44px -apple-system,Helvetica,Arial,sans-serif'; sg.textAlign = 'center'; sg.fillText('GUBER', 128, 62);
-  const sm = new THREE.MeshBasicMaterial({ map: tex(sc) }); own.push(sm); const sgm = new THREE.BoxGeometry(1.3, .45, .5); own.push(sgm); const sign = new THREE.Mesh(sgm, sm); sign.position.set(0, top + .38, .75); g.add(sign);
-  const flames = new THREE.Group(), fm = new THREE.MeshBasicMaterial({ color: 0xffa530, transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false }), fg = new THREE.ConeGeometry(.28, 2.2, 8); fg.rotateX(-Math.PI / 2); own.push(fm, fg);
-  for (const sx of [-1, 1]) { const f = new THREE.Mesh(fg, fm); f.position.set(sx * .5, S.wr + .3, -S.len / 2 - 1.1); flames.add(f); } flames.visible = false; g.add(flames);
+  const sm = new THREE.MeshBasicMaterial({ map: tex(sc) }); own.push(sm); const sign = new THREE.Mesh(geom(new THREE.BoxGeometry(1.3, 0.45, 0.5)), sm); sign.position.set(0, roofY + 0.38, S.len * (0.5 - T.flat) - 0.4); g.add(sign);
+  const speakers = buildVanSpeakers(T, id, dec, roofY, T.rackZ, own, g);
+  const flames = new THREE.Group(), fm = new THREE.MeshBasicMaterial({ color: 0xffa530, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }), fg = new THREE.ConeGeometry(0.28, 2.2, 8); fg.rotateX(-Math.PI / 2); own.push(fm, fg);
+  for (const sx of [-1, 1]) { const f = new THREE.Mesh(fg, fm); f.position.set(sx * 0.5, S.wr + 0.3, -S.len / 2 - 1.1); flames.add(f); } flames.visible = false; g.add(flames);
   g.traverse(o => { if (o.isMesh && o.material.blending !== THREE.AdditiveBlending) o.castShadow = true; });
-  g.userData = { wheels, flames, own, S, tail }; return g;
+  g.userData = { wheels, flames, own, S, tail, tier: id, speakers }; return g;
 }
 
 /* ======================================================================
@@ -1668,7 +1797,7 @@ class Input {
       dashing. Phones get ACES on the renderer instead, which is free.
    ====================================================================== */
 const LookConfig = {
-  grime: 1.0,          // overall dirt strength, 0 = the old clean city
+  grime: 1.3,          // overall dirt strength, 0 = the old clean city (was 1.0 until 2026-11-25, when the buildings went grey and derelict)
   wet: 0.75,           // puddle coverage strength on flat ground
   hdrGlow: 3.2,        // additive glows and brake lights are multiplied by this under PostFX so they bloom
   hdrPool: 1.35,       // textured additive light pools (lamps, headlights) cover a lot of screen; at 3.2 they blew out to a white disc
@@ -1705,7 +1834,9 @@ const GRIME_ALBEDO = `
   float tone = gH(vec2(floor(u / 14.0), floor(vGW.y / 22.0) + 3.0)); // building-to-building weathering, so no two walls match
   float dirt = clamp((blot - 0.38) * 1.9, 0.0, 1.0) * 0.6 + (streak * 0.85 + kick * 0.7 + tone * 0.25) * wall + (fine - 0.5) * 0.2 * near + (grit - 0.5) * 0.12 * near;
   if (up > 0.9) dirt += smoothstep(0.62, 0.8, gFbm(vGW.xz * 0.35 + 9.0)) * 0.7; // oil and gum stains on flat ground
-  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.3, 0.26, 0.2), clamp(dirt * uGrime, 0.0, 1.0));
+  float wl = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));    // walls drain toward a cold grey: the city is decaying tech, not warm brick
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(wl) * vec3(0.92, 0.97, 1.0), wall * 0.4);
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.28, 0.285, 0.3), clamp(dirt * uGrime, 0.0, 1.0));
   if (up > 0.9) { float pud = gFbm(vGW.xz * 0.11 + 3.1) + (grit - 0.5) * 0.08; gWetM = smoothstep(0.49, 0.555, pud) * uWet; diffuseColor.rgb *= 1.0 - gWetM * 0.7; }
 }`;
 const GRIME_WET = `
@@ -1867,7 +1998,7 @@ class Game {
     LookUniforms.uWet.value = LookConfig.wet * (dec.night ? 1.3 : 1); LookUniforms.uSkyHi.value.set(dec.sky[0]); LookUniforms.uSkyLo.value.set(dec.sky[1]); LookUniforms.uSunDir.value.copy(this.sunDir);
     this.W.group.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => grimeMaterial(m, this.q === 0 ? 3 : 2)); }); this.glowScan = 0;
     this.traffic = new Traffic(this.scene, this.W, this.q > 0 ? { ...dec, traffic: Math.ceil(dec.traffic * QUALITY[this.q].traffic) } : dec, rng); this.peds = new Pedestrians(this.scene, this.W, dec, rng, QUALITY[this.q].peds); this.targets = new TargetManager(this.scene, this.W, dec, rng); this.orders = new OrderManager(this.scene, this.W, rng); this.doinks = new Doinks(this.scene, this.W, rng); this.car.drive = this.diff.drive;
-    this.carMesh = buildVan(dec, rng); this.scene.add(this.carMesh);
+    this.carMesh = buildVan(dec, rng, this.diff.id); this.scene.add(this.carMesh);
     this.car.reset(this.W.cRoad(4) - GameConfig.LANE, this.W.cRoad(4) - 20, 0); this.chase.snap(this.car); this.chase.init = false;
   }
   paintSky(dec) {
@@ -2064,7 +2195,7 @@ class Game {
     const car = this.car, S = this.carMesh.userData.S, fx = Math.sin(car.h), fz = Math.cos(car.h), lx = Math.cos(car.h), lz = -Math.sin(car.h);
     if (car.drifting && car.grounded) for (const sx of [-0.8, 0.8]) this.smoke.emit(car.x - fx * S.len * 0.3 + lx * sx, 0.3, car.z - fz * S.len * 0.3 + lz * sx, (Math.random() - .5) * 2 - fx * 2, 0.6 + Math.random(), (Math.random() - .5) * 2 - fz * 2, 0.7, 0x9a9aa4, -0.5);
     // the cab's half-lowered windows leak smoke at all times: puffs ride the van's own velocity, then drift up and back as it thins
-    for (const sx of [-1, 1]) if (Math.random() < Math.min(1, dt * 8)) this.fumes.emit(car.x + lx * sx * 0.98 + fx * S.len * 0.14, car.y + 1.75, car.z + lz * sx * 0.98 + fz * S.len * 0.14, car.vx * 0.85 + lx * sx * 0.7 + (Math.random() - .5) * 0.5, 0.9 + Math.random() * 0.7, car.vz * 0.85 + lz * sx * 0.7 + (Math.random() - .5) * 0.5, 1.6 + Math.random() * 0.8, 0x55555c, -0.1);
+    if (this.carMesh.userData.tier === 'struggle') for (const sx of [-1, 1]) if (Math.random() < Math.min(1, dt * 8)) this.fumes.emit(car.x + lx * sx * 0.98 + fx * S.len * 0.14, car.y + 1.75, car.z + lz * sx * 0.98 + fz * S.len * 0.14, car.vx * 0.85 + lx * sx * 0.7 + (Math.random() - .5) * 0.5, 0.9 + Math.random() * 0.7, car.vz * 0.85 + lz * sx * 0.7 + (Math.random() - .5) * 0.5, 1.6 + Math.random() * 0.8, 0x55555c, -0.1);
     if (car.boostT > 0) { for (let i = 0; i < 3; i++) this.sparks.emit(car.x - fx * (S.len / 2 + 0.6) + lx * (Math.random() - .5), 0.7 + Math.random() * 0.3, car.z - fz * (S.len / 2 + 0.6) + lz * (Math.random() - .5), -fx * (10 + Math.random() * 10), Math.random() * 2, -fz * (10 + Math.random() * 10), 0.35, 0xff9a30, 0); }
   }
   render(dt) {
@@ -2073,6 +2204,7 @@ class Game {
     if (this.carMesh && this.state !== 'dead') {
       const m = this.carMesh; m.position.set(car.x, car.y, car.z); m.rotation.set(car.pitch, car.h, car.roll, 'YXZ'); m.userData.flames.visible = car.boostT > 0; m.userData.flames.scale.z = 0.8 + Math.random() * 0.6;
       const U = m.userData, inp = this.input.state; U.wheels.forEach(w => { w.rotation.x = car.wheelSpin; });
+      this.pulse = Math.max(clamp((this.audio.level() - 0.05) * 2.4, 0, 1), (this.pulse || 0) - dt * 3.5); U.speakers.update(this.pulse, this.time); // speakers thump to the music; the decay lets a kick ring out
       this.steerVis = damp(this.steerVis || 0, inp.steer * 0.45, 14, dt); U.wheels[0].rotation.y = U.wheels[1].rotation.y = this.steerVis;
       const braking = inp.brake > 0.05 && car.vf > 1; U.tail.color.setRGB(braking ? 1 : 0.55, braking ? 0.18 : 0.07, braking ? 0.18 : 0.07).multiplyScalar(this.post ? LookConfig.hdrGlow : 1);
     }

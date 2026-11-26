@@ -1,0 +1,5 @@
+
+# local build output
+.dummy/
+build/
+.pio/

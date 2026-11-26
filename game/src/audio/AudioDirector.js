@@ -51,6 +51,7 @@
 //    no sound. If a value arrives here, something below answers for it.
 
 import { CFG } from '../../config.js';
+import { ON_BOX, tracksFromSdList } from '../core/Box.js';
 
 // The same public bucket S'music uses. Inlined rather than imported from core.js
 // so the game's boot doesn't depend on the site's shared layer loading first —
@@ -88,7 +89,7 @@ function silentWav(ms = 50) {
 
 function publicUrl(p) {
   if (!p) return null;
-  if (/^(https?:|data:|blob:)/.test(p)) return p;
+  if (/^(https?:|data:|blob:|\/)/.test(p)) return p;   // '/sd/..' is the radio box's own card
   return `${SUPA_URL}/storage/v1/object/public/tracks/`
     + p.replace(/^tracks\//, '').split('/').map(encodeURIComponent).join('/');
 }
@@ -373,6 +374,18 @@ export class AudioDirector {
    * to music.json, so the record still plays.
    */
   async _liveTracks() {
+    // On a radio box the record is whatever songs are on its SD card, and
+    // there is no database to ask. Empty card -> [] -> music.json, as ever.
+    if (ON_BOX) {
+      try {
+        const r = await fetch('/api/sd', { cache: 'no-store' });
+        if (!r.ok) return [];
+        const j = await r.json();
+        return j && j.mounted ? tracksFromSdList(j.files) : [];
+      } catch {
+        return [];
+      }
+    }
     try {
       const r = await fetch(`${SUPA_URL}/rest/v1/rpc/game_tracks`, {
         method: 'POST',

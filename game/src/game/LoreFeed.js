@@ -28,6 +28,8 @@
 // A document that is pure prose parses to nothing, which means it changes
 // nothing — writing the story badly for the parser cannot break the game.
 
+import { ON_BOX } from '../core/Box.js';
+
 const ASK = /^\s*(?:[-*>#\s]*)(?:q|ask|fish|them)\s*[:—-]\s*(.+)$/i;
 const SAY = /^\s*(?:[-*>#\s]*)(?:a|say|diver|him|reply)\s*[:—-]\s*(.+)$/i;
 
@@ -51,6 +53,7 @@ export class LoreFeed {
 
   /** Fetch once. Called at session start; never again during play. */
   async refresh() {
+    if (ON_BOX) return;        // no database on a radio box: the built-in lore stands
     try { await this._fetch(); } catch (err) {
       console.warn('[LoreFeed] fetch failed; the built-in lore stands.', err);
     }

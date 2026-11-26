@@ -1,4 +1,5 @@
 import { KEYS } from '../core/Keys.js';
+import { ON_BOX } from '../core/Box.js';
 // What's in the box.
 //
 // A download of Mango Tree World, offered for an email address — and offered
@@ -81,6 +82,9 @@ export class RewardScreen {
     }
     this.status.textContent = 'Sending…';
     try {
+      // A radio box has no database to reach: take the offline path below and
+      // keep the address on this phone.
+      if (ON_BOX) throw new Error('on a radio box');
       const r = await fetch(`${SUPA_URL}/rest/v1/rpc/game_subscribe`, {
         method: 'POST',
         headers: {

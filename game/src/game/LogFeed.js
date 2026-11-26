@@ -23,6 +23,8 @@
 // a new entry in the middle does shuffle what a saved id points at, which is the
 // honest cost of not asking a band to hand-maintain identifiers.
 
+import { ON_BOX } from '../core/Box.js';
+
 const HEADING = /^\s*(?:#{1,3}\s*|-{2,}\s*|\[)\s*(.+?)\s*(?:\]|-{2,})?\s*$/;
 
 export class LogFeed {
@@ -49,6 +51,7 @@ export class LogFeed {
    * swimming toward it would be worse than being a minute out of date.
    */
   async refresh() {
+    if (ON_BOX) return null;   // no database on a radio box: the built-in log stands
     try {
       const r = await fetch(`${this.url}/rest/v1/rpc/lore_active`, {
         method: 'POST',

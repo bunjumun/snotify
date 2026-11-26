@@ -93,6 +93,7 @@ bool glyphPixel(const Glyph* g, int col, int row) {
 // ---- state ----
 struct State {
   Mode mode = Mode::Off;
+  uint8_t brightness = 20;
   uint32_t modeStartMs = 0;
   char title[kTitleMax + 1] = {0};
   uint8_t titleLen = 0;
@@ -100,6 +101,8 @@ struct State {
   uint32_t clockBaseSecs = 0;  // seconds since midnight when it was set
   uint32_t clockBaseMs = 0;
   char image[kPixels + 1] = {0};
+  uint16_t alignPoints = 0;
+  uint32_t alignSeed = 0x4C4Bu;
   uint8_t bands[kBands] = {0};
   bool bandsFed = false;
   uint32_t bandsMs = 0;
@@ -223,6 +226,71 @@ void drawClock(uint32_t nowMs) {
   for (int x = 0; x < lit && x < kSize; ++x) put(x, kSize - 1, 6);
 }
 
+// ---- alignment ----
+constexpr uint32_t kAlignWanderMs = 350;  // how often the unlocked points hop
+constexpr uint8_t kAlignLocked = 15;      // a locked node, steady and full
+constexpr uint8_t kAlignEarningBase = 5;  // the node being earned, 5..9 as it fills
+constexpr uint8_t kAlignEarningSpan = 4;
+constexpr uint32_t kAlignDimBase = 2;     // an unlocked point, 2..4
+constexpr uint32_t kAlignDimSpan = 3;
+
+// Writes the cell of every node, in lock order: diagonals outward from the
+// bottom-left corner, left to right along each.
+void alignmentOrder(uint8_t xs[kPixels], uint8_t ys[kPixels]) {
+  int n = 0;
+  for (int d = 0; d <= 2 * (kSize - 1); ++d) {
+    const int lo = d > kSize - 1 ? d - (kSize - 1) : 0;
+    const int hi = d < kSize - 1 ? d : kSize - 1;
+    for (int col = lo; col <= hi; ++col) {
+      xs[n] = (uint8_t)col;
+      ys[n] = (uint8_t)(kSize - 1 - (d - col));
+      ++n;
+    }
+  }
+}
+
+void putMax(int x, int y, uint8_t level) {
+  if (x < 0 || x >= kSize || y < 0 || y >= kSize) return;
+  char& c = g.frame[y * kSize + x];
+  const uint8_t have = (uint8_t)(c <= '9' ? c - '0' : c - 'a' + 10);
+  if (level > have) c = kHex[level & 0xF];
+}
+
+int clampCell(int v) { return v < 0 ? 0 : (v >= kSize ? kSize - 1 : v); }
+
+void drawAlignment(uint32_t nowMs) {
+  uint8_t xs[kPixels], ys[kPixels];
+  alignmentOrder(xs, ys);
+  const uint32_t points = g.alignPoints > kAlignMaxPoints ? kAlignMaxPoints : g.alignPoints;
+  const int locked = (int)(points / kAlignNodePoints);
+  const uint32_t share = points % kAlignNodePoints;  // 0..99 of the next node
+  const uint32_t disorder = 100u - points * 100u / kAlignMaxPoints;  // 100 .. 0
+  const uint32_t step = (nowMs - g.modeStartMs) / kAlignWanderMs;
+  const int reach = disorder > 50 ? 2 : 1;
+  for (int n = locked; n < kPixels; ++n) {
+    const uint32_t h = hash2(g.alignSeed + (uint32_t)n * 2654435761u, step);
+    int x = xs[n], y = ys[n];
+    if ((h & 0xFFu) * 100u / 256u < disorder) {
+      const int span = 2 * reach + 1;
+      x += (int)((h >> 8) % (uint32_t)span) - reach;
+      y += (int)((h >> 16) % (uint32_t)span) - reach;
+    }
+    uint8_t level = (uint8_t)(kAlignDimBase + ((h >> 24) % kAlignDimSpan));
+    if (n == locked) level = (uint8_t)(kAlignEarningBase + share * kAlignEarningSpan / 100u);
+    putMax(clampCell(x), clampCell(y), level);
+  }
+  for (int n = 0; n < locked; ++n) put(xs[n], ys[n], kAlignLocked);
+}
+
+constexpr int kTestCorners[4] = {0, kSize - 1, kPixels - kSize, kPixels - 1};
+constexpr uint8_t kTestColours[4][3] = {
+    {255, 0, 0}, {0, 255, 0}, {0, 0, 255}, {255, 255, 255}};
+
+void drawTest() {
+  for (int i = 0; i < kPixels; ++i) g.frame[i] = '2';  // dim, never dark
+  for (int c : kTestCorners) g.frame[c] = 'f';
+}
+
 void drawImage() {
   memcpy(g.frame, g.image, kPixels);
 }
@@ -239,6 +307,8 @@ const char* modeName(Mode m) {
     case Mode::Dazzle: return "dazzle";
     case Mode::Clock: return "clock";
     case Mode::Image: return "image";
+    case Mode::Test: return "test";
+    case Mode::Alignment: return "alignment";
   }
   return "off";
 }
@@ -246,7 +316,8 @@ const char* modeName(Mode m) {
 bool modeFromName(const char* name, Mode* out) {
   if (!name || !out) return false;
   static const Mode all[] = {Mode::Off,   Mode::Bars,  Mode::Title,
-                             Mode::Dazzle, Mode::Clock, Mode::Image};
+                             Mode::Dazzle, Mode::Clock, Mode::Image, Mode::Test,
+                             Mode::Alignment};
   for (Mode m : all) {
     if (strcmp(name, modeName(m)) == 0) {
       *out = m;
@@ -310,6 +381,40 @@ void feedBands(const uint8_t levels[kBands], uint32_t nowMs) {
   g.bandsMs = nowMs;
 }
 
+bool pixelColor(int index, uint8_t rgb[3]) {
+  if (g.mode != Mode::Test || !rgb) return false;
+  for (int k = 0; k < 4; ++k) {
+    if (kTestCorners[k] != index) continue;
+    for (int j = 0; j < 3; ++j) rgb[j] = kTestColours[k][j];
+    return true;
+  }
+  return false;
+}
+
+void setAlignment(uint16_t points, uint32_t seed) {
+  g.alignPoints = points > kAlignMaxPoints ? kAlignMaxPoints : points;
+  g.alignSeed = seed;
+}
+
+uint16_t alignmentPoints() { return g.alignPoints; }
+
+bool alignmentCell(int node, int* x, int* y) {
+  if (node < 0 || node >= kPixels || !x || !y) return false;
+  uint8_t xs[kPixels], ys[kPixels];
+  alignmentOrder(xs, ys);
+  *x = xs[node];
+  *y = ys[node];
+  return true;
+}
+
+bool setBrightness(uint8_t percent) {
+  if (percent < 1 || percent > 100) return false;
+  g.brightness = percent;
+  return true;
+}
+
+uint8_t brightness() { return g.brightness; }
+
 const char* render(uint32_t nowMs) {
   memset(g.frame, '0', kPixels);
   g.frame[kPixels] = '\0';
@@ -322,6 +427,8 @@ const char* render(uint32_t nowMs) {
     case Mode::Image:
       if (g.image[0]) drawImage();
       break;
+    case Mode::Test: drawTest(); break;
+    case Mode::Alignment: drawAlignment(nowMs); break;
   }
   return g.frame;
 }

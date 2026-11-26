@@ -97,6 +97,7 @@
         var b = doc.createElement('button');
         b.type = 'button';
         b.className = 'task' + (w.classList.contains('focus') ? ' focus' : '');
+        if (b.setAttribute) b.setAttribute('data-help', 'taskbar-task');
         b.textContent = taskLabel((w.dataset && w.dataset.title) || w.id);
         b.addEventListener('click', function () { focusWin(w); renderTasks(); });
         bar.appendChild(b);

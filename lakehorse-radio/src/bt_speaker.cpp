@@ -23,6 +23,8 @@ String choose(const String&) { return kNotBuilt; }
 void connect() {}
 void disconnect() {}
 String setEnabled(bool) { return kNotBuilt; }
+bool isSetupBoot() { return false; }
+void restart(bool) { ESP.restart(); }
 }  // namespace btspeaker
 
 #else
@@ -49,6 +51,18 @@ bool savedOn() {
   return on != 0;
 }
 
+// A setup boot (setup_boot.h) skips Bluetooth for exactly one boot. The mark
+// lives in RTC memory, which survives ESP.restart() but not a power cut, and
+// nothing is written to flash: a box unplugged mid-setup comes back normal.
+// The magic number makes a power-on's random RTC contents read as "not set".
+constexpr uint32_t kSetupBootMagic = 0x5E7B00A1;
+RTC_NOINIT_ATTR uint32_t g_setupBootMark;
+
+bool setupMarked() { return g_setupBootMark == kSetupBootMagic; }
+
+// What this boot actually runs: the saved setting, unless this is a setup boot.
+bool runsThisBoot() { return savedOn() && !setupMarked(); }
+
 }  // namespace
 
 // The core frees Bluetooth Classic memory at boot unless the sketch claims it
@@ -56,9 +70,9 @@ bool savedOn() {
 // on: with Bluetooth off, the ~40 KB the controller reserves goes back to the
 // heap. Without the claim, esp_bt_controller_init fails ESP_ERR_INVALID_STATE.
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
-bool btClassicInUse(void) { return savedOn(); }
+bool btClassicInUse(void) { return runsThisBoot(); }
 #else
-bool btInUse(void) { return savedOn(); }
+bool btInUse(void) { return runsThisBoot(); }
 #endif
 
 namespace btspeaker {
@@ -78,6 +92,8 @@ class BoxSource : public BluetoothA2DPSource {
 
 BoxSource g_src;
 bool g_on = false;
+// This boot skipped Bluetooth for network setup (setup_boot.h).
+bool g_setupBoot = false;
 
 constexpr size_t kNameLen = 64;
 constexpr size_t kMaxFound = 8;
@@ -176,7 +192,11 @@ void saveTarget(const String& name) {
 }  // namespace
 
 void begin(FillFn fill, KeyFn onKey) {
-  g_on = enabled();
+  g_on = runsThisBoot();
+  g_setupBoot = setupMarked();
+  // Read once and cleared at once, so the boot after this one is normal
+  // whatever happens next.
+  g_setupBootMark = 0;
   {
     Preferences prefs;
     String name = cfg::BT_SPEAKER_NAME;
@@ -185,6 +205,10 @@ void begin(FillFn fill, KeyFn onKey) {
       prefs.end();
     }
     strlcpy(g_target, name.c_str(), kNameLen);
+  }
+  if (g_setupBoot) {
+    Serial.println(F("[box] setup boot: bluetooth skipped so the hotspot can serve the setup page"));
+    return;
   }
   if (!g_on) {
     Serial.println(F("[box] bluetooth is switched off (saved setting)"));
@@ -319,6 +343,16 @@ void disconnect() {
   g_searchUntil = 0;
   g_searchAfterDrop = false;
   g_src.disconnect();  // also stops the heartbeat redialling
+}
+
+bool isSetupBoot() { return g_setupBoot; }
+
+void restart(bool forSetup) {
+  g_setupBootMark = forSetup ? kSetupBootMagic : 0;
+  Serial.println(forSetup ? F("[box] restarting without bluetooth for network setup")
+                          : F("[box] restarting with bluetooth back"));
+  Serial.flush();
+  ESP.restart();
 }
 
 String setEnabled(bool on) {

@@ -83,7 +83,15 @@ def version_references(html, hashes):
 BUNDLE_NAME = "bundle.js"
 
 # A plain local classic script tag on its own: <script src="x.js"></script>.
-_SCRIPT = re.compile(r'[ \t]*<script src="(?P<name>[A-Za-z0-9_.\-]+\.js)"></script>[ \t]*\n?')
+_SCRIPT = re.compile(r'[ \t]*<script src="(?P<name>[A-Za-z0-9_.\-]+\.js)"(?P<late> data-late)?></script>[ \t]*\n?')
+
+LATE_NAME = "late.js"
+# Runs once the page has loaded: the first screen never waits for late.js.
+_LATE_LOADER = (
+    '  <script data-late-src="%s">(function(){var u=document.currentScript.getAttribute("data-late-src");'
+    'addEventListener("load",function(){setTimeout(function(){'
+    'var s=document.createElement("script");s.src=u;document.body.appendChild(s)},800)})})()</script>\n'
+)
 
 
 def bundle_scripts(html, files):
@@ -91,17 +99,23 @@ def bundle_scripts(html, files):
 
     Why: the box answers one request at a time at about 0.25 s each, so the
     number of files costs more than their size. `files` maps name -> bytes.
-    Returns (new_html, bundle_bytes, bundled_names). The scripts are joined in
+    Tags marked data-late go into a second file, late.js, which a small inline
+    loader fetches after the page's load event (keeps the first load small).
+    Returns (new_html, bundle_bytes, bundled_names, late_bytes, late_names). The scripts are joined in
     page order, each followed by a ';' line so a file that does not end in a
     semicolon cannot run into the next. The one tag sits where the first script
     was. Tags for files not in `files`, and remote scripts, are left alone.
     """
-    names, parts = [], []
+    names, parts, late_names, late_parts = [], [], [], []
 
     def swap(match):
         name = match.group("name")
         if name not in files:
             return match.group(0)
+        if match.group("late"):
+            late_names.append(name)
+            late_parts.append(files[name] + b"\n;\n")
+            return _LATE_LOADER % LATE_NAME if len(late_names) == 1 else ""
         names.append(name)
         parts.append(files[name] + b"\n;\n")
         if len(names) > 1:
@@ -109,7 +123,44 @@ def bundle_scripts(html, files):
         return '  <script src="%s"></script>\n' % BUNDLE_NAME
 
     new_html = _SCRIPT.sub(swap, html)
-    return new_html, b"".join(parts), names
+    return new_html, b"".join(parts), names, b"".join(late_parts), late_names
+
+
+INLINE_MARKER = "<!-- inline-critical -->"
+_STYLE_LINK = re.compile(r'[ \t]*<link rel="stylesheet" href="(?P<name>[A-Za-z0-9_.\-]+\.css)" ?/?>[ \t]*\n?')
+
+
+def inline_critical(html, files):
+    """Fold the stylesheet and the bundle into the page when it carries INLINE_MARKER.
+
+    Why: the box serves several large responses at once badly on a lossy
+    Bluetooth-sharing link (3 parallel files took 13 to 40 s where the same
+    files one after another took 2 s), so the first screen is one request.
+    A file whose text contains its own closing tag is left as a separate file.
+    Returns (new_html, inlined_names).
+    """
+    if INLINE_MARKER not in html:
+        return html, []
+    inlined = []
+
+    def style(match):
+        name = match.group("name")
+        data = files.get(name)
+        if data is None or b"</style" in data.lower():
+            return match.group(0)
+        inlined.append(name)
+        return "<style>\n" + data.decode("utf-8") + "\n</style>\n"
+
+    def script(match):
+        data = files.get(BUNDLE_NAME)
+        if data is None or b"</script" in data.lower() or BUNDLE_NAME in inlined:
+            return match.group(0)
+        inlined.append(BUNDLE_NAME)
+        return "  <script>\n" + data.decode("utf-8") + "\n  </script>\n"
+
+    html = _STYLE_LINK.sub(style, html)
+    html = re.sub(r'[ \t]*<script src="%s"></script>[ \t]*\n?' % re.escape(BUNDLE_NAME), script, html)
+    return html, inlined
 
 
 def stage(src_dir, dst_dir):
@@ -134,12 +185,23 @@ def stage(src_dir, dst_dir):
             contents[name] = f.read()
 
     if "index.html" in contents:
-        html, bundle, bundled = bundle_scripts(contents["index.html"].decode("utf-8"), contents)
-        if bundled:
+        html, bundle, bundled, late, late_names = bundle_scripts(contents["index.html"].decode("utf-8"), contents)
+        if bundled or late_names:
             contents["index.html"] = html.encode("utf-8")
-            for name in bundled:
+            for name in bundled + late_names:
                 del contents[name]
-            contents[BUNDLE_NAME] = bundle
+            if bundled:
+                contents[BUNDLE_NAME] = bundle
+            if late_names:
+                contents[LATE_NAME] = late
+            names = sorted(contents)
+
+    if "index.html" in contents:
+        html, inlined = inline_critical(contents["index.html"].decode("utf-8"), contents)
+        if inlined:
+            contents["index.html"] = html.encode("utf-8")
+            for name in inlined:
+                del contents[name]
             names = sorted(contents)
 
     hashes = {n: file_hash(b) for n, b in contents.items() if n.lower().endswith((".js", ".css"))}

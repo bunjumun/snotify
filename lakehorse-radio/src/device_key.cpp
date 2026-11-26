@@ -2,8 +2,10 @@
 
 #include <Preferences.h>
 #include <esp_random.h>
+#include <esp_system.h>
 
 #include "config.h"
+#include "pair_window.h"
 
 namespace devkey {
 namespace {
@@ -30,7 +32,32 @@ String generate() {
 
 }  // namespace
 
+namespace {
+pairwindow::Window g_window;
+}  // namespace
+
+void tick() {
+  const bool down = digitalRead(cfg::PAIR_BUTTON_PIN) == LOW;
+  const bool wasOpen = pairwindow::isOpen(g_window, millis(), cfg::PAIR_WINDOW_MS);
+  g_window = pairwindow::button(g_window, down, millis(), cfg::PAIR_HOLD_MS);
+  if (!wasOpen && pairwindow::isOpen(g_window, millis(), cfg::PAIR_WINDOW_MS)) {
+    Serial.println(F("[pair] BOOT button held: pairing open on any network for 2 minutes"));
+  }
+}
+
+bool pairWindowOpen() { return pairwindow::isOpen(g_window, millis(), cfg::PAIR_WINDOW_MS); }
+
 void begin() {
+  // The BOOT button pulls GPIO 0 to ground; it only matters to the chip at
+  // reset, so reading it afterwards is safe.
+  pinMode(cfg::PAIR_BUTTON_PIN, INPUT_PULLUP);
+  // Unplugging and plugging in is hands on the box too. A software restart
+  // (which the page can cause) is not.
+  if (esp_reset_reason() == ESP_RST_POWERON) {
+    g_window = pairwindow::open(g_window, millis());
+    Serial.println(F("[pair] powered on: pairing open on any network for 2 minutes"));
+  }
+
   Preferences prefs;
   if (!prefs.begin(cfg::NVS_NAMESPACE, /*readOnly=*/false)) {
     // Fall back to a session-only key rather than leaving writes ungated.

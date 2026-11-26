@@ -3,9 +3,13 @@
 #include <Preferences.h>
 #include <WiFi.h>
 
+#include <mutex>
+
 #include "bt_speaker.h"
 #include "config.h"
+#include "hotspot_retry.h"
 #include "net_identity.h"
+#include "saved_networks.h"
 
 namespace wifinet {
 namespace {
@@ -13,7 +17,42 @@ namespace {
 StationState g_state = StationState::Idle;
 String g_ssid;
 uint32_t g_lastAttemptMs = 0;
-bool g_haveSaved = false;
+
+// Every network the box remembers, most recent first (saved_networks.h), and
+// which one the next attempt uses. Written from the web task (provision,
+// forget, use) and read on the loop task, so every touch holds g_listMutex.
+// Passwords live here and in NVS only; nothing prints or serves them.
+savednets::List g_nets;
+int g_tryIndex = 0;
+std::mutex g_listMutex;
+
+// Set on GOT_IP, drained in tick(): the joined network moves to the front of
+// the list (an NVS write, so not on the event task), and the moment is kept
+// for the hotspot teardown grace.
+volatile bool g_promotePending = false;
+
+// Host mode: the owner asked the box to leave its network and serve its own
+// hotspot, keeping every saved network. Lasts until a network is chosen (use,
+// join) or the box restarts. g_hostPending carries the request from the web
+// task to tick(), which owns the radio.
+volatile bool g_hostMode = false;
+// The keep-trying window after Join or Use now (hotspot_retry.h, inJoinWindow).
+volatile bool g_joinWindow = false;
+volatile uint32_t g_joinStartMs = 0;
+volatile bool g_hostPending = false;
+volatile uint32_t g_connectedAtMs = 0;
+
+// g_ssid is written on the loop task and read by status polls and forget()
+// on the web task; an Arduino String is not safe to share unguarded.
+String currentSsid() {
+  std::lock_guard<std::mutex> lock(g_listMutex);
+  return g_ssid;
+}
+
+bool haveSaved() {
+  std::lock_guard<std::mutex> lock(g_listMutex);
+  return !g_nets.empty();
+}
 
 // Whether the fallback access point is currently up. Latches true the moment
 // it is raised and stays true through every retry after that — see
@@ -74,24 +113,96 @@ bool g_forgetPending = false;
 // the radio's own events is the only thing that is actually true.
 bool g_associating = false;
 
+// Join the owner started from the setup page (provision()), as opposed to a
+// background retry. g_personPending is set by the HTTP handler and moved to
+// g_personAttempt when beginStationAttempt() actually starts it; the attempt flag is
+// cleared when that attempt ends (address, failure, or tick()'s timeout). A phone
+// joining the hotspot cancels a background search but never one of these, see
+// handleHotspotSearch(). volatile: written from the event task and the web task,
+// read from the loop task; each is a single bool, so no lock is needed.
+volatile bool g_personPending = false;
+volatile bool g_personAttempt = false;
+
+// True while the station search is cancelled because a phone is on the hotspot.
+// Loop task only.
+bool g_searchCancelled = false;
+
 Preferences g_prefs;
 
-// Reads the saved credentials out of NVS. The password is handed straight to
-// WiFi.begin() and deliberately never stored in a longer-lived String than it
-// has to be, never printed, and never exposed by any HTTP route.
-bool readSaved(String& ssid, String& password) {
-  if (!g_prefs.begin(cfg::NVS_NAMESPACE, /*readOnly=*/true)) return false;
-  // isKey() first: getString() on a missing key logs an ERROR line from the
-  // Preferences library itself, so a perfectly normal first boot prints two
-  // scary-looking errors. Checking first keeps a clean boot log actually clean,
-  // which matters because that log is how anyone diagnoses this box.
-  const bool present = g_prefs.isKey(cfg::NVS_KEY_SSID);
-  ssid = present ? g_prefs.getString(cfg::NVS_KEY_SSID, "") : String();
-  password = (present && g_prefs.isKey(cfg::NVS_KEY_PASS))
-                 ? g_prefs.getString(cfg::NVS_KEY_PASS, "")
-                 : String();
+// NVS key for slot `i`: the original key for slot 0, so the network saved
+// before the list existed is still found, and the key with the number
+// appended after that ("ssid1", "pass1", ...).
+String slotKey(const char* base, size_t i) {
+  return i == 0 ? String(base) : String(base) + String((unsigned)i);
+}
+
+// Reads every saved network out of NVS, in order, stopping at the first empty
+// slot. isKey() first: getString() on a missing key logs an ERROR line from
+// the Preferences library itself, which makes a clean boot log look broken.
+savednets::List loadList() {
+  savednets::List out;
+#ifdef LAKEHORSE_WIFI_UNREACHABLE_TEST
+  // Bench-only (env:radio-core2-nowifitest, never in the shipping build): pretend
+  // the only saved network is one that does not exist, so the away-from-home path
+  // can be tested at the desk. NVS is neither read nor written, so the real saved
+  // networks survive and the shipping firmware joins them again after a reflash.
+  out.push_back(savednets::Net{"lakehorse-test-no-such-network", ""});
+  return out;
+#endif
+  if (!g_prefs.begin(cfg::NVS_NAMESPACE, /*readOnly=*/true)) return out;
+  for (size_t i = 0; i < cfg::SAVED_NETWORKS_MAX; ++i) {
+    const String ssidKey = slotKey(cfg::NVS_KEY_SSID, i);
+    if (!g_prefs.isKey(ssidKey.c_str())) break;
+    const String ssid = g_prefs.getString(ssidKey.c_str(), "");
+    if (ssid.length() == 0) break;
+    const String passKey = slotKey(cfg::NVS_KEY_PASS, i);
+    const String pass =
+        g_prefs.isKey(passKey.c_str()) ? g_prefs.getString(passKey.c_str(), "") : String();
+    out.push_back(savednets::Net{ssid.c_str(), pass.c_str()});
+  }
   g_prefs.end();
-  return ssid.length() > 0;
+  return out;
+}
+
+// Writes the whole list, and clears the slots past its end so a shorter list
+// does not leave a forgotten network behind to be read back next boot.
+bool storeList(const savednets::List& list) {
+#ifdef LAKEHORSE_WIFI_UNREACHABLE_TEST
+  (void)list;
+  return true;
+#endif
+  if (!g_prefs.begin(cfg::NVS_NAMESPACE, /*readOnly=*/false)) {
+    Serial.println(F("[wifi] could not open NVS to save networks"));
+    return false;
+  }
+  bool ok = true;
+  for (size_t i = 0; i < cfg::SAVED_NETWORKS_MAX; ++i) {
+    const String ssidKey = slotKey(cfg::NVS_KEY_SSID, i);
+    const String passKey = slotKey(cfg::NVS_KEY_PASS, i);
+    if (i < list.size()) {
+      ok = g_prefs.putString(ssidKey.c_str(), list[i].ssid.c_str()) > 0 && ok;
+      // An open network has an empty password; a zero-length write is fine.
+      g_prefs.putString(passKey.c_str(), list[i].password.c_str());
+    } else {
+      if (g_prefs.isKey(ssidKey.c_str())) g_prefs.remove(ssidKey.c_str());
+      if (g_prefs.isKey(passKey.c_str())) g_prefs.remove(passKey.c_str());
+    }
+  }
+  g_prefs.end();
+  if (!ok) Serial.println(F("[wifi] writing a network name to NVS failed"));
+  return ok;
+}
+
+// The network the next attempt uses. The password is handed straight to
+// WiFi.begin() and never printed or exposed by any HTTP route.
+bool readSaved(String& ssid, String& password) {
+  std::lock_guard<std::mutex> lock(g_listMutex);
+  if (g_nets.empty()) return false;
+  if (g_tryIndex < 0 || (size_t)g_tryIndex >= g_nets.size()) g_tryIndex = 0;
+  const savednets::Net& n = g_nets[(size_t)g_tryIndex];
+  ssid = n.ssid.c_str();
+  password = n.password.c_str();
+  return true;
 }
 
 // The handful of reasons that actually happen in a barn, in plain words. The
@@ -169,6 +280,11 @@ void raiseAccessPoint() {
     return;
   }
   g_apActive = true;
+  // The Arduino core's own search loop would otherwise rescan every ~1.7 s for the
+  // out-of-range saved network and keep pulling the radio off the hotspot's channel
+  // (measured 2026-11-25). Our tick() retry is the only searching while the hotspot
+  // is up; auto-reconnect comes back when it is torn down (lowerAccessPoint()).
+  WiFi.setAutoReconnect(false);
   Serial.printf("[wifi] access point \"%s\" up on channel %u at %s\n", cfg::AP_SSID,
                 (unsigned)cfg::AP_CHANNEL, WiFi.softAPIP().toString().c_str());
 }
@@ -179,40 +295,39 @@ void lowerAccessPoint() {
   if (!g_apActive) return;
   WiFi.softAPdisconnect(true);
   g_apActive = false;
+  g_searchCancelled = false;
+  WiFi.setAutoReconnect(true);
   Serial.println(F("[wifi] access point disabled (connected)"));
 }
 
-// Plan verification step 1: prove the channel-mismatch diagnosis on every real
-// boot, before trusting anything downstream of it, by scanning for the saved
-// network and logging its channel next to the SoftAp's. Filtering the scan to
-// one SSID (rather than sweeping and searching the results) makes it quick,
-// and a blocking scan is the right call specifically here: nothing else has
-// started yet — no access point, no web server, nothing async waiting on the
-// radio — so there is nothing for a few blocking seconds to stall. Runs once
-// per boot, before the station's first attempt to associate, exactly as the
-// plan specifies; it stays in as a permanent boot-time diagnostic rather than
-// a one-off check, because the whole point is that the mismatch is otherwise
-// invisible.
-void logBootChannelDiagnostic(const String& ssid) {
-  if (ssid.length() == 0) {
-    Serial.println(F("[wifi] no saved network; skipping the boot channel scan"));
-    return;
+// Boot scan: which saved network to try first. Nothing else has started
+// yet (no access point, no web server, nothing async waiting on the radio),
+// so a blocking scan stalls nothing. The strongest saved network in range
+// goes first; with none in range the most recent is tried, and the retries
+// walk the list from there. Each saved network heard is logged with its
+// channel next to the hotspot's, the diagnostic this scan began life as
+// (one radio, one tuner: a mismatch is otherwise invisible).
+void pickBootNetwork() {
+  std::vector<savednets::Seen> seen;
+  const int16_t found = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/false,
+                                          /*passive=*/false, cfg::WIFI_SCAN_DWELL_MS);
+  for (int16_t i = 0; i < found; ++i) {
+    seen.push_back(savednets::Seen{WiFi.SSID(i).c_str(), (int)WiFi.RSSI(i)});
   }
-
-  const int16_t found =
-      WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/false, /*passive=*/false,
-                         cfg::WIFI_SCAN_DWELL_MS, /*channel=*/0, ssid.c_str());
-  if (found <= 0) {
-    Serial.printf("[wifi] boot scan: \"%s\" not in range (SoftAp channel is %u)\n",
-                  ssid.c_str(), (unsigned)cfg::AP_CHANNEL);
-  } else {
-    const int32_t netChannel = WiFi.channel(0);
-    const bool matches = netChannel == (int32_t)cfg::AP_CHANNEL;
-    Serial.printf("[wifi] boot scan: \"%s\" is on channel %d, SoftAp channel is %u%s\n",
-                  ssid.c_str(), (int)netChannel, (unsigned)cfg::AP_CHANNEL,
-                  matches ? "" : " -- mismatch");
+  std::lock_guard<std::mutex> lock(g_listMutex);
+  for (int16_t i = 0; i < found; ++i) {
+    if (savednets::indexOf(g_nets, seen[(size_t)i].ssid) < 0) continue;
+    Serial.printf("[wifi] boot scan: saved \"%s\" heard at %d dBm on channel %d (hotspot channel %u)\n",
+                  seen[(size_t)i].ssid.c_str(), seen[(size_t)i].rssi, (int)WiFi.channel(i),
+                  (unsigned)cfg::AP_CHANNEL);
   }
   WiFi.scanDelete();
+  const int best = savednets::bestInRange(g_nets, seen);
+  g_tryIndex = best >= 0 ? best : 0;
+  if (best < 0) {
+    Serial.printf("[wifi] boot scan: none of %u saved networks in range\n",
+                  (unsigned)g_nets.size());
+  }
 }
 
 // The actual station attempt, reached from attemptSaved() below whichever way
@@ -233,10 +348,15 @@ void beginStationAttempt(const String& ssid, const String& password) {
 
   if (g_apActive) raiseAccessPoint();
 
-  g_ssid = ssid;
+  {
+    std::lock_guard<std::mutex> lock(g_listMutex);
+    g_ssid = ssid;
+  }
   g_state = StationState::Connecting;
   g_lastAttemptMs = millis();
   g_associating = true;
+  g_personAttempt = g_personPending;
+  g_personPending = false;
 
   Serial.printf("[wifi] trying saved network \"%s\"\n", ssid.c_str());
   WiFi.begin(ssid.c_str(), password.c_str());
@@ -262,12 +382,9 @@ void beginStationAttempt(const String& ssid, const String& password) {
 bool attemptSaved() {
   String ssid, password;
   if (!readSaved(ssid, password)) {
-    g_haveSaved = false;
     g_state = StationState::Idle;
     return false;
   }
-
-  g_haveSaved = true;
 
   // Refuse to begin() on top of an association already in flight. The caller
   // leaves the request pending and tick() comes back once the radio has
@@ -285,13 +402,16 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
       g_lastReason = 0;
       g_associating = false;
       g_everConnected = true;
+      g_personAttempt = false;
+      g_connectedAtMs = millis();
+      g_promotePending = true;
       // Not torn down here: this handler runs on the WiFi event task and
       // should not make further WiFi-mutating calls any more than it should
       // block (see the DISCONNECTED case below), so the actual
       // softAPdisconnect() happens in tick() once g_apTeardownPending is seen.
       if (cfg::AP_TEARDOWN_ON_CONNECT && g_apActive) g_apTeardownPending = true;
       Serial.printf("[wifi] joined \"%s\" as %s\n",
-                    g_ssid.c_str(), WiFi.localIP().toString().c_str());
+                    currentSsid().c_str(), WiFi.localIP().toString().c_str());
       break;
 
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
@@ -300,6 +420,7 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
       // picks it up; we do not reconnect from inside the event handler, which
       // runs on the event task and should not block.
       g_associating = false;
+      g_personAttempt = false;
       g_lastReason = info.wifi_sta_disconnected.reason;
       Serial.printf("[wifi] not connected: %s (reason %u)\n",
                     describeReason(g_lastReason), (unsigned)g_lastReason);
@@ -325,9 +446,17 @@ void begin() {
   // place in this file that turns the hotspot on, not two.
   resetRadio();
 
-  String ssid, password;
-  readSaved(ssid, password);
-  logBootChannelDiagnostic(ssid);
+  {
+    std::lock_guard<std::mutex> lock(g_listMutex);
+    g_nets = loadList();
+  }
+  if (haveSaved()) pickBootNetwork();
+  else Serial.println(F("[wifi] no saved networks; skipping the boot scan"));
+
+  // A setup boot exists because a phone is waiting on the hotspot
+  // (setup_boot.h), so the hotspot comes up at once rather than after the
+  // usual fallback wait. beginStationAttempt() keeps it up across the attempt.
+  if (btspeaker::isSetupBoot()) raiseAccessPoint();
 
   // If there is a saved network, attemptSaved() below runs resetRadio() again
   // on a radio nothing has touched since the reset just above -- harmless
@@ -341,6 +470,9 @@ void begin() {
 // tick() knows there is nothing further to do this pass.
 bool drainApTeardown() {
   if (!g_apTeardownPending) return false;
+  // Held a little while so a phone that set the box up from the hotspot can
+  // still read the box's new address off it (cfg::AP_TEARDOWN_GRACE_MS).
+  if (millis() - g_connectedAtMs < cfg::AP_TEARDOWN_GRACE_MS) return false;
   g_apTeardownPending = false;
   lowerAccessPoint();
   return true;
@@ -385,13 +517,81 @@ void maybeRaiseFallbackAp(uint32_t now) {
   raiseAccessPoint();
 }
 
+// WLED's "disable search so that AP can work": a search for the saved network that is
+// still running when a phone joins the hotspot is cancelled, and the wait for the next
+// one restarts once the last phone has left. The client count is read here on the loop
+// task, never inside the Wi-Fi event handler. A join the owner started from the setup
+// page is never cancelled (see hotspot_retry.h for the decision and its tests).
+// Returns true if it acted, so tick() stops for this pass.
+bool handleHotspotSearch(uint32_t now) {
+  const int apClients = g_apActive ? (int)WiFi.softAPgetStationNum() : 0;
+  const bool personAttempt = g_personAttempt || g_personPending;
+  switch (hotspotretry::searchAction(g_apActive, apClients,
+                                      g_state == StationState::Connected, personAttempt,
+                                      g_searchCancelled)) {
+    case hotspotretry::SearchAction::Cancel:
+      g_searchCancelled = true;
+      // Only an attempt actually in flight needs stopping; disconnecting an idle
+      // station just logs a driver error.
+      if (g_associating) WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/false);
+      g_associating = false;
+      g_state = StationState::Failed;
+      g_lastAttemptMs = now;
+      Serial.println(F("[wifi] a phone joined the hotspot, search for the saved network paused"));
+      return true;
+    case hotspotretry::SearchAction::Resume:
+      g_searchCancelled = false;
+      // Count the usual wait from now rather than searching at once, so a phone that
+      // is only reconnecting is not met by a scan.
+      g_lastAttemptMs = now;
+      Serial.println(F("[wifi] the hotspot is empty again, search for the saved network resumes"));
+      return false;
+    case hotspotretry::SearchAction::None:
+      break;
+  }
+  return false;
+}
+
+// The network just joined moves to the front of the list, so it is the first
+// guess next boot. Written only when the order actually changes.
+void drainPromote() {
+  if (!g_promotePending) return;
+  g_promotePending = false;
+  std::lock_guard<std::mutex> lock(g_listMutex);
+  const savednets::List next = savednets::promote(g_nets, g_ssid.c_str());
+  g_tryIndex = 0;
+  if (savednets::sameOrder(next, g_nets)) return;
+  g_nets = next;
+  storeList(g_nets);
+}
+
+// Carries out hostMode(): drops the station without forgetting anything and
+// puts the hotspot up. While g_hostMode holds, tick() starts no attempt.
+void drainHostMode() {
+  g_hostPending = false;
+  g_reconnectPending = false;
+  g_personPending = false;
+  g_apTeardownPending = false;
+  g_searchCancelled = false;
+  WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/false);
+  g_associating = false;
+  g_state = StationState::Idle;
+  if (!g_apActive) raiseAccessPoint();
+  Serial.println(F("[wifi] host mode: serving its own hotspot, saved networks kept"));
+}
+
 void tick() {
+  drainPromote();
+  if (g_hostPending) { drainHostMode(); return; }
+  if (g_hostMode && !g_reconnectPending) return;
   if (drainForget()) return;
   if (drainApTeardown()) return;
   if (drainPendingReconnect()) return;
+  const bool saved = haveSaved();
+  if (saved && handleHotspotSearch(millis())) return;
 
-  if (g_state == StationState::Connected) return;
-  if (!g_haveSaved) return;
+  if (g_state == StationState::Connected) { g_joinWindow = false; return; }
+  if (!saved) return;
 
   const uint32_t now = millis();
   maybeRaiseFallbackAp(now);
@@ -401,12 +601,25 @@ void tick() {
     // comparing the timestamps directly would not be.
     if (now - g_lastAttemptMs < cfg::STA_CONNECT_TIMEOUT_MS) return;
     Serial.println(F("[wifi] saved network did not answer in time"));
+    g_personAttempt = false;
     g_state = StationState::Failed;
     g_lastAttemptMs = now;
     return;
   }
 
-  if (now - g_lastAttemptMs < cfg::STA_RETRY_INTERVAL_MS) return;
+  // Retry the saved network far less often while a phone is joined to the
+  // hotspot: a retry resets the one radio and throws that phone off, and a
+  // phone cannot finish the setup sheet if it is kicked off every 30 s (found
+  // 2026-11-25, see hotspot_retry.h). WLED does the same with a 5 minute wait.
+  const int apClients = g_apActive ? (int)WiFi.softAPgetStationNum() : 0;
+  const bool joining =
+      hotspotretry::inJoinWindow(now, g_joinStartMs, cfg::JOIN_KEEP_TRYING_MS, g_joinWindow);
+  if (!joining) g_joinWindow = false;
+  const uint32_t retryMs = joining ? cfg::STA_RETRY_DURING_JOIN_MS
+                                   : hotspotretry::intervalMs(cfg::STA_RETRY_INTERVAL_MS,
+                                                              cfg::STA_RETRY_INTERVAL_WITH_AP_CLIENT_MS,
+                                                              g_apActive, apClients);
+  if (!hotspotretry::due(now, g_lastAttemptMs, retryMs)) return;
 
   // Route the retry through the same disconnect-then-settle path a provisioning
   // request uses. Calling attemptSaved() straight from here hit exactly the
@@ -414,58 +627,109 @@ void tick() {
   // often still associating when the retry timer fires, so the retry was being
   // thrown away and the box just kept failing on the original attempt.
   g_lastAttemptMs = now;
+  if (joining) {
+    // Same network again, still counted as the owner's own join so a phone on
+    // the hotspot does not cancel it.
+    g_personPending = true;
+  } else {
+    // The last one did not answer: the next retry tries the next saved network.
+    std::lock_guard<std::mutex> lock(g_listMutex);
+    g_tryIndex = savednets::next(g_tryIndex, g_nets.size());
+  }
   g_reconnectPending = true;
 }
 
 bool provision(const String& ssid, const String& password) {
   // The one boundary both the HTTP setup page and anything else that might
   // call this in future have to pass through, so it is the one place this
-  // needs enforcing. 802.11 caps an SSID at 32 bytes; WPA2-PSK requires an
-  // 8-63 byte password, except an open network, which has none at all.
-  if (ssid.length() == 0 || ssid.length() > 32) return false;
-  if (password.length() != 0 && (password.length() < 8 || password.length() > 63)) return false;
+  // needs enforcing (saved_networks.h, valid()).
+  if (!savednets::valid(ssid.c_str(), password.c_str())) return false;
 
-  if (!g_prefs.begin(cfg::NVS_NAMESPACE, /*readOnly=*/false)) {
-    Serial.println(F("[wifi] could not open NVS to save credentials"));
-    return false;
-  }
-  const bool okSsid = g_prefs.putString(cfg::NVS_KEY_SSID, ssid) > 0;
-  // An open network has an empty password, so a zero-length write is a success
-  // here and must not be treated as a failure.
-  g_prefs.putString(cfg::NVS_KEY_PASS, password);
-  g_prefs.end();
-
-  if (!okSsid) {
-    Serial.println(F("[wifi] writing the SSID to NVS failed"));
-    return false;
+  {
+    std::lock_guard<std::mutex> lock(g_listMutex);
+    const savednets::List next =
+        savednets::remember(g_nets, ssid.c_str(), password.c_str(), cfg::SAVED_NETWORKS_MAX);
+    if (!storeList(next)) return false;
+    g_nets = next;
+    g_tryIndex = 0;
   }
 
   // A new network gets its own fair run at the fallback timer, rather than
-  // inheriting "already connected once" from whatever was saved before.
+  // inheriting "already connected once" from whatever was joined before.
   g_everConnected = false;
 
-  // Deferred to tick() for the reason spelled out on g_forgetPending above:
-  // the attempt begins with resetRadio(), which tears interfaces down, and
-  // this runs on the web server's task with a live request still in hand.
-  // Set here rather than read back from NVS a moment from now, so a status
-  // poll in between does not claim there is nothing saved.
-  g_haveSaved = true;
+  // Deferred to tick(): the attempt begins with resetRadio(), which tears
+  // interfaces down, and this runs on the web server's task with a live
+  // request still in hand (see g_forgetPending above).
+  g_hostMode = false;
+  g_hostPending = false;
+  g_joinStartMs = millis();
+  g_joinWindow = true;
+  g_personPending = true;
   g_reconnectPending = true;
   return true;
 }
 
-bool forget() {
-  if (!g_prefs.begin(cfg::NVS_NAMESPACE, /*readOnly=*/false)) return false;
-  g_prefs.remove(cfg::NVS_KEY_SSID);
-  g_prefs.remove(cfg::NVS_KEY_PASS);
-  g_prefs.end();
+bool use(const String& ssid) {
+  {
+    std::lock_guard<std::mutex> lock(g_listMutex);
+    const int at = savednets::indexOf(g_nets, ssid.c_str());
+    if (at < 0) return false;
+    g_tryIndex = at;
+  }
+  g_hostMode = false;
+  g_hostPending = false;
+  g_joinStartMs = millis();
+  g_joinWindow = true;
+  g_personPending = true;
+  g_reconnectPending = true;
+  return true;
+}
 
-  g_haveSaved = false;
-  g_state = StationState::Idle;
-  g_ssid = "";
-  g_reconnectPending = false;
+void hostMode() {
+  g_joinWindow = false;
+  g_hostMode = true;
+  g_hostPending = true;
+}
+
+bool inHostMode() { return g_hostMode; }
+
+bool forget(const String& which) {
+  const String current = currentSsid();
+  const String ssid = which.length() ? which : current;
+  bool nowEmpty = false;
+  {
+    std::lock_guard<std::mutex> lock(g_listMutex);
+    const savednets::List next = savednets::forget(g_nets, ssid.c_str());
+    if (next.size() == g_nets.size()) return false;
+    if (!storeList(next)) return false;
+    g_nets = next;
+    nowEmpty = g_nets.empty();
+    const int at = savednets::indexOf(g_nets, current.c_str());
+    g_tryIndex = at >= 0 ? at : 0;
+  }
+
+  // Forgetting a network the box is not on changes nothing on the radio.
+  if (!nowEmpty && ssid != current) return true;
+
+  g_personPending = false;
+  g_personAttempt = false;
+  g_searchCancelled = false;
   g_everConnected = false;
 
+  if (!nowEmpty) {
+    // Others are left: leave this one and try them, through tick().
+    g_lastAttemptMs = millis();
+    g_reconnectPending = true;
+    return true;
+  }
+
+  g_state = StationState::Idle;
+  {
+    std::lock_guard<std::mutex> lock(g_listMutex);
+    g_ssid = "";
+  }
+  g_reconnectPending = false;
   // Every radio call this needs happens in tick() instead -- dropping the
   // station from here kills the connection the caller is still being answered
   // on. See g_forgetPending above for the panic that taught us this.
@@ -473,8 +737,17 @@ bool forget() {
   return true;
 }
 
+std::vector<String> savedNames() {
+  std::vector<String> out;
+  std::lock_guard<std::mutex> lock(g_listMutex);
+  for (const savednets::Net& n : g_nets) out.push_back(String(n.ssid.c_str()));
+  return out;
+}
+
+int accessPointClients() { return g_apActive ? (int)WiFi.softAPgetStationNum() : 0; }
+
 void reconnect() {
-  if (!g_haveSaved) return;
+  if (!haveSaved() || g_hostMode) return;
   g_lastAttemptMs = millis();
   g_reconnectPending = true;
 }
@@ -484,12 +757,12 @@ uint8_t lastFailureReason() { return g_lastReason; }
 const char* lastFailureText() {
   return g_lastReason ? describeReason(g_lastReason) : "";
 }
-String stationSsid() { return g_ssid; }
+String stationSsid() { return currentSsid(); }
 String stationIp() {
   return g_state == StationState::Connected ? WiFi.localIP().toString() : String();
 }
 String accessPointIp() { return WiFi.softAPIP().toString(); }
-bool hasSavedNetwork() { return g_haveSaved; }
+bool hasSavedNetwork() { return haveSaved(); }
 bool isAccessPointActive() { return g_apActive; }
 
 uint8_t accessPointChannel() {

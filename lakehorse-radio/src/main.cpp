@@ -32,10 +32,12 @@
 #include "captive_portal.h"
 #include "config.h"
 #include "device_key.h"
+#include "matrix_driver.h"
 #include "net_identity.h"
 #include "net_watchdog.h"
 #include "playlist_store.h"
 #include "sd_store.h"
+#include "setup_boot.h"
 #include "web_server.h"
 #include "wifi_manager.h"
 #include "wifi_seed.h"
@@ -111,6 +113,10 @@ void setup() {
   // After the access point exists, because the DNS server binds to its address.
   portal::begin();
 
+  // Before the web server, which locks around the frame engine; after Wi-Fi
+  // and Bluetooth are up, so the panel's current is not stacked on theirs.
+  matrixdrv::begin();
+
   web::begin();
 
   Serial.println(F("[boot] ready"));
@@ -129,8 +135,39 @@ void heartbeat() {
                 (int)WiFi.status(), (int)WiFi.RSSI());
 }
 
+// Setting up a new network away from home with Bluetooth on (setup_boot.h):
+// gathers the facts once per loop and restarts when the decision says so.
+// The timers count from the last moment their condition was false.
+void setupBootTick() {
+  static uint32_t lastNotEmpty = millis();
+  static uint32_t lastNotConnected = millis();
+  const uint32_t now = millis();
+  const bool connected = wifinet::stationState() == wifinet::StationState::Connected;
+  const int clients = wifinet::accessPointClients();
+  // Only a phone on the hotspot resets this. A hotspot that failed to come up
+  // counts as empty, so a setup boot still gives Bluetooth back in the end.
+  if (clients > 0) lastNotEmpty = now;
+  if (!connected) lastNotConnected = now;
+
+  setupboot::State s;
+  s.btRunning = btspeaker::needsModemSleep();
+  s.setupBoot = btspeaker::isSetupBoot();
+  s.apUp = wifinet::isAccessPointActive();
+  s.apClients = clients;
+  s.stationConnected = connected;
+  s.msSinceApEmpty = now - lastNotEmpty;
+  s.msSinceConnected = now - lastNotConnected;
+  switch (setupboot::decide(s, cfg::SETUP_EMPTY_LIMIT_MS, cfg::SETUP_JOINED_HOLD_MS)) {
+    case setupboot::Action::RestartForSetup: btspeaker::restart(/*forSetup=*/true); break;
+    case setupboot::Action::RestartWithBluetooth: btspeaker::restart(/*forSetup=*/false); break;
+    case setupboot::Action::None: break;
+  }
+}
+
 void loop() {
   wifinet::tick();
+  setupBootTick();
+  devkey::tick();
   netwatch::tick();
   btspeaker::tick();
   heartbeat();

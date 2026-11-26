@@ -73,11 +73,43 @@
     return rows;
   }
 
+  // Pure: the saved networks, most recent first, with the one the box is on
+  // marked. Names only: the box never sends passwords.
+  function savedRows(s) {
+    if (!s || !Array.isArray(s.saved)) return [];
+    var on = s.station === 'connected' ? s.ssid : null;
+    return s.saved.filter(function (n) { return typeof n === 'string' && n; })
+      .map(function (n) { return { ssid: n, current: n === on }; });
+  }
+
+  // Pure: where "Open in browser" goes. Once the box has joined a network its
+  // address there wins, because that is where the phone is about to move;
+  // before that, the hotspot's address when this visitor is on it.
+  function pageAddress(s) {
+    if (s && s.station === 'connected' && s.ip) return 'http://' + s.ip + '/';
+    if (s && s.viaAccessPoint && s.apIp) return 'http://' + s.apIp + '/';
+    return '/';
+  }
+
+  // Pure: the help line under a failed join. "Not found" is nearly always a
+  // 5 GHz network or a phone hotspot that has stopped advertising.
+  function joinFailureHint(reason) {
+    if (!reason) return '';
+    if (/not found|out of range/.test(reason)) {
+      return 'The box only sees 2.4 GHz Wi-Fi. On an iPhone hotspot turn on Maximize Compatibility '
+        + 'and keep the Personal Hotspot screen open while the box joins. See "Box cannot find or join a network?" below.';
+    }
+    if (/password/.test(reason)) {
+      return 'Passwords are case sensitive. If it is right, the network may be WPA3 only: see "Box cannot find or join a network?" below.';
+    }
+    return 'See "Box cannot find or join a network?" below.';
+  }
+
   // Pure: may this visitor change the network? The firmware's rule: from the
   // hotspot, or with the pairing key. The page mirrors it so it does not offer
   // a form the box would refuse.
   function canChange(s, hasKey) {
-    return !!(s && (s.viaAccessPoint || hasKey));
+    return !!(s && (s.networkOpen || s.viaAccessPoint || hasKey));
   }
 
   function attach(el, opts) {
@@ -87,6 +119,7 @@
     // Held from the start: emptying the list detaches this element, after which
     // looking it up by id finds nothing.
     var noteEl = el('netNote');
+    var savedNoteEl = el('savedNote');  // same reason as noteEl
     var rows = [];
 
     function pick(n) {
@@ -126,6 +159,7 @@
         var b = doc.createElement('button');
         b.type = 'button';
         b.className = 'netrow';
+        b.setAttribute('data-help', 'net-row');
         b.setAttribute('aria-pressed', 'false');
         var name = doc.createElement('span');
         name.textContent = n.ssid + (n.open ? '  (open)' : '');
@@ -162,7 +196,40 @@
         facts.appendChild(dt);
         facts.appendChild(dd);
       });
-      el('forgetBtn').hidden = !(s && s.hasSavedNetwork);
+      el('forgetBtn').hidden = !(s && s.station === 'connected' && s.ssid);
+      el('openPage').setAttribute('href', pageAddress(s));
+      el('setupBootNote').hidden = !(s && s.setupBoot);
+      showSaved(s);
+    }
+
+    // The saved list: each row the name, and buttons to join it now or forget
+    // it. The network the box is on has no "Use now", only "Forget".
+    function showSaved(s) {
+      var list = el('savedList');
+      var note = savedNoteEl;
+      list.textContent = '';
+      var saved = savedRows(s);
+      note.textContent = saved.length ? '' : 'None yet. Add one below.';
+      list.appendChild(note);
+      saved.forEach(function (n) {
+        var row = doc.createElement('div');
+        row.className = 'savedrow';
+        var name = doc.createElement('span');
+        name.textContent = n.ssid + (n.current ? '  (on now)' : '');
+        row.appendChild(name);
+        function button(label, fn) {
+          var b = doc.createElement('button');
+          b.type = 'button';
+          b.className = 'btn';
+          b.setAttribute('data-help', label === 'Forget' ? 'net-saved-forget' : 'net-saved-use');
+          b.textContent = label;
+          b.addEventListener('click', function () { if (fn) fn(n.ssid); });
+          row.appendChild(b);
+        }
+        if (!n.current) button('Use now', opts.onUse);
+        button('Forget', opts.onForget);
+        list.appendChild(row);
+      });
     }
 
     el('showPass').addEventListener('change', function () {
@@ -184,12 +251,17 @@
 
   var instance = null;
   if (typeof document !== 'undefined' && document.getElementById && document.getElementById('netList')) {
-    instance = attach(function (id) { return document.getElementById(id); });
+    // app.js owns the requests; it registers them on window before this loads.
+    instance = attach(function (id) { return document.getElementById(id); }, {
+      onUse: function (n) { if (root.LakehorseNetActions) root.LakehorseNetActions.use(n); },
+      onForget: function (n) { if (root.LakehorseNetActions) root.LakehorseNetActions.forget(n); }
+    });
   }
 
   var exported = {
     signalBars: signalBars, arrange: arrange, passwordLabel: passwordLabel, headline: headline, currentRows: currentRows,
-    canChange: canChange, attach: attach,
+    canChange: canChange, attach: attach, savedRows: savedRows, pageAddress: pageAddress,
+    joinFailureHint: joinFailureHint,
     // For app.js, which owns the scan: no-ops until the page has the window.
     render: function (n) { if (instance) instance.render(n); },
     note: function (t) { if (instance) instance.note(t); },

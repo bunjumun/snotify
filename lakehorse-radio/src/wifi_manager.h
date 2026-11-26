@@ -36,6 +36,8 @@
 //
 #include <Arduino.h>
 
+#include <vector>
+
 namespace wifinet {
 
 enum class StationState { Idle, Connecting, Connected, Failed };
@@ -50,15 +52,30 @@ void begin();
 // access-point timer; the actual connection events arrive as callbacks.
 void tick();
 
-// Saves credentials and attempts them. Returns false only if the write failed;
+// Remembers up to cfg::SAVED_NETWORKS_MAX networks (saved_networks.h): home,
+// a venue, a phone hotspot. Boot tries the strongest one in range; retries
+// walk the list. A station on any of them is what keeps Bluetooth and the
+// page working together, which the box's own hotspot cannot (HANDOFF.md).
+
+// Saves credentials at the front of the list and attempts them. Returns false
+// if they are invalid or the write failed;
 // a wrong password reports success here and fails asynchronously, which is why
 // the caller must report "trying" rather than "connected".
 bool provision(const String& ssid, const String& password);
 
-// Forgets the saved network and drops the station. The access point is
-// brought up if it was not already (or left alone if it was), so the box
-// stays reachable to be re-provisioned either way.
-bool forget();
+// Forgets one saved network (the current one when `ssid` is empty). If it was
+// the one in use the box moves on to the others; with none left the access
+// point comes up so the box stays reachable. False if it was not saved.
+bool forget(const String& ssid);
+
+// Joins a network that is already saved, now. False if it is not saved.
+bool use(const String& ssid);
+
+// Saved network names, most recent first. Never the passwords.
+std::vector<String> savedNames();
+
+// Phones on the box's own hotspot; 0 while it is down.
+int accessPointClients();
 
 // Drops and rejoins the saved network, through the same path the retry timer
 // uses. For net_watchdog.h, when the link says "connected" but is deaf.
@@ -74,6 +91,13 @@ String stationSsid();
 String stationIp();
 String accessPointIp();
 bool hasSavedNetwork();
+
+// Leaves the current network and serves the box's own hotspot, keeping every
+// saved network. Stays that way until use() or provision() picks a network, or
+// the box restarts (then it rejoins a saved one as usual). The radio work is
+// done by tick(), not by the caller.
+void hostMode();
+bool inHostMode();
 
 // Whether the fallback hotspot is currently up. False before it has ever been
 // needed, and false again once a saved network has answered and

@@ -86,6 +86,38 @@ constexpr uint32_t WIFI_SCAN_DWELL_MS = 300;
 // enough not to hammer a router that is genuinely down, short enough that the
 // box rejoins on its own after a power cut without anyone touching it.
 constexpr uint32_t STA_RETRY_INTERVAL_MS = 30000;
+// After Join or Use now: keep retrying the chosen network this often, for this
+// long, so the owner can switch to their phone's hotspot screen (hotspot_retry.h).
+constexpr uint32_t STA_RETRY_DURING_JOIN_MS = 4000;
+constexpr uint32_t JOIN_KEEP_TRYING_MS = 180000;
+// Retry interval while a phone is joined to the box's own hotspot (see
+// hotspot_retry.h). WLED waits five minutes in the same situation.
+constexpr uint32_t STA_RETRY_INTERVAL_WITH_AP_CLIENT_MS = 300000;
+
+// How many networks the box remembers (saved_networks.h). Home, a venue or
+// two and a phone hotspot fit; each costs two small NVS strings. Slot 0 uses
+// the original NVS_KEY_SSID / NVS_KEY_PASS keys so the network saved before
+// the list existed is kept; slot n uses those keys with n appended.
+constexpr size_t SAVED_NETWORKS_MAX = 5;
+
+// With Bluetooth on, the box's own hotspot cannot serve pages (internal heap),
+// so a phone joining it restarts the box once without Bluetooth (setup_boot.h).
+// In that setup boot: how long the box stays on a newly joined network before
+// restarting with Bluetooth back, long enough for the setup page to read and
+// show its new address...
+constexpr uint32_t SETUP_JOINED_HOLD_MS = 20000;
+// ...and how long the hotspot may sit empty before giving up on setup and
+// restarting with Bluetooth back.
+constexpr uint32_t SETUP_EMPTY_LIMIT_MS = 180000;
+// How long the hotspot stays up after the station joins a network, so a
+// phone that set it up can still read the box's new address before it goes.
+constexpr uint32_t AP_TEARDOWN_GRACE_MS = 15000;
+
+// Pairing from any network (pair_window.h): the dev board's BOOT button,
+// how long to hold it, and how long the window stays open.
+constexpr uint8_t PAIR_BUTTON_PIN = 0;
+constexpr uint32_t PAIR_HOLD_MS = 3000;
+constexpr uint32_t PAIR_WINDOW_MS = 120000;
 
 // ---------- Playlist limits ----------
 //
@@ -152,6 +184,13 @@ constexpr bool SD_UPLOAD_ENABLED = true;
 // someone you let in. Turn it on before the box goes anywhere shared: with it
 // off, anyone on the network can fill or empty the card.
 constexpr bool SD_WRITES_NEED_KEY = false;
+
+// Whether changing the box's Wi-Fi (join, use, forget) needs the pairing key or
+// the box's own hotspot. Off while the box is being built and tried out on a
+// home network, so the owner is never locked out of the network window by a
+// forgotten key or a cleared browser. Turn it on before the box goes anywhere
+// shared: with it off, anyone on the same network can change which Wi-Fi it uses.
+constexpr bool NETWORK_CHANGES_NEED_KEY = false;
 // Uploads are gathered into blocks this big before touching the card. A
 // multiple of the 512-byte sector, and big enough to amortise the card's
 // per-write overhead without costing much RAM.
@@ -195,10 +234,18 @@ constexpr uint16_t HTTP_SEND_WINDOW = 2 * 1436;
 //     cover every case. Small, busy structures in PSRAM are not safe on it.
 // Bluetooth started this way streamed cleanly in the same tests.
 constexpr size_t BT_START_PSRAM_THRESHOLD = 32;
-// After Bluetooth is up: buffers of this size and up (lwIP send segments,
-// the web server's 2.9 KB send buffers) go to PSRAM; small structures such as
-// LittleFS file handles, the ones seen corrupted in PSRAM, stay internal.
-constexpr size_t RUNTIME_PSRAM_THRESHOLD = 1024;
+// After Bluetooth is up: buffers of this size and up (the web server's 2.9 KB
+// send buffers, the 16 KB SD read blocks) go to PSRAM; everything smaller stays
+// internal. That includes lwIP's TCP segments (pbufs, at most ~1,508 bytes:
+// 72 of header room plus a 1,436-byte MSS), and it MUST: this was 1024 until
+// 2026-11-23, which put every full segment in PSRAM, and on this rev v1.0 chip
+// the Wi-Fi driver's copy out of a PSRAM pbuf drops bytes. The last (length
+// mod 4) bytes of a response's header block arrived as zeros (that was the
+// "header length matters" bug noted in web_server.cpp) and bodies came back
+// short, deterministically per file: /game/index.html, three.core, config.js
+// failed every time. Small structures such as LittleFS file handles, seen
+// corrupted in PSRAM, stay internal as before.
+constexpr size_t RUNTIME_PSRAM_THRESHOLD = 1600;
 // Bluedroid finishes its profile setup on its own task after start()
 // returns; the low threshold is held this long so that lands in PSRAM too.
 constexpr uint32_t BT_START_SETTLE_MS = 1500;
@@ -276,5 +323,15 @@ constexpr const char* NVS_KEY_PASS = "pass";
 // Fingerprint of the last wifi_defaults.h applied, so it is applied once per
 // change of that file rather than on every boot. See wifi_seed.h.
 constexpr const char* NVS_KEY_SEED = "seed";
+
+// ---- Small card files (POST /api/sd/card-file, src/card_files.h) ----
+// The ONLY names the box will write at the card root over Wi-Fi. Exact,
+// case-sensitive, no folders, no deletes. Add a name here and a content check in
+// card_files.cpp together; a name with no check is refused.
+constexpr const char* CARD_FILE_NAMES[] = {"band-tracks.json"};
+// Largest body accepted, and it is held in RAM for the length of the request, so it
+// is small on purpose. 4 KB is also what alignment_box.cpp is willing to read back
+// (kBandListMaxBytes): a bigger list would upload fine and then flag nothing.
+constexpr size_t CARD_FILE_MAX_BYTES = 4096;
 
 }  // namespace cfg

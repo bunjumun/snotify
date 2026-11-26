@@ -33,4 +33,10 @@ const String& value();
 // itself a hint.
 bool matches(const String& supplied);
 
+// The pairing window (pair_window.h): open for cfg::PAIR_WINDOW_MS after a
+// power-on, or after the BOOT button is held cfg::PAIR_HOLD_MS. While open,
+// GET /api/pair answers on any network. tick() from loop().
+void tick();
+bool pairWindowOpen();
+
 }  // namespace devkey

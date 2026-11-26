@@ -276,7 +276,7 @@ fieldset { background: transparent; }
 .matrixwin canvas { display: block; width: 100%; max-width: 320px; aspect-ratio: 1 / 1; margin: 4px auto 8px; }
 .matrixwin .row .btn { margin-top: 8px; }
 /* Five mode buttons must fit one row on a 375 px phone. */
-.matrixwin #matrixModes { flex-wrap: nowrap; }
+.matrixwin #matrixModes { flex-wrap: wrap; }
 .matrixwin #matrixModes .btn { flex: 1 1 auto; padding: 10px 6px; }
 .matrixwin.full {
   position: fixed; inset: 0; z-index: 40; margin: 0; border: 0; max-width: none; box-shadow: none;
@@ -360,3 +360,148 @@ a.btn[aria-disabled="true"] { opacity: 0.4; pointer-events: none; }
 a.gameicon { text-decoration: none; text-align: center; }
 a.gameicon:hover span, a.gameicon:focus-visible span { background: var(--accent); color: #0c0e0d; }
 a.gameicon[aria-disabled="true"] { opacity: .4; pointer-events: none; }
+
+/* Saved networks (network-window.js): name, then Use now / Forget. */
+.savedlist { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.savedrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.savedrow span { flex: 1 1 auto; min-width: 8em; overflow-wrap: anywhere; }
+a.btn { display: inline-block; text-decoration: none; color: inherit; }
+.nethelp { margin-top: 14px; }
+.nethelp summary { cursor: pointer; font-weight: 600; }
+.nethelp ul { padding-left: 1.2em; }
+.nethelp li { margin: 6px 0; }
+
+/* ======================================================================
+   Parallel-dimension look (SHELL-AND-MATRIX-PLAN.md standing rule).
+   Generous curves everywhere, panels clip their contents, no square corners
+   except the matrix pixels. Bevel colours are untouched. Later rules win.
+   ====================================================================== */
+.win { border-radius: 22px; overflow: hidden; }
+.win-title { border-radius: 20px 20px 0 0; }
+.win-name i { border-radius: 4px; }
+.win-x, .win-help {
+  width: 44px; height: 28px; padding: 0; border-radius: 14px; overflow: visible; cursor: pointer;
+  background: #3b3d39; color: #e9e5d6;
+  border: 2px solid; border-color: #6a6c65 #0f1110 #0f1110 #6a6c65;
+  font: 600 13px ui-monospace, Menlo, monospace; display: inline-flex; align-items: center; justify-content: center;
+}
+.win-help { margin-left: auto; margin-right: 6px; }
+.win-x svg { display: block; }
+/* The painted button is 28 px tall; the tap area is 44 (the title bar is 36, so 8 px reach above and below). */
+.win-x, .win-help { position: relative; }
+.win-x::after, .win-help::after { content: ""; position: absolute; left: 0; right: 0; top: -8px; bottom: -8px; }
+.win .btn, .win input, .win select, .banner, .track, .well, .netlist, .note, .pathbar,
+.startbtn, .task, .tray, .matrixpreview, .win-body progress, .drivefile, .drivelog, .driveviewer, .drivenet svg, .netrow.on, .group {
+  border-radius: 14px;
+}
+.win input[type=range], .win .playerbar input[type=range], .win .check input { border-radius: 0; }
+.banner, .track, .well, .netlist, .matrixpreview, .drivelog, .driveviewer, .drivenet svg, .pathbar { overflow: hidden; }
+.win fieldset { border-radius: 0; }
+.note, .callout, #helpBubble { border-radius: 18px; }
+.icon span { border-radius: 8px; }
+.taskbar { border-radius: 26px 26px 0 0; }
+.startmenu { border-radius: 22px; overflow: hidden; }
+.startband { border-radius: 0; }
+.startitems button { border-radius: 0; }
+.startitems button.needs { border-radius: 0; }
+.matrixwin.full { border-radius: 0; }
+.netrow { border-radius: 0; }
+.group .grouptitle { border-radius: 6px; }
+progress { border-radius: 7px; }
+
+/* ======================================================================
+   Drive B
+   ====================================================================== */
+.balloon { margin: 6px 0; }
+.drivefiles { background: #121412; border: 2px solid; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; border-radius: 14px; overflow: hidden; margin: 10px 0; }
+.drivefile {
+  width: 100%; min-height: 60px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 2px;
+  padding: 0 12px; background: transparent; color: #e9e5d6; border: 0; border-bottom: 1px solid #3b3d39; border-radius: 0;
+  text-align: left; cursor: pointer; font: 400 13px ui-monospace, Menlo, monospace;
+}
+.drivefile:last-child { border-bottom: 0; }
+.dfname { font-weight: 600; overflow-wrap: anywhere; }
+.dfstat { font-size: 11px; }
+.dfstat.ok { color: #5fd0b0; }
+.dfstat.warn { color: #ff6b2c; }
+.drivefile.stutter { animation: dstutter .45s steps(1) 1; }
+@keyframes dstutter { 0% { transform: translateX(-3px); } 25% { transform: translateX(4px); opacity: .6; } 50% { transform: translateX(-2px); } 75% { transform: translateX(3px); opacity: .8; } 100% { transform: none; } }
+.driveviewer { background: #121412; border: 2px solid; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; margin: 10px 0; padding: 8px; }
+.driveviewerbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; }
+.driveviewer .btn { margin-top: 0; }
+.driveviewer pre { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 12px/1.5 ui-monospace, Menlo, monospace; max-height: 240px; overflow-y: auto; }
+.drivenet { display: flex; gap: 10px; align-items: center; background: #121412; border: 2px solid; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; border-radius: 14px; padding: 8px; overflow: hidden; margin: 10px 0; }
+.drivenetinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size: 11px; }
+.drivenetinfo .label { margin: 0; }
+.bigpct { font: 400 44px/1 ui-monospace, Menlo, monospace; color: #5fd0b0; }
+.drivenet svg { flex: none; width: 128px; height: 128px; background: #0c0e0d; border: 2px solid; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; }
+.drivenet svg .snap { animation: dsnap .9s ease-out 1; }
+.drivenet svg .flash { animation: dsnap .9s ease-out 1, dflash 1.6s ease-out 1; }
+@keyframes dsnap { from { transform: translate(var(--dx, 0), var(--dy, 0)); } to { transform: none; } }
+@keyframes dflash { 0% { fill: #e9e5d6; r: 6px; } 100% { fill: #5fd0b0; r: 3.2px; } }
+.drivelog { background: #121412; border: 2px solid; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; padding: 6px 8px; font-size: 11px; line-height: 1.5; min-height: 28px; margin: 10px 0; }
+.drivelog .log-ok { color: #5fd0b0; }
+.drivelog .log-dim { color: #a8a597; }
+
+/* Help */
+.helplist .label { margin-top: 14px; }
+.helpentry { border-bottom: 1px solid #3b3d39; }
+.helpentry summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+.helpentry p { margin: 0 0 12px; color: var(--text-dim); font-size: 13px; line-height: 1.5; }
+#helpCatcher { position: fixed; inset: 0; z-index: 60; background: transparent; cursor: help; }
+#helpCatcher[hidden], #helpBubble[hidden] { display: none; }
+#helpBubble {
+  position: fixed; z-index: 70; padding: 10px 12px; background: #f4efc8; color: #0c0e0d;
+  border: 1px solid #0c0e0d; box-shadow: 3px 3px 0 #000; font-size: 13px; line-height: 1.45;
+  max-height: 60vh; overflow-y: auto; text-shadow: none;
+}
+#helpBubble b { display: block; margin-bottom: 4px; }
+#helpBubble b[hidden] { display: none; }
+html.asking .win-help { background: var(--accent); color: #0c0e0d; }
+
+/* ======================================================================
+   Vintage control screen lens (SHELL-AND-MATRIX-PLAN.md standing rule).
+   Cheap layers only: scanlines, noise, vignette and a rolling band, all
+   fixed, pointer-events none, drawn from inline SVG/gradients (no requests).
+   Left out on purpose: the full-page SVG warp filter (a filter on the body
+   turns position:fixed into position-relative-to-body and moves tap targets)
+   and backdrop-filter bands (costly on an iPhone 8). Legibility wins.
+   Start menu > Screen switches this off (html.lens-clean).
+   ====================================================================== */
+.lens { position: fixed; inset: 0; z-index: 50; pointer-events: none; overflow: hidden; }
+.lens i { position: absolute; display: block; pointer-events: none; }
+.l-scan { inset: 0; background: repeating-linear-gradient(0deg, rgba(0,0,0,.14) 0 1px, transparent 1px 3px); }
+.l-noise {
+  inset: -50%; opacity: .045;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: lensnoise .5s steps(1) infinite;
+}
+@keyframes lensnoise { 0% { transform: translate(0, 0); } 33% { transform: translate(-43px, 71px); } 66% { transform: translate(29px, -38px); } }
+.l-vig {
+  inset: 0; border-radius: 20px;
+  background: radial-gradient(ellipse 80% 75% at 50% 50%, transparent 66%, rgba(0,0,0,.2) 100%);
+  box-shadow: inset 0 0 40px 4px rgba(0,0,0,.35), 0 0 0 40px #000;
+  animation: lensflick 6s steps(1) infinite;
+}
+@keyframes lensflick { 0%, 100% { opacity: 1; } 47% { opacity: .9; } 48% { opacity: 1; } 83% { opacity: .95; } }
+.l-roll {
+  left: 0; right: 0; top: 0; height: 120px;
+  background: linear-gradient(transparent, rgba(95,208,176,.06) 50%, transparent);
+  animation: lensroll 9s linear infinite;
+}
+@keyframes lensroll { from { transform: translateY(-140px); } to { transform: translateY(110vh); } }
+.l-tear {
+  left: 0; right: 0; top: 38%; height: 5px; background: rgba(255,107,44,.07); opacity: 0;
+  animation: lenstear 7s steps(1) infinite;
+}
+@keyframes lenstear { 0%, 100% { opacity: 0; top: 38%; } 61% { opacity: 1; top: 22%; transform: translateX(5px); } 62% { top: 63%; } 63% { opacity: 0; transform: none; } }
+
+/* Colour fringing on text only: form fields and help bubbles stay crisp. */
+html:not(.lens-clean) body { text-shadow: .6px 0 rgba(255,40,90,.3), -.6px 0 rgba(30,220,255,.3); }
+html:not(.lens-clean) input, html:not(.lens-clean) select, html:not(.lens-clean) textarea,
+html:not(.lens-clean) #helpBubble, html:not(.lens-clean) #helpBubble * { text-shadow: none; }
+html.lens-clean .lens { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .l-noise, .l-vig, .l-roll, .l-tear, .drivefile.stutter, .drivenet svg .snap, .drivenet svg .flash { animation: none; }
+  .l-roll, .l-tear { display: none; }
+}

@@ -32,6 +32,10 @@ struct Snapshot {
 };
 Snapshot snapshot();
 
+// True when `name` (a file name on the card) is listed in /band-tracks.json.
+// The event endpoint uses it for songs the page played from the card.
+bool isBandSong(const char* name);
+
 // For the event endpoint. `id` for a song is not checked here; the endpoint
 // has already matched it to the playlist.
 EventResult submitEvent(Source source, const char* id, Result result);

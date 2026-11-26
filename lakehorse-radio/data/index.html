@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Lakehorse Radio</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📻</text></svg>" />
+<!-- inline-critical -->
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -14,8 +15,8 @@
        it is open unless it has the hidden attribute. -->
   <main class="desktop" id="desktop">
 
-    <section class="win" id="win-player" data-title="PLAYER.EXE">
-      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>PLAYER.EXE</span><button type="button" class="win-x" data-close aria-label="Close PLAYER.EXE">X</button></div>
+    <section class="win" id="win-player" data-help="win-player" data-title="PLAYER.EXE">
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>PLAYER.EXE</span><button type="button" class="win-x" data-help="win-close" data-close aria-label="Close PLAYER.EXE">X</button></div>
       <div class="win-body">
     <!-- The banner is filled in from /api/status before anything else renders.
          It is the first thing on the page because how you got here decides
@@ -28,18 +29,18 @@
     <audio id="player" preload="auto"></audio>
     <div class="playerbar" id="playerBar" hidden>
       <p class="nowplaying" id="nowPlaying"></p>
-      <button class="btn" id="playToggle" type="button">Pause</button>
-      <button class="btn" id="playNext" type="button">Next</button>
+      <button class="btn" id="playToggle" data-help="play-toggle" type="button">Pause</button>
+      <button class="btn" id="playNext" data-help="play-next" type="button">Next</button>
       <span class="time" id="playTime">0:00 / 0:00</span>
-      <input id="playSeek" type="range" min="0" max="1000" value="0" aria-label="Position" />
+      <input id="playSeek" data-help="play-seek" type="range" min="0" max="1000" value="0" aria-label="Position" />
       <label class="volume" for="playVolume">Volume</label>
-      <input id="playVolume" type="range" min="0" max="100" value="100" />
+      <input id="playVolume" data-help="play-volume" type="range" min="0" max="100" value="100" />
     </div>
     <span class="status" id="playerStatus"></span>
     <!-- Shown only when the box was built with Bluetooth (player-box.js). -->
     <p class="row" id="playOnRow" hidden>
       <label for="playOn">Play songs on</label>
-      <select id="playOn">
+      <select id="playOn" data-help="play-on">
         <option value="browser">this device</option>
         <option value="box">the box's speaker</option>
       </select>
@@ -47,7 +48,7 @@
     <!-- The matrix lights (matrix-window.js). The preview is the way in and
          makes no request; the window below polls only while it is open. -->
     <p class="row matrixrow">
-      <button class="matrixpreview" id="matrixOpen" type="button" aria-label="Matrix lights">
+      <button class="matrixpreview" id="matrixOpen" data-help="matrix-preview" type="button" aria-label="Matrix lights">
         <canvas id="matrixPreview" width="64" height="64"></canvas>
       </button>
       <span class="muted">Matrix lights</span>
@@ -64,8 +65,8 @@
 
         <div id="sdUpload" hidden>
           <div class="row">
-            <button class="btn primary" id="sdPick">Upload songs</button>
-            <input type="file" id="sdFile" accept=".wav,.flac,.mp3,.m4a,.aac,.ogg,.opus,audio/*" multiple hidden />
+            <button class="btn primary" id="sdPick" data-help="sd-pick">Upload songs</button>
+            <input type="file" id="sdFile" data-help="sd-pick" accept=".wav,.flac,.mp3,.m4a,.aac,.ogg,.opus,audio/*" multiple hidden />
           </div>
           <p class="muted">24-bit and 32-bit WAVs are converted to 16-bit in your browser before they are sent, at their own sample rate. Other files are sent as they are. For files ready for Bluetooth playback, prepare them with song prep on a computer.</p>
           <progress id="sdBar" max="1" value="0" hidden></progress>
@@ -73,9 +74,9 @@
 
         <div id="sdKeyRow" hidden>
           <label for="sdKey">Pairing key</label>
-          <input id="sdKey" placeholder="Needed once, to upload or delete" autocomplete="off" />
+          <input id="sdKey" data-help="sd-key" placeholder="Needed once, to upload or delete" autocomplete="off" />
           <p class="muted">Join the Lakehorse Radio hotspot and open this page: the key is filled in for you. Or paste it here.</p>
-          <button class="btn" id="sdKeySave">Save key</button>
+          <button class="btn" id="sdKeySave" data-help="sd-key-save">Save key</button>
         </div>
         <span class="status" id="sdStatus"></span>
       </fieldset>
@@ -86,25 +87,25 @@
       </div>
     </section>
 
-    <section class="win" id="win-speaker" data-title="SPEAKER.EXE" hidden>
-      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>SPEAKER.EXE</span><button type="button" class="win-x" data-close aria-label="Close SPEAKER.EXE">X</button></div>
+    <section class="win" id="win-speaker" data-help="win-speaker" data-title="SPEAKER.EXE" hidden>
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>SPEAKER.EXE</span><button type="button" class="win-x" data-help="win-close" data-close aria-label="Close SPEAKER.EXE">X</button></div>
       <div class="win-body">
     <!-- Bluetooth speaker controls (speaker-panel.js). Shown only when the box
          was built with Bluetooth, whether it is switched on or off. -->
     <div id="speakerPanel" hidden>
       <div class="well"><span id="spkStatus"></span></div>
       <p class="row">
-        <button class="btn" id="spkLink" type="button" hidden></button>
-        <button class="btn" id="spkFind" type="button">Find speakers</button>
+        <button class="btn" id="spkLink" data-help="spk-link" type="button" hidden></button>
+        <button class="btn" id="spkFind" data-help="spk-find" type="button">Find speakers</button>
       </p>
       <ul class="tracks" id="spkList"></ul>
       <p class="muted" id="spkNote"></p>
       <!-- Not shown: the Optimize box below does this job. Kept because
            speaker-panel.js wires it, and its tests exercise it. -->
-      <button class="btn" id="spkPower" type="button" hidden>Turn Bluetooth off</button>
+      <button class="btn" id="spkPower" data-help="spk-optimize" type="button" hidden>Turn Bluetooth off</button>
       <div class="group">
         <span class="grouptitle">SPEED</span>
-        <label class="check big"><input type="checkbox" id="spkOptimize" /> Optimize for this device</label>
+        <label class="check big"><input type="checkbox" id="spkOptimize" data-help="spk-optimize" /> Optimize for this device</label>
         <p class="muted" id="spkOptNote"></p>
         <p class="note" id="spkRestartNote">Changing this restarts the box, about 10 seconds. The page waits and reconnects by itself.</p>
       </div>
@@ -114,8 +115,8 @@
       </div>
     </section>
 
-    <section class="win" id="win-network" data-title="NETWORK.EXE" hidden>
-      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>NETWORK.EXE</span><button type="button" class="win-x" data-close aria-label="Close NETWORK.EXE">X</button></div>
+    <section class="win" id="win-network" data-help="win-network" data-title="NETWORK.EXE" hidden>
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>NETWORK.EXE</span><button type="button" class="win-x" data-help="win-close" data-close aria-label="Close NETWORK.EXE">X</button></div>
       <div class="win-body">
     <!-- Setup is on the same page rather than behind a link, because a phone
          that arrived through the captive sheet often cannot navigate anywhere
@@ -124,14 +125,26 @@
       <p class="label">THIS BOX</p>
       <p class="headline" id="netHeadline">Checking...</p>
       <dl class="facts" id="netFacts"></dl>
+      <p class="note" id="setupBootNote" hidden>Bluetooth is resting while you set up a network, so this hotspot can work. It comes back by itself once the box has joined one.</p>
       <div class="row">
-        <button class="btn" id="netRefresh" type="button">Refresh</button>
-        <button class="btn" id="forgetBtn" type="button" hidden>Forget network</button>
+        <button class="btn" id="netRefresh" data-help="net-refresh" type="button">Refresh</button>
+        <!-- A real link, not a script: in a phone's captive setup sheet it is
+             the one way out to a full browser. -->
+        <a class="btn" id="openPage" data-help="net-open-page" href="/" target="_blank" rel="noopener">Open in browser</a>
+        <button class="btn" id="forgetBtn" data-help="net-forget" type="button" hidden>Forget this network</button>
+        <button class="btn" id="hostBtn" data-help="net-host-mode" type="button" hidden>Host its own network</button>
       </div>
+      <p class="note" id="hostNote" hidden>The box is hosting its own network, <b>Lakehorse Radio</b>, and is not on any other. Join it on this phone and open <b>http://192.168.4.1/</b>. Pick a saved network below to put it back on Wi-Fi.</p>
       <span class="status" id="netCurrentStatus"></span>
     </section>
 
     <section id="setup" hidden>
+      <p class="label">SAVED NETWORKS</p>
+      <div class="savedlist" id="savedList">
+        <p class="muted" id="savedNote"></p>
+      </div>
+
+      <p class="label">ADD A NETWORK</p>
       <p class="muted" id="setupIntro"></p>
 
       <p class="label">NETWORKS IN RANGE</p>
@@ -141,75 +154,130 @@
       <!-- Holds the network picked from the list; app.js save() reads it. -->
       <input type="hidden" id="ssid" value="" />
 
+      <p class="muted" id="scanHotspotNote">Using this phone's own hotspot? It will not show up in the scan while this phone is showing this page. Type its name and password below, tap Join, then open the Personal Hotspot screen and leave it open: the box keeps looking for about 3 minutes.</p>
       <label for="ssidManual">Or type the name</label>
-      <input id="ssidManual" placeholder="Network name" autocomplete="off" />
+      <input id="ssidManual" data-help="net-manual" placeholder="Network name" autocomplete="off" />
 
       <label for="pass" id="passLabel">Password</label>
-      <input id="pass" type="password" placeholder="Leave empty if the network is open" autocomplete="off" />
-      <label class="check"><input type="checkbox" id="showPass" /> Show password</label>
+      <input id="pass" data-help="net-pass" type="password" placeholder="Leave empty if the network is open" autocomplete="off" />
+      <label class="check"><input type="checkbox" id="showPass" data-help="net-show-pass" /> Show password</label>
 
       <!-- Set here rather than on its own screen, because this is the one
            moment anyone is thinking about how they will reach this box. -->
       <label for="host">Name on the network</label>
-      <input id="host" placeholder="lakehorseradio" autocomplete="off" />
+      <input id="host" data-help="net-host" placeholder="lakehorseradio" autocomplete="off" />
       <p class="muted" id="hostHint">Letters, numbers and hyphens. You will reach the box at this name followed by .local</p>
 
       <div class="row">
-        <button class="btn primary" id="saveBtn" type="button">Join</button>
-        <button class="btn" id="rescanBtn" type="button">Scan networks</button>
-        <button class="btn" id="cancelBtn" type="button">Cancel</button>
+        <button class="btn primary" id="saveBtn" data-help="net-join" type="button">Join</button>
+        <button class="btn" id="rescanBtn" data-help="net-rescan" type="button">Scan networks</button>
+        <button class="btn" id="cancelBtn" data-help="net-cancel" type="button">Cancel</button>
       </div>
-      <p class="note" id="joinNote">The box drops its own Wi-Fi while it joins. Reconnect your phone to your home Wi-Fi, then open <b id="netHostName">lakehorseradio.local</b>.</p>
+      <p class="note" id="joinNote">If you are on the box's own hotspot, it goes away a few seconds after the box joins. Switch this phone to the same network, then tap Open in browser, or go to <b id="netHostName">lakehorseradio.local</b>.</p>
       <span class="status" id="setupStatus"></span>
+
+      <details class="nethelp">
+        <summary data-help="net-help">Box cannot find or join a network?</summary>
+        <p><b>The box only works with 2.4 GHz Wi-Fi.</b> Most networks offer it, but some phones and routers switch it off.</p>
+        <ul>
+          <li><b>iPhone hotspot:</b> Settings, Personal Hotspot. Turn on Allow Others to Join and Maximize Compatibility (that is the 2.4 GHz switch). Keep that screen open while the box joins: iPhones stop advertising the hotspot after a minute or two otherwise.</li>
+          <li><b>Android hotspot:</b> Settings, Hotspot and tethering, Wi-Fi hotspot. Set the band (AP band) to 2.4 GHz, and the security to WPA2.</li>
+          <li><b>Home or venue router:</b> make sure the 2.4 GHz band is switched on. If the router shows one name for both bands and the box still cannot join, give the 2.4 GHz band its own name in the router's settings and join that.</li>
+          <li><b>WPA3 only:</b> set the network to WPA2, or WPA2/WPA3 mixed.</li>
+          <li><b>Hotel, cafe or airport Wi-Fi</b> with a sign-in page will not work. Use a phone hotspot instead.</li>
+          <li>Passwords are case sensitive, and must be 8 to 63 characters. Open networks need none.</li>
+          <li><b>Box joined your phone's hotspot but lakehorseradio.local will not open?</b> On an iPhone hotspot try <b>172.20.10.2</b>, then .3, .4 and so on. The box is usually one of the first few addresses.</li>
+        </ul>
+        <p>Tip: add your phone's hotspot while you are at home. When you take the box out, turn the hotspot on and the box finds it by itself.</p>
+      </details>
 
       <p class="muted" id="pairLine"></p>
     </section>
-        <p class="muted" id="setupAway">Changing the network needs this device to be paired with the box, so nobody else on the Wi-Fi can move it. Join the box's own hotspot, "Lakehorse Radio", once and open this page: the device is paired from then on.</p>
+        <div id="setupAway" hidden>
+          <p class="muted" id="pairIntro" data-locked="To change the box's networks, pair this phone first, so nobody else on the Wi-Fi can move the box. At the box, hold the <b>BOOT</b> button for 3 seconds, or unplug it and plug it back in. Then, within 2 minutes:">To change the box's networks, pair this phone first, so nobody else on the Wi-Fi can move the box. At the box, hold the <b>BOOT</b> button for 3 seconds, or unplug it and plug it back in. Then, within 2 minutes:</p>
+          <div class="row"><button class="btn primary" id="pairBtn" data-help="net-pair" type="button">Pair this phone</button></div>
+          <span class="status" id="pairStatus"></span>
+        </div>
       </div>
     </section>
 
-    <section class="win matrixwin" id="matrixWindow" data-title="MATRIX.EXE" data-opener="matrixOpen" data-closer="matrixClose" hidden>
-      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>MATRIX.EXE</span><button type="button" class="win-x" data-close aria-label="Close MATRIX.EXE">X</button></div>
+    <section class="win matrixwin" id="matrixWindow" data-help="win-matrix" data-title="MATRIX.EXE" data-opener="matrixOpen" data-closer="matrixClose" hidden>
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>MATRIX.EXE</span><button type="button" class="win-x" data-help="win-close" data-close aria-label="Close MATRIX.EXE">X</button></div>
     <div class="win-body">
       <canvas id="matrixCanvas" width="320" height="320" aria-label="What the 8 by 8 lights show"></canvas>
       <div class="row" id="matrixModes">
-        <button class="btn" type="button" data-mode="off" aria-pressed="false">Off</button>
-        <button class="btn" type="button" data-mode="bars" aria-pressed="false">Bars</button>
-        <button class="btn" type="button" data-mode="title" aria-pressed="false">Title</button>
-        <button class="btn" type="button" data-mode="dazzle" aria-pressed="false">Dazzle</button>
-        <button class="btn" type="button" data-mode="clock" aria-pressed="false">Clock</button>
+        <button class="btn" type="button" data-help="matrix-mode-off" data-mode="off" aria-pressed="false">Off</button>
+        <button class="btn" type="button" data-help="matrix-mode-bars" data-mode="bars" aria-pressed="false">Bars</button>
+        <button class="btn" type="button" data-help="matrix-mode-title" data-mode="title" aria-pressed="false">Title</button>
+        <button class="btn" type="button" data-help="matrix-mode-dazzle" data-mode="dazzle" aria-pressed="false">Dazzle</button>
+        <button class="btn" type="button" data-help="matrix-mode-clock" data-mode="clock" aria-pressed="false">Clock</button>
+        <button class="btn" type="button" data-help="matrix-mode-test" data-mode="test" aria-pressed="false">Test</button>
+        <button class="btn" type="button" data-help="matrix-mode-alignment" data-mode="alignment" aria-pressed="false">Align</button>
       </div>
       <label for="matrixBright">Brightness</label>
-      <input id="matrixBright" type="range" min="1" max="100" value="70" />
+      <input id="matrixBright" data-help="matrix-bright" type="range" min="1" max="100" value="70" />
       <div class="row">
-        <button class="btn" id="matrixFull" type="button">Full view</button>
-        <button class="btn" id="matrixClose" type="button">Close</button>
+        <button class="btn" id="matrixFull" data-help="matrix-full" type="button">Full view</button>
+        <button class="btn" id="matrixClose" data-help="matrix-close" type="button">Close</button>
       </div>
       <span class="status" id="matrixNote"></span>
     </div>
     </section>
 
-    <section class="win" id="win-game" data-title="GAMES" hidden>
-      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>GAMES</span><button type="button" class="win-x" data-close aria-label="Close GAMES">X</button></div>
+    <section class="win" id="win-game" data-help="win-games" data-title="GAMES" hidden>
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>GAMES</span><button type="button" class="win-x" data-help="win-close" data-close aria-label="Close GAMES">X</button></div>
       <div class="win-body">
     <!-- A folder of games, like a directory in an OS: one icon per game, each opens in its own tab.
          The files live on the SD card under /game (game-window.js checks they are there). -->
     <div class="pathbar" aria-label="Folder">SD:/game/</div>
     <div class="games">
-      <a class="icon gameicon" id="gameLaunch" href="/game/" target="_blank" rel="noopener" aria-disabled="true"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="8" width="34" height="28" fill="#0d2b2e" stroke="#e9e5d6" stroke-width="2"/><path d="M9 28 q6-8 12 0 t12 0" fill="none" stroke="#e9e5d6" stroke-width="3"/></svg><span>Lakehorse Swimulator</span></a>
-      <a class="icon gameicon" id="guberLaunch" href="/game/guber-eats/" target="_blank" rel="noopener" aria-disabled="true"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="8" width="34" height="28" fill="#08080a" stroke="#e9e5d6" stroke-width="2"/><path d="M5 30 L20 8 M14 36 L34 8 M26 36 L39 18" stroke="#e9e5d6" stroke-width="3" fill="none"/><rect x="14" y="19" width="16" height="8" fill="#e9e5d6" stroke="#08080a" stroke-width="2"/></svg><span>Guber Eats</span></a>
+      <a class="icon gameicon" id="gameLaunch" data-help="game-swim" href="/game/" target="_blank" rel="noopener" aria-disabled="true"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="8" width="34" height="28" fill="#0d2b2e" stroke="#e9e5d6" stroke-width="2"/><path d="M9 28 q6-8 12 0 t12 0" fill="none" stroke="#e9e5d6" stroke-width="3"/></svg><span>Lakehorse Swimulator</span></a>
+      <a class="icon gameicon" id="guberLaunch" data-help="game-guber" href="/game/guber-eats/" target="_blank" rel="noopener" aria-disabled="true"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="8" width="34" height="28" fill="#08080a" stroke="#e9e5d6" stroke-width="2"/><path d="M5 30 L20 8 M14 36 L34 8 M26 36 L39 18" stroke="#e9e5d6" stroke-width="3" fill="none"/><rect x="14" y="19" width="16" height="8" fill="#e9e5d6" stroke="#08080a" stroke-width="2"/></svg><span>Guber Eats</span></a>
     </div>
     <p class="muted" id="gameNote">Checking the card...</p>
     <p class="muted">Songs on the card are the soundtrack. Stop the box speaker first for the fastest load.</p>
       </div>
     </section>
 
+    <section class="win" id="win-driveb" data-title="DRIVE B:" data-help="win-driveb" hidden>
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>DRIVE B:</span><button type="button" class="win-x" data-help="win-close" data-close aria-label="Close DRIVE B:">X</button></div>
+      <div class="win-body">
+        <div class="note balloon">This drive came off the ENIAS when it crashed. Everything on it got scrambled.</div>
+        <div class="drivefiles" id="driveFiles"><p class="muted">Mounting...</p></div>
+        <div class="driveviewer" id="driveViewer" hidden>
+          <div class="driveviewerbar"><span id="driveViewerName"></span><button type="button" class="btn" id="driveViewerClose" data-help="driveb-viewer-close">Close</button></div>
+          <pre id="driveViewerText"></pre>
+        </div>
+        <div class="drivenet">
+          <div class="drivenetinfo" data-help="driveb-percent">
+            <span class="label">ENIAS NEURAL NET</span>
+            <span class="bigpct" id="drivePercent">0%</span>
+            <span class="muted">alignment</span>
+            <span id="driveCount">0 of 64 nodes locked</span>
+          </div>
+          <svg id="driveNet" data-help="driveb-net" role="img" aria-label="Network of 64 nodes, 0 aligned" width="128" height="128" viewBox="0 0 128 128"></svg>
+        </div>
+        <div class="drivelog" id="driveLog" data-help="driveb-log"></div>
+        <div class="note balloon" id="driveBalloon">Pattern drift detected.</div>
+        <div class="note balloon">Alignment is saved on the box, so it follows you to any phone.</div>
+      </div>
+    </section>
+
+    <section class="win" id="win-help" data-title="HELP" data-help="win-help" hidden>
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>HELP</span><button type="button" class="win-x" data-help="win-close" data-close aria-label="Close HELP">X</button></div>
+      <div class="win-body">
+        <p class="muted">Tap a line to read it. For any button on screen, tap the ? in a title bar, then tap the button.</p>
+        <div id="helpList" class="helplist"><p class="muted">Loading...</p></div>
+      </div>
+    </section>
+
     <nav class="icons" aria-label="Desktop">
-      <button type="button" class="icon" data-open="win-player"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="12" width="34" height="22" fill="#e9e5d6" stroke="#0c0e0d" stroke-width="2"/><rect x="9" y="26" width="14" height="3" fill="#0c0e0d"/><rect x="30" y="25" width="5" height="5" fill="#5fd0b0" stroke="#0c0e0d"/></svg><span>PLAYER</span></button>
-      <button type="button" class="icon" data-open="win-speaker"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="6" y="16" width="10" height="12" fill="#e9e5d6" stroke="#0c0e0d" stroke-width="2"/><polygon points="16,16 28,8 28,36 16,28" fill="#e9e5d6" stroke="#0c0e0d" stroke-width="2"/><path d="M32 16 q5 6 0 12" fill="none" stroke="#e9e5d6" stroke-width="3"/></svg><span>SPEAKER</span></button>
-      <button type="button" class="icon" data-open="matrixWindow"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="6" y="6" width="32" height="32" fill="#050605" stroke="#e9e5d6" stroke-width="2"/><g fill="#ff6b2c"><rect x="11" y="11" width="4" height="4"/><rect x="19" y="11" width="4" height="4"/><rect x="27" y="19" width="4" height="4"/><rect x="11" y="27" width="4" height="4"/><rect x="19" y="19" width="4" height="4"/><rect x="27" y="27" width="4" height="4"/></g></svg><span>MATRIX</span></button>
-      <button type="button" class="icon" data-open="win-network"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><path d="M6 18 q16-14 32 0" fill="none" stroke="#e9e5d6" stroke-width="4"/><path d="M12 25 q10-9 20 0" fill="none" stroke="#e9e5d6" stroke-width="4"/><rect x="19" y="30" width="6" height="6" fill="#ff6b2c" stroke="#0c0e0d"/></svg><span>NETWORK</span></button>
-      <button type="button" class="icon" data-open="win-game"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="8" width="34" height="28" fill="#0d2b2e" stroke="#e9e5d6" stroke-width="2"/><path d="M9 28 q6-8 12 0 t12 0" fill="none" stroke="#e9e5d6" stroke-width="3"/></svg><span>GAMES</span></button>
+      <button type="button" class="icon" data-help="icon-player" data-open="win-player"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="12" width="34" height="22" fill="#e9e5d6" stroke="#0c0e0d" stroke-width="2"/><rect x="9" y="26" width="14" height="3" fill="#0c0e0d"/><rect x="30" y="25" width="5" height="5" fill="#5fd0b0" stroke="#0c0e0d"/></svg><span>PLAYER</span></button>
+      <button type="button" class="icon" data-help="icon-speaker" data-open="win-speaker"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="6" y="16" width="10" height="12" fill="#e9e5d6" stroke="#0c0e0d" stroke-width="2"/><polygon points="16,16 28,8 28,36 16,28" fill="#e9e5d6" stroke="#0c0e0d" stroke-width="2"/><path d="M32 16 q5 6 0 12" fill="none" stroke="#e9e5d6" stroke-width="3"/></svg><span>SPEAKER</span></button>
+      <button type="button" class="icon" data-help="icon-matrix" data-open="matrixWindow"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="6" y="6" width="32" height="32" fill="#050605" stroke="#e9e5d6" stroke-width="2"/><g fill="#ff6b2c"><rect x="11" y="11" width="4" height="4"/><rect x="19" y="11" width="4" height="4"/><rect x="27" y="19" width="4" height="4"/><rect x="11" y="27" width="4" height="4"/><rect x="19" y="19" width="4" height="4"/><rect x="27" y="27" width="4" height="4"/></g></svg><span>MATRIX</span></button>
+      <button type="button" class="icon" data-help="icon-network" data-open="win-network"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><path d="M6 18 q16-14 32 0" fill="none" stroke="#e9e5d6" stroke-width="4"/><path d="M12 25 q10-9 20 0" fill="none" stroke="#e9e5d6" stroke-width="4"/><rect x="19" y="30" width="6" height="6" fill="#ff6b2c" stroke="#0c0e0d"/></svg><span>NETWORK</span></button>
+      <button type="button" class="icon" data-help="icon-games" data-open="win-game"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="8" width="34" height="28" fill="#0d2b2e" stroke="#e9e5d6" stroke-width="2"/><path d="M9 28 q6-8 12 0 t12 0" fill="none" stroke="#e9e5d6" stroke-width="3"/></svg><span>GAMES</span></button>
+      <button type="button" class="icon" data-help="icon-driveb" data-open="win-driveb"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="9" width="34" height="26" fill="#3b3d39" stroke="#e9e5d6" stroke-width="2"/><rect x="9" y="26" width="12" height="3" fill="#0c0e0d"/><circle cx="31" cy="27.5" r="2.5" fill="#ff6b2c"/><path d="M9 15 l5 3 l5 -4 l5 5 l6 -4" fill="none" stroke="#5fd0b0" stroke-width="2"/></svg><span>DRIVE B</span></button>
     </nav>
   </main>
 
@@ -218,22 +286,36 @@
   <div class="startmenu" id="startMenu" hidden>
     <div class="startband" aria-hidden="true">LKHRS/OS</div>
     <div class="startitems">
-      <button type="button" data-open="win-player">Player</button>
-      <button type="button" data-open="win-network" id="startNetwork"><span>Network</span><small id="startNetworkNote"></small></button>
-      <button type="button" data-open="win-speaker">Speaker (Bluetooth)</button>
-      <button type="button" data-open="matrixWindow">Matrix lights</button>
-      <button type="button" data-open="win-game">Games</button>
+      <button type="button" data-help="start-player" data-open="win-player">Player</button>
+      <button type="button" data-help="start-driveb" data-open="win-driveb">Drive B</button>
+      <button type="button" data-help="start-network" data-open="win-network" id="startNetwork"><span>Network</span><small id="startNetworkNote"></small></button>
+      <button type="button" data-help="start-speaker" data-open="win-speaker">Speaker (Bluetooth)</button>
+      <button type="button" data-help="start-matrix" data-open="matrixWindow">Matrix lights</button>
+      <button type="button" data-help="start-games" data-open="win-game">Games</button>
+      <button type="button" data-help="start-lens" id="startLens">Screen: tube</button>
+      <button type="button" data-help="start-help" data-open="win-help">Help</button>
+      <button type="button" data-help="start-whatsthis" id="startWhat">? What's this?</button>
     </div>
   </div>
 
   <footer class="taskbar">
-    <button type="button" class="startbtn" id="startBtn" aria-expanded="false" aria-controls="startMenu"><i aria-hidden="true"></i>START</button>
+    <button type="button" class="startbtn" id="startBtn" data-help="start-button" aria-expanded="false" aria-controls="startMenu"><i aria-hidden="true"></i>START</button>
     <div class="tasks" id="tasks"></div>
-    <div class="tray" id="tray">--:--</div>
+    <div class="tray" id="tray" data-help="tray">--:--</div>
   </footer>
+
+  <!-- Help: the catcher takes the tap in What's this? mode, so nothing under it acts. -->
+  <div id="helpCatcher" hidden></div>
+  <div id="helpBubble" role="status" hidden><b id="helpBubbleTitle"></b><span id="helpBubbleText"></span></div>
+
+  <!-- The screen look (lens.js, style.css): inline layers, all pointer-events none, no requests. -->
+  <div class="lens" aria-hidden="true"><i class="l-noise"></i><i class="l-scan"></i><i class="l-roll"></i><i class="l-tear"></i><i class="l-vig"></i></div>
 
   <script src="dazzle.js"></script>
   <script src="shell.js"></script>
+  <script src="frame.js"></script>
+  <script src="lens.js"></script>
+  <script src="help.js" data-late></script>
   <script src="network-window.js"></script>
   <script src="app.js"></script>
   <script src="buffering.js"></script>
@@ -245,7 +327,9 @@
   <script src="speaker-panel.js"></script>
   <script src="matrix-window.js"></script>
   <script src="game-window.js"></script>
-  <script src="wavconvert.js"></script>
+  <script src="drive-b.js" data-late></script>
+  <script src="wavconvert.js" data-late></script>
+  <script src="align-report.js"></script>
   <script src="library.js"></script>
 </body>
 </html>

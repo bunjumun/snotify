@@ -171,17 +171,16 @@
 
           if (s.station === 'connected') {
             say($('setupStatus'),
-                'On ' + s.ssid + ' at ' + s.ip + '. Reach it at ' + mdns
-                + ' from anything on that network. Setting up a box next time '
-                + 'can also be done once over USB, with no hotspot needed.', 'ok');
+                'On ' + s.ssid + ' at ' + s.ip + '. Switch this phone to ' + s.ssid
+                + ' too, then tap Open in browser, or go to ' + mdns + '.', 'ok');
             showCurrent(s);
             return;
           }
 
           if (s.lastFailure) {
             say($('setupStatus'),
-                'Could not join ' + ssid + ': ' + s.lastFailure
-                + '. Check the password and that ' + ssid + ' is in range.', 'err');
+                'Could not join ' + ssid + ': ' + s.lastFailure + '. '
+                + NET().joinFailureHint(s.lastFailure), 'err');
             return;
           }
 
@@ -198,9 +197,9 @@
           if (++lost >= 2) {
             say($('setupStatus'),
                 'The box stopped answering here, which usually means it joined '
-                + ssid + ' and moved its hotspot. Try ' + mdns + ' from that '
-                + 'network. Setting up a box next time can also be done once '
-                + 'over USB, with no hotspot needed.', 'ok');
+                + ssid + '. Switch this phone to ' + ssid + ', then open ' + mdns
+                + '. If that name does not load, the box is still reachable at its '
+                + 'address on ' + ssid + ', shown in the Network window there.', 'ok');
             return;
           }
           if (++tries > WATCH_TRIES_MAX) return;
@@ -227,11 +226,25 @@
     // box's own hotspot, or a device that already holds the pairing key. Showing
     // it to anyone else would just produce refusals.
     var allowed = NET() && NET().canChange(s, !!pairKey());
+    $('hostNote').hidden = !s.hostMode;
+    // Offered only while there is a network to leave.
+    $('hostBtn').hidden = !(allowed && s.station === 'connected' && !s.hostMode);
     $('setup').hidden = !allowed;
-    if (!allowed) return;
-    $('setupIntro').textContent = s.hasSavedNetwork
-      ? 'This box already remembers a network. Joining another replaces it.'
-      : 'This box has not been put on a network yet.';
+    // Pairing stays on offer to a phone with no key even when setup is open to
+    // everyone: a paired phone keeps working if the lock is turned back on.
+    var needsPair = !pairKey();
+    $('setupAway').hidden = allowed && !needsPair;
+    $('pairIntro').textContent = allowed
+      ? 'Optional: pair this phone with the box, so it can still change networks if the box is locked later. On the box\'s own hotspot this works at once; elsewhere hold the BOOT button for 3 seconds, or unplug and replug the box, then tap within 2 minutes.'
+      : $('pairIntro').dataset.locked;
+    if (!allowed) {
+      // An unpaired phone is refused by the box, so do not offer it the button.
+      $('forgetBtn').hidden = true;
+      return;
+    }
+    $('setupIntro').textContent = 'Any Wi-Fi works: your home network, a venue\'s, or your '
+      + 'phone\'s hotspot. The box remembers up to 5 and joins whichever is in range, with '
+      + 'Bluetooth still playing.';
     // Prefill with the box's real current name, so the field shows the
     // truth rather than a placeholder that might not match.
     if (s.hostname && !$('host').value) $('host').value = s.hostname;
@@ -256,25 +269,95 @@
       });
   }
 
-  function forget() {
-    var name = (status && status.ssid) || 'this network';
-    if (!window.confirm('Forget ' + name + '? The box will leave it and start its own '
-        + '"' + ((status && status.apSsid) || 'Lakehorse Radio') + '" hotspot. '
-        + 'You will need to join that hotspot to set it up again.')) return;
-    say($('netCurrentStatus'), 'Forgetting...', '');
-    fetch('/api/wifi/forget', { method: 'POST', headers: authHeaders() })
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
-      .then(function (res) {
-        if (!res.ok) throw new Error(res.d.error || 'rejected');
-        say($('netCurrentStatus'),
-            'Forgotten. The box is leaving the network, so this page may stop answering. '
-            + 'Join its hotspot to set it up again.', 'ok');
-        setTimeout(refresh, 4000);
+  // Posts one saved network's name to a /api/wifi route. Form-encoded, which
+  // is what the firmware reads with getParam(..., true).
+  function postNet(path, ssid) {
+    return fetch(path, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
+      body: 'ssid=' + encodeURIComponent(ssid)
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) { if (!res.ok) throw new Error(res.d.error || 'rejected'); });
+  }
+
+  function forget(ssid) {
+    var name = ssid || (status && status.ssid);
+    if (!name) return;
+    var saved = (status && Array.isArray(status.saved)) ? status.saved : [];
+    var others = saved.filter(function (n) { return n !== name; }).length;
+    var onIt = status && status.station === 'connected' && status.ssid === name;
+    var msg = 'Forget ' + name + '?';
+    if (onIt) {
+      msg += others
+        ? ' The box will leave it and try your other saved networks, so this page may stop answering.'
+        : ' It is the only saved network: the box will leave it and start its own "'
+          + ((status && status.apSsid) || 'Lakehorse Radio') + '" hotspot.';
+    }
+    if (!window.confirm(msg)) return;
+    say($('netCurrentStatus'), 'Forgetting ' + name + '...', '');
+    postNet('/api/wifi/forget', name)
+      .then(function () {
+        say($('netCurrentStatus'), 'Forgot ' + name + '.', 'ok');
+        setTimeout(refresh, onIt ? 4000 : 300);
       })
       .catch(function (err) {
         say($('netCurrentStatus'), 'Could not forget it. ' + (err.message || ''), 'err');
       });
   }
+
+  // Puts the box on its own hotspot without forgetting anything it knows.
+  function hostNow() {
+    if (!window.confirm('Put the box on its own network, "Lakehorse Radio"? It leaves '
+        + (status && status.ssid ? status.ssid : 'its network') + ' (it is kept in the saved list), '
+        + 'so this page stops answering here. Join "Lakehorse Radio" on this phone and open http://192.168.4.1/.')) return;
+    say($('netCurrentStatus'), 'Switching to its own network...', '');
+    fetch('/api/wifi/host', { method: 'POST', headers: authHeaders() })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.d.error || 'refused');
+        say($('netCurrentStatus'), 'Done. Join "Lakehorse Radio" on this phone, then open http://192.168.4.1/.', 'ok');
+      })
+      .catch(function (err) {
+        say($('netCurrentStatus'), 'Could not switch. ' + (err.message || ''), 'err');
+      });
+  }
+
+  function useNow(ssid) {
+    if (!window.confirm('Join ' + ssid + ' now? The box leaves its current network, '
+        + 'so this page will stop answering here. Switch this phone to ' + ssid + ' too.')) return;
+    say($('netCurrentStatus'), 'Joining ' + ssid + '...', '');
+    postNet('/api/wifi/use', ssid)
+      .then(function () {
+        say($('netCurrentStatus'), 'Joining ' + ssid + '. Switch this phone to ' + ssid
+          + ', then open ' + ((status && status.mdns) || 'lakehorseradio.local') + '.', 'ok');
+        watchConnection(ssid, (status && status.mdns) || 'lakehorseradio.local');
+      })
+      .catch(function (err) {
+        say($('netCurrentStatus'), 'Could not switch. ' + (err.message || ''), 'err');
+      });
+  }
+
+  // Pairs this phone while the box's pairing window is open (BOOT button held,
+  // or just powered on). The key is kept for this address only, which is why a
+  // phone paired on the box's hotspot is not paired at lakehorseradio.local.
+  function pair() {
+    say($('pairStatus'), 'Pairing...', '');
+    fetch('/api/pair', { cache: 'no-store' })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok || !res.d.key) throw new Error(res.d.error || 'refused');
+        try { localStorage.setItem(KEY_STORE, res.d.key); } catch (e) { /* private mode */ }
+        say($('pairStatus'), 'Paired.', 'ok');
+        refresh();
+      })
+      .catch(function (err) {
+        say($('pairStatus'), 'The box said no: ' + (err.message || '')
+          + '. Hold BOOT for 3 seconds, then tap Pair again within 2 minutes.', 'err');
+      });
+  }
+
+  // network-window.js draws the saved rows and calls these.
+  window.LakehorseNetActions = { use: useNow, forget: forget };
 
   function init() {
     // dazzle.js is a separate <script>, loaded before this one, and exposes
@@ -285,7 +368,9 @@
     $('saveBtn').addEventListener('click', save);
     $('rescanBtn').addEventListener('click', function () { loadScan(); });
     $('netRefresh').addEventListener('click', function () { say($('netCurrentStatus'), ''); refresh(); });
-    $('forgetBtn').addEventListener('click', forget);
+    $('forgetBtn').addEventListener('click', function () { forget(status && status.ssid); });
+    $('hostBtn').addEventListener('click', hostNow);
+    $('pairBtn').addEventListener('click', pair);
     refresh();
   }
 

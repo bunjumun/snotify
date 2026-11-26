@@ -5,6 +5,7 @@
 #include <string>
 #include <unity.h>
 
+#include "alignment.h"
 #include "matrix_engine.h"
 
 using namespace matrix;
@@ -313,6 +314,192 @@ void font_has_no_duplicate_or_blank_look_alikes() {
   }
 }
 
+void test_mode_marks_four_corners_and_dims_the_rest() {
+  setMode(Mode::Test, 0);
+  const char* f = render(0);
+  TEST_ASSERT_EQUAL('f', f[0]);
+  TEST_ASSERT_EQUAL('f', f[7]);
+  TEST_ASSERT_EQUAL('f', f[56]);
+  TEST_ASSERT_EQUAL('f', f[63]);
+  int dim = 0;
+  for (int i = 0; i < kPixels; ++i) {
+    if (i == 0 || i == 7 || i == 56 || i == 63) continue;
+    TEST_ASSERT_TRUE_MESSAGE(f[i] > '0' && f[i] < 'f', rows(f).c_str());
+    ++dim;
+  }
+  TEST_ASSERT_EQUAL(60, dim);
+}
+
+void test_mode_is_static_and_named() {
+  setMode(Mode::Test, 0);
+  const std::string a = render(0);
+  TEST_ASSERT_EQUAL_STRING(a.c_str(), render(99999));
+  Mode m = Mode::Off;
+  TEST_ASSERT_TRUE(modeFromName("test", &m));
+  TEST_ASSERT_EQUAL((int)Mode::Test, (int)m);
+  TEST_ASSERT_EQUAL_STRING("test", modeName(Mode::Test));
+}
+
+void test_mode_corner_colours_red_green_blue_white() {
+  uint8_t c[3];
+  setMode(Mode::Test, 0);
+  TEST_ASSERT_TRUE(pixelColor(0, c));
+  TEST_ASSERT_TRUE(c[0] == 255 && c[1] == 0 && c[2] == 0);
+  TEST_ASSERT_TRUE(pixelColor(7, c));
+  TEST_ASSERT_TRUE(c[0] == 0 && c[1] == 255 && c[2] == 0);
+  TEST_ASSERT_TRUE(pixelColor(56, c));
+  TEST_ASSERT_TRUE(c[0] == 0 && c[1] == 0 && c[2] == 255);
+  TEST_ASSERT_TRUE(pixelColor(63, c));
+  TEST_ASSERT_TRUE(c[0] == 255 && c[1] == 255 && c[2] == 255);
+  TEST_ASSERT_FALSE(pixelColor(1, c));    // dim pixels use the default colour
+  TEST_ASSERT_FALSE(pixelColor(64, c));
+  TEST_ASSERT_FALSE(pixelColor(-1, c));
+}
+
+void pixel_colour_is_absent_outside_test_mode() {
+  uint8_t c[3];
+  setMode(Mode::Bars, 0);
+  TEST_ASSERT_FALSE(pixelColor(0, c));
+  setMode(Mode::Off, 0);
+  TEST_ASSERT_FALSE(pixelColor(63, c));
+}
+
+void brightness_defaults_low_and_validates() {
+  TEST_ASSERT_EQUAL(20, brightness());
+  TEST_ASSERT_TRUE(setBrightness(55));
+  TEST_ASSERT_EQUAL(55, brightness());
+  TEST_ASSERT_TRUE(setBrightness(1));
+  TEST_ASSERT_TRUE(setBrightness(100));
+  TEST_ASSERT_FALSE(setBrightness(0));
+  TEST_ASSERT_FALSE(setBrightness(101));
+  TEST_ASSERT_EQUAL(100, brightness());  // unchanged by refusals
+  reset();
+  TEST_ASSERT_EQUAL(20, brightness());
+}
+
+// ---- Alignment pattern (Drive B, ALIGNMENT-BRIEF.md) ----
+namespace {
+std::string alignFrame(uint16_t points, uint32_t seed, uint32_t t) {
+  setAlignment(points, seed);
+  setMode(Mode::Alignment, 0);
+  return std::string(render(t));
+}
+int full(const std::string& f) {
+  int n = 0;
+  for (char c : f) n += c == 'f';
+  return n;
+}
+}  // namespace
+
+void alignment_mode_is_named_and_round_trips() {
+  TEST_ASSERT_EQUAL_STRING("alignment", modeName(Mode::Alignment));
+  Mode back = Mode::Off;
+  TEST_ASSERT_TRUE(modeFromName("alignment", &back));
+  TEST_ASSERT_EQUAL((int)Mode::Alignment, (int)back);
+}
+
+void alignment_at_zero_has_no_locked_nodes_but_is_not_dark() {
+  const std::string f = alignFrame(0, 7, 1000);
+  TEST_ASSERT_EQUAL(0, full(f));
+  TEST_ASSERT_TRUE(lit(f.c_str()) >= 12);  // scattered dim points, not a blank panel
+  for (char c : f) TEST_ASSERT_TRUE(c <= '9');  // nothing near full
+}
+
+void alignment_at_full_is_every_pixel_locked_and_still() {
+  const std::string a = alignFrame(6400, 7, 0);
+  TEST_ASSERT_EQUAL_STRING(std::string(kPixels, 'f').c_str(), a.c_str());
+  TEST_ASSERT_EQUAL_STRING(a.c_str(), alignFrame(6400, 7, 123456).c_str());
+}
+
+void alignment_points_above_the_full_bar_are_held() {
+  TEST_ASSERT_EQUAL_STRING(std::string(kPixels, 'f').c_str(),
+                           alignFrame(65535, 3, 500).c_str());
+  setAlignment(65535, 3);
+  TEST_ASSERT_EQUAL(kAlignMaxPoints, alignmentPoints());
+}
+
+void alignment_is_deterministic_for_a_total_seed_and_time() {
+  TEST_ASSERT_EQUAL_STRING(alignFrame(2300, 99, 4200).c_str(), alignFrame(2300, 99, 4200).c_str());
+  TEST_ASSERT_FALSE(alignFrame(2300, 99, 4200) == alignFrame(2300, 100, 4200));
+}
+
+void alignment_locked_nodes_grow_one_at_a_time_and_never_vanish() {
+  std::string prev(kPixels, '0');
+  int prevFull = 0;
+  for (int nodes = 0; nodes <= 64; ++nodes) {
+    const std::string f = alignFrame((uint16_t)(nodes * 100), 5, 777);
+    TEST_ASSERT_EQUAL(nodes, full(f));          // exactly the locked ones are full
+    TEST_ASSERT_TRUE(full(f) >= prevFull);      // monotone
+    for (int n = 0; n < nodes; ++n) {           // each locked node sits in its own cell
+      int x, y;
+      TEST_ASSERT_TRUE(alignmentCell(n, &x, &y));
+      TEST_ASSERT_EQUAL_CHAR('f', f[y * kSize + x]);
+    }
+    prevFull = full(f);
+  }
+}
+
+void alignment_a_partly_earned_node_glows_but_is_not_locked() {
+  const std::string f = alignFrame(1099, 5, 777);  // 10 locked, the 11th at 99%
+  TEST_ASSERT_EQUAL(10, full(f));
+  const std::string g = alignFrame(1000, 5, 777);
+  TEST_ASSERT_EQUAL(10, full(g));
+}
+
+void alignment_settles_as_points_rise() {
+  // Wandering shrinks: the share of unlocked nodes sitting on their own cell
+  // rises with alignment (measured over many time steps).
+  auto atHome = [](uint16_t points) {
+    int home = 0, total = 0;
+    for (uint32_t step = 0; step < 40; ++step) {
+      const std::string f = alignFrame(points, 11, step * 350 + 10);
+      for (int n = points / 100 + 1; n < 64; ++n) {
+        int x, y;
+        alignmentCell(n, &x, &y);
+        ++total;
+        home += f[y * kSize + x] != '0';
+      }
+    }
+    return total ? home * 100 / total : 100;
+  };
+  TEST_ASSERT_TRUE(atHome(5600) > atHome(3200));
+  TEST_ASSERT_TRUE(atHome(3200) > atHome(400));
+}
+
+void alignment_wanders_over_time_at_low_alignment_only() {
+  TEST_ASSERT_FALSE(alignFrame(300, 5, 0) == alignFrame(300, 5, 3500));
+  const std::string a = alignFrame(6400, 5, 0);
+  TEST_ASSERT_EQUAL_STRING(a.c_str(), alignFrame(6400, 5, 3500).c_str());
+}
+
+void alignment_cells_cover_the_panel_once_in_the_agreed_order() {
+  bool seen[kPixels] = {false};
+  for (int n = 0; n < kPixels; ++n) {
+    int x, y;
+    TEST_ASSERT_TRUE(alignmentCell(n, &x, &y));
+    TEST_ASSERT_FALSE(seen[y * kSize + x]);
+    seen[y * kSize + x] = true;
+  }
+  int x, y;
+  TEST_ASSERT_FALSE(alignmentCell(64, &x, &y));
+  TEST_ASSERT_FALSE(alignmentCell(-1, &x, &y));
+  // The page lattice (test/drive-b.test.js) pins these same first cells.
+  const int want[10][2] = {{0, 7}, {0, 6}, {1, 7}, {0, 5}, {1, 6}, {2, 7}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
+  for (int n = 0; n < 10; ++n) {
+    alignmentCell(n, &x, &y);
+    TEST_ASSERT_EQUAL(want[n][0], x);
+    TEST_ASSERT_EQUAL(want[n][1], y);
+  }
+  alignmentCell(63, &x, &y);
+  TEST_ASSERT_EQUAL(7, x);
+  TEST_ASSERT_EQUAL(0, y);
+}
+
+void alignment_total_matches_the_counter_cap() {
+  TEST_ASSERT_EQUAL(alignment::kMaxPoints, kAlignMaxPoints);
+  TEST_ASSERT_EQUAL(alignment::kNodePoints, kAlignNodePoints);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(frame_is_64_hex_chars_and_off_is_dark);
@@ -338,6 +525,22 @@ int main() {
   RUN_TEST(image_round_trips_and_validates);
   RUN_TEST(image_mode_without_a_picture_is_dark);
   RUN_TEST(parse_uint_edges);
+  RUN_TEST(test_mode_marks_four_corners_and_dims_the_rest);
+  RUN_TEST(test_mode_is_static_and_named);
+  RUN_TEST(test_mode_corner_colours_red_green_blue_white);
+  RUN_TEST(pixel_colour_is_absent_outside_test_mode);
+  RUN_TEST(brightness_defaults_low_and_validates);
   RUN_TEST(font_has_no_duplicate_or_blank_look_alikes);
+  RUN_TEST(alignment_mode_is_named_and_round_trips);
+  RUN_TEST(alignment_at_zero_has_no_locked_nodes_but_is_not_dark);
+  RUN_TEST(alignment_at_full_is_every_pixel_locked_and_still);
+  RUN_TEST(alignment_points_above_the_full_bar_are_held);
+  RUN_TEST(alignment_is_deterministic_for_a_total_seed_and_time);
+  RUN_TEST(alignment_locked_nodes_grow_one_at_a_time_and_never_vanish);
+  RUN_TEST(alignment_a_partly_earned_node_glows_but_is_not_locked);
+  RUN_TEST(alignment_settles_as_points_rise);
+  RUN_TEST(alignment_wanders_over_time_at_low_alignment_only);
+  RUN_TEST(alignment_cells_cover_the_panel_once_in_the_agreed_order);
+  RUN_TEST(alignment_total_matches_the_counter_cap);
   return UNITY_END();
 }

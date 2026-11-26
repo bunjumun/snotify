@@ -57,6 +57,11 @@ Nothing here has been started.
 
 ## Shell, games and lore
 
+- **DECIDED** (2026-11-25) Every usable feature has help, not only each window: a Windows 95 style What's this? mode (tap "?", then tap anything) plus a Help index in the Start menu that also covers features with no button. Text in data/help.json, written by whichever session builds the feature, enforced by a coverage test, added retroactively in plan Module 9. A guided tutorial mode comes later and reads the same file.
+- **IDEA** (2026-11-25, not planned) Optics recalibration: a photo from the phone camera sets the shared color palette for the matrix, the shell and Signal Jam. ENIAS speaking lines aloud through the phone's built-in text to speech, if it works over plain HTTP on the iPhone.
+- **IDEA** (2026-11-25, not planned) Fleet mode: boxes on the same network find each other, play in sync, compare alignment and share files that open only when several are together. Needs unique box names.
+- **IDEA** (2026-11-25, not planned) Crew manifest photo booth: a phone selfie shrunk to a tiny portrait in the browser, saved to the card, shown on Drive B and as a face on the matrix. Each person can delete their own entry.
+- **IDEA** (2026-11-25, not planned) Speaker knock codes: rhythmic presses on the Bluetooth speaker's own buttons unlock hidden things, without skipping the song.
 - **PARTIAL** Dazzle-camo look: a dazzle.js already ships with the page. The full crashed-ship OS shell (boot log, launcher of programs, embedded bitmap font) is not started.
 - **PARTIAL** (built 2026-11-23, untested on the box; see HANDOFF) Browser games, including the Lakehorse Swimulator, served from the card with the stored music as the soundtrack. First loads are heavy, so games should load with Bluetooth off or stay small.
 - **TODO** Save slots as crew profiles on the card, so progress is shared across devices, with unlocks tied to the profile.
@@ -74,7 +79,11 @@ Nothing here has been started.
 - **DECIDED** No Bandcamp API for a fan's collection (the official API is for labels and partners), and the box never holds a fan's login cookie.
 - **OPEN** Quality without a noticeable drop. WAV is about 10.6 MB per minute, so a 40-minute album is roughly 420 MB and slow to upload. Preferred direction: FLAC on the box (lossless, about half the size, light on the CPU), using the FLAC decoders in audio-tools. Decoder working memory is roughly 16 to 64 KB, which does not fit in the roughly 50 KB of internal RAM left while Bluetooth plays on this chip. It needs the newer board and a test. Fallback: high-bitrate AAC or MP3, which is lossy and a user decision.
 - **DECIDED** Card swapping is out, and USB file transfer is not possible on the classic ESP32.
-- **TODO** OTA firmware updates (needs another partition change).
+- **CHECKED, NOT BUILT** Page-only updates over Wi-Fi. The core can write the page partition, but it erases in place, a failed write leaves an empty filesystem, and there is no recovery page in firmware. Safe only with a firmware-served recovery page and an SD-staged image, see HANDOFF.md "Borrowed from WLED" item 4.
+- **DONE** Small card-file upload (`POST /api/sd/card-file`, allowlist in config.h, pairing key, content checked) so song updates can maintain band-tracks.json; push it with `tools/push_card_file.py`.
+- **DONE** Hotspot stays usable while the saved network is away: auto-reconnect off while the hotspot is up, search cancelled when a phone joins, resumes 30 s after it leaves (bench-measured with a Mac; iPhone 5 minute test still open).
+- **NOTE** The 8x8 matrix driver costs about 13.5 KB of internal heap and is out of the normal build until the matrix section is picked up (`env:radio-core2-matrix` has it).
+- **TODO** OTA firmware updates. Blocked by flash: partitions.csv has one 3.375 MB app slot in a 4 MB chip, and an update needs a second slot of the same size, which cannot fit. Options to weigh later: a module with more flash, or a much smaller firmware. Check the built firmware size before deciding. WLED's own OTA is a plain browser upload to /update, see the chat notes of 2026-11-25.
 
 ## Hardware and future editions
 
@@ -84,6 +93,7 @@ Nothing here has been started.
 
 ## Open questions
 
+- **BUG** Away from its saved network (taken from the house, 2026-11-25), the box raised its hotspot but the phone could not hold a connection to it long enough for the setup sheet to appear. Not Bluetooth. Likely cause is the 30 s background retry of the saved network knocking phones off the hotspot; details and the proposed fix are in SHELL-AND-MATRIX-PLAN.md under Open decisions. Matters for any use away from a home network, including shows.
 - Will the new board raise Wi-Fi throughput with Bluetooth on? RAM will improve, but the limit looks like coexistence power saving, so this is unknown.
 - FLAC or high-bitrate AAC/MP3, decided after a memory test.
 - How to handle first-load game downloads under Bluetooth.

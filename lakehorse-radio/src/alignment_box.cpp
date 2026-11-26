@@ -119,6 +119,8 @@ void onTrackLeft(const char* name, float fraction, bool reachedEnd) {
                 (unsigned)uxTaskGetStackHighWaterMark(nullptr));
 }
 
+bool isBandSong(const char* name) { return g_mutex && name && name[0] && isBandTrack(name); }
+
 Snapshot snapshot() {
   if (!g_mutex) return {0, 0, 0};
   Guard guard;

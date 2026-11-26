@@ -4,6 +4,7 @@ import gzip
 import importlib.util
 import os
 import tempfile
+import shutil
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -169,12 +170,12 @@ class Bundle(unittest.TestCase):
     files = {"a.js": b"var a=1", "b.js": b"var b=2;\n", "c.js": b"var c=3"}
 
     def test_scripts_join_in_page_order_with_safe_separators(self):
-        html, bundle, names = G.bundle_scripts(self.page, self.files)
+        html, bundle, names, _l, _ln = G.bundle_scripts(self.page, self.files)
         self.assertEqual(names, ["a.js", "b.js", "c.js"])
         self.assertEqual(bundle, b"var a=1\n;\nvar b=2;\n\n;\nvar c=3\n;\n")
 
     def test_page_gets_one_tag_where_the_first_script_was(self):
-        html, _, _ = G.bundle_scripts(self.page, self.files)
+        html, _, _, _l, _ln = G.bundle_scripts(self.page, self.files)
         self.assertEqual(html.count("<script"), 1)
         self.assertIn('<script src="bundle.js"></script>', html)
         self.assertNotIn("a.js", html)
@@ -182,14 +183,88 @@ class Bundle(unittest.TestCase):
 
     def test_remote_and_unknown_scripts_are_left_alone(self):
         page = '<script src="a.js"></script><script src="https://x.test/z.js"></script><script src="gone.js"></script>'
-        html, bundle, names = G.bundle_scripts(page, self.files)
+        html, bundle, names, _l, _ln = G.bundle_scripts(page, self.files)
         self.assertEqual(names, ["a.js"])
         self.assertIn("https://x.test/z.js", html)
         self.assertIn("gone.js", html)
 
     def test_page_with_no_local_scripts_is_unchanged(self):
-        html, bundle, names = G.bundle_scripts("<p>hi</p>", self.files)
+        html, bundle, names, _l, _ln = G.bundle_scripts("<p>hi</p>", self.files)
         self.assertEqual((html, bundle, names), ("<p>hi</p>", b"", []))
+
+    def test_late_scripts_go_to_late_js_behind_a_load_time_loader(self):
+        page = '<body>\n  <script src="a.js"></script>\n  <script src="b.js" data-late></script>\n  <script src="c.js" data-late></script>\n</body>'
+        html, bundle, names, late, late_names = G.bundle_scripts(page, self.files)
+        self.assertEqual(names, ["a.js"])
+        self.assertEqual(late_names, ["b.js", "c.js"])
+        self.assertEqual(late, b"var b=2;\n\n;\nvar c=3\n;\n")
+        self.assertNotIn("b.js", html)
+        self.assertEqual(html.count('data-late-src="late.js"'), 1)
+        self.assertIn('addEventListener("load"', html)
+        # currentScript is null once the page has loaded, so it must be read at parse time.
+        loader = html[html.index("<script data-late-src"):]
+        self.assertLess(loader.index("currentScript"), loader.index("addEventListener"))
+        self.assertNotIn("var b=2", bundle.decode())
+
+    def test_stage_versions_and_ships_late_js(self):
+        tmp = tempfile.TemporaryDirectory()
+        src, dst = os.path.join(tmp.name, "d"), os.path.join(tmp.name, "b", "gz")
+        os.makedirs(src)
+        write(src, "index.html", '<script src="a.js"></script>\n<script src="b.js" data-late></script>\n' + "<p>x</p>" * 100)
+        write(src, "a.js", b"var a=1;" * 50)
+        write(src, "b.js", b"var b=2;" * 50)
+        G.stage(src, dst)
+        got = sorted(os.listdir(dst))
+        self.assertIn("late.js.gz", got)
+        self.assertNotIn("b.js.gz", got)
+        with open(os.path.join(dst, "index.html.gz"), "rb") as f:
+            html = gzip.decompress(f.read()).decode()
+        self.assertRegex(html, r'data-late-src="late\.js\?v=[0-9a-f]{8}"')
+
+    def test_inline_marker_folds_css_and_bundle_into_the_page(self):
+        page = '<!-- inline-critical -->\n<link rel="stylesheet" href="s.css" />\n<body>\n  <script src="bundle.js"></script>\n</body>'
+        html, inlined = G.inline_critical(page, {"s.css": b"p{color:red}", "bundle.js": b"var a=1;"})
+        self.assertEqual(sorted(inlined), ["bundle.js", "s.css"])
+        self.assertIn("<style>\np{color:red}\n</style>", html)
+        self.assertIn("<script>\nvar a=1;\n  </script>", html)
+        self.assertNotIn("href=", html)
+
+    def test_inline_needs_the_marker_and_skips_files_holding_their_own_closing_tag(self):
+        page = '<link rel="stylesheet" href="s.css" />'
+        self.assertEqual(G.inline_critical(page, {"s.css": b"p{}"}), (page, []))
+        marked = "<!-- inline-critical -->" + page
+        html, inlined = G.inline_critical(marked, {"s.css": b"a{}/* </style> */"})
+        self.assertEqual(inlined, [])
+        self.assertIn("s.css", html)
+
+    def test_stage_ships_one_page_with_only_late_js_beside_it(self):
+        tmp = tempfile.TemporaryDirectory()
+        src, dst = os.path.join(tmp.name, "d"), os.path.join(tmp.name, "b", "gz")
+        os.makedirs(src)
+        write(src, "index.html", '<!-- inline-critical -->\n<link rel="stylesheet" href="s.css" />\n<script src="a.js"></script>\n<script src="b.js" data-late></script>\n' + "<p>x</p>" * 100)
+        write(src, "s.css", "p{color:red}" * 50)
+        write(src, "a.js", b"var a=1;" * 50)
+        write(src, "b.js", b"var b=2;" * 50)
+        G.stage(src, dst)
+        self.assertEqual(sorted(os.listdir(dst)), [".gzip-staging", "index.html.gz", "late.js.gz"])
+        with open(os.path.join(dst, "index.html.gz"), "rb") as f:
+            html = gzip.decompress(f.read()).decode()
+        self.assertIn("var a=1;", html)
+        self.assertRegex(html, r'data-late-src="late\.js\?v=[0-9a-f]{8}"')
+
+    def test_late_loader_still_finds_its_url_after_the_page_has_loaded(self):
+        import re, subprocess
+        if not shutil.which("node"):
+            self.skipTest("node not installed")
+        js = re.search(r'<script data-late-src="[^"]*">(.*)</script>', G._LATE_LOADER % "late.js?v=x", re.S).group(1)
+        prog = (
+            "let load,timer,out=[];"
+            "global.document={currentScript:{getAttribute:()=>'late.js?v=x'},createElement:()=>({}),body:{appendChild:e=>out.push(e.src)}};"
+            "global.addEventListener=(n,f)=>{load=f};global.setTimeout=f=>{timer=f};"
+            + js + ";document.currentScript=null;load();timer();console.log(JSON.stringify(out));"
+        )
+        got = subprocess.run(["node", "-e", prog], capture_output=True, text=True)
+        self.assertEqual(got.stdout.strip(), '["late.js?v=x"]', got.stderr)
 
     def test_stage_ships_bundle_instead_of_the_separate_scripts(self):
         tmp = tempfile.TemporaryDirectory()
@@ -208,6 +283,25 @@ class Bundle(unittest.TestCase):
             want = G.file_hash(gzip.decompress(f.read()))
         self.assertIn('src="bundle.js?v=%s"' % want, html)
         tmp.cleanup()
+
+    def test_help_and_drive_b_json_ship_like_the_other_json_and_the_real_data_stages(self):
+        # help.json and drive-b.json are page data (read with fetch), so they
+        # are gzipped like any other .json; only playlist.json stays plain.
+        for name in ("help.json", "drive-b.json"):
+            self.assertTrue(G.should_compress(name), name)
+        data = os.path.join(os.path.dirname(__file__), "..", "data")
+        dst = tempfile.mkdtemp()
+        try:
+            G.stage(data, os.path.join(dst, "out"))
+            got = os.listdir(os.path.join(dst, "out"))
+        finally:
+            shutil.rmtree(dst)
+        for name in ("help.json.gz", "drive-b.json.gz", "playlist.json", "late.js.gz", "index.html.gz"):
+            self.assertIn(name, got)
+        self.assertNotIn("bundle.js.gz", got)  # inlined into index.html
+        self.assertNotIn("style.css.gz", got)
+        for name in ("help.js.gz", "drive-b.js.gz", "frame.js.gz", "lens.js.gz"):
+            self.assertNotIn(name, got)  # scripts are folded into the page or late.js
 
 
 if __name__ == "__main__":

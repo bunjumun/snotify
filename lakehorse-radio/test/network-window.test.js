@@ -57,6 +57,8 @@ assert.strictEqual(N.canChange({ viaAccessPoint: true }, false), true);
 assert.strictEqual(N.canChange({ viaAccessPoint: false }, true), true);
 assert.strictEqual(N.canChange({ viaAccessPoint: false }, false), false);
 assert.strictEqual(N.canChange(null, true), false);
+assert.strictEqual(N.canChange({ networkOpen: true, viaAccessPoint: false }, false), true);
+assert.strictEqual(N.canChange({ networkOpen: false, viaAccessPoint: false }, false), false);
 
 // ---- attach, against a fake page ----
 function fakePage() {
@@ -74,11 +76,13 @@ function fakePage() {
     els[id] = e;
     return e;
   };
-  ['netHeadline', 'netFacts', 'forgetBtn', 'netList', 'netNote', 'ssid', 'ssidManual', 'pass', 'passLabel', 'showPass', 'cancelBtn', 'setupStatus'].forEach((i) => mk(i));
+  ['netHeadline', 'netFacts', 'forgetBtn', 'savedList', 'savedNote', 'openPage', 'setupBootNote', 'netList', 'netNote', 'ssid', 'ssidManual', 'pass', 'passLabel', 'showPass', 'cancelBtn', 'setupStatus'].forEach((i) => mk(i));
   const doc = { createElement: (tag) => mk('new-' + Math.random(), { tag, className: '' }) };
   // Like a real page: an element emptied out of netList can no longer be found by id.
   const lookup = (id) => (id === 'netNote' && !els.netList.children.includes(els.netNote) && els.netList.cleared) ? null : els[id];
-  const api = N.attach(lookup, { doc });
+  const calls = [];
+  const api = N.attach(lookup, { doc, onUse: (n) => calls.push(['use', n]), onForget: (n) => calls.push(['forget', n]) });
+  api.calls = calls;
   return { els, api };
 }
 const rowsOf = (p) => p.els.netList.children.filter((c) => c.tag === 'button');
@@ -165,5 +169,44 @@ assert.strictEqual(p.els.forgetBtn.hidden, true);
 p.api.showCurrent(null);
 assert.strictEqual(p.els.netHeadline.textContent, 'No answer from the box');
 assert.strictEqual(p.els.netFacts.children.length, 0);
+
+// ---- saved networks ----
+assert.deepStrictEqual(N.savedRows({ saved: ['home', 'phone'], station: 'connected', ssid: 'phone' }),
+  [{ ssid: 'home', current: false }, { ssid: 'phone', current: true }]);
+assert.deepStrictEqual(N.savedRows({ saved: ['home'], station: 'connecting', ssid: 'home' }),
+  [{ ssid: 'home', current: false }]);                       // not joined yet: not "on now"
+assert.deepStrictEqual(N.savedRows({ saved: 'x' }), []);
+assert.deepStrictEqual(N.savedRows({ saved: ['', 5, 'ok'] }).map((r) => r.ssid), ['ok']);
+assert.deepStrictEqual(N.savedRows(null), []);
+
+// ---- where "Open in browser" goes ----
+assert.strictEqual(N.pageAddress({ station: 'connected', ip: '172.20.10.3', viaAccessPoint: true, apIp: '192.168.4.1' }),
+  'http://172.20.10.3/');                                    // once joined, the new address wins
+assert.strictEqual(N.pageAddress({ station: 'connecting', viaAccessPoint: true, apIp: '192.168.4.1' }), 'http://192.168.4.1/');
+assert.strictEqual(N.pageAddress({ station: 'failed', viaAccessPoint: false }), '/');
+assert.strictEqual(N.pageAddress(null), '/');
+
+// ---- the 2.4 GHz rule is spelled out for the failure people actually hit ----
+assert.ok(/2\.4 GHz/.test(N.joinFailureHint('that network was not found')));
+assert.ok(/password/i.test(N.joinFailureHint('the password was not accepted')));
+assert.strictEqual(N.joinFailureHint(''), '');
+
+// ---- the saved list draws rows with Use now / Forget ----
+p = fakePage();
+p.api.showCurrent({ station: 'connected', ssid: 'home', ip: '192.168.0.15', saved: ['home', 'phone'], hasSavedNetwork: true });
+const savedRowsOf = (pg) => pg.els.savedList.children.filter((c) => c.className === 'savedrow');
+assert.strictEqual(savedRowsOf(p).length, 2);
+const btnsOf = (row) => row.children.filter((c) => c.tag === 'button');
+assert.strictEqual(btnsOf(savedRowsOf(p)[0]).length, 1);      // the joined one: Forget only
+assert.strictEqual(btnsOf(savedRowsOf(p)[1]).length, 2);      // the other: Use now and Forget
+btnsOf(savedRowsOf(p)[1])[0].listeners.click();
+btnsOf(savedRowsOf(p)[1])[1].listeners.click();
+assert.deepStrictEqual(p.api.calls, [['use', 'phone'], ['forget', 'phone']]);
+assert.strictEqual(p.els.openPage.attrs.href, 'http://192.168.0.15/');
+assert.strictEqual(p.els.setupBootNote.hidden, true);
+p.api.showCurrent({ station: 'idle', saved: [], setupBoot: true, viaAccessPoint: true, apIp: '192.168.4.1' });
+assert.strictEqual(savedRowsOf(p).length, 0);
+assert.ok(/none yet/i.test(p.els.savedNote.textContent));
+assert.strictEqual(p.els.setupBootNote.hidden, false);
 
 console.log('network-window: all passed');

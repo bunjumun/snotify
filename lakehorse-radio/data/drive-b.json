@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "name": "LOG_0417.TXT",
+      "threshold": 0,
+      "kind": "text",
+      "content": "PLACEHOLDER - replace this text. It is the ship's log, entry 0417, and it is readable from the first moment. Edit data/drive-b.json and reflash the page image."
+    },
+    {
+      "name": "CREW_MANIFEST.DAT",
+      "threshold": 25,
+      "kind": "text",
+      "content": "PLACEHOLDER - replace this text. It is the crew manifest, recovered at 25 percent alignment. Edit data/drive-b.json and reflash the page image."
+    },
+    {
+      "name": "TX_PROMO.WAV",
+      "threshold": 60,
+      "kind": "download",
+      "url": "drive-b.json"
+    },
+    {
+      "name": "SHOW_TICKETS.LNK",
+      "threshold": 100,
+      "kind": "link",
+      "url": "https://example.com/PLACEHOLDER-show-tickets"
+    }
+  ]
+}

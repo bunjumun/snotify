@@ -87,4 +87,12 @@ void disconnect();
 // request that asked still reaches the page.
 String setEnabled(bool on);
 
+// True when this boot skipped Bluetooth so the box's own hotspot can serve
+// the setup page (setup_boot.h). Only ever true for one boot at a time.
+bool isSetupBoot();
+
+// Restarts now. forSetup: the next boot skips Bluetooth, once. Otherwise the
+// next boot runs the saved setting as usual.
+void restart(bool forSetup);
+
 }  // namespace btspeaker

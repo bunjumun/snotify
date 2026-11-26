@@ -37,7 +37,7 @@
   var SLOW_MS = 350;       // a reply slower than this doubles the wait
   var BRIGHT_KEY = 'lakehorse.matrix.brightness';
   var DEFAULT_TITLE = 'LAKEHORSE';
-  var MODES = ['off', 'bars', 'title', 'dazzle', 'clock'];
+  var MODES = ['off', 'bars', 'title', 'dazzle', 'clock', 'test', 'alignment'];
 
   // Pure: a frame string in, 64 levels (0..15) out; null when it is not a
   // frame, so a garbled reply draws nothing instead of a wrong picture.
@@ -89,7 +89,19 @@
     return '/api/matrix?' + q;
   }
 
-  function paint(canvas, levels, brightnessPct) {
+  // Pure: the box's "index:rrggbb" corner colours as {index: '#rrggbb'}; junk
+  // entries are skipped.
+  function parseColors(list) {
+    var out = {};
+    if (!list || !list.length) return out;
+    for (var i = 0; i < list.length; i++) {
+      var m = /^(\d{1,2}):([0-9a-f]{6})$/i.exec(String(list[i]));
+      if (m && +m[1] < PIXELS) out[+m[1]] = '#' + m[2];
+    }
+    return out;
+  }
+
+  function paint(canvas, levels, brightnessPct, colors) {
     var ctx = canvas && canvas.getContext && canvas.getContext('2d');
     if (!ctx) return;
     var cell = canvas.width / SIZE;
@@ -106,7 +118,7 @@
       var a = lightAlpha(levels ? levels[i] : 0, brightnessPct);
       if (a > 0) {
         ctx.globalAlpha = a;
-        ctx.fillStyle = '#ff6b2c';
+        ctx.fillStyle = (colors && colors[i]) || '#ff6b2c';
         ctx.fill();
         ctx.globalAlpha = 1;
       }
@@ -138,6 +150,7 @@
     var timer = null;
     var delay = BASE_MS;
     var levels = null;      // last good frame
+    var colors = null;      // per-light colours, only while the box is in Test mode
     var brightness = 70;
     var mode = '';
     var full = false;
@@ -151,8 +164,8 @@
     function say(msg) { el('matrixNote').textContent = msg || ''; }
 
     function redraw() {
-      paint(el('matrixCanvas'), levels, brightness);
-      paint(el('matrixPreview'), levels, brightness);
+      paint(el('matrixCanvas'), levels, brightness, colors);
+      paint(el('matrixPreview'), levels, brightness, colors);
     }
 
     function showMode(m) {
@@ -172,6 +185,7 @@
       if (reply.mode && reply.mode !== mode) showMode(reply.mode);
       if (mode === 'bars' && now() - localAt < LOCAL_HOLD_MS) return true;  // phone bars are showing
       levels = f;
+      colors = reply.mode === 'test' ? parseColors(reply.colors) : null;
       redraw();
       return true;
     }
@@ -272,6 +286,12 @@
       try { (storage || root.localStorage).setItem(BRIGHT_KEY, String(brightness)); } catch (e) { /* not saved */ }
       redraw();
     });
+    // The real panel's brightness lives on the box: send it when the slider is
+    // released, not on every nudge. A failed send is harmless (the page still
+    // previews the value) and the next release tries again.
+    el('matrixBright').addEventListener('change', function () {
+      doFetch('/api/matrix?bright=' + brightness, { method: 'POST' }).catch(function () {});
+    });
     if (doc && doc.addEventListener) {
       doc.addEventListener('visibilitychange', function () {
         if (!isOpen) return;
@@ -294,7 +314,7 @@
   var exported = {
     parseFrame: parseFrame, nextDelay: nextDelay, lightAlpha: lightAlpha,
     titleFor: titleFor, clockQuery: clockQuery, modeRequest: modeRequest,
-    attach: attach, MODES: MODES
+    attach: attach, MODES: MODES, parseColors: parseColors
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
   else root.LakehorseMatrixWindow = exported;

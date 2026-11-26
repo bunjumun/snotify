@@ -68,6 +68,7 @@
       var li = document.createElement('li');
       li.className = 'track' + (f.name === playingName ? ' playing' : '');
       li.dataset.name = f.name;
+      li.setAttribute('data-help', 'sd-track');
 
       var title = document.createElement('span');
       title.className = 't';
@@ -78,6 +79,7 @@
 
       var del = document.createElement('button');
       del.className = 'btn';
+      del.setAttribute('data-help', 'sd-delete');
       del.textContent = 'Delete';
       del.addEventListener('click', function (ev) { ev.stopPropagation(); remove(f.name); });
 
@@ -103,6 +105,7 @@
   // replaces the browser backend: that swap is the createPlayer line below.
   var VOLUME_STORE = 'lakehorse.radio.volume';
   var player = null;
+  var reporter = null;
   var seekDragging = false;
   var duration = 0;
 
@@ -163,16 +166,23 @@
     var backend = kind === 'box'
       ? window.LakehorseBoxPlayer.create()
       : window.LakehorseBrowserPlayer.create($('player'));
+    // Songs this page plays count toward the alignment total (align-report.js).
+    // The box counts its own, so a box player gets no tracker.
+    var AR = window.LakehorseAlignReport;
+    reporter = kind !== 'box' && AR ? AR.createTracker(AR.poster(function (u, o) { return fetch(u, o); })) : null;
+    var tracker = reporter;
     player = window.LakehorsePlayer.createPlayer(backend, {
-      progress: showProgress,
+      progress: function (pos, dur, isPlaying) { showProgress(pos, dur, isPlaying); if (tracker) tracker.progress(pos, dur, isPlaying); },
       status: playerStatus,
-      track: showTrack
+      track: function (name) { showTrack(name); if (tracker) tracker.track(name); }
     }, volume);
     // The matrix window asks this for bars while this page is the one playing.
     window.LakehorsePhoneBands = kind === 'box' ? null : function () { return backend.bands ? backend.bands() : null; };
     player.setTracks(trackNames);
     $('playVolume').value = Math.round(player.volume() * 100);
   }
+
+  window.addEventListener('pagehide', function () { if (reporter) reporter.flush(); });
 
   function buildPlayer(kind) {
     var carried = player ? player.volume() : savedVolume();

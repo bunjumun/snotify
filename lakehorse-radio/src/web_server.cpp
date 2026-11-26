@@ -20,6 +20,7 @@
 #include "alignment_test_routes.h"
 #endif
 #include "captive_portal.h"
+#include "card_files.h"
 #include "config.h"
 #include "device_key.h"
 #include "matrix_api.h"
@@ -72,6 +73,11 @@ void sendError(AsyncWebServerRequest* request, int code, const char* reason) {
 // proximity check this wants. Anyone on the wider barn network is refused.
 bool onAccessPointSubnet(AsyncWebServerRequest* request) {
   if (request->client() == nullptr) return false;
+  // Only while the hotspot is actually up. softAPIP() keeps reporting
+  // 192.168.4.1 after it is torn down, and now that the box joins other
+  // people's networks, a venue network on 192.168.4.x would otherwise count
+  // as "standing at the box": no key needed, and the key handed out.
+  if (!wifinet::isAccessPointActive()) return false;
   const IPAddress remote = request->client()->remoteIP();
   const IPAddress ap = WiFi.softAPIP();
   return remote[0] == ap[0] && remote[1] == ap[1] && remote[2] == ap[2];
@@ -80,6 +86,12 @@ bool onAccessPointSubnet(AsyncWebServerRequest* request) {
 bool authorised(AsyncWebServerRequest* request) {
   if (!request->hasHeader("X-Lakehorse-Key")) return false;
   return devkey::matches(request->header("X-Lakehorse-Key"));
+}
+
+// Who may change the box's Wi-Fi: anyone while cfg::NETWORK_CHANGES_NEED_KEY is
+// off, otherwise someone on the box's hotspot or holding the pairing key.
+bool mayChangeNetwork(AsyncWebServerRequest* request) {
+  return !cfg::NETWORK_CHANGES_NEED_KEY || onAccessPointSubnet(request) || authorised(request);
 }
 
 const char* stateName(wifinet::StationState s) {
@@ -105,16 +117,27 @@ void handleStatus(AsyncWebServerRequest* request) {
   // Both channels ride in the same response so a mismatch is something the
   // page can display, not something only a serial log can catch.
   doc["apChannel"] = wifinet::accessPointChannel();
-  doc["station"] = stateName(wifinet::stationState());
-  doc["ssid"] = wifinet::stationSsid();
+  // Hosting its own hotspot is a deliberate state, not a failed join.
+  const bool hosting = wifinet::inHostMode();
+  doc["station"] = hosting ? "idle" : stateName(wifinet::stationState());
+  doc["ssid"] = hosting ? String() : wifinet::stationSsid();
   doc["ip"] = wifinet::stationIp();
   doc["stationChannel"] = wifinet::stationChannel();
   doc["hasSavedNetwork"] = wifinet::hasSavedNetwork();
+  doc["hostMode"] = wifinet::inHostMode();
+  // Names only, never passwords: the page lists them with Use now / Forget.
+  JsonArray saved = doc["saved"].to<JsonArray>();
+  for (const String& name : wifinet::savedNames()) saved.add(name);
+  // This boot skipped Bluetooth so the hotspot can serve setup (setup_boot.h).
+  doc["setupBoot"] = btspeaker::isSetupBoot();
+  // Pairing open on any network right now (pair_window.h).
+  doc["pairOpen"] = devkey::pairWindowOpen();
   doc["lastFailure"] = wifinet::lastFailureText();
   doc["lastFailureCode"] = wifinet::lastFailureReason();
   // Lets the page tell a listener standing at the box from one on the network,
   // so it can explain the right thing rather than the same thing twice.
   doc["viaAccessPoint"] = onAccessPointSubnet(request);
+  doc["networkOpen"] = !cfg::NETWORK_CHANGES_NEED_KEY;  // the page offers setup to everyone
   // All three are internal RAM only on core 3.x (Esp.cpp), so they stay
   // comparable whether or not PSRAM is enabled. largestFreeBlock is the
   // biggest single allocation that can still succeed; minFreeHeap is the low
@@ -143,9 +166,10 @@ void handleStatus(AsyncWebServerRequest* request) {
 }
 
 void handlePair(AsyncWebServerRequest* request) {
-  if (!onAccessPointSubnet(request)) {
+  if (!onAccessPointSubnet(request) && !devkey::pairWindowOpen()) {
     sendError(request, 403,
-              "join the Lakehorse Radio hotspot to pair with this box");
+              "hold the box's BOOT button for 3 seconds (or unplug it and plug it back in), "
+              "then pair within 2 minutes");
     return;
   }
   JsonDocument doc;
@@ -167,7 +191,7 @@ void handleGetPlaylist(AsyncWebServerRequest* request) {
 
 // POST /api/alignment/event?source=song|level&id=...&result=full|partial|clear|attempt
 // Phone-mode songs and every level report here (ALIGNMENT-BRIEF.md). A song id
-// is accepted only if it is a title in the playlist the page plays from; a level
+// is accepted only if it is a title in the playlist or a band-list file on the card; a level
 // id is a number 0..31. Answers with the new total; a repeat of the same event
 // inside 10 seconds is acknowledged and not counted.
 void handleAlignmentEvent(AsyncWebServerRequest* request) {
@@ -195,8 +219,10 @@ void handleAlignmentEvent(AsyncWebServerRequest* request) {
   if (source == alignment::Source::Song) {
     String playlistJson = playlist::load();
     if (playlistJson.length() == 0) playlistJson = kDefaultPlaylist;
-    if (!alignment::playlistHasTitle(playlistJson.c_str(), playlistJson.length(), id.c_str())) {
-      sendError(request, 400, "that song is not in the playlist");
+    // A playlist title, or a file the page played from the card that is on the band list.
+    if (!alignment::playlistHasTitle(playlistJson.c_str(), playlistJson.length(), id.c_str()) &&
+        !alignment::isBandSong(id.c_str())) {
+      sendError(request, 400, "that song is not in the playlist or on the band list");
       return;
     }
   }
@@ -321,7 +347,7 @@ void registerWifiWrite() {
         Serial.printf("[wifi] provisioning request from %s (via AP: %s)\n",
                       from.toString().c_str(), viaAp ? "yes" : "no");
 
-        if (!viaAp && !authorised(request)) {
+        if (!mayChangeNetwork(request)) {
           sendError(request, 401, "join the Lakehorse Radio hotspot to change the network");
           return;
         }
@@ -347,7 +373,9 @@ void registerWifiWrite() {
 
         Serial.printf("[wifi] asked to join \"%s\"\n", ssid.c_str());
         if (!wifinet::provision(ssid, password)) {
-          sendError(request, 500, "could not save the network");
+          sendError(request, 400,
+                    "could not save the network: check the name, and that the password "
+                    "is 8 to 63 characters or empty for an open network");
           return;
         }
 
@@ -625,6 +653,141 @@ void handleGameUploadDone(AsyncWebServerRequest* request) {
   sendJson(request, 200, out);
 }
 
+// ---------- One small file at the card root ----------
+//
+// POST /api/sd/card-file?name=band-tracks.json, raw body, same shape and the same two
+// rules as the song upload: the pairing key when cfg::SD_WRITES_NEED_KEY is on, and one
+// upload at a time (g_uploadOwner). The name must be on cfg::CARD_FILE_NAMES and the
+// body must pass cardfiles::validate before anything touches the card, so a bad upload
+// leaves the old file exactly as it was. The body is held in RAM (at most
+// cfg::CARD_FILE_MAX_BYTES, in one allocation that the request frees with its
+// _tempObject, so a dropped connection cannot leak it), written to "<name>.part",
+// checked by size, then swapped in. Not a file editor: no other names, no folders, no
+// deletes.
+struct CardFileState {
+  int code;
+  const char* error;
+  bool finished;
+  size_t length;
+  char name[32];
+  char body[1];  // really contentLength() bytes, see the calloc below
+};
+
+void handleCardFileChunk(AsyncWebServerRequest* request, uint8_t* data, size_t len,
+                         size_t index, size_t total) {
+  if (index == 0 && request->_tempObject == nullptr) {
+    // Size the allocation only once the length is known to be sane; a refused
+    // request gets the small fixed part and no body buffer at all.
+    const size_t declared = request->contentLength();
+    const size_t bodyBytes = (declared > 0 && declared <= cfg::CARD_FILE_MAX_BYTES) ? declared : 0;
+    request->_tempObject = calloc(1, sizeof(CardFileState) + bodyBytes);
+  }
+  CardFileState* s = static_cast<CardFileState*>(request->_tempObject);
+  if (s == nullptr) return;
+  // A refused upload gives the one-upload slot back at once, but only if it holds it:
+  // a request turned away because another upload is running must not free that one's.
+  auto reject = [s, request](int code, const char* why) {
+    if (s->error == nullptr) { s->code = code; s->error = why; }
+    if (g_uploadOwner == request) g_uploadOwner = nullptr;
+  };
+
+  if (index == 0) {
+    const String wanted = request->hasParam("name") ? request->getParam("name")->value() : String();
+    const size_t declared = request->contentLength();
+    if (!cfg::SD_UPLOAD_ENABLED) {
+      reject(403, "uploading is switched off in this version");
+    } else if (cfg::SD_WRITES_NEED_KEY && !authorised(request)) {
+      reject(401, "missing or wrong X-Lakehorse-Key");
+    } else if (!sdstore::mounted()) {
+      reject(503, "there is no SD card in the box");
+    } else if (wanted.length() >= sizeof(s->name) || !cardfiles::nameAllowed(wanted.c_str())) {
+      reject(400, cardfiles::describe(cardfiles::Result::NameNotAllowed));
+    } else if (declared == 0 || total != declared) {
+      reject(400, "the file is empty or has no length");
+    } else if (declared > cfg::CARD_FILE_MAX_BYTES) {
+      reject(413, cardfiles::describe(cardfiles::Result::TooBig));
+    } else if (g_uploadOwner != nullptr) {
+      reject(503, "another upload is already in progress");
+    } else {
+      g_uploadOwner = request;
+      request->onDisconnect([]() { g_uploadOwner = nullptr; });
+      strlcpy(s->name, wanted.c_str(), sizeof(s->name));
+    }
+  }
+  if (s->error != nullptr) return;
+  if (index + len > cfg::CARD_FILE_MAX_BYTES || index + len > request->contentLength()) {
+    reject(400, "the body is longer than it said");
+    return;
+  }
+  memcpy(s->body + index, data, len);
+  s->length = index + len;
+  if (index + len != total) return;
+
+  // Whole body is in. Everything below runs once, on the last chunk.
+  const cardfiles::Result verdict = cardfiles::validate(s->name, s->body, s->length);
+  if (verdict != cardfiles::Result::Ok) {
+    reject(400, cardfiles::describe(verdict));
+    return;
+  }
+  const String finalPath = String("/") + s->name;
+  const String partPath = finalPath + cfg::SD_PART_SUFFIX;
+  const String oldPath = finalPath + ".old";
+  SD.remove(partPath);
+  File f = SD.open(partPath, FILE_WRITE);
+  if (!f) {
+    reject(500, "could not create the file on the SD card");
+    return;
+  }
+  const bool wrote = f.write(reinterpret_cast<const uint8_t*>(s->body), s->length) == s->length;
+  f.close();
+  File check = SD.open(partPath, FILE_READ);
+  const bool sizeOk = check && check.size() == s->length;
+  if (check) check.close();
+  if (!wrote || !sizeOk) {
+    SD.remove(partPath);
+    reject(500, "writing to the SD card failed");
+    return;
+  }
+  // FAT rename will not overwrite, so the old file is moved aside first and put back if
+  // the swap fails: at no point is the only good copy deleted before the new one is in.
+  SD.remove(oldPath);
+  const bool hadOld = SD.exists(finalPath);
+  if (hadOld && !SD.rename(finalPath, oldPath)) {
+    SD.remove(partPath);
+    reject(500, "could not replace the old file");
+    return;
+  }
+  if (!SD.rename(partPath, finalPath)) {
+    if (hadOld) SD.rename(oldPath, finalPath);
+    SD.remove(partPath);
+    reject(500, "could not move the finished file into place");
+    return;
+  }
+  if (hadOld) SD.remove(oldPath);
+  s->finished = true;
+  if (g_uploadOwner == request) g_uploadOwner = nullptr;
+  Serial.printf("[card] stored %s (%u bytes)\n", s->name, (unsigned)s->length);
+}
+
+void handleCardFileDone(AsyncWebServerRequest* request) {
+  const CardFileState* s = static_cast<CardFileState*>(request->_tempObject);
+  if (s != nullptr && s->error != nullptr) {
+    sendError(request, s->code, s->error);
+    return;
+  }
+  if (s == nullptr || !s->finished) {
+    sendError(request, 400, "no file arrived");
+    return;
+  }
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["name"] = s->name;
+  doc["bytes"] = (uint32_t)s->length;
+  String out;
+  serializeJson(doc, out);
+  sendJson(request, 200, out);
+}
+
 // Removes ONE file under /game/ (?path=src/core/Game.js.gz). Same path rules as
 // the game upload, so a URL can never leave /game/, and folders are refused, so
 // this cannot wipe a tree. Exists so stale files left by an earlier pack can be cleared without a card reader.
@@ -829,6 +992,9 @@ void sendOpenedFile(AsyncWebServerRequest* request, File opened, const char* mim
 // build adds ?v=<hash> to each script and stylesheet reference in it, so those
 // URLs change whenever a file does and can be kept for a week without a request.
 // The handler ignores the query string when it looks the file up.
+// CAUSE FOUND 2026-11-23: the note below was lwIP's TCP segments living in
+// PSRAM (RUNTIME_PSRAM_THRESHOLD was 1024, see config.h); it is 1600 now and
+// header length no longer matters. The padding is kept because it is harmless.
 // HEADER LENGTH MATTERS ON THIS BOARD (found 2026-11-22 on hardware). When a
 // response's header block is 2 bytes past a multiple of 4 (202 and 226 bytes
 // were seen), the last two header bytes, the blank line that ends the headers,
@@ -913,11 +1079,41 @@ void begin() {
   g_server.on("/api/alignment/event", HTTP_POST, handleAlignmentEvent);
 
   g_server.on("/api/wifi/forget", HTTP_POST, [](AsyncWebServerRequest* request) {
-    if (!onAccessPointSubnet(request) && !authorised(request)) {
+    if (!mayChangeNetwork(request)) {
       sendError(request, 401, "not allowed from this network");
       return;
     }
-    wifinet::forget();
+    const String ssid = request->hasParam("ssid", true) ? request->getParam("ssid", true)->value()
+                                                         : String();
+    if (!wifinet::forget(ssid)) {
+      sendError(request, 404, "that network is not saved");
+      return;
+    }
+    sendJson(request, 200, "{\"ok\":true}");
+  });
+
+  // Leaves the network and serves the box's own hotspot; saved networks stay.
+  g_server.on("/api/wifi/host", HTTP_POST, [](AsyncWebServerRequest* request) {
+    if (!mayChangeNetwork(request)) {
+      sendError(request, 401, "not allowed from this network");
+      return;
+    }
+    wifinet::hostMode();
+    sendJson(request, 200, "{\"ok\":true}");
+  });
+
+  // Joins a network that is already saved, now. Same rule as the others.
+  g_server.on("/api/wifi/use", HTTP_POST, [](AsyncWebServerRequest* request) {
+    if (!mayChangeNetwork(request)) {
+      sendError(request, 401, "not allowed from this network");
+      return;
+    }
+    const String ssid = request->hasParam("ssid", true) ? request->getParam("ssid", true)->value()
+                                                         : String();
+    if (!wifinet::use(ssid)) {
+      sendError(request, 404, "that network is not saved");
+      return;
+    }
     sendJson(request, 200, "{\"ok\":true}");
   });
 
@@ -926,6 +1122,7 @@ void begin() {
   g_server.on("/api/sd/upload", HTTP_POST, handleUploadDone, nullptr, handleUploadChunk);
   g_server.on("/api/sd/game-upload", HTTP_POST, handleGameUploadDone, nullptr, handleGameUploadChunk);
   g_server.on("/api/sd/game-delete", HTTP_POST, handleGameDelete);
+  g_server.on("/api/sd/card-file", HTTP_POST, handleCardFileDone, nullptr, handleCardFileChunk);
   g_server.on("/sd/*", HTTP_GET, handleSdFile);
   // Wildcard first: the library treats the plain "/game" as a prefix too, so
   // registered first it redirected every /game/... URL back to /game/ forever.

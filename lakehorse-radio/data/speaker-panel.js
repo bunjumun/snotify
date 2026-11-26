@@ -115,6 +115,7 @@
         var b = list.ownerDocument.createElement('button');
         b.className = 'btn';
         b.type = 'button';
+        if (b.setAttribute) b.setAttribute('data-help', 'spk-device');
         b.textContent = s.current ? s.name + ' (chosen)' : 'Play on ' + s.name;
         b.addEventListener('click', function () { command('/api/speaker/choose?name=' + encodeURIComponent(s.name)); });
         li.appendChild(b);

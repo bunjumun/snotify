@@ -66,6 +66,7 @@ stack takes tens of KB of internal RAM on its own) has to fit under that.
 - A failed NVS write is logged and the total still counts until reboot.
 - The endpoint does not refuse phone song events while the box is playing; the page is meant to not report then (piece 2).
 - **Can the existing upload write band-tracks.json? No.** `/api/sd/upload` only takes audio names into `/music`; `/api/sd/game-upload` only writes under `/game/`. Future song updates need a card reader or a new small route. I did not add a permanent one.
+  - **↳ AMENDED 2026-11-25:** the small route now exists, `POST /api/sd/card-file`, see "Borrowed from WLED" item 3. Push the list with `python3 tools/push_card_file.py`.
 - Test-only firmware: `env:radio-core2-aligntest` (`-D LAKEHORSE_ALIGN_TEST`) adds `POST /api/test/align-reset` and `POST /api/test/band-tracks` (send `Content-Type: application/json`). Compiled out of `env:radio-core2`, which is the shipping build.
 - Starter list: `band-tracks.json` in the project root (all four songs on the card).
 
@@ -82,6 +83,16 @@ stack takes tens of KB of internal RAM on its own) has to fit under that.
 **Not verified:** minFreeHeap A/B (above); pairing from cold (speaker was already connected); malformed or missing `band-tracks.json` on the box (covered by native tests only); phone-mode song events from a real page.
 
 **State left on the box:** shipping firmware, total 0, `/band-tracks.json` on the card with all four songs (written by the last test run), Bluetooth ON (it was off when I started). The test route is not in this firmware, so a future list change needs a card reader.
+
+## START HERE (2026-11-23, night): broken game-file responses = PSRAM pbufs (FIXED, flashed, verified)
+
+- **Symptom:** `/game/index.html`, `three.core.min.js`, `three.module.min.js`, `config.js` failed EVERY time (not random): curl 200 + 0 bytes (exit 8), Chrome `ERR_INVALID_HTTP_RESPONSE`. Raw dump: the last (header length mod 4) bytes of the header block arrive as `00` (183-byte header -> `\n\r\n` lost). Guber's index.html (184-byte header) was fine.
+- **Cause:** `RUNTIME_PSRAM_THRESHOLD = 1024` (config.h) put lwIP TCP pbufs (~1,508 B) in PSRAM; on this rev v1.0 chip the Wi-Fi copy out of PSRAM drops bytes. The old "header length matters" note in `web_server.cpp` was this same bug.
+- **Fix:** threshold 1600 (pbufs internal; 2.9 KB send buffers and 16 KB SD blocks stay PSRAM).
+- **Heap before (idle, ML301 connected, stopped):** freeHeap 22,368 / largestFreeBlock 12,276 / minFreeHeap 12,648; PSRAM free 3,726,623.
+- **Heap after (`radio-core2` flashed, same state):** boot settles 23,228 / 14,324 / min 23,168. After 6 cold browser loads + 4 full game-file sweeps: 19,456 / 9,204 / **min 9,804**. After a song stream plus game sweep: 19,196 / 8,692 / **min 9,064**. PSRAM unchanged (3,726,623). The low-water is ~3.5 KB lower than before because segments in flight now sit in internal RAM; no OOM seen, box answered throughout. Watch this if anything else lands in internal RAM.
+- **Verified:** every `/game/*` file byte-identical to its packed copy (gz as served), 4 sweeps, 0 bad (Guber index differs only because `build/sd-game` is stale; the served one is valid gzip, current source + the 46-byte box flag). Chrome cold loads (fresh isolated context each): Guber `/game/guber-eats/?mute` 3/3 and Swimulator `/game/` 3/3, every request 200, no console errors (one `/favicon.ico` 404 from the browser itself on 1 load; the box has no favicon). Radio page `/` still 200 with full body.
+- **Not fixed (pre-existing, documented in Module 6):** with Bluetooth on, HTTP is 30-40 KB/s (modem sleep + send-window cap). A phone streaming a song while the game loads starves both: in a 25 s test 1 of 3 song ranges and one `config.js` fetch timed out. Turn Bluetooth off for phone playback, or don't stream songs during a game load.
 
 ## START HERE (2026-11-23, evening): Swimulator is bundled; GAMES folder; touch Guber live
 
@@ -962,3 +973,255 @@ Everything below is built and on the box (firmware and page flashed after each m
 - A device never paired still sees the explanation (`#setupAway`, reworded: join the hotspot once to pair).
 - Pure helpers `headline`, `currentRows`, `canChange` in `network-window.js`; `test/network-window.test.js` extended (incl. null reply, 0 dBm, no-ssid). All page suites green.
 - **Still to do:** try Scan/Join on the phone from home Wi-Fi; Forget and a real join from the home network are untried (a wrong join from home leaves only the hotspot to recover with). Backup network still not built (firmware keeps one).
+
+## Shell Module 7: matrix hardware (2026-11-24) - BUILT and compiled, NOT flashed, NOT verified on hardware
+
+The owner's ESP module was unavailable, so nothing below has run on a board. Software is done and builds (`radio-core2` and `radio-core2-matrixbench` both SUCCESS; `pio test -e native` 144 passed; `node --test test/matrix-window.test.js` passed).
+
+**Built**
+- `src/matrix_layout.{h,cpp}`: logical pixel to strip index, serpentine or progressive, four origins. Default serpentine, top left. `test/test_layout` (9 tests: bijection in all 8 layouts, corners, row reversal, names).
+- Engine (`matrix_engine`): `Mode::Test` ("test": TL red, TR green, BL blue, BR white at full, the rest dim at level 2), `pixelColor()`, and a box-side `brightness()` (1..100, default 20). New tests in `test/test_matrix`.
+- `src/matrix_driver.{h,cpp}`: FastLED WS2812, GPIO 27, GRB. A FreeRTOS task (core 1, priority 1, 4 KB stack, about 15 fps) calls `boxplayer::bandsNow()` then `feedBands()`, `render()`, maps through the layout, scales by brightness. Compiled only with `-D LAKEHORSE_MATRIX=1` (set in `env:radio-core2`; `env:radio` and native are unaffected). Layout saved in NVS namespace "matrix".
+- `/api/matrix` now takes `bright` (1-100), `wiring` (serpentine|progressive), `origin` (tl|tr|bl|br), `mode=test`, and returns `brightness`, `wiring`, `origin`, `hardware`, and `colors` (Test mode only). Web handlers and the driver share `matrixdrv::Lock`, because the engine renders into one static buffer.
+- Page: a Test button, Test colours painted in the virtual window, and the Brightness slider sends `bright` to the box on release.
+- `bench/matrix_bench.cpp` and `env:radio-core2-matrixbench`: panel alone, no Wi-Fi/BT, 150 mA limit before the first show, brightness 16/255, a one-pixel, corner, and slow-fill sequence for about a minute, reset reason logged at boot.
+
+**Decisions**
+- Brightness was assumed to "already exist" but lived only in the page (localStorage). Added box-side brightness; the slider sends it. Not yet confirmed with the owner as a permanent rule.
+- No earlier matrix bench handoff existed; the bench is its own env.
+- Safety: matrix starts 3 s after boot (after Wi-Fi/BT); 150 mA FastLED limit set before the first show; first show is black at brightness 0; brightness ramps in about 1 s; the page value is capped at 40% on the box until a bench pass at higher levels; frames unchanged are not re-shown; Off clears and stops drawing. Brownout detector left alone.
+- Wiring decided with the owner: ESP on USB (serial kept), panel 5 V from the dev-kit supply module, ESP 5 V pin not tied to the panel, grounds bridged, supply on first. Owner reports plugging the matrix power in may have crashed the ESP; treat a reset at plug-in as unattributed until reset reason (logged at boot) says otherwise. No capacitor/resistor/level shifter added.
+
+**Audit (reading only; none of this measured)**
+- Task: core 1 (Wi-Fi/BT on core 0, async TCP on core 1 but light), priority 1, so audio/Wi-Fi tasks preempt it. Stack 4 KB, high-water mark not logged yet.
+- RMT: FastLED uses an RMT channel; A2DP uses none. Coexistence unproven until a song plays with the matrix on.
+- Frame buffer: one mutex covers render+copy in both the web handler and the driver, so no torn reads. The audio reader writes band levels only into `band_levels`, read via `bandsNow()`, unchanged.
+- Power limit is applied before the first show (checked in `drawTask`).
+- Open: heap cost and `minFreeHeap` vs 26,024 not measured.
+
+**Not verified (needs the board)**: bench sequence, every pattern on the panel, corner colours (owner must look: TL red, TR green, BL blue, BR white; if wrong set `wiring`/`origin` via `/api/matrix`), Bars with a song on the speaker, brightness and Off from the page, 0 underruns over a full song, minFreeHeap, pairing/playback unchanged.
+
+**Next session, in order**: power the supply first; flash `radio-core2-matrixbench` (115200), watch serial for resets; if clean, flash `radio-core2` and select Test from the page. If the panel is dark: pin, GRB order, then DIN not DOUT, shared ground, 5 V at the panel; flicker or wrong colours point to a level shifter.
+
+**Unrelated, reported by owner**: iPhone hotspot join failed or dropped in the car. Join code reviewed, nothing found; needs a serial log of one failed attempt. Candidates: hotspot "Maximize Compatibility" off (ESP32 is 2.4 GHz only), hotspot sleeping when idle, `lakehorse.local` not resolving (use the 172.20.10.x address), modem sleep forced on by the Bluetooth build.
+
+## Hotspot retry hold (2026-11-25): built, compiled, flashed and measured on the box; it was not the whole cause, see "Borrowed from WLED" below
+
+**Measured result (2026-11-25, same day, code session):** the hold compiles and its 6 timing tests pass, but on the box it changed nothing visible, because the retry it holds was not what was searching. Details and the fix that did work are under "Borrowed from WLED", item 1 and 2. The text below is the chat session's original write-up, kept as it was.
+
+Written in a chat session, not a code session, on a machine with no PlatformIO, so the firmware has not been built. Only the timing logic was compiled and run (g++ with a small stand-in for Unity): 6 of 6 pass. Run `pio test -e native` for the real result.
+
+**Problem (owner report).** Taken from the house, the box woke up away from its saved network (network audio mode, so Bluetooth was off) and raised its hotspot. An iPhone could not hold a connection to it long enough for the setup sheet to appear. This is the "iPhone hotspot join failed or dropped in the car" item noted at the end of Shell Module 7.
+
+**Suspect, from reading the code, not yet reproduced.** With a saved network out of range, `wifinet::tick()` retried it every `STA_RETRY_INTERVAL_MS` (30 s). Each retry goes through `resetRadio()` (WIFI_MODE_NULL) and then re-raises the hotspot, and the retry is also a scan for a network that is not there, on the one radio. A phone on the hotspot was thrown off every 30 s and had to rejoin.
+
+**Reference: WLED's `handleConnection()`** (read from a fork of its wled.cpp, so check it against current upstream before relying on details). It waits 300000 ms between reconnect attempts when a phone is on its hotspot, against 20000 ms otherwise, and it does not stop retrying altogether. The change below copies that.
+
+**Change.**
+- New `src/hotspot_retry.h` (header only, Arduino-free): `intervalMs(normal, withClient, apUp, apClients)` and `due(now, last, interval)`.
+- `src/config.h`: `STA_RETRY_INTERVAL_WITH_AP_CLIENT_MS = 300000`, next to `STA_RETRY_INTERVAL_MS`.
+- `src/wifi_manager.cpp` `tick()`: the background retry uses the long interval while `WiFi.softAPgetStationNum()` is above zero and the hotspot is up. Nobody on the hotspot: timing unchanged. Include added for `hotspot_retry.h`.
+- New `test/test_hotspotretry/test_hotspotretry.cpp` (6 tests, Unity). No change to `platformio.ini` needed (header only, `-I src` already set for the native env).
+- Not touched: provisioning, forget, `reconnect()` (used by the link watchdog, which only runs when connected), the fallback hotspot timer, channel handling, Bluetooth.
+
+**Not copied from WLED, on purpose, and probably still needed.** When a phone joins its hotspot while it is searching, WLED also cancels the search (`if (stac) WiFi.disconnect()`, commented "disable search so that AP can work") and restarts it when the last phone leaves. This change does not do that, so a search already running when a phone joins (up to `STA_CONNECT_TIMEOUT_MS`, 20 s), and any searching the Arduino core does by itself between our retries, can still disturb the hotspot. I did not copy it untested because it would also cancel a join the owner starts from the setup page: it needs a "this attempt was asked for by a person" flag set in `provision()` and cleared when the attempt ends, and a board to check the event ordering against the "sta is connecting, cannot set config" wall noted in this file. If the bench test below still shows drops, do that next. Also not yet checked: whether `WiFi.setAutoReconnect` is left at its default (true) on core 2.0.17, which would mean the core keeps scanning on its own.
+
+**To verify (bench).**
+1. `pio test -e native` (the new suite plus everything else), then `pio run -e radio-core2`.
+2. Flash with a saved network that is out of range (turn the router off or take the box out of range). Watch serial.
+3. Join the hotspot from the iPhone. Expect no `[wifi] trying saved network` lines for about 5 minutes while it stays joined, and the setup sheet to open. Note any drops and what the serial log said at that moment.
+4. Confirm a normal boot at home still joins the saved network and that playback and pairing are unchanged.
+5. Confirm the iPhone setup sheet appears at all: the captive probe paths in `captive_portal.cpp` have never been exercised on a real iPhone or Android.
+
+## Borrowed from WLED (2026-11-25, one code session, items 1 to 4)
+
+Everything below is in the working tree, nothing committed. Box state left: shipping `radio-core2` (now WITHOUT the matrix driver, see "Matrix segmented off"), joined to pifi at 192.168.0.15, `/band-tracks.json` on the card is the real 100-byte starter list, Bluetooth on, ML301 connected. Upstream WLED was not checked (no network lookup was done); the details copied were the ones the chat notes quoted from a fork, and the measured behaviour below is what actually matters.
+
+### Item 1: hotspot retry wait. It does not fix the bug on its own.
+- Audit of the chat session's change: logic is right, header is Arduino-free, 6 native tests pass. Whole suite now 169 native tests, all 13 JS and Python test files green. `pio run -e radio-core2` builds.
+- **`WiFi.setAutoReconnect` is left at its default (true) on core 2.0.17, and it matters a lot.** `WiFiGeneric.cpp` re-runs `WiFi.disconnect(); WiFi.begin()` on every STA disconnect whose reason is on `_isReconnectableReason`, and `WIFI_REASON_NO_AP_FOUND` (201) is on that list. So with the saved network out of range the core rescans every ~1.7 s on its own.
+- **Measured** with the test-only build `env:radio-core2-nowifitest` (the saved network is replaced in memory by one that does not exist, NVS untouched, never the shipping build): serial showed `not connected ... reason 201` every 1.7 s for the whole run and **zero `[wifi] trying saved network` lines**, i.e. our 30 s retry, and so the 300 s hold, never ran. Each scan sweeps channels and pulls the one radio off the hotspot's channel, which is what threw phones off. A Mac asked to join the hotspot during that run could not even find it ("Could not find network").
+- Bench method note: the Mac was used as the hotspot client (a phone was not needed for this). macOS drops a no-internet network by itself after about a minute, so the Mac can hold the link ~60 s, not 5 minutes. Opening the serial port resets the board on this Mac, as known.
+- **Measured on the owner's iPhone, Bluetooth compiled out (`radio-core2-nowifitest-nobt`):** phone joined at 111.0 s, `search ... paused` logged once, then **no retry line for 300 s**; the next `trying saved network` came at 411.2 s (the 300 s hold, exactly), which re-raises the hotspot and drops the phone for that moment. No drops in between, page and audio worked from Safari. With Bluetooth ON the hold was not the problem, memory was, see the Bluetooth section below.
+- Normal boot at home: the shipping build joined pifi at 192.168.0.15 about 7 s after reset, page 200, playback started, 0 underruns, pairing refuses off the hotspot as before.
+
+### Item 2: cancel the search when a phone joins. BUILT (the condition in the brief was met).
+- Why built: item 1's bench showed the core searching on its own (above).
+- `hotspot_retry.h` gained `searchAction(apUp, apClients, stationConnected, personAttempt, cancelled)` returning None, Cancel or Resume; 8 more native tests (14 in the suite).
+- `wifi_manager.cpp`: (a) **auto-reconnect is switched off whenever the hotspot is raised** and back on when it is torn down, so our 30 s tick retry is the only searching while the hotspot is up; (b) `handleHotspotSearch()` runs on the loop task from `tick()` (client count read there, never in the event handler): a phone joining cancels an in-flight attempt with `WiFi.disconnect(false,false)`, and when the last phone leaves (or the hotspot drops) the wait restarts from that moment, so the next retry comes ~30 s later; (c) a join started from the setup page is never cancelled: `provision()` sets `g_personPending`, `beginStationAttempt()` moves it to `g_personAttempt`, cleared on GOT_IP, on a disconnect event, and on tick()'s timeout; it also lifts an earlier cancel. Disconnect is only issued if an attempt is actually in flight (an idle disconnect only logs a driver error), and the "sta is connecting, cannot set config" wall is untouched because nothing here calls `begin()` or sets config.
+- Known small exposure: a late STA_DISCONNECTED event from `resetRadio()` could clear `g_personAttempt` early; the 10 ms settle delays in `resetRadio()` make that very unlikely, and the same window already exists for `g_associating`.
+- **Measured on the bench build (Mac as client):** after the hotspot came up at 17.5 s there were no more self-scans (the log has no reason-201 line until the phone had come and gone); `a phone joined the hotspot, search ... paused` at 28.7 s; no retry lines while it stayed (~58 s); `hotspot is empty again, search resumes` at 86.7 s; `trying saved network` at 116.8 s, **30 s later**, as designed. Same on a second run (pause 27.5 s, resume 87.7 s, retry 120.6 s).
+- The retry itself still re-raises the hotspot, so every 30 s with nobody on it (and every 300 s with someone on it) the hotspot blinks. Unchanged design, now the only blink.
+
+### Item 3: small card-file endpoint. BUILT and tested on the box.
+- `POST /api/sd/card-file?name=band-tracks.json`, raw body (`Content-Type: application/octet-stream`, a form content type is not read as a raw body and answers "no file arrived"). Same rules as the song upload: pairing key when `SD_WRITES_NEED_KEY` is on (it is off at present, so the 401 path was not exercised on the box, it is the same `authorised()` check as the other routes), `SD_UPLOAD_ENABLED`, SD mounted, and the one-upload slot `g_uploadOwner`.
+- Allowlist `cfg::CARD_FILE_NAMES` and cap `cfg::CARD_FILE_MAX_BYTES` = 4096 in `config.h` (4096 is the most `alignment_box.cpp` will read back, so a bigger list could not work anyway). Exact name match only; no folders, no `..`, no deletes.
+- `card_files.{h,cpp}` (Arduino-free): `nameAllowed`, `validate`. For band-tracks.json the body must parse, be an object, have `version` 1 if present, and a `tracks` array of non-empty strings. Trailing text after the JSON is tolerated because the reader tolerates it. 10 native tests (`test/test_cardfiles`, including that an accepted list is one `bandListContains` reads).
+- Write path: whole body held in one allocation (freed with the request, so a dropped connection cannot leak it), validated, written to `/band-tracks.json.part`, size checked, old file moved to `.old`, part renamed in, `.old` removed; on a failed swap the old file is put back. A bad upload never touches the old file.
+- **Box results:** good upload 200; bad JSON 400; wrong shape 400; 5000 bytes 413; names `playlist.json`, `music/band-tracks.json`, `../band-tracks.json` 400; empty 400; a second upload while a slow one ran 503 ("another upload is already in progress") and the slow one still completed 200; an upload killed after 3 s did not lock the slot (the next good one went through). Final push by `tools/push_card_file.py` restored the real list.
+- Heap: a card-file upload costs a transient 3 to 4 KB (minFreeHeap 20,408 to 16,660 across the whole test session on the matrix-free build).
+- Tool: `tools/push_card_file.py [FILE] [HOST] [--key KEY]` (defaults band-tracks.json, lakehorseradio.local; key also from `LAKEHORSE_KEY`, never printed). Test `test/push_card_file.test.py`.
+- Not verified: the band flag actually changing after a push (the box has no read-back route; the firmware checks the written size, and the reader is the already tested piece 1 code).
+
+### Item 4: page updates over Wi-Fi. NOT BUILT, found not safe. What would make it safe is below.
+Read from the core (2.0.17 `Update` library) and this firmware, nothing was written to the partition:
+- The core can write the filesystem partition while the box runs: `Update.begin(size, U_SPIFFS)` finds the partition labelled `spiffs` (our LittleFS one) and `size` is checked against it, so an image larger than 512 KB is refused before writing.
+- **It erases and writes sector by sector from the first byte** (`Updater.cpp`, `_writeBuffer`), in place, with no second copy. From the first chunk the live LittleFS is damaged while it is still mounted, so the page, the Wi-Fi setup sheet and the saved playlist are served from a partition being erased underneath them.
+- **A failed or interrupted write leaves a partition that cannot mount.** `playlist_store.cpp` mounts with `LittleFS.begin(formatOnFail=true)`, so the next boot formats it: an empty filesystem, no page. NVS (saved Wi-Fi, pairing key), the app, SD playback and the JSON API all survive, so the box still boots and plays through the API.
+- **There is no recovery page served from firmware.** Every HTML page, including the Wi-Fi setup sheet the hotspot shows, is in LittleFS (the only text compiled in is the default playlist JSON). So after a bad write a box away from its network has no way to be set up from a browser, and USB is the only recovery. The card-free recovery that does exist is re-running the push tool at the box over a network it already knows, because the upload route itself would live in firmware.
+- Also: a fresh image replaces `playlist.json`, which is user data written at run time into the same partition; any push would have to carry it or read it back first.
+- By the brief's own test (still boots, still plays, still answers a small built-in recovery page from firmware) this is not safe today, so no route, tool or interrupted-upload test was made.
+- **What would make it safe, in order:** (1) a small recovery page compiled into firmware (PROGMEM), served for `/` whenever LittleFS has no `index.html`, with the Wi-Fi setup form and an image upload; (2) stage the image on the SD card first (route writes `/page-update.bin`, checks size, LittleFS magic and a hash), then write the partition from the staged file with the page handlers quiet, and keep a pending marker so a boot that finds the staged file and a bad filesystem simply re-writes it, which makes an interrupted write self-healing whenever a card is present; (3) carry `playlist.json` across. With (1) and (2) the interrupted-upload test becomes a meaningful pass criterion.
+
+### Matrix segmented off (owner's call, 2026-11-25)
+- Found while chasing "the captive portal comes up but is blank": with the LED matrix driver built in (`-D LAKEHORSE_MATRIX=1`, it was in `env:radio-core2`), internal heap at idle was **6.8 KB free** against **20.4 KB** with it off (A/B on the same code, matrix driver the only difference; the box as found before today's flash had 21.2 KB). In hotspot mode with Bluetooth on that low-water mark was 5.3 KB and the web server answered one request and then stalled for the whole sheet.
+- `platformio.ini`: the flag is out of `env:radio-core2` and lives in the new `env:radio-core2-matrix` (same firmware plus the driver). Nothing else about the matrix was touched; its code, tests and page window are as they were. When the matrix section is picked up, either build that env or win back the ~13.5 KB (smaller RMT buffers, move the frame buffer to PSRAM, or the board swap).
+- After the change the setup sheet rendered the full shell page (player and games windows) on the Mac at 192.168.4.1. It showed "Checking the card..." and no song list inside the minute the Mac stayed (see below); `/api/sd` answers in 0.4 s at home.
+
+### Hotspot with Bluetooth ON starves the network stack; with it off the hotspot works (owner's iPhone, 2026-11-25)
+- With the bench build that has Bluetooth on (`radio-core2-nowifitest`), the iPhone stayed joined (no kicks: the earlier "bouncing back to pifi" was iOS auto-join preferring a known network), but the setup sheet and Safari could not load the page, a song stalled at "buffer 0 of 4 seconds", and the box logged `WiFiUdp endPacket(): could not send data: 12` (ENOMEM) on its DNS replies, 56 times in two minutes, with free heap ~20 KB and largest block ~8 KB. HTTP to the box also died within seconds of a client joining.
+- With Bluetooth compiled out (`env:radio-core2-nowifitest-nobt`, the owner's "network audio mode"), same code: boot free heap 259 KB instead of 160 KB, ~180 KB free at idle, ~100 KB low-water while a phone was on, **0 ENOMEM lines**, and from the iPhone over the hotspot **the page loaded in Safari and audio played**. The phone joined and stayed.
+- Conclusion: the fixes for the search loop are right, and the remaining hotspot failure is internal-heap pressure from the Bluetooth stack (Bluetooth on leaves ~20 KB free once a client is on the hotspot). Bluetooth off is fine today. To use the hotspot with Bluetooth on, internal heap has to go up or lwIP has to be given room: candidates are fewer simultaneous TCP clients in AP mode, smaller AsyncTCP queue (`CONFIG_ASYNC_TCP_QUEUE_SIZE=128`), moving more buffers to PSRAM (careful, the pbuf PSRAM bug), or the board swap. Not attempted here.
+- `env:radio-core2-nowifitest-nobt` is a bench env only, like `-nowifitest`.
+
+### Heap, against the last recorded figures
+| Moment | minFreeHeap |
+|---|---|
+| Box as found, before today (pre-matrix firmware, joined, ML301 connected, idle) | 21,248 |
+| Module 8 piece 1 after a 4 play run (matrix era) | 16,240 |
+| This work, matrix off, idle after boot | 20,408 (0.8 KB under the as-found figure) |
+| same, after the card-file test session | 16,660 |
+| Final shipping flash, 30 s after boot while ML301 connects | 15,320 |
+| Playing Mango Tree World, 0 underruns | 19,160 |
+| Matrix on (the old shipping env), idle | 6,864 to 7,320 |
+Today's code (card-file route, search pause) accounts for under 1 KB at idle plus the transient upload cost above. The big movement is the matrix driver.
+
+### Left for the owner (iPhone, a minute or two)
+1. Done on 2026-11-25 with the owner's iPhone (see item 1). Still worth a look: Android and the captive probe paths, and a way to run the hotspot with Bluetooth on.
+2. Songs and games listing inside the setup sheet itself was not confirmed; Safari at 192.168.4.1 with Bluetooth off works. With Bluetooth on the hotspot cannot serve pages (heap), and the old 30 to 40 KB/s note stands.
+
+## Join any network, keep Bluetooth on (2026-11-25, Opus) - reading written BEFORE code
+
+Replaces the hotspot-memory brief's direction. Owner's idea: instead of the box's own hotspot (which starves with Bluetooth on), the box joins a network: home Wi-Fi, a venue's, or the owner's phone hotspot. As a station the box runs no AP, DHCP or captive DNS, which is the setup that already works with Bluetooth on at home.
+
+Reading, settled act-first:
+- **Several saved networks** (up to `cfg::SAVED_NETWORKS_MAX` = 5), most recent first. Slot 0 keeps the old NVS keys (`ssid`/`pass`) so the network already saved survives the update. Names only ever leave the box (status `saved`), never passwords.
+- **Which one:** boot scans once (blocking, nothing else running yet) and tries the strongest saved network in range; background retries walk the list in turn. Joining moves that network to the front.
+- **Page:** Network window lists saved networks with "Use now" and "Forget"; the join form says any Wi-Fi works, including a phone hotspot; a "Can't find your network?" help block covers 2.4 GHz only (iPhone Maximize Compatibility, Android 2.4 GHz band, router band settings, WPA3-only, hotel login pages); an "Open in browser" button opens the box's page at its current address.
+- **Best practice:** add the phone hotspot while at home through the normal page (works with Bluetooth on). Away from home the box then finds it alone.
+- **First-time setup away from home** (a network never saved) still needs the box's own hotspot, which cannot serve pages with Bluetooth on. Setup boot: when a phone joins the box's hotspot while Bluetooth is running and the box is on no network, the box restarts once with Bluetooth skipped for that boot only (RTC flag, nothing saved). After it joins a network, or once the hotspot has been empty a few minutes, it restarts again with Bluetooth back. Cost: the speaker is silent during first-time setup only.
+- Plan B, not built: Bluetooth's run-time allocations steered to PSRAM by task, and trimmed Wi-Fi buffers. Only if the box's own hotspot has to work with Bluetooth on.
+
+### Built, flashed, verified at home (2026-11-25, Opus). Phone steps NOT yet run.
+- **Code:** `saved_networks.h` (list logic, 13 native tests), `setup_boot.h` (setup-boot decision, 8 native tests), `wifi_manager.cpp` (list in NVS behind a mutex, boot scan picks the strongest saved network, retries walk the list, the joined one moves to the front, `use()` / `forget(ssid)` / `savedNames()`, hotspot held `AP_TEARDOWN_GRACE_MS` after a join; a setup boot raises the hotspot at once), `bt_speaker.cpp` (RTC-only setup-boot mark, `btInUse()` false that boot so the controller memory goes back, `restart(forSetup)`), `main.cpp` (`setupBootTick()`), `web_server.cpp` (`saved` + `setupBoot` in status, `POST /api/wifi/use`, `/api/wifi/forget` takes `ssid`, same hotspot-or-key rule). Page: saved list with Use now / Forget, "Add a network" text saying any Wi-Fi works, a 2.4 GHz help block (iPhone Maximize Compatibility, Android AP band, router band, WPA3-only, sign-in Wi-Fi), an "Open in browser" link that points at the box's new address once joined, a setup-boot note, failure hints. JS tests extended.
+- **Tests:** native 190/190 (169 + 21 new), every `test/*.test.js`, `box.test.mjs` and `test/*.test.py` green. `radio-core2` builds (RAM 31.0%, flash 53.0%).
+- **Flashed** `radio-core2` + page image (hash verified; the box's `playlist.json` matched `data/` first, so nothing was lost).
+- **On the box at home:** the network saved before the update came back as slot 0 (`saved: ["pifi"]`, joined 192.168.0.15). Boot log: `boot scan: saved "pifi" heard at -47 dBm on channel 1`, then joined; one transient `reason 2` before the join, recovered by itself. ML301 reconnected. `/api/wifi/use` and `/api/wifi/forget` answer 401 from the home network without the key. Served page has the new markup and bundle code.
+- **Heap with ML301 connected:** idle free 17,844 / largest 8,180 / min 14,076; after 3 page loads free 19,404 / largest 9,716 / **min 12,160** (earlier figures in this file: 15,320 at boot settle, 9,804 after game sweeps). The list costs well under 1 KB.
+- **Seen, not caused by this as far as I can tell, not A/B tested:** with Bluetooth connected, 20% ping loss to the box and occasional 1 to 3 s TCP connects (one `/api/status` timed out at 6 s). Matches the long-standing "Bluetooth on: modem sleep, slow Wi-Fi" note; worth an A/B against the previous firmware if it bothers anyone.
+- **Not verified (needs the owner's phone; this Mac cannot be a hotspot client without dropping the session):** (1) adding a network and Use now / Forget from a paired phone; (2) the box joining a phone hotspot with Bluetooth on and the page plus playback working there; (3) the setup boot: a phone joining "Lakehorse Radio" with Bluetooth on restarts the box without Bluetooth, the setup sheet loads, and after a join the box restarts with Bluetooth back.
+
+**Owner test, about 10 minutes, iPhone:**
+1. At home: on the iPhone turn Personal Hotspot on, with Maximize Compatibility on. Open the box page (lakehorseradio.local), Network, Add a network: pick the iPhone's hotspot, type its password, Join. Expect the box to move to the hotspot. Switch nothing on the phone (it is the hotspot). Open the page by tapping Open in browser from the Network window on the next visit, or open `http://lakehorseradio.local`. If the name does not load from the hotspot iPhone, read the box's address off its serial log or the router and report it: then the page needs to show the address in a better way.
+2. On the hotspot with ML301 playing: play a song to the phone from the page. Report whether it loads and plays.
+3. Forget the iPhone hotspot from the saved list (or switch the hotspot off): the box should go back to pifi within about 30 s.
+4. Optional, away-from-home setup: with no saved network in range, join "Lakehorse Radio" from the phone. The box restarts once (Bluetooth rests), the setup sheet should load. Add a network; once joined, about 20 s later the box restarts with Bluetooth back.
+
+### Pairing from home (2026-11-25, later): built after the owner's first test failed
+- **What happened:** the owner tapped Forget network at `lakehorseradio.local`. The page showed its "the box will start its own hotspot" warning, the box refused (401, phone not paired at that address), and nothing changed. Two causes: the pairing key is kept per address (paired at 192.168.4.1 is not paired at lakehorseradio.local), and the key was only handed out over the box's hotspot, which is down whenever the box is on a network. The page also showed Forget to an unpaired phone.
+- **Fix:** `pair_window.h` (7 native tests): hold the dev board's **BOOT** button (GPIO 0) 3 s, or power the box on (unplug/plug; a software restart does not count), and `/api/pair` answers on any network for 2 minutes (`cfg::PAIR_*`). The Network window shows "Pair this phone" with those instructions to an unpaired visitor and hides Forget and the network controls from it. Status carries `pairOpen`.
+- Verified: after a serial/esptool reset (not a power-on) `pairOpen` is false and `/api/pair` from pifi is refused with the instructions. The BOOT button and the power-on path were not exercised (need hands on the box).
+
+### Audit of this work (2026-11-25, end of session)
+Fixed during the audit, flashed:
+1. **`onAccessPointSubnet()` trusted any 192.168.4.x client even with the hotspot down** (`softAPIP()` keeps reporting 192.168.4.1). Pre-existing, but with the box now joining venue networks a guest on a 192.168.4.x network would have been treated as "at the box": network changes without a key, and the key handed out. Now requires the hotspot to be up.
+2. **`g_ssid` (an Arduino String) shared between the loop and web tasks unguarded.** Now read and written under `g_listMutex` (`currentSsid()`).
+3. **Setup boot could keep Bluetooth off for good** if the hotspot failed to come up (the empty timer reset while the hotspot was down). Now only a phone on the hotspot resets it.
+4. Help text: if `lakehorseradio.local` does not open on an iPhone hotspot, try 172.20.10.2, .3, ...
+
+Known trade-offs, not changed (owner's call):
+- **The hotspot is open (no password).** With Bluetooth on and no saved network in range, any phone that joins "Lakehorse Radio" (iOS auto-joins open networks it has joined before) restarts the box into a setup boot, Bluetooth off. While that phone stays joined Bluetooth stays off; 3 min after it leaves the box restarts with Bluetooth. Fix if it bites: a hotspot password, at the cost of typing it once per phone.
+- **Power-on pairing window:** for 2 minutes after a power cut anyone on the same network can pair (one shared key, full rights). Same model as WPS. Fix if it bites: BOOT button only.
+- **Strongest saved network wins at boot.** At home with the phone hotspot also on, the box may pick the hotspot. Turn the hotspot off, or Use now on home.
+- **Bluetooth on = slow, lossy Wi-Fi** (modem sleep): 20% ping loss and 1 to 3 s connects seen at home. Pre-existing; affects every network equally, the phone hotspot included.
+
+Unknowns only the phone test can answer, in order of risk:
+1. Does `lakehorseradio.local` resolve from the iPhone that is hosting the hotspot? If not, the box is reachable only by trying 172.20.10.x. If that is common, the next fix is the box showing its address somewhere the owner can see it (the ML301 announcing it is not possible; options: the page on the previous network shows "last known address", or a fixed address request).
+2. Does the iPhone hotspot keep a modem-sleeping ESP32 client joined for a whole session?
+3. In the iOS setup sheet, does "Open in browser" open Safari or stay inside the sheet?
+4. Does a song stream to the phone over the hotspot with Bluetooth playing on ML301 (the original goal)?
+
+### Morning plan (owner + next session)
+1. At the box: unplug and plug it in (or hold BOOT 3 s). Within 2 minutes, phone on pifi, open `lakehorseradio.local`, Network, **Pair this phone**.
+2. iPhone: Personal Hotspot on, Maximize Compatibility on. Network, Add a network: the iPhone hotspot, Join. Keep the Personal Hotspot screen open while it joins.
+3. Open `http://lakehorseradio.local` on that iPhone (or 172.20.10.2, .3, ...). Report which address worked.
+4. With ML301 playing from the box, play a song to the phone. Report: loads? plays? drops?
+5. Turn the hotspot off: the box should be back on pifi within about a minute.
+6. Optional: setup boot (no saved network in range, join "Lakehorse Radio"), steps in the "Owner test" list above.
+Next session: read the owner's answers to the four unknowns first; if (1) fails, build the address display; if (4) fails, then and only then plan B (Bluetooth run-time memory to PSRAM).
+
+
+## Shell Module 9: help and look (2026-11-25) - BUILT, flashed, not yet seen on an iPhone 8
+
+**Start state.** Repo toplevel `esp music v1`, branch `lakehorse-radio`, commit `a53c5a3`, working tree dirty (about 49 entries, mostly another session's uncommitted work). Nothing committed or pushed by this session, as briefed.
+
+**What exists.**
+- `data/frame.js`: every `.win-title` gets a "?" button and the close button becomes a skull SVG (aria-label "Close <title>", 44 px target).
+- `data/help.js`: What's this? mode. A transparent full-page catcher takes the next tap, `elementFromPoint` finds the target, the nearest `data-help` picks the text, a bubble shows it, and the tap does nothing else. "?" then a title bar explains the window. Help window index (Start > Help) is built from `help.json` on first open.
+- `data/help.json`: 86 entries, plain text, written from the code as it stands. Includes the no-control features (BOOT button, power-on pairing, speaker buttons, saved networks, phone hotspot, hotspot setup boot, alignment scoring, band-tracks.json, alignment pattern, tube look, drive-b.json). Fetched lazily with `cache:'no-cache'` because the box serves assets with a 70-day immutable cache. Missing or malformed file gives "Help could not be loaded" and the page works.
+- `data/lens.js`: Start > "Screen: tube/clean", remembered in localStorage `lakehorse.lens`. Five fixed inline layers (noise, scanlines, roll, tear, vignette), all pointer-events none, text-shadow fringe excluded from inputs and the bubble, `prefers-reduced-motion` stops animation.
+- Look: windows 22 px, buttons/inputs/panels/taskbar items 14 px, title bars 20 px top, taskbar 26 px top, balloons/badges 18 px, panels clip. Bevel colours unchanged.
+- Test: `test/help-coverage.test.js` (every interactive element has a `data-help` that exists; every entry is reachable from an element or the Help index), plus `test/help.test.js`.
+
+**Decisions.**
+- Left out on purpose: the warp filter (a filter on body breaks position:fixed and moves tap targets) and backdrop-filter bands (costly on an iPhone 8). Roll and tear are plain gradient layers.
+- Network work untouched: in `network-window.js`, `speaker-panel.js`, `library.js`, `shell.js` and the Network part of `index.html` only `data-help` attributes were added. No `src/` Wi-Fi, pairing or setup-boot code touched. `network-window.test.js` and the native savednets, setupboot and pairwindow suites were identical before and after.
+- Matrix driver kept off: `env:radio-core2` has no `LAKEHORSE_MATRIX` flag, boot log says "built without the LED driver", `/api/matrix` reports `hardware:false`. Driver code not deleted. Only addition: the driver feeds alignment points before render (inside the `LAKEHORSE_MATRIX` block, never compiled in).
+
+## Shell Module 8, pieces 2 and 3: Drive B and the Alignment pattern (2026-11-25) - BUILT, flashed, verified on the box except as listed
+
+**What exists.**
+- `data/drive-b.js` + Drive B desktop icon, Start entry and window: file list, ENIAS panel with big percent, 8x8 lattice (locked nodes teal and joined by thin lines, unlocked nodes orange rings at fixed per-node offsets), short event log built from what the page sees, balloons that hint and never state the rule.
+- Data: `data/drive-b.json`, four PLACEHOLDER files at thresholds 0, 25, 60, 100 (LOG_0417.TXT text, CREW_MANIFEST.DAT text, TX_PROMO.WAV download, SHOW_TICKETS.LNK link). Gzipped by `tools/gzip_data.py` like other json (test added). Locked file: half-garbled name, status resolving toward its threshold, tap stutters and shows "read error: try after the next track". Unlocked: text in a viewer, download via anchor, link in a new tab (javascript: and `//` URLs refused). Malformed or missing file: window still opens, empty list.
+- Requests: `/api/status` only while the window is open: on open, about 1.5 s after a song change, and every 20 s (paused when the tab is hidden). None when closed. Snap animation on newly locked nodes, flash on the node of a finished song.
+- Matrix: `Mode::Alignment` in `matrix_engine`. Points 0 to 6400, clamped; 100 per node. Locked nodes steady and bright, in diagonals outward from the bottom-left corner. Unlocked points wander at dim level with disorder proportional to the missing share; the node being earned glows as its share fills. Pure function of points, seed and clock. In the pattern list and the virtual window ("Align"), 64-char frame. 11 native tests: deterministic, monotone, correct at 0 and 6400, clamp, cell order pinned.
+- Phone-mode song reporting from the page is NOT built. Only songs the box plays count; the help text says so.
+
+**Audit before flashing.** Points are clamped in `setAlignment`. The web handler reads `alignment::snapshot()` (copy) so no shared mutable state with the engine. Malformed or missing `help.json` / `drive-b.json` leave the shell and Drive B usable (unit tests).
+
+**Measured on the box (192.168.0.15, Bluetooth on).**
+- Native 208/208 (was 197). All JS and Python tests green, unchanged suites identical.
+- Full song (Mango Tree World) at volume 0.04: 0 underruns; total 0 to 100. Volume restored to 0.4, playback stopped.
+- Drive B percent equals `/api/status` (1%, 1 of 64 at 100 points; 3%, 2 of 64 at 200 after a level-clear event), snap animation seen, locked file shows the read error, unlocked file opens in the viewer. Matrix alignment frame at 200 points has 2 locked nodes, `hardware:false`.
+- Page on the wire: 65,275 bytes (bundle 51,544, css 7,300, html 6,431).
+- **First load did NOT meet Module 1's 1.0 s.** pageload.py: best 4.9 to 8.2 s, median about 15 s with several 15 s timeouts. The link itself is bad with Bluetooth on (ping 7% loss, 9 to 120 ms; single curl of the bundle 3 to 8 s, some resets), so this is not cleanly attributable; no A/B against the earlier page was run. A repeat visit answers 304 in about 0.35 s. The in-app browser lost the bundle and css to connection resets twice, so the on-box UI check ran the real box-served bundle fetched with retries and evaluated in the page; CSS-dependent looks were checked on the dev server only.
+- **minFreeHeap 9,544 now** (12,628 after the song; last recorded in this file 12,160 and 15,320). It is lower than before. It follows page loads and a song on a saturated link, so it may be the test load rather than the code, but it is not proven; to settle it, reboot, load the page three times, read minFreeHeap, and compare with the previous build.
+
+**Reset.** Alignment total reset to 0 with `env:radio-core2-aligntest` (`POST /api/test/align-reset`), then shipping `env:radio-core2` reflashed (upload speed 115200, flash never erased). Verified: test route 404, total 0, `/api/matrix` mode off.
+
+**Not verified.** Lens smoothness and touch behaviour on the iPhone 8. What's this? and skull on every window were checked on the dev server, and Drive B and shell wiring on the box, not each window on the box. Network and pairing phone test is still pending from the other session. Real matrix hardware: untouched.
+
+
+## Follow-up 2026-11-25: first load, heap, box check, phone-mode song reporting
+
+**First load (was 1.0 s target; first pass measured a 15 s median).** Cause found, not the link alone: three parallel large responses (css, bundle, late files) stall on this box with Bluetooth on (3 in parallel took 13 to 40 s or came back short; the same files one after another took 2 s). The in-app browser's connection resets were the same thing. Fix, all in the build: `tools/gzip_data.py` now
+- folds `style.css` and `bundle.js` into `index.html` when the page carries `<!-- inline-critical -->`, so the first screen is ONE request (50.9 KB gzipped, was 65.3 KB over three);
+- moves `help.js`, `drive-b.js` and `wavconvert.js` (tags marked `data-late`) into `late.js`, fetched 800 ms after the page's load event by a tiny inline loader (`document.currentScript` is read at parse time, a bug I caught on the box and pinned with a test). Before late.js arrives the "?" button, Drive B and in-browser WAV conversion do nothing; on a good link that is about a second.
+- Measured on the box with `tools/pageload.py` (page plus late.js, 8 to 10 rounds, 0 failed): best 0.67 to 1.24 s, median 1.46 to 1.55 s, worst 2.7 to 4 s. Page alone by curl: 0.8 to 1.1 s. Repeat visit: 304 in 0.3 to 0.7 s. So the page itself is close to 1.0 s; the whole first load including late.js is about 1.5 s median, so the 1.0 s target is still not met by the full pageload.py figure. Tests: 27 in `test/gzip_data.test.py`.
+
+**minFreeHeap.** Static RAM A/B: building the shipping firmware with my three matrix files reverted to HEAD gives 101,660 bytes used; with them 101,668 (8 bytes). So the firmware change is not the cause. Heap dips with page traffic: 20,932 to 24,000 fresh after boot, 11,240 after 14 loads, 9,720 after about 10 more, 9,544 earlier. Last figure recorded before (12,160 after 3 loads) is therefore comparable, not a regression, but the floor under repeated loads sits near 10 KB with Bluetooth on.
+
+**Box check in the real browser (the full box-served page).** All 7 windows open and close with the skull; What's this? gave the right bubble on controls in Player, Speaker, Network, Matrix and Drive B (the Games window has no plain button to sample); the Help index built 29 entries; the lens toggle works and reads "Screen: tube/clean". Found and fixed: the "?" and skull buttons were 28 px tall; their tap area is now 44 px tall (padding pseudo-element, overflow visible).
+Note: the in-app browser pane stalls pages whenever the box is saturated, and once the box stopped answering altogether (host down for more than 5 minutes). I opened its serial port, which resets it, and it came back on Wi-Fi at once; the cause of that outage was not captured. Watch for it.
+
+**Phone-mode song reporting is now built.** `data/align-report.js` tracks time actually listened (position steps of at most 1.5 s, so seeking to the end earns nothing) for songs the browser backend plays from the card: 95% listened counts as full, 50% as partial, leaving earlier counts nothing; it reports when the song changes, stops, or the page is hidden. The box player gets no tracker, so nothing counts twice. Firmware: `POST /api/alignment/event` now accepts a song id that is a playlist title OR a file listed in `/band-tracks.json` on the card (`alignment::isBandSong`). Verified on the box: an unknown name answers 400, "Mango Tree World.wav" credits +10 as partial, the same event again is a repeat and adds 0. Not tried: a real song played in a phone browser (the pane could not stream a 40 MB WAV through this link). `test/align-report.test.js` covers the tracker. The help text for Alignment scoring was updated.
+The total was reset to 0 again afterwards the same way as before (aligntest build, reset, shipping `radio-core2` reflashed; the test route answers 404, total 0). All native (208), JS and Python tests pass.
+
+## Network changes are open while building (2026-11-25, on the owner's word)
+The owner could not configure Wi-Fi: the Network window hides the list from a phone with no pairing key (a lost key, a cleared Safari, a different address all do it), and BOOT pairing is not acceptable to ship. `cfg::NETWORK_CHANGES_NEED_KEY` (config.h, default false, same pattern as `SD_WRITES_NEED_KEY`) now makes `/api/wifi` join, use and forget accept anyone on the network, and `/api/status` carries `networkOpen:true` so the page always offers the list. Set it true before the box goes anywhere shared: then the old rule returns (box hotspot or pairing key, BOOT or power-on window). Flashed (firmware and page); verified: status `networkOpen:true`, `wifi/use` and `wifi/forget` from an unpaired client answer "not saved" instead of 401. `network-window.test.js` has two new cases; native 208/208. A real phone test of joining or leaving a network is still pending. Hotspot pairing from the page was NOT built: it only matters with the lock on, and it would touch the setup-boot code that has not yet had its iPhone test.
+
+Pair button returned (2026-11-25): with setup open to everyone, a phone holding no key still sees an optional "Pair this phone" row under the form (`#pairIntro`, app.js applyStatus). Flashed with the page image. Phone hotspot not seen by the box on the first iPhone test; retrying with Maximize Compatibility on.
+
+## Host mode (2026-11-25, owner request)
+Network window button "Host its own network" (`#hostBtn`, shown only while joined to a network): `POST /api/wifi/host` -> `wifinet::hostMode()` sets a flag, `tick()` drops the station (nothing forgotten), raises the "Lakehorse Radio" hotspot and starts no attempts while `g_hostMode` holds. Leaves host mode when `use()` or `provision()` picks a network (reconnect() from the watchdog is ignored while hosting); a restart returns to the saved networks as usual (not persisted on purpose). `/api/status` carries `hostMode` and reports station idle and an empty ssid while hosting; the page shows a note with 192.168.4.1. Verified on the box from the Mac: host -> hotspot answered at 192.168.4.1 with `viaAccessPoint:true`, stayed hosting after 45 s with both saved networks kept, `wifi/use pifi` put it back on pifi. Not tried on a phone. Native 208/208; JS tests pass. No native test for the Arduino-only radio part.
+Scan note: the page now says a phone's own hotspot will not appear in the scan while that phone shows the page; type the name instead (2026-11-25).

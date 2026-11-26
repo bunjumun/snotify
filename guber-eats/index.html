@@ -2059,13 +2059,18 @@ class Game {
     const rows = e.funeral.items.map(([n, a]) => `<tr class="sub"><td>${n}</td><td>-${money(a)}</td></tr>`).join('');
     const prompt = neg ? `Your estate owes <b class="neg">${money(-e.final)}</b>. Please enter your Credit Card #, Expiration, CVV, and Mother's Maiden Name to settle your estate's remaining balance.`
       : `A final estate-processing fee of <b>${money(e.fee)}</b> (2.9% + $0.30) applies to the remaining balance. Please enter your Credit Card #, Expiration, CVV, and Mother's Maiden Name to process the transfer to your heirs.`;
+    // a positive balance goes to the next of kin as a Shamazon gift card (satire: the fields are wiped on exit and read by nothing)
+    const kin = neg ? '' : `<div>You died with <b class="pos">${money(e.final)}</b>. Please enter your next of kin's name and address so we can send them a <b>Shamazon</b> gift card for that amount.</div>
+        <input type="text" autocomplete="off" placeholder="Next of kin's full name (joke)" data-joke>
+        <input type="text" autocomplete="off" placeholder="Next of kin's address (joke)" data-joke>
+        <div class="fine">Gift card valid at Shamazon only. Expires on delivery. No cash value.</div>`;
     $('overCard').innerHTML = `<h1 class="logo" style="font-size:44px">Wrecked</h1><div class="tag">${this.causeText} &middot; ${this.decade.id} &middot; ${this.diff.label}</div>
       <h3>Final net worth &amp; estate statement</h3>
       <table class="est"><tr><td>Pre-death net worth</td><td class="${e.pre < 0 ? 'neg' : ''}">${money(e.pre)}</td></tr>
         <tr class="sub"><td>Repairs paid by you (already deducted)</td><td>-${money(this.eco.stats.repairs)}</td></tr><tr class="sub"><td>Repairs insurance covered</td><td>${money(this.eco.stats.covered)}</td></tr><tr class="sub"><td>Insurance premiums paid</td><td>-${money(this.eco.stats.premiums)}</td></tr>
         <tr><td>Funeral &amp; burial expenses (${this.decade.id} prices)</td><td>-${money(e.funeral.total)}</td></tr>${rows}
         <tr class="tot"><td>Final balance</td><td class="${neg ? 'neg' : 'pos'}">${money(e.final)}</td></tr></table>
-      <div class="joke"><div>${prompt}</div>
+      <div class="joke">${kin}<div>${prompt}</div>
         <input type="text" autocomplete="off" placeholder="Credit Card # (this is a joke)" data-joke>
         <div class="two"><input type="text" autocomplete="off" placeholder="Expiration (joke)" data-joke><input type="text" autocomplete="off" placeholder="CVV (joke)" data-joke></div>
         <input type="text" autocomplete="off" placeholder="Mother's Maiden Name (joke)" data-joke>

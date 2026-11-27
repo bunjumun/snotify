@@ -83,6 +83,9 @@ canvas{display:block}
 #banner p{margin:8px 0 0;font:800 clamp(13px,2vw,20px) var(--mono);color:#fff;text-shadow:0 2px 0 #08080a,0 0 8px #08080a}
 #slot{position:fixed;left:50%;top:60%;transform:translate(-50%,0);z-index:14;pointer-events:none;display:flex;gap:6px}
 #slot span{display:block;min-width:84px;padding:8px 10px;text-align:center;background:#08080a;border:2px solid #fff;border-radius:3px;font:800 28px var(--mono)}
+#mini{position:absolute;left:14px;bottom:128px;width:150px;height:150px;border-radius:50%;background:rgba(8,8,10,.62);border:2px solid rgba(255,255,255,.35)}
+body.touch #mini{display:none}
+#hunt{position:fixed;inset:0;pointer-events:none;z-index:11;opacity:0;box-shadow:inset 0 0 140px 30px rgba(255,20,20,.55);transition:opacity .4s}#hunt.on{opacity:1;animation:huntp 1s infinite alternate}@keyframes huntp{from{box-shadow:inset 0 0 120px 20px rgba(255,20,20,.35)}to{box-shadow:inset 0 0 170px 45px rgba(255,20,20,.7)}}
 #flash{position:fixed;inset:0;pointer-events:none;z-index:12;opacity:0;background:radial-gradient(ellipse at center,transparent 40%,rgba(255,60,60,.75) 100%)}
 #flash.on{animation:flash .45s}@keyframes flash{0%{opacity:1}100%{opacity:0}}
 
@@ -179,10 +182,11 @@ body.touch .panel::before{height:5px;margin-bottom:5px}
     <div class="row" style="margin-top:8px"><span class="lbl">Vehicle</span><span class="small" id="hHpTxt">100%</span></div>
     <div class="bar hp" id="hHp"><i></i></div>
   </div>
+  <canvas id="mini" width="300" height="300"></canvas>
   <div id="navwrap"></div>
   <div id="navInfo"><div id="navDist">--</div><div id="navLabel">--</div></div>
   <div class="panel" id="pnlRight">
-    <span class="badge" id="hDecade">1940s</span> <span class="badge dim" id="hDiff">Middle Class</span>
+    <span class="badge" id="hDecade">1970s</span> <span class="badge dim" id="hDiff">Middle Class</span>
     <div class="small" style="margin-top:6px" id="hQuota">0 / 6 deliveries</div>
     <div class="small" id="hCover"></div>
   </div>
@@ -206,7 +210,10 @@ body.touch .panel::before{height:5px;margin-bottom:5px}
     <div class="bar thin"><i id="hBoost"></i></div>
     <div class="row" style="margin-top:6px"><span class="lbl">DOINK stash</span><span class="mono" id="hStash">0/8</span></div>
     <div class="bar thin"><i id="hStashBar" style="background:#5dff7a"></i></div>
+    <div class="row" style="margin-top:6px"><span class="lbl">Bernstain files</span><span class="mono" id="hFiles">0/1</span></div>
+    <div class="bar thin"><i id="hFilesBar" style="background:#e8c46a"></i></div>
     <div class="small" id="hDoink"></div>
+    <div class="small" id="hHunt" style="color:#ff6a6a;font-weight:800"></div>
   </div>
 </div>
 <div id="tc">
@@ -219,6 +226,7 @@ body.touch .panel::before{height:5px;margin-bottom:5px}
   <button class="tcb" id="tcPause" data-k="pause"><span>Pause</span></button>
 </div>
 <div id="rotate"><i></i><b>Turn your phone sideways</b></div>
+<div id="hunt"></div>
 <div id="callouts" class="layer"></div>
 <div id="banner"><h2></h2><p></p></div>
 <div id="slot" class="hide"><span>?</span><span>?</span><span>?</span></div>
@@ -227,14 +235,13 @@ body.touch .panel::before{height:5px;margin-bottom:5px}
 <div class="screen" id="scTitle">
   <div class="card">
     <h1 class="logo">Guber<br>Eats</h1>
-    <div class="tag">A Lakehorse arcade delivery game &middot; 1940s &rarr; today</div>
+    <div class="tag">A Lakehorse arcade delivery game &middot; 1970s &rarr; today</div>
     <h3>Family income</h3>
     <div class="opts" id="optDiff"></div>
     <h3>Start in</h3>
     <select id="selDecade"></select>
     <div class="btns">
       <button class="btn primary" id="btnStart">Start shift (Enter)</button>
-      <button class="btn" id="btnDep" disabled>The Great Depression (locked)</button>
       <button class="btn" id="btnDemo">Demo: watch it play</button>
     </div>
     <h3>Controls</h3>
@@ -275,8 +282,8 @@ function money(n, signed = false) {
   return s + '$' + body;
 }
 const $ = (id) => document.getElementById(id);
-/* Alignment points (lakehorse-radio/ALIGNMENT-BRIEF.md). Only on the box, which sets window.LAKEHORSE_BOX. Level ids: the decades 0..8 in order,
-   the Depression is Decades.list.length (9); the Swimulator is 16. A demo run sends demo=1: a tenth of the credit, and it never ticks the level. */
+/* Alignment points (lakehorse-radio/ALIGNMENT-BRIEF.md). Only on the box, which sets window.LAKEHORSE_BOX. Level ids: the decades 0..5 in order
+   (1970s to 2020s; before 2026-11-27 they were 0..8 from the 1940s, plus the Depression at 9); the Swimulator is 16. A demo run sends demo=1: a tenth of the credit, and it never ticks the level. */
 const Align = {
   url(id, result, demo) { return `/api/alignment/event?source=level&id=${id}&result=${result}${demo ? '&demo=1' : ''}`; },
   post(id, result, demo) { if (!window.LAKEHORSE_BOX) return; try { fetch(this.url(id, result, demo), { method: 'POST', keepalive: true }).catch(() => {}); } catch (e) { /* never touch the game */ } },
@@ -287,9 +294,9 @@ const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
 
 const Save = {
   key: 'guberEats.v1',
-  defaults() { return { depressionUnlocked: false, maxDecade: 0, bestWorth: 0, doinkTutorial: false }; },
+  defaults() { return { maxDecade: 0, bestWorth: 0, doinkTutorial: false }; },
   noWrite: false, // demo mode: watching must never change what the player has unlocked
-  load() { try { return Object.assign(this.defaults(), JSON.parse(localStorage.getItem(this.key) || '{}')); } catch (e) { return this.defaults(); } },
+  load() { try { const d = Object.assign(this.defaults(), JSON.parse(localStorage.getItem(this.key) || '{}')); d.maxDecade = Math.min(d.maxDecade, Decades.list.length - 1); return d; } catch (e) { return this.defaults(); } },
   write(d) { if (this.noWrite) return; try { localStorage.setItem(this.key, JSON.stringify(d)); } catch (e) { /* storage blocked: the run still plays, it just will not remember */ } },
 };
 
@@ -306,9 +313,9 @@ const GameConfig = {
      rather than a wreck below `heavyWreck` m/s. The fleet is kept within `recycleDist` of the player, `drawDist` is the cull. */
   npc: {
     car: 1.8, bus: .18, truck: .18, moto: .3, parked: .9, cops: 3, rivals: 2,
-    speed: { car: [10, 16], bus: [7, 10], truck: [8, 12], moto: [17, 23], cop: [12, 15], rival: [21, 25] },
-    r: { car: 3.1, bus: 4.4, truck: 3.9, moto: 2.1, cop: 3.1, rival: 3.4, parked: 3.1 },
-    mass: { car: 1, bus: 2.4, truck: 1.9, moto: .45, cop: 1.15, rival: 1.2, parked: 1 },
+    speed: { car: [10, 16], bus: [7, 10], truck: [8, 12], moto: [17, 23], cop: [12, 15], rival: [21, 25], army: [26, 30] },
+    r: { car: 3.1, bus: 4.4, truck: 3.9, moto: 2.1, cop: 3.1, rival: 3.4, parked: 3.1, army: 4.4 },
+    mass: { car: 1, bus: 2.4, truck: 1.9, moto: .45, cop: 1.15, rival: 1.2, parked: 1, army: 2.8 },
     heavyWreck: 20, spawnMin: 45, spawnMax: 230, recycleDist: 280, drawDist: 240,
     copHeat: .25, chaseRange: 250, copTop: 38, heatPerHit: .45, heatPerPed: .6, heatDecay: .035, fine: 40, stealCd: 30, stealRadius: 18,
     /* Order stealing (2026-11-26). Half the rivals start the run carrying an order, so there is something to take. After any swap
@@ -331,11 +338,20 @@ const GameConfig = {
   theme: {
     startAt: 8, // seconds: Currency skips its first 8 s whenever it starts
     sources: ['../tracks/lakehorse/Currency/theme.m4a', '../lakehorse-radio/music/Currency Mix 8-24-26.wav'],
-    era: { '1930s': { hp: 450, lp: 2400, rate: 0.96 }, '1940s': { hp: 300, lp: 3600, rate: 1 }, '1950s': { hp: 120, lp: 6000, rate: 1 }, '1960s': { hp: 80, lp: 8500, rate: 1 },
-           '1970s': { hp: 40, lp: 12000, rate: 1 }, full: { hp: 20, lp: 20000, rate: 1 } },
+    era: { '1970s': { hp: 40, lp: 12000, rate: 1 }, full: { hp: 20, lp: 20000, rate: 1 } },
   },
+  /* Buildings start new and rot as the era's deliveries are made (age 0..1 scales the decay painted over the walls and the grime shader).
+     A DOINK flight low enough to clip a roof razes the whole block: `razeDelay` s of rubble, then it regrows over `growTime` s as clean new buildings. */
+  age: { start: .12, end: 1, grime: [.45, 1], razeDelay: 3.5, growTime: 2.5, minGap: .35, bandChance: (dec) => (dec.year < 1990 ? .6 : dec.year < 2010 ? .4 : .3) },
+  /* Nepo: every `every`th billed crash is ruled in your favour: the repair is refunded and `payback` x the bill is paid on top. */
+  nepo: { every: 5, payback: 1.5 },
+  /* Digital DOINK: every `every`th DOINK hit drops one somewhere on the map. Touch it for `cash` (2020s dollars, scaled by wage like all pay), a clean police record and a repaired van. */
+  /* Bernstain files: manila folders on the map, worth a quarter or a half; a whole file (1.0) turns the army and every cop on you until you
+     hit a DOINK or Digital DOINK. `army` vehicles are built once and woken by the hunt; contact is a heavy hit, never a fine. */
+  files: { count: 14, deck: [.25, .25, .5], radius: 7, respawn: 30, scale: 2.6 },
+  hunt: { army: 4, armyLite: 2, speed: [26, 30], top: 46, r: 4.4, mass: 2.8, hitMin: 20, chaseRange: 600 },
+  digital: { every: 3, cash: 10000, minFrom: 110, radius: 6 },
   drainBase: 2.2,
-  depressionYears: 1, // was 3 when a year was 3 minutes; a year is now ~20
   funeral2020s: 9400,
   stunt: { nearMiss: 2, drift: 5, air: 8, smash: 0.5, comboWindow: 4.5 },
   /* Driving assists (2026-11-25, "easier on all modes, scaled up from easy"). These are shared; the per-difficulty half is
@@ -348,7 +364,7 @@ const GameConfig = {
      wheel for the pull, rise and hold while the camera circles the van, the world goes strange for the taper, and you get
      a banked dash and some cash. Order timers stop while you are not driving. */
   doink: { count: 4, baggies: 32, needed: 8, bagDeck: [1, 1, 1, 2, 2, 4], bagScale: 3.4, bagRadius: 7, radius: 6, height: 15, minApart: 150,
-           pull: 0.6, rise: 1.5, flyTime: 14, flySpeed: 110, climbSpeed: 90, cruiseAbove: 30, dwell: 0.6, minLeg: 4, taper: 30, dashBank: 1, dashBankMax: 3, cash: 70, bagRespawn: 18, nagCd: 3 },
+           pull: 0.6, rise: 1.5, flyTime: 14, flySpeed: 110, climbSpeed: 90, cruiseFrac: .95, cruiseMin: 16, dwell: 0.6, minLeg: 4, taper: 30, dashBank: 1, dashBankMax: 3, cash: 70, bagRespawn: 18, nagCd: 3 },
 };
 
 /* ======================================================================
@@ -358,38 +374,28 @@ const GameConfig = {
    ====================================================================== */
 const Decades = {
   list: [
-    { id: '1940s', year: 1940, tag: 'POST-WAR RECOVERY', cpi: .075, payMul: 1, tipMul: 1, drainMul: 1, height: .7, traffic: 12, style: 'coupe',
-      light: '#d8d0b8', dark: '#1b1a1e', accent: '#b08d4f', sky: ['#3d5164', '#d6c6a0'], fog: '#a69f86', ground: '#1d1c1a', road: '#26262a', night: false,
-      music: { bpm: 92, root: 48, scale: [0, 2, 3, 5, 7, 8, 10], wave: 'triangle', bass: 'sine', drum: 'brush', swing: .2 } },
-    { id: '1950s', year: 1950, tag: 'DRIVE-IN BOOM', cpi: .10, payMul: 1, tipMul: 1.05, drainMul: 1, height: .8, traffic: 14, style: 'fins',
-      light: '#f1e2cf', dark: '#15202b', accent: '#3fc1b7', sky: ['#6fb7d6', '#fbe3c2'], fog: '#cfd8d8', ground: '#222a2e', road: '#2b3136', night: false,
-      music: { bpm: 126, root: 45, scale: [0, 2, 4, 7, 9], wave: 'triangle', bass: 'sine', drum: 'rock', swing: .3 } },
-    { id: '1960s', year: 1960, tag: 'MOD & MUSCLE', cpi: .125, payMul: 1, tipMul: 1.05, drainMul: 1, height: .9, traffic: 15, style: 'muscle',
-      light: '#fff6e0', dark: '#1a1218', accent: '#ff7a1a', sky: ['#ff9f6b', '#ffe6b0'], fog: '#e9c9a0', ground: '#2a2020', road: '#2d2a2e', night: false,
-      music: { bpm: 118, root: 52, scale: [0, 3, 5, 6, 7, 10], wave: 'sawtooth', bass: 'triangle', drum: 'rock', swing: .1 } },
-    { id: '1970s', year: 1970, tag: 'GAS LINES & DISCO', cpi: .19, payMul: .92, tipMul: 1, drainMul: 1.08, height: 1, traffic: 16, style: 'wagon',
+    { id: '1970s', top: 0.08, rent: 0.34, year: 1970, tag: 'GAS LINES & DISCO', cpi: .19, payMul: .92, tipMul: 1, drainMul: 1.08, height: 1, traffic: 16, style: 'wagon',
       light: '#e6d3a3', dark: '#2a1a10', accent: '#d9822b', sky: ['#c9743a', '#f0c27a'], fog: '#c99a62', ground: '#2a1e14', road: '#2e2620', night: false,
       music: { bpm: 108, root: 45, scale: [0, 2, 3, 5, 7, 9, 10], wave: 'sawtooth', bass: 'sawtooth', drum: 'disco', swing: 0 } },
-    { id: '1980s', year: 1980, tag: 'NEON & BIG HAIR', cpi: .37, payMul: 1, tipMul: 1.1, drainMul: 1.1, height: 1.15, traffic: 18, style: 'wedge',
+    { id: '1980s', top: 0.1, rent: 0.38, year: 1980, tag: 'NEON & BIG HAIR', cpi: .37, payMul: 1, tipMul: 1.1, drainMul: 1.1, height: 1.15, traffic: 18, style: 'wedge',
       light: '#f2ecff', dark: '#0b0720', accent: '#ff2fd0', sky: ['#1a0b3d', '#ff4fa3'], fog: '#5a2a7a', ground: '#120a24', road: '#1a1330', night: true,
       music: { bpm: 112, root: 45, scale: [0, 2, 3, 5, 7, 8, 10], wave: 'sawtooth', bass: 'square', drum: 'synth', swing: 0 } },
-    { id: '1990s', year: 1990, tag: 'DIAL-UP DAYS', cpi: .55, payMul: 1, tipMul: 1.05, drainMul: 1.12, height: 1.2, traffic: 19, style: 'hatch',
+    { id: '1990s', top: 0.14, rent: 0.4, year: 1990, tag: 'DIAL-UP DAYS', cpi: .55, payMul: 1, tipMul: 1.05, drainMul: 1.12, height: 1.2, traffic: 19, style: 'hatch',
       light: '#e8f1ff', dark: '#0e1230', accent: '#19e6c1', sky: ['#3b2f8f', '#7fd1ff'], fog: '#8fa0d8', ground: '#141838', road: '#1c2040', night: false,
       music: { bpm: 124, root: 43, scale: [0, 3, 5, 7, 10], wave: 'square', bass: 'sawtooth', drum: 'break', swing: .05 } },
-    { id: '2000s', year: 2000, tag: 'FLIP PHONES & SUVs', cpi: .72, payMul: 1, tipMul: 1, drainMul: 1.18, height: 1.3, traffic: 20, style: 'suv',
+    { id: '2000s', top: 0.17, rent: 0.43, year: 2000, tag: 'FLIP PHONES & SUVs', cpi: .72, payMul: 1, tipMul: 1, drainMul: 1.18, height: 1.3, traffic: 20, style: 'suv',
       light: '#e9e9ee', dark: '#1c2230', accent: '#7aa2ff', sky: ['#6fa8ff', '#dfeeff'], fog: '#cfd9ea', ground: '#1f2430', road: '#262b36', night: false,
       music: { bpm: 100, root: 46, scale: [0, 2, 4, 5, 7, 9, 11], wave: 'triangle', bass: 'sine', drum: 'rock', swing: .05 } },
-    { id: '2010s', year: 2010, tag: 'THE APP ECONOMY', cpi: .88, payMul: 1.05, tipMul: .95, drainMul: 1.25, height: 1.45, traffic: 22, style: 'crossover',
+    { id: '2010s', top: 0.18, rent: 0.46, year: 2010, tag: 'THE APP ECONOMY', cpi: .88, payMul: 1.05, tipMul: .95, drainMul: 1.25, height: 1.45, traffic: 22, style: 'crossover',
       light: '#fafafa', dark: '#20242a', accent: '#ff6b6b', sky: ['#8fb4d9', '#f2f2f2'], fog: '#d4dbe3', ground: '#24282e', road: '#2c3036', night: false,
       music: { bpm: 126, root: 44, scale: [0, 3, 5, 7, 8, 10], wave: 'sawtooth', bass: 'sawtooth', drum: 'disco', swing: 0 } },
-    { id: '2020s', year: 2020, tag: 'TODAY', cpi: 1, payMul: 1.1, tipMul: .9, drainMul: 1.35, height: 1.6, traffic: 24, style: 'ev',
+    { id: '2020s', top: 0.2, rent: 0.5, year: 2020, tag: 'TODAY', cpi: 1, payMul: 1.1, tipMul: .9, drainMul: 1.35, height: 1.6, traffic: 24, style: 'ev',
       light: '#ffffff', dark: '#08080a', accent: '#6cf3ff', sky: ['#05060a', '#2a2f4a'], fog: '#1c2036', ground: '#0c0c10', road: '#17171c', night: true,
       music: { bpm: 140, root: 40, scale: [0, 3, 5, 7, 10], wave: 'square', bass: 'sine', drum: 'trap', swing: 0 } },
   ],
-  depression: { id: '1930s', year: 1930, tag: 'BONUS · THE GREAT DEPRESSION', cpi: .06, payMul: .38, tipMul: .15, drainMul: 3, height: .65, traffic: 7, style: 'coupe',
-    light: '#d9c9a3', dark: '#2b2218', accent: '#8a6d3b', sky: ['#8a7a5a', '#cdbf9a'], fog: '#a89a78', ground: '#2a2218', road: '#322a20', night: false, sepia: true,
-    music: { bpm: 72, root: 43, scale: [0, 2, 3, 5, 7, 8, 10], wave: 'triangle', bass: 'sine', drum: 'brush', swing: .25 } },
   wage(dec) { return Math.pow(dec.cpi, 0.55); },
+  /** 0 in the 1970s (top 1% took ~8% of income) to 1 in the 2020s (~20%): how far apart the three families sit. */
+  gap(dec) { return clamp(((dec.top || .08) - .08) / .12, 0, 1); },
 };
 
 /* ======================================================================
@@ -414,17 +420,21 @@ class Economy {
   constructor(diff, decade) { this.reset(diff, decade); }
   reset(diff, decade) {
     this.diff = diff; this.decade = decade;
-    this.worth = Math.round(diff.start * Decades.wage(decade));
+    this.worth = Math.round(diff.start * Economy.startMul(diff, decade) * Decades.wage(decade));
     this.peak = this.worth; this.yearClock = 0; this.year = 1; this.totalTime = 0; this.earnedYear = 0; this.earnedTotal = 0;
     this.monthSpent = 0; this.month = 1; this.pendingTax = [];
     this.quarterClock = 0; this.premiumAccrued = 0; this.surcharge = 0; this.claimsQ = 0; this.premiumFreeUntil = 0;
-    this.stats = { repairs: 0, covered: 0, premiums: 0, rent: 0 };
+    this.stats = { repairs: 0, covered: 0, premiums: 0, rent: 0 }; this.record = { repairs: 0, fines: 0 };
   }
   setDecade(decade) { this.decade = decade; }
+  /** Wealth inequality by era (Decades.gap): Nepo's cushion grows and Struggle's shrinks as the gap widens; the middle barely moves. */
+  static startMul(d, dec) { const g = Decades.gap(dec); return d.id === 'nepo' ? .6 + 1.4 * g : d.id === 'struggle' ? 1.3 - .6 * g : 1.1 - .1 * g; }
+  static payMul(d, dec) { const g = Decades.gap(dec); return d.id === 'nepo' ? 1 + .2 * g : d.id === 'struggle' ? 1 - .2 * g : 1; }
+  get rentShare() { return this.decade.rent || GameConfig.rentShare; }
   get wage() { return Decades.wage(this.decade); }
   drainPerSec() { return GameConfig.drainBase * this.wage * this.diff.drain * this.decade.drainMul; }
   /** The trickle part of the burn: everything but rent, which is billed monthly. */
-  tricklePerSec() { return this.drainPerSec() * (1 - GameConfig.rentShare); }
+  tricklePerSec() { return this.drainPerSec() * (1 - this.rentShare); }
   get ins() { return this.diff.insurance; }
   get premiumWaived() { return this.totalTime < this.premiumFreeUntil; }
   /** Bill a crash. kind keys GameConfig.repair; speed is impact m/s (ignored when flat). Returns null for a free scrape. */
@@ -434,11 +444,13 @@ class Economy {
     const sev = flat ? 1 : clamp((speed - C.severity.free) / C.severity.span, C.severity.min, C.severity.max);
     const bill = Math.round(base * this.wage * sev * 100) / 100, ins = this.ins; let paid = bill;
     if (ins.cover > 0) { paid = Math.min(bill, Math.max(ins.deductible * this.wage, bill * (1 - ins.cover))); this.claimsQ++; this.surcharge = Math.min(C.insuranceSurcharge.cap, this.surcharge + C.insuranceSurcharge.step); }
-    const covered = Math.round((bill - paid) * 100) / 100; this.worth -= paid; this.stats.repairs += paid; this.stats.covered += covered;
+    const covered = Math.round((bill - paid) * 100) / 100; this.worth -= paid; this.stats.repairs += paid; this.record.repairs += paid; this.stats.covered += covered;
     return { kind, bill, covered, paid };
   }
+  /** Digital DOINK: wipe the record. Refunds the repair bills and fines paid since the last wipe and returns what was refunded. */
+  forgive() { const back = this.record.repairs + this.record.fines; this.worth += back; this.record = { repairs: 0, fines: 0 }; return back; }
   /** Month end: rent is a lump, not a trickle. */
-  monthEnd(ev) { const y = GameConfig.year, rent = this.drainPerSec() * GameConfig.rentShare * (y.seconds / y.months); this.worth -= rent; this.monthSpent += rent; this.stats.rent += rent; ev.push({ type: 'month', spent: this.monthSpent, rent, bills: this.bills(this.monthSpent) }); this.monthSpent = 0; }
+  monthEnd(ev) { const y = GameConfig.year, rent = this.drainPerSec() * this.rentShare * (y.seconds / y.months); this.worth -= rent; this.monthSpent += rent; this.stats.rent += rent; ev.push({ type: 'month', spent: this.monthSpent, rent, bills: this.bills(this.monthSpent) }); this.monthSpent = 0; }
   earn(amount) { this.worth += amount; if (amount > 0) { this.earnedYear += amount; this.earnedTotal += amount; } this.peak = Math.max(this.peak, this.worth); }
   /** Advance the cost-of-living clock. Returns events: {type:'month'|'tax'|'taxPaid', ...} */
   tick(dt) {
@@ -513,14 +525,17 @@ function dazzleCanvas(W, H, o) { const c = document.createElement('canvas'); c.w
 /* Buildings read as high-tech left to rot (2026-11-25, at the user's word): the era palette is pulled almost to neutral grey (still
    slightly cold, never warm), then a decay pass is painted over the dazzle. The van and the road keep the era's colour, so the
    van is what stands out. `sat` and `lum` scale the colour's saturation and lightness in sRGB, so greys stay perceptually even. */
+/** Mix two css colours; t 0 = a, 1 = b. */
+function mixHex(a, b, t) { const c = new THREE.Color(a).lerp(new THREE.Color(b), t); return '#' + c.getHexString(THREE.SRGBColorSpace); }
 function greyDecay(hex, sat, lum) {
   const c = new THREE.Color(hex), h = {}; c.getHSL(h, THREE.SRGBColorSpace);
   c.setHSL(0.55, Math.min(0.12, h.s * sat), Math.min(0.82, h.l * lum), THREE.SRGBColorSpace); return '#' + c.getHexString(THREE.SRGBColorSpace);
 }
 /* Curtain-wall glazing that has gone dead: grey wash, a glass grid with most panes black, some smashed, a few still lit cold cyan,
    frame seams, rust runs, soot from the base, torn cladding and sagging cables. Seeded from its own rng so the city layout is unchanged. */
-function decayOverlay(cv, rng) {
-  const g = cv.getContext('2d'), W = cv.width, H = cv.height, cw = 32, ch = 48;
+/** `age` 0..1 scales the whole overlay: a new building is clean dazzle, an old one is this. */
+function decayOverlay(cv, rng, age = 1) {
+  const g = cv.getContext('2d'), W = cv.width, H = cv.height, cw = 32, ch = 48; g.globalAlpha = clamp(age, 0, 1);
   g.fillStyle = 'rgba(84,90,94,.36)'; g.fillRect(0, 0, W, H);
   for (let y = 0; y < H; y += ch) for (let x = 0; x < W; x += cw) {
     const r = rng();
@@ -639,7 +654,7 @@ class SynthAudio {
   }
   /** Each era hears the same record through its own speaker: AM radio in the 40s, a gramophone in the Depression, full range from the 80s. */
   applyEra() {
-    if (!this.ctx || !this.themeHp) return; const t = this.ctx.currentTime, id = this.dec ? this.dec.id : '1940s';
+    if (!this.ctx || !this.themeHp) return; const t = this.ctx.currentTime, id = this.dec ? this.dec.id : '1970s';
     const E = GameConfig.theme.era[id] || GameConfig.theme.era.full;
     this.eraLp = E.lp; this.themeHp.frequency.setTargetAtTime(E.hp, t, 0.4); this.themeLp.frequency.setTargetAtTime(E.lp * (1 - (this.tripV || 0) * 0.85), t, 0.4); this.themeGain.gain.setTargetAtTime(0.85, t, 0.3);
     if (this.themeEl) this.themeEl.playbackRate = E.rate;
@@ -717,7 +732,7 @@ const FACES = [
 class BoxBatch {
   constructor() { this.pos = []; this.nor = []; this.uv = []; this.idx = []; }
   add(cx, cy, cz, w, h, d, tile = 24, uo = 0, vo = 0) {
-    const half = [w / 2, h / 2, d / 2], ext = [w, h, d];
+    const half = [w / 2, h / 2, d / 2], ext = [w, h, d], first = this.pos.length / 3;
     for (const f of FACES) {
       const base = this.pos.length / 3, an = f.n.findIndex(x => x !== 0), au = f.u.findIndex(x => x !== 0), av = f.v.findIndex(x => x !== 0);
       for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
@@ -727,6 +742,7 @@ class BoxBatch {
       }
       this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
+    return [first, 24]; // vertex range, so a building can be blanked out of the merged mesh later
   }
   /** Flat top-face-only rectangle (4 verts) for road paint: a full box per zebra stripe would be 6x the geometry. */
   quad(cx, y, cz, w, d) {
@@ -752,17 +768,24 @@ class CityBuilder {
     const cRoad = (i) => (i - N / 2) * P, cBlock = (i) => (i + 0.5 - N / 2) * P, E = N * P / 2 + C.ROAD / 2;
     const W = { group, N, P, E, cRoad, cBlock, buildings: [], buckets: new Map(), edgeWalls: [], ramps: [], spots: [], restaurants: [], ticketSpots: [], propSpots: [], disposables: [] };
 
-    // dazzle variants for walls: light/dark swaps, accent panels, fat vs narrow stripes
-    const gL = greyDecay(dec.light, 0.1, 0.72), gD = greyDecay(dec.dark, 0.1, 0.8), gA = greyDecay(dec.accent, 0.45, 0.6), decayRng = mulberry32(seed * 13 + 5);
+    // dazzle variants for walls: light/dark swaps, accent panels, fat vs narrow stripes. Painted by age (see paintVariant), so the same
+    // six canvases go from new colour to grey rot as the run goes on, and a rebuilt block gets a fresh set (W.freshMats).
     const V = [
-      { l: gL, d: gD, bmin: 14, bmax: 34 }, { l: gD, d: gL, bmin: 14, bmax: 34 }, { l: gL, d: gD, a: gA, e: 5, bmin: 16, bmax: 40 },
-      { l: gL, d: gD, bmin: 8, bmax: 18 }, { l: gD, d: gL, a: gA, e: 6, bmin: 22, bmax: 48 }, { l: gL, d: gD, bmin: 30, bmax: 60 },
+      { l: 'L', d: 'D', bmin: 14, bmax: 34 }, { l: 'D', d: 'L', bmin: 14, bmax: 34 }, { l: 'L', d: 'D', a: 'A', e: 5, bmin: 16, bmax: 40 },
+      { l: 'L', d: 'D', bmin: 8, bmax: 18 }, { l: 'D', d: 'L', a: 'A', e: 6, bmin: 22, bmax: 48 }, { l: 'L', d: 'D', bmin: 30, bmax: 60 },
     ];
-    const batches = V.map(() => new BoxBatch()), mats = V.map((v) => {
-      const cv = dazzleCanvas(512, 512, { light: v.l, dark: v.d, accent: v.a, every: v.e, panelMin: .09, panelMax: .24, bandMin: v.bmin, bandMax: v.bmax, rng });
-      decayOverlay(cv, decayRng);
-      const tx = makeTexture(cv); W.disposables.push(tx); const m = new THREE.MeshLambertMaterial({ map: tx }); W.disposables.push(m); return m;
+    const paletteFor = (age) => { const m = (hex, s, l) => mixHex(hex, greyDecay(hex, s, l), age); return { L: m(dec.light, 0.1, 0.72), D: m(dec.dark, 0.1, 0.8), A: m(dec.accent, 0.45, 0.6) }; };
+    const paintVariant = (i, age, overlay) => {
+      const v = V[i], P = paletteFor(age), cv = dazzleCanvas(512, 512, { light: P[v.l], dark: P[v.d], accent: v.a && P[v.a], every: v.e, panelMin: .09, panelMax: .24, bandMin: v.bmin, bandMax: v.bmax, rng: mulberry32(seed * 17 + i * 101 + 3) });
+      if (overlay) decayOverlay(cv, mulberry32(seed * 13 + 5 + i), age); return cv;
+    };
+    W.age = GameConfig.age.start;
+    const batches = V.map(() => new BoxBatch()), mats = V.map((v, i) => {
+      const tx = makeTexture(paintVariant(i, W.age, true)); W.disposables.push(tx); const m = new THREE.MeshLambertMaterial({ map: tx }); W.disposables.push(m); return m;
     });
+    W.freshMats = V.map((v, i) => { const tx = makeTexture(paintVariant(i, 0, false)); const m = new THREE.MeshLambertMaterial({ map: tx }); W.disposables.push(tx, m); return m; });
+    W.paintWalls = (age) => { W.age = age; mats.forEach((m, i) => { m.map.image = paintVariant(i, age, true); m.map.needsUpdate = true; }); };
+    W.blocks = new Map(); W.regrow = []; W.batchMeshes = [];
     W.rampMat = mats[2];
     const accentBatch = new BoxBatch(), accentMat = new THREE.MeshBasicMaterial({ color: dec.accent }); W.disposables.push(accentMat);
     const slabs = new BoxBatch(), slabMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(dec.light).multiplyScalar(dec.night ? 0.28 : 0.55) }); W.disposables.push(slabMat);
@@ -781,12 +804,12 @@ class CityBuilder {
 
     const addBuilding = (bi, bj, x0, x1, z0, z1, h, tall) => {
       const w = x1 - x0, d = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, v = Math.floor(rng() * V.length);
-      batches[v].add(cx, h / 2, cz, w, h, d, 24, rng(), rng());
-      if (rng() < 0.45) accentBatch.add(cx, h - 2.2, cz, w + 0.5, 1.1, d + 0.5);
+      const parts = [[v, batches[v].add(cx, h / 2, cz, w, h, d, 24, rng(), rng())]];
+      if (rng() < GameConfig.age.bandChance(dec)) parts.push(['A', accentBatch.add(cx, h - 2.2, cz, w + 0.5, 1.1, d + 0.5)]);
       // rooftop clutter in the same dazzle skin (own rng so the city layout above is unchanged): plant room, tank, antenna
-      if (decoRng() < 0.7) { const rw = Math.min(w, d) * (0.18 + decoRng() * 0.18), ox = (decoRng() - 0.5) * (w - rw * 2), oz = (decoRng() - 0.5) * (d - rw * 2); batches[(v + 1) % V.length].add(cx + ox, h + rw * 0.4, cz + oz, rw * 2, rw * 0.8, rw * 2, 12, decoRng(), decoRng()); }
-      if (decoRng() < 0.35) { const ax = cx + (decoRng() - 0.5) * (w - 2), az = cz + (decoRng() - 0.5) * (d - 2), ah = 6 + decoRng() * 10; accentBatch.add(ax, h + ah / 2, az, 0.35, ah, 0.35); accentBatch.add(ax, h + ah, az, 1.6, 0.25, 0.25); }
-      const box = { x0, x1, z0, z1, h }; W.buildings.push(box); const k = bi + ',' + bj; if (!W.buckets.has(k)) W.buckets.set(k, []); W.buckets.get(k).push(box); return box;
+      if (decoRng() < 0.7) { const rw = Math.min(w, d) * (0.18 + decoRng() * 0.18), ox = (decoRng() - 0.5) * (w - rw * 2), oz = (decoRng() - 0.5) * (d - rw * 2); parts.push([(v + 1) % V.length, batches[(v + 1) % V.length].add(cx + ox, h + rw * 0.4, cz + oz, rw * 2, rw * 0.8, rw * 2, 12, decoRng(), decoRng())]); }
+      if (decoRng() < 0.35) { const ax = cx + (decoRng() - 0.5) * (w - 2), az = cz + (decoRng() - 0.5) * (d - 2), ah = 6 + decoRng() * 10; parts.push(['A', accentBatch.add(ax, h + ah / 2, az, 0.35, ah, 0.35)], ['A', accentBatch.add(ax, h + ah, az, 1.6, 0.25, 0.25)]); }
+      const k = bi + ',' + bj, box = { x0, x1, z0, z1, h, H: h, v, parts, block: k }; W.buildings.push(box); if (!W.buckets.has(k)) W.buckets.set(k, []); W.buckets.get(k).push(box); if (!W.blocks.has(k)) W.blocks.set(k, []); W.blocks.get(k).push(box); return box;
     };
     const baseH = () => (14 + rng() * 42 + (rng() < 0.12 ? 28 : 0)) * dec.height;
     const Z = C.BLOCK - 2 * C.SIDEWALK, ALLEY = 8, plazas = [];
@@ -892,13 +915,45 @@ class CityBuilder {
     // sidewalk paving joints, drawn in the slab texture so they scale with the world (2 m flags)
     const slabCv = document.createElement('canvas'); slabCv.width = slabCv.height = 128; { const g = slabCv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 128, 128); g.fillStyle = 'rgba(0,0,0,.16)'; for (let k = 0; k < 128; k += 16) { g.fillRect(k, 0, 2, 128); g.fillRect(0, k, 128, 2); } }
     slabMat.map = makeTexture(slabCv); W.disposables.push(slabMat.map);
-    batches.forEach((b, i) => { if (!b.empty) { const m = b.mesh(mats[i]); m.castShadow = m.receiveShadow = true; group.add(m); } });
+    batches.forEach((b, i) => { if (!b.empty) { const m = b.mesh(mats[i]); m.castShadow = m.receiveShadow = true; group.add(m); W.batchMeshes[i] = m; } });
     const accentMesh = accentBatch.mesh(accentMat), slabMesh = slabs.mesh(slabMat), rzm = roadsZ.mesh(roadMatZ), rxm = roadsX.mesh(roadMatX), crm = crossing.mesh(asphalt);
-    accentMesh.castShadow = true; for (const m of [accentMesh, slabMesh, rzm, rxm, crm]) m.receiveShadow = true;
+    W.batchMeshes.A = accentMesh; accentMesh.castShadow = true; for (const m of [accentMesh, slabMesh, rzm, rxm, crm]) m.receiveShadow = true;
     group.add(accentMesh, slabMesh, rzm, rxm, crm);
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshLambertMaterial({ color: dec.ground })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02; ground.receiveShadow = true; group.add(ground); W.disposables.push(ground.material, ground.geometry);
     for (const r of W.ramps) { const rm = CityBuilder.rampMesh(r, W.rampMat); rm.castShadow = rm.receiveShadow = true; group.add(rm); }
     return W;
+  }
+  /** Blank every building of a block out of the merged meshes (or drop its rebuilt mesh) and out of collision. Returns the footprints for regrowing. */
+  static razeBlock(W, key) {
+    const boxes = W.blocks.get(key); if (!boxes || !boxes.length) return null;
+    const foot = boxes.map(b => ({ x0: b.x0, x1: b.x1, z0: b.z0, z1: b.z1, H: b.H, v: b.v }));
+    for (const b of boxes) {
+      if (b.parts) for (const [k, [s, c]] of b.parts) { const m = W.batchMeshes[k]; if (!m) continue; const a = m.geometry.attributes.position; a.array.fill(0, s * 3, (s + c) * 3); a.needsUpdate = true; }
+      if (b.mesh) { W.group.remove(b.mesh); b.mesh.geometry.dispose(); }
+      const i = W.buildings.indexOf(b); if (i >= 0) W.buildings.splice(i, 1);
+    }
+    W.buckets.set(key, (W.buckets.get(key) || []).filter(x => !boxes.includes(x))); W.blocks.set(key, []); return foot;
+  }
+  /** New buildings on the old footprints: their own mesh each, clean paint, solid for collision from the start at a height that grows. */
+  static growBlock(W, key, foot, rng) {
+    const out = [];
+    for (const f of foot) {
+      const w = f.x1 - f.x0, d = f.z1 - f.z0, batch = new BoxBatch(); batch.add(0, f.H / 2, 0, w, f.H, d, 24, rng(), rng());
+      const mesh = batch.mesh(W.freshMats[f.v]); mesh.position.set((f.x0 + f.x1) / 2, 0, (f.z0 + f.z1) / 2); mesh.scale.y = 0.02; mesh.castShadow = mesh.receiveShadow = true; W.group.add(mesh);
+      const box = { x0: f.x0, x1: f.x1, z0: f.z0, z1: f.z1, h: 0.5, H: f.H, v: f.v, parts: null, block: key, mesh }; out.push(box); W.buildings.push(box);
+      if (!W.buckets.has(key)) W.buckets.set(key, []); W.buckets.get(key).push(box); W.blocks.get(key).push(box);
+    }
+    return out;
+  }
+  /** Per frame: rubble timer, then the regrowth. */
+  static tick(W, dt, rng) {
+    const A = GameConfig.age;
+    for (let i = W.regrow.length - 1; i >= 0; i--) {
+      const r = W.regrow[i]; r.t += dt; if (!r.boxes && r.t >= A.razeDelay) r.boxes = CityBuilder.growBlock(W, r.key, r.foot, rng);
+      if (!r.boxes) continue; const u = clamp((r.t - A.razeDelay) / A.growTime, 0, 1), e = u * u * (3 - 2 * u);
+      for (const b of r.boxes) { b.mesh.scale.y = Math.max(0.02, e); b.h = Math.max(0.5, b.H * e); }
+      if (u >= 1) W.regrow.splice(i, 1);
+    }
   }
   static rampMesh(r, mat) {
     const w = r.wd / 2, L = r.len / 2, h = r.h;
@@ -950,6 +1005,10 @@ class WorldQuery {
       p.x += nx * pen; p.z += nz * pen; hits.push({ nx, nz });
     }
     return hits;
+  }
+  /** The city building (not a kiosk, sign or wall) a point is inside, or null. */
+  buildingAt(x, z, y, margin) {
+    for (const b of this.nearby(x, z)) if (b.block && y < b.h + 1 && x > b.x0 - margin && x < b.x1 + margin && z > b.z0 - margin && z < b.z1 + margin) return b; return null;
   }
   pointInBuilding(x, z, y, margin) {
     for (const b of this.nearby(x, z)) if (y < b.h + 1 && x > b.x0 - margin && x < b.x1 + margin && z > b.z0 - margin && z < b.z1 + margin) return true; return false;
@@ -1329,6 +1388,7 @@ class Traffic {
     /* Civilian paint is flat colour. Dazzle camo is the Guber livery and the government's (buses, cops), so a plain car can never be
        mistaken for a rival van. */
     this.civSkins = ['#e8b923', '#e9e9e4', '#9aa1a8', '#b3262c', '#1f7a7a', '#1d3557', '#3e7d3a', '#5a3a7a', '#c9702a', '#14141a'].map(col => { const cv = document.createElement('canvas'); cv.width = cv.height = 16; const g = cv.getContext('2d'); g.fillStyle = col; g.fillRect(0, 0, 16, 16); return makeTexture(cv); });
+    this.armySkin = makeTexture(dazzleCanvas(128, 128, { light: '#8a8f6a', dark: '#2d3322', accent: '#c9b458', panelMin: .15, panelMax: .35, bandMin: 6, bandMax: 14, rng }));
     this.copSkin = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); g.fillStyle = '#0d0d11'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#f0f0f0'; g.fillRect(0, 22, 64, 24); return makeTexture(c); })();
     this.styles = dec.id === '2020s' || dec.id === '2010s' ? ['crossover', 'suv', 'ev', 'hatch'] : [dec.style, dec.style, dec.style === 'coupe' ? 'wagon' : dec.style];
     const lanes = [], N = GameConfig.npc; this.laneKey = new Map();
@@ -1337,10 +1397,11 @@ class Traffic {
     this.lanes = lanes;
     const base = dec.traffic, plan = [], add = (kind, n) => { for (let k = 0; k < n; k++) plan.push(kind); };
     add('car', Math.round(base * N.car)); add('bus', Math.ceil(base * N.bus)); add('truck', Math.ceil(base * N.truck)); add('moto', Math.ceil(base * N.moto));
-    add('parked', Math.round(base * N.parked * (lite ? .5 : 1))); add('cop', lite ? 1 : N.cops); add('rival', lite ? 1 : N.rivals);
+    add('parked', Math.round(base * N.parked * (lite ? .5 : 1))); add('cop', lite ? 1 : N.cops); add('rival', lite ? 1 : N.rivals); add('army', lite ? GameConfig.hunt.armyLite : GameConfig.hunt.army);
     plan.forEach((kind, n) => {
       const mesh = this.build(kind, n, dec); this.group.add(mesh); mesh.traverse(o => { if (o.isMesh && o.material.blending !== THREE.AdditiveBlending) o.castShadow = true; });
       const c = { kind, mesh, r: N.r[kind], mass: N.mass[kind], lane: lanes[0], s: 0, lat: 0, tlat: 0, speed: 0, cruise: 0, state: 'drive', honkCd: 0, nearCd: 0, hitCd: 0, turnCd: 0, stealCd: 6 + rng() * 10, hold: 0, phase: rng() * 6.28, vx: 0, vz: 0, spin: 0, wreckT: 0, x: 0, z: 0, yaw: 0, vyaw: 0, chasing: false, idle: null, order: null, graceT: 0, cash: 0, seeded: false, y: 0, vy: 0, pitch: 0, boom: false };
+      if (kind === 'army') { c.active = false; mesh.visible = false; }
       this.cars.push(c); this.respawn(c, null, true);
     });
   }
@@ -1352,6 +1413,10 @@ class Traffic {
     if (kind === 'rival') {
       const m = buildCar('van', this.skins[2], dec.accent, true), S = m.userData.S, bg = new THREE.BoxGeometry(1.1, .6, 1.1), bm = new THREE.MeshBasicMaterial({ color: 0x35ff6a });
       m.userData.own.push(bg, bm); const bag = new THREE.Mesh(bg, bm); bag.position.set(0, S.wr + S.hgt + S.ch + 1, S.co); bag.visible = false; m.add(bag); m.userData.bag = bag; return m; // the bag shows while the van carries an order
+    }
+    if (kind === 'army') { // olive dazzle truck with a turret: asleep until a Bernstain file is collected
+      const m = buildCar('truck', this.armySkin, dec.accent, false), S = m.userData.S, own = m.userData.own, dark = new THREE.MeshLambertMaterial({ color: 0x1d2118 }), tg = new THREE.BoxGeometry(1.3, .5, 1.5), bg = new THREE.BoxGeometry(.18, .18, 2.2);
+      own.push(dark, tg, bg); const tur = new THREE.Mesh(tg, dark), bar = new THREE.Mesh(bg, dark); tur.position.set(0, S.wr + S.hgt + S.ch + .35, S.co); bar.position.set(0, S.wr + S.hgt + S.ch + .4, S.co + 1.5); m.add(tur, bar); return m;
     }
     if (kind === 'cop') {
       const m = buildCar(this.styles[0], this.copSkin, dec.accent, false), S = m.userData.S, own = m.userData.own, y = S.wr + S.hgt + S.ch + .1;
@@ -1406,8 +1471,12 @@ class Traffic {
     c.hold = 0; return { x: best.x, z: best.z, cruise: N.speed.rival[1] + 3 };
   }
   update(dt, player, hooks) {
-    this.t += dt; const N = GameConfig.npc, far = player.x > 9e4, heat = hooks.heat ? hooks.heat() : 0;
+    this.t += dt; const N = GameConfig.npc, far = player.x > 9e4, heat = hooks.heat ? hooks.heat() : 0, hunted = !!(hooks.hunted && hooks.hunted()) && !far;
+    if (hunted !== !!this.hunting) { // the Bernstain hunt starts or ends: the army wakes up around the player, or stands down
+      this.hunting = hunted; for (const c of this.cars) if (c.kind === 'army') { c.active = hunted; c.mesh.visible = hunted; if (hunted) { c.state = 'drive'; this.respawn(c, player); } }
+    }
     for (const c of this.cars) {
+      if (c.kind === 'army' && !c.active) continue;
       c.honkCd = Math.max(0, c.honkCd - dt); c.nearCd = Math.max(0, c.nearCd - dt); c.hitCd = Math.max(0, c.hitCd - dt); c.turnCd = Math.max(0, c.turnCd - dt); c.graceT = Math.max(0, c.graceT - dt); if (c.mesh.userData.bag) c.mesh.userData.bag.visible = !!c.order;
       if (c.state === 'wreck') {
         c.x += c.vx * dt; c.z += c.vz * dt; c.vx *= Math.exp(-1.6 * dt); c.vz *= Math.exp(-1.6 * dt); c.yaw += c.spin * dt; c.spin *= Math.exp(-1.2 * dt); c.wreckT -= dt;
@@ -1418,8 +1487,8 @@ class Traffic {
       if (!far && d > N.recycleDist && !c.chasing) { this.respawn(c, player); d = Math.hypot(player.x - c.x, player.z - c.z); }
       const rx = player.x - c.x, rz = player.z - c.z; let fwdX = 0, fwdZ = 0, ahead = 0, side = 0;
       if (c.state === 'drive') {
-        c.chasing = c.kind === 'cop' && heat > N.copHeat && !far && d < N.chaseRange;
-        let goal = null; if (c.chasing) goal = { x: player.x, z: player.z, cruise: clamp(player.speed * 1.05 + 4, 20, N.copTop) }; else if (c.kind === 'rival') goal = this.rivalGoal(c, player, hooks, dt);
+        c.chasing = (c.kind === 'cop' || c.kind === 'army') && !far && (hunted ? d < GameConfig.hunt.chaseRange : c.kind === 'cop' && heat > N.copHeat && d < N.chaseRange);
+        let goal = null; if (c.chasing) goal = { x: player.x, z: player.z, cruise: clamp(player.speed * 1.05 + 4, 20, hunted ? GameConfig.hunt.top : N.copTop) }; else if (c.kind === 'rival') goal = this.rivalGoal(c, player, hooks, dt);
         if (goal) this.steerLane(c, goal.x, goal.z);
         const l = c.lane; fwdX = l.axis === 'x' ? l.dir : 0; fwdZ = l.axis === 'z' ? l.dir : 0; ahead = rx * fwdX + rz * fwdZ; side = l.axis === 'z' ? rx : rz;
         let target = goal ? goal.cruise : c.cruise; c.tlat = c.kind === 'moto' ? Math.sin(this.t * .9 + c.phase) * 2.3 : 0;
@@ -1455,6 +1524,7 @@ class Traffic {
             if (swapped) { c.graceT = N.stealGrace; c.hitCd = .7; c.speed *= .5; continue; }
           }
         }
+        if (c.kind === 'army') { c.speed *= .4; if (c.hitCd <= 0) { c.hitCd = .9; hooks.hit(Math.max(rel, GameConfig.hunt.hitMin) * c.mass, c.x, c.z, -nx, -nz, c); } continue; } // heavy hits, never wrecked, never a fine
         if (c.chasing && hooks.bust) { hooks.bust(c); c.speed *= .3; if (c.hitCd <= 0) { c.hitCd = .7; hooks.hit(rel * .3, c.x, c.z, -nx, -nz, c); } continue; } // a bust is a fine, not a wreck
         if (c.mass > 1.4 && rel < N.heavyWreck) { c.speed *= 0.5; if (c.hitCd <= 0) { c.hitCd = .7; hooks.hit(rel * (1 + (c.mass - 1) * .5), c.x, c.z, -nx, -nz, c); } }
         else { c.state = 'wreck'; c.vx = nx * -rel * 0.8 / c.mass + fwdX * c.speed * 0.5; c.vz = nz * -rel * 0.8 / c.mass + fwdZ * c.speed * 0.5; c.spin = (Math.random() - .5) * 6; c.wreckT = 3; hooks.hit(rel * c.mass, c.x, c.z, -nx, -nz, c); }
@@ -1629,8 +1699,8 @@ class OrderManager {
   makeOrder(r, G, from) {
     const E = G.eco, dec = G.decade, diff = G.diff, W = this.W, spots = W.spots.filter(s => { const d = Math.hypot(s.x - r.x, s.z - r.z); return d > 110 && d < 440; });
     const to = spots.length ? spots[Math.floor(this.rng() * spots.length)] : W.spots[Math.floor(this.rng() * W.spots.length)], dist = Math.hypot(to.x - r.x, to.z - r.z) + Math.hypot(r.x - from.x, r.z - from.z) * 0.3;
-    const base = (14 + dist * 0.11) * E.wage * dec.payMul * diff.pay, total = this.budget(dist, G);
-    return { from: r, to, base, total, time: total, item: pick(this.rng, ITEMS), who: pick(this.rng, NAMES), pot: 0, combo: 0, comboT: 0, mult: diff.tipBase * dec.tipMul, dist };
+    const base = (14 + dist * 0.11) * E.wage * dec.payMul * diff.pay * Economy.payMul(diff, dec), total = this.budget(dist, G);
+    return { from: r, to, base, total, time: total, item: pick(this.rng, ITEMS), who: pick(this.rng, NAMES), pot: 0, combo: 0, comboT: 0, mult: diff.tipBase * Economy.payMul(diff, dec) * dec.tipMul, dist };
   }
   /** Seconds allowed for a delivery of `dist` metres. */
   budget(dist, G) { return Math.max(24 / (1 / G.diff.timer), dist / GameConfig.order.avgSpeed + 14) * G.diff.timer * (G.decade.sepia ? .85 : 1); }
@@ -1692,7 +1762,7 @@ const EIGHTHS = ['', '1/8', '1/4', '3/8', '1/2', '5/8', '3/4', '7/8', '8/8'];
 class Doinks {
   constructor(scene, W, rng) {
     const K = GameConfig.doink; this.scene = scene; this.rng = rng; this.g = new THREE.Group(); scene.add(this.g); this.own = [];
-    this.stash = 0; this.deck = []; this.nag = 0; this.t = 0;
+    this.stash = 0; this.deck = []; this.nag = 0; this.t = 0; this.hits = 0; this.digital = null;
     const taken = new Set(W.restaurants), free = W.spots.filter(sp => !taken.has(sp)).sort(() => rng() - 0.5);
     // DOINKs first, spread out so there is always one within a few blocks
     this.list = []; for (const sp of free) { if (this.list.length >= K.count) break; if (this.list.every(d => Math.hypot(d.x - sp.x, d.z - sp.z) > K.minApart)) this.list.push({ x: sp.x, z: sp.z, sp }); }
@@ -1737,6 +1807,17 @@ class Doinks {
   }
   /* Bags are van-sized (an eighth is about the van's length) and a half is half again as big; `sc` also lifts the bag so it floats clear of the road. */
   sizeBag(b) { b.sc = GameConfig.doink.bagScale * (0.85 + b.worth * 0.22) / 1.07; b.body.scale.setScalar(b.sc); }
+  /** A glitching cyan/magenta wire DOINK that appears at a random free spot, at least `minFrom` m from the van. One at a time. */
+  spawnDigital(from) {
+    const D = GameConfig.digital, H = GameConfig.doink.height; this.removeDigital();
+    const far = this.free.filter(sp => Math.hypot(sp.x - from.x, sp.z - from.z) > D.minFrom), pool = far.length ? far : this.free; if (!pool.length) return null;
+    const sp = pool[Math.floor(Math.random() * pool.length)], g = new THREE.Group(), wire = new THREE.MeshBasicMaterial({ color: 0x19ffe6, wireframe: true, transparent: true, opacity: .95, blending: THREE.AdditiveBlending, depthWrite: false });
+    const fill = new THREE.MeshBasicMaterial({ color: 0xff2fd0, transparent: true, opacity: .28, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), beam = new THREE.MeshBasicMaterial({ color: 0x19ffe6, transparent: true, opacity: .25, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const gc = new THREE.CylinderGeometry(1.9, 1.1, H, 10, 8, true), gb = new THREE.CylinderGeometry(3.4, 3.4, 220, 14, 1, true), a = new THREE.Mesh(gc, wire), b = new THREE.Mesh(gc, fill), c = new THREE.Mesh(gb, beam);
+    a.position.y = b.position.y = H / 2 + 1.6; c.position.y = 110; g.add(a, b, c); g.position.set(sp.x, 0, sp.z); this.g.add(g);
+    this.digital = { x: sp.x, z: sp.z, g, a, b, c, mats: [wire, fill, beam], geos: [gc, gb] }; return this.digital;
+  }
+  removeDigital() { const d = this.digital; if (!d) return; this.g.remove(d.g); d.mats.forEach(m => m.dispose()); d.geos.forEach(m => m.dispose()); this.digital = null; }
   get ready() { return this.stash >= GameConfig.doink.needed; }
   frac() { return EIGHTHS[Math.min(8, this.stash)] || '0/8'; }
   nearest(car) { let best = null, bd = 1e9; for (const d of this.list) { const k = Math.hypot(d.x - car.x, d.z - car.z); if (k < bd) { bd = k; best = d; } } return best; }
@@ -1754,15 +1835,52 @@ class Doinks {
         b.g.visible = false; b.gone = K.bagRespawn; const before = this.stash; this.stash = Math.min(K.needed, this.stash + b.worth); G.onBaggie(b.worth, this.stash, before);
       }
     }
+    const dg = this.digital; if (dg) { // glitch: flickers between wire and fill, jumps sideways a few times a second, stretches
+      const f = Math.sin(this.t * 31) > .2; dg.a.visible = f || Math.sin(this.t * 7) > 0; dg.b.visible = !f; dg.g.position.x = dg.x + (Math.random() < dt * 6 ? (Math.random() - .5) * 1.8 : 0); dg.a.scale.set(1 + Math.random() * .12, 1 + Math.sin(this.t * 3) * .05, 1); dg.c.material.opacity = .15 + .2 * Math.abs(Math.sin(this.t * 17));
+      if (live && Math.hypot(dg.x - car.x, dg.z - car.z) < GameConfig.digital.radius && car.y < 12) { this.removeDigital(); G.onDigital(); }
+    }
     if (!live) return null;
     const d = this.nearest(car); if (!d || Math.hypot(d.x - car.x, d.z - car.z) > K.radius) return null;
     if (this.ready) return d;
     if (this.nag <= 0) { this.nag = K.nagCd; G.hud.callout(`Need 8/8 for a DOINK · you have ${this.frac()}`, 'sm'); }
     return null;
   }
-  dispose() { this.scene.remove(this.g); this.own.forEach(o => o.dispose && o.dispose()); }
+  dispose() { this.removeDigital(); this.scene.remove(this.g); this.own.forEach(o => o.dispose && o.dispose()); }
 }
 
+
+
+/* ======================================================================
+   Files — the Bernstain files. Manila folders floating over the sidewalks, a quarter or a half each (dealt from a shuffled deck so all
+   sizes appear). Collecting a whole file is the game's way of saying you know too much (Game.onBernstain).
+   ====================================================================== */
+const FILE_FRACS = ['0', '1/4', '1/2', '3/4'];
+class Files {
+  constructor(scene, W, rng, spots) {
+    const K = GameConfig.files; this.scene = scene; this.rng = rng; this.g = new THREE.Group(); scene.add(this.g); this.own = []; this.deck = []; this.stash = 0; this.t = 0;
+    const cv = document.createElement('canvas'); cv.width = 128; cv.height = 160; const c = cv.getContext('2d'); c.fillStyle = '#e8c46a'; c.fillRect(0, 0, 128, 160); c.fillStyle = '#d3ac4f'; c.fillRect(0, 0, 128, 22); c.fillStyle = '#b3262c'; c.fillRect(8, 60, 112, 26);
+    c.fillStyle = '#fff'; c.font = '800 15px Helvetica,Arial,sans-serif'; c.textAlign = 'center'; c.fillText('TOP SECRET', 64, 79); c.fillStyle = '#5a4a22'; c.font = '700 13px Helvetica,Arial,sans-serif'; c.fillText('BERNSTAIN', 64, 112); c.fillRect(20, 124, 88, 3); c.fillRect(20, 134, 70, 3);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; const face = new THREE.MeshBasicMaterial({ map: tex }), edge = new THREE.MeshBasicMaterial({ color: 0xd3ac4f });
+    const glow = new THREE.MeshBasicMaterial({ color: 0xffd45a, transparent: true, opacity: .35, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const gF = new THREE.BoxGeometry(1.6, 2.0, .16), gRing = new THREE.RingGeometry(3.6, 5.0, 28); gRing.rotateX(-Math.PI / 2); this.own.push(tex, face, edge, glow, gF, gRing);
+    this.items = []; for (const sp of spots.slice(0, K.count)) {
+      const g = new THREE.Group(), body = new THREE.Mesh(gF, [edge, edge, edge, edge, face, face]), ring = new THREE.Mesh(gRing, glow); ring.position.y = .06; g.position.set(sp.x, 0, sp.z); g.add(body, ring); this.g.add(g);
+      const it = { g, body, sp, worth: this.deal(), gone: 0, ph: this.rng() * 6 }; this.size(it); this.items.push(it);
+    }
+  }
+  deal() { if (!this.deck.length) { this.deck = GameConfig.files.deck.slice(); for (let i = this.deck.length - 1; i > 0; i--) { const j = Math.floor(this.rng() * (i + 1)); [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]]; } } return this.deck.pop(); }
+  size(it) { it.sc = GameConfig.files.scale * (0.8 + it.worth * 0.5); it.body.scale.setScalar(it.sc); }
+  label() { return FILE_FRACS[Math.round(this.stash * 4)] || '0'; }
+  update(dt, car, G, live) {
+    const K = GameConfig.files; this.t += dt;
+    for (const b of this.items) {
+      if (b.gone > 0) { b.gone -= dt; if (b.gone <= 0) { b.g.visible = true; b.worth = this.deal(); this.size(b); } continue; }
+      b.ph += dt; b.body.position.y = b.sc * 0.8 + 0.6 + Math.sin(b.ph * 2) * 0.35; b.body.rotation.y += dt * 1.2;
+      if (live && Math.hypot(b.sp.x - car.x, b.sp.z - car.z) < K.radius && car.y < 3) { b.g.visible = false; b.gone = K.respawn; this.stash = Math.round((this.stash + b.worth) * 4) / 4; G.onFile(b.worth, this.stash); }
+    }
+  }
+  dispose() { this.scene.remove(this.g); this.own.forEach(o => o.dispose && o.dispose()); }
+}
 
 /* ======================================================================
    Autopilot — demo mode. It drives through the same input fields as the keyboard and pad (throttle, brake, steer, hand), so
@@ -1848,7 +1966,7 @@ class HUD {
     { const i = e.ins, left = Math.max(0, e.premiumFreeUntil - e.totalTime), mm = Math.floor(left / 60), ss = String(Math.floor(left % 60)).padStart(2, '0');
       this.set('hCover', i.cover > 0 ? `Insured ${Math.round(i.cover * 100)}%` + (e.surcharge > 0 ? ` · claims +${Math.round(e.surcharge * 100)}%` : '') + (left > 0 ? ` · PREMIUMS WAIVED ${mm}:${ss}` : '') : 'Uninsured: you pay every repair'); }
     this.set('hDecade', G.decade.id); this.set('hDiff', G.diff.label);
-    this.set('hQuota', G.mode === 'depression' ? `Survive ${GameConfig.depressionYears} tax years (${Math.min(e.year - 1, 99)} done)` : `${G.delivered} / ${GameConfig.order.quota} deliveries`);
+    this.set('hQuota', `${G.delivered} / ${GameConfig.order.quota} deliveries`);
     const t = G.orders.target(car); if (t) { this.set('navDist', Math.round(Math.hypot(t.x - car.x, t.z - car.z)) + ' m'); this.set('navLabel', t.kind === 'drop' ? 'DROP-OFF' : 'PICK-UP'); } else { this.set('navDist', '--'); this.set('navLabel', 'NO ORDERS'); }
     if (o) {
       $('hTimer').classList.remove('hide'); $('hTimerBarW').classList.remove('hide'); const tm = Math.max(0, o.time); this.set('hTimer', tm.toFixed(1)); $('hTimer').classList.toggle('warn', tm < 8); $('hTimerBar').style.width = (clamp(tm / o.total, 0, 1) * 100) + '%';
@@ -1857,7 +1975,20 @@ class HUD {
     const cm = o ? 1 + o.combo * 0.1 : 1; this.set('hCombo', 'x' + cm.toFixed(1)); $('hComboBar').style.width = (o ? clamp(o.comboT / GameConfig.stunt.comboWindow, 0, 1) * 100 : 0) + '%'; this.set('hPot', money(o ? o.pot : 0));
     { const D = G.doinks; if (D) { this.set('hStash', D.frac() + (car.dashBank >= 1 ? ' · +' + Math.floor(car.dashBank) + ' dash' : '')); $('hStashBar').style.width = (D.stash / GameConfig.doink.needed * 100) + '%';
       const d = D.nearest(car), km = d ? Math.round(Math.hypot(d.x - car.x, d.z - car.z)) : 0; this.set('hDoink', G.trip ? (G.trip.ph === 'taper' ? 'Coming down…' : 'DOINK') : D.ready ? 'DOINK READY: ' + km + ' m to the nearest' : 'Fill the stash with baggies (green)'); } }
+    { const F = G.files; if (F) { this.set('hFiles', F.label() + (G.hunted ? ' · HUNTED' : '')); $('hFilesBar').style.width = (F.stash * 100) + '%'; this.set('hHunt', G.hunted ? 'HUNTED: hit a DOINK to lose them' : (G.doinks && G.doinks.digital ? 'DIGITAL DOINK is on the map: ' + Math.round(Math.hypot(G.doinks.digital.x - car.x, G.doinks.digital.z - car.z)) + ' m' : '')); $('hunt').classList.toggle('on', !!G.hunted); this.mini(G); } }
     this.set('hSpeed', Math.round(car.speed * 3.6) + ' km/h'); $('hBoost').style.width = (car.boostCd <= 0 ? 100 : clamp(100 - (car.boostCd / (GameConfig.car.boostCd + GameConfig.car.boostTime)) * 100, 0, 100)) + '%';
+  }
+  /** Corner map: the van (arrow, north up), folders, DOINKs, the Digital DOINK, and the army while hunted. About 10 redraws a second. */
+  mini(G) {
+    const now = performance.now(); if (now - (this.miniT || 0) < 100) return; this.miniT = now; const cv = $('mini'); if (!cv || cv.offsetParent === null) return; const g = cv.getContext('2d'), S = cv.width, R = 180, car = G.car, k = S / 2 / R;
+    g.clearRect(0, 0, S, S); g.save(); g.beginPath(); g.arc(S / 2, S / 2, S / 2 - 2, 0, 6.283); g.clip(); g.translate(S / 2, S / 2);
+    const P = (x, z) => [(x - car.x) * k, -(z - car.z) * k], dot = (x, z, col, r) => { const [a, b] = P(x, z); if (Math.hypot(a, b) > S / 2 - 4) { const m = Math.atan2(b, a); g.fillStyle = col; g.fillRect(Math.cos(m) * (S / 2 - 8) - r / 2, Math.sin(m) * (S / 2 - 8) - r / 2, r, r); return; } g.fillStyle = col; g.beginPath(); g.arc(a, b, r, 0, 6.283); g.fill(); };
+    g.fillStyle = 'rgba(255,255,255,.07)'; for (const b of G.W.buildings) { if (!b.block) continue; const [x0, y0] = P(b.x0, b.z1), [x1, y1] = P(b.x1, b.z0); g.fillRect(x0, y0, x1 - x0, y1 - y0); }
+    for (const f of G.files.items) if (f.gone <= 0) dot(f.sp.x, f.sp.z, '#ffd45a', 7);
+    for (const d of G.doinks.list) dot(d.x, d.z, G.doinks.ready ? '#5dff7a' : '#2f7a3c', 6);
+    if (G.doinks.digital) dot(G.doinks.digital.x, G.doinks.digital.z, Math.floor(now / 150) % 2 ? '#19ffe6' : '#ff2fd0', 8);
+    if (G.hunted) for (const c of G.traffic.cars) if (c.chasing) dot(c.x, c.z, c.kind === 'army' ? '#9aa86a' : '#ff4040', 5);
+    g.rotate(0); g.fillStyle = '#fff'; g.save(); g.rotate(car.h); g.beginPath(); g.moveTo(0, -10); g.lineTo(7, 8); g.lineTo(0, 4); g.lineTo(-7, 8); g.closePath(); g.fill(); g.restore(); g.restore();
   }
   callout(text, kind = '') { const d = document.createElement('div'); d.className = 'co ' + kind; d.textContent = text; d.style.marginLeft = ((Math.random() - .5) * 22) + '%'; $('callouts').appendChild(d); setTimeout(() => d.remove(), 1600); }
   banner(title, sub, ms = 2600) { const b = $('banner'); b.querySelector('h2').textContent = title; b.querySelector('p').textContent = sub || ''; b.classList.add('on'); clearTimeout(this.bt); this.bt = setTimeout(() => b.classList.remove('on'), ms); }
@@ -2119,7 +2250,7 @@ class Game {
     this.sparks = new Particles(this.scene, 500, 0.7, 1); this.smoke = new Particles(this.scene, 300, 2.4, 0.35); this.fumes = new Particles(this.scene, 120, 1.7, 0.4); this.fx = $('fx'); this.fxg = this.fx.getContext('2d');
     this.car = new VehiclePhysics(); this.trip = null; this.tripV = 0; this.doinks = null; this.demo = null; this.carMesh = null; this.W = null; this.wq = null; this.traffic = null; this.peds = null; this.targets = null; this.orders = null; this.eco = new Economy(this.diff, Decades.list[0]); this.decade = Decades.list[0];
     this.time = 0; this.title = { a: 0 }; this.last = performance.now(); this.deadT = 0; this.transT = 0;
-    addEventListener('resize', () => this.resize()); this.resize(); this.buildTitle(); this.loadDecade(Decades.list[0], 1940); this.audio.setDecade(null);
+    addEventListener('resize', () => this.resize()); this.resize(); this.buildTitle(); this.loadDecade(Decades.list[0], 1970); this.audio.setDecade(null);
     requestAnimationFrame((t) => this.frame(t));
   }
   /* Quality 0 is the desktop look, unchanged. See QUALITY at the top. */
@@ -2137,19 +2268,18 @@ class Game {
     const od = $('optDiff'); od.innerHTML = '';
     Object.values(Difficulties).forEach(d => { const b = document.createElement('button'); b.className = 'opt' + (d === this.diff ? ' sel' : ''); b.innerHTML = `${d.label}<small>${d.sub}<br>${d.desc}</small>`; b.onclick = () => { this.diff = d; this.buildTitle(); }; od.appendChild(b); });
     const sel = $('selDecade'); sel.innerHTML = ''; Decades.list.forEach((d, i) => { if (i <= this.save.maxDecade) { const o = document.createElement('option'); o.value = i; o.textContent = d.id + ' / ' + d.tag; sel.appendChild(o); } }); sel.value = this.startIdx; sel.onchange = () => { this.startIdx = +sel.value; };
-    const dep = $('btnDep'); dep.disabled = !this.save.depressionUnlocked; dep.textContent = this.save.depressionUnlocked ? 'The Great Depression (bonus)' : 'The Great Depression (locked until you beat the 2020s)'; dep.onclick = () => this.startRun('depression');
     $('btnDemo').onclick = () => this.startDemo(true); $('btnStart').onclick = () => this.startRun('normal'); $('btnResume').onclick = () => this.pause(false); $('btnQuit').onclick = () => this.toTitle();
   }
   toTitle() {
     this.endAttempt();
     this.state = 'title'; this.hud.show(false); ['scPause', 'scOver'].forEach(i => $(i).classList.add('hide')); $('scTitle').classList.remove('hide'); $('slot').classList.add('hide'); this.audio.stopAll(); this.save = Save.load(); this.buildTitle();
-    this.clearRun(); this.loadDecade(Decades.list[0], 1940);
+    this.clearRun(); this.loadDecade(Decades.list[0], 1970);
   }
   pause(on) { if (on && this.state === 'play') { this.state = 'pause'; $('scPause').classList.remove('hide'); } else if (!on && this.state === 'pause') { this.state = 'play'; $('scPause').classList.add('hide'); this.last = performance.now(); } }
 
   /* ---- world per decade ---- */
   clearRun() {
-    this.endTrip(); for (const k of ['traffic', 'peds', 'targets', 'orders', 'doinks']) { if (this[k]) { this[k].dispose(); this[k] = null; } }
+    this.endTrip(); for (const k of ['traffic', 'peds', 'targets', 'orders', 'doinks', 'files']) { if (this[k]) { this[k].dispose(); this[k] = null; } }
     if (this.carMesh) { this.scene.remove(this.carMesh); this.carMesh.userData.own.forEach(d => d.dispose && d.dispose()); this.carMesh.traverse(o => { if (o.geometry && !this.carMesh.userData.own.includes(o.geometry)) o.geometry.dispose(); }); this.carMesh = null; }
     this.sparks.clear(); this.smoke.clear(); this.fumes.clear();
   }
@@ -2162,8 +2292,8 @@ class Game {
     this.hemi.intensity *= LookConfig.fill; this.sun.intensity *= LookConfig.key;
     this.paintSky(dec); document.body.style.setProperty('--accent', dec.accent); $('gl').style.filter = dec.sepia && !this.post ? 'sepia(.85) contrast(1.1) saturate(.8)' : 'none';
     LookUniforms.uWet.value = LookConfig.wet * (dec.night ? 1.3 : 1); LookUniforms.uSkyHi.value.set(dec.sky[0]); LookUniforms.uSkyLo.value.set(dec.sky[1]); LookUniforms.uSunDir.value.copy(this.sunDir);
-    this.W.group.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => grimeMaterial(m, this.q === 0 ? 3 : 2)); }); this.glowScan = 0;
-    this.heat = 0; this.traffic = new Traffic(this.scene, this.W, this.q > 0 ? { ...dec, traffic: Math.ceil(dec.traffic * QUALITY[this.q].traffic) } : dec, rng, { x: this.W.cRoad(4) - GameConfig.LANE, z: this.W.cRoad(4) - 20 }, this.q > 0); this.peds = new Pedestrians(this.scene, this.W, dec, rng, QUALITY[this.q].peds); this.targets = new TargetManager(this.scene, this.W, dec, rng); this.orders = new OrderManager(this.scene, this.W, rng); this.doinks = new Doinks(this.scene, this.W, rng); this.car.drive = this.diff.drive;
+    this.W.group.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => grimeMaterial(m, this.q === 0 ? 3 : 2)); }); this.W.freshMats.forEach(m => grimeMaterial(m, this.q === 0 ? 3 : 2)); LookUniforms.uGrime.value = LookConfig.grime * GameConfig.age.grime[0]; this.glowScan = 0;
+    this.heat = 0; this.traffic = new Traffic(this.scene, this.W, this.q > 0 ? { ...dec, traffic: Math.ceil(dec.traffic * QUALITY[this.q].traffic) } : dec, rng, { x: this.W.cRoad(4) - GameConfig.LANE, z: this.W.cRoad(4) - 20 }, this.q > 0); this.peds = new Pedestrians(this.scene, this.W, dec, rng, QUALITY[this.q].peds); this.targets = new TargetManager(this.scene, this.W, dec, rng); this.orders = new OrderManager(this.scene, this.W, rng); this.doinks = new Doinks(this.scene, this.W, rng); this.files = new Files(this.scene, this.W, rng, this.doinks.free.slice(GameConfig.doink.baggies)); this.hunted = false; this.car.drive = this.diff.drive;
     this.carMesh = buildVan(dec, rng, this.diff.id); this.scene.add(this.carMesh);
     this.car.reset(this.W.cRoad(4) - GameConfig.LANE, this.W.cRoad(4) - 20, 0); this.chase.snap(this.car); this.chase.init = false;
   }
@@ -2184,10 +2314,10 @@ class Game {
 
   /* ---- run lifecycle ---- */
   startRun(mode) {
-    this.audio.init(); this.mode = mode; const dec = mode === 'depression' ? Decades.depression : Decades.list[this.startIdx]; this.delivered = 0; this.runDecadeIdx = mode === 'depression' ? -1 : this.startIdx;
-    this.eco = new Economy(this.diff, dec); this.loadDecade(dec, mode === 'depression' ? 1930 : dec.year); this.car.health = 100; this.car.reset(this.W.cRoad(4) - GameConfig.LANE, this.W.cRoad(4) - 20, 0); this.chase.snap(this.car);
-    $('scTitle').classList.add('hide'); $('scOver').classList.add('hide'); $('scPause').classList.add('hide'); this.hud.show(true); this.state = 'play'; this.audio.setDecade(dec); this.last = performance.now(); this.levelT = 0; this.hud.lastWorth = null; this.stats = { smashed: 0, tickets: 0 };
-    this.hud.banner(dec.id, dec.tag + (mode === 'depression' ? ' · SURVIVE' : ' · ' + GameConfig.order.quota + ' DELIVERIES'), 3000);
+    this.audio.init(); this.mode = mode; const dec = Decades.list[this.startIdx]; this.delivered = 0; this.runDecadeIdx = this.startIdx;
+    this.eco = new Economy(this.diff, dec); this.loadDecade(dec, dec.year); this.car.health = 100; this.car.reset(this.W.cRoad(4) - GameConfig.LANE, this.W.cRoad(4) - 20, 0); this.chase.snap(this.car);
+    $('scTitle').classList.add('hide'); $('scOver').classList.add('hide'); $('scPause').classList.add('hide'); this.hud.show(true); this.state = 'play'; this.audio.setDecade(dec); this.last = performance.now(); this.levelT = 0; this.hud.lastWorth = null; this.stats = { smashed: 0, tickets: 0 }; this.crashN = 0;
+    this.hud.banner(dec.id, dec.tag + ' · ' + GameConfig.order.quota + ' DELIVERIES', 3000);
   }
   nextDecade() {
     this.clearLevel(); this.state = 'trans'; this.transT = 4.2; const idx = this.runDecadeIdx + 1; this.save.maxDecade = Math.max(this.save.maxDecade, Math.min(idx, Decades.list.length - 1)); Save.write(this.save);
@@ -2201,15 +2331,13 @@ class Game {
   }
   victory(survived) {
     if (survived) this.clearLevel();
-    this.state = 'over'; this.audio.stopAll(); this.hud.show(false); const e = this.eco.estate(); const unlocked = !survived && !this.save.depressionUnlocked;
-    if (!survived) { this.save.depressionUnlocked = true; this.save.maxDecade = Decades.list.length - 1; }
+    this.state = 'over'; this.audio.stopAll(); this.hud.show(false); const e = this.eco.estate(); this.save.maxDecade = Decades.list.length - 1;
     this.save.bestWorth = Math.max(this.save.bestWorth, Math.round(this.eco.worth)); Save.write(this.save);
-    const t = survived ? 'You survived the Depression' : 'You beat the economy';
-    $('overCard').innerHTML = `<h1 class="logo" style="font-size:44px">${t}</h1><div class="tag">${survived ? 'Three hard years, still breathing.' : 'Every decade, 1940s to today.'}</div>
+    const t = 'You beat the economy';
+    $('overCard').innerHTML = `<h1 class="logo" style="font-size:44px">${t}</h1><div class="tag">Every decade, 1970s to today.</div>
       <table class="est"><tr class="tot"><td>Final net worth</td><td class="${this.eco.worth < 0 ? 'neg' : 'pos'}">${money(this.eco.worth)}</td></tr></table>
-      ${unlocked ? '<h3>Unlocked</h3><div class="badge">The Great Depression (bonus level)</div>' : ''}
-      <div class="btns">${unlocked ? '<button class="btn primary" id="oDep">Play the Depression</button>' : ''}<button class="btn ${unlocked ? '' : 'primary'}" id="oMenu">Main menu</button></div>`;
-    $('scOver').classList.remove('hide'); const d = $('oDep'); if (d) d.onclick = () => this.startRun('depression'); $('oMenu').onclick = () => this.toTitle(); this.audio.arpeggio(true);
+      <div class="btns"><button class="btn primary" id="oMenu">Main menu</button></div>`;
+    $('scOver').classList.remove('hide'); $('oMenu').onclick = () => this.toTitle(); this.audio.arpeggio(true);
   }
   die(cause) {
     if (this.state !== 'play') return; this.endAttempt(); this.state = 'dead'; this.deadT = 2.0; this.car.dead = true; this.car.health = 0; this.audio.explosion(); this.audio.stopAll(); this.hud.flash(); this.carMesh.visible = false; this.orders.cancel();
@@ -2249,7 +2377,7 @@ class Game {
   doBoost() { if (this.car.tryBoost()) { this.audio.whoosh(); this.chase.shake = 0.25; } }
   resetCar() { const p = this.wq.nearestRoad(this.car.x, this.car.z); this.car.reset(p.x, p.z, p.heading); this.chase.snap(this.car); this.hud.callout('RESET', 'sm'); }
   stunt(label, amount, kind) {
-    const o = this.orders.order, a = amount * this.eco.wage * this.decade.payMul * this.diff.tipBase * this.decade.tipMul;
+    const o = this.orders.order, a = amount * this.eco.wage * this.decade.payMul * this.diff.tipBase * Economy.payMul(this.diff, this.decade) * this.decade.tipMul;
     if (o) { o.pot += a; o.combo = Math.min(o.combo + 1, 30); o.comboT = GameConfig.stunt.comboWindow; } else this.eco.earn(a * 0.6);
     this.hud.callout(`${label} ${money(a, true)}`, kind || ''); this.audio.ding(false);
   }
@@ -2257,14 +2385,42 @@ class Game {
     const full = stash >= GameConfig.doink.needed; this.audio.ding(full); this.hud.callout(`+${EIGHTHS[worth]} · ${EIGHTHS[stash]} of a DOINK`, full ? 'gold' : 'sm');
     if (full && before < GameConfig.doink.needed) { this.hud.callout('DOINK READY', 'gold'); this.hud.banner('DOINK READY', 'Drive into a giant DOINK (green beam)', 3200); this.audio.arpeggio(true); }
   }
+  /** World age 0..1: repaints the wall textures (a handful of 512 px canvases, only when it changes) and scales the grime shader. */
+  setAge(a) { const A = GameConfig.age; this.W.paintWalls(a); LookUniforms.uGrime.value = LookConfig.grime * lerp(A.grime[0], A.grime[1], a); }
+  ageForProgress() { const A = GameConfig.age; return lerp(A.start, A.end, clamp(this.delivered / GameConfig.order.quota, 0, 1)); }
+  /** A flight clipped a roof: the whole block goes up and comes back new. No damage: the trip is invincible. */
+  explodeBlock(key) {
+    const W = this.W, foot = CityBuilder.razeBlock(W, key); if (!foot) return; W.regrow.push({ key, foot, t: 0, boxes: null });
+    const [bi, bj] = key.split(',').map(Number), cx = W.cBlock(bi), cz = W.cBlock(bj), Z = GameConfig.BLOCK * .45, top = foot.reduce((m, f) => Math.max(m, f.H), 0);
+    for (let i = 0; i < 140; i++) { const a = Math.random() * 6.283, s = 4 + Math.random() * 16; this.sparks.emit(cx + (Math.random() - .5) * Z, Math.random() * top, cz + (Math.random() - .5) * Z, Math.cos(a) * s, 4 + Math.random() * 14, Math.sin(a) * s, 1.2 + Math.random(), Math.random() < .5 ? 0xff8a1a : 0xffd45a, 14); }
+    for (let i = 0; i < 90; i++) this.smoke.emit(cx + (Math.random() - .5) * Z, Math.random() * top * .8, cz + (Math.random() - .5) * Z, (Math.random() - .5) * 8, 3 + Math.random() * 9, (Math.random() - .5) * 8, 3 + Math.random() * 3, 0x3a3834, -0.2);
+    this.audio.crash(1); this.chase.shake = Math.max(this.chase.shake || 0, 1); this.hud.flash(); this.hud.callout(Math.random() < .3 ? 'DEMOLITION DOINK!' : 'BUILDING DOWN!', 'gold');
+  }
+  flyCrash(dt) {
+    this.razeCd = Math.max(0, (this.razeCd || 0) - dt); if (this.razeCd > 0) return;
+    const car = this.car, b = this.wq.buildingAt(car.x, car.z, car.y, 2.5); if (b) { this.razeCd = GameConfig.age.minGap; this.explodeBlock(b.block); }
+  }
+  /** Touched a Digital DOINK: cash, a wiped record (heat, fines and repair bills refunded), a repaired van, and the hunt is called off. */
+  onDigital() {
+    const cash = GameConfig.digital.cash * this.eco.wage; this.eco.earn(cash); const back = this.eco.forgive(); this.heat = 0; this.car.health = 100; this.endHunt();
+    this.hud.callout('DIGITAL DOINK ' + money(cash, true), 'gold'); if (back > 0.5) this.hud.callout('RECORD WIPED, ' + money(back) + ' FORGIVEN', 'sm gold'); this.hud.banner('DIGITAL DOINK', 'Police record gone. Damages forgiven. Van repaired.', 3200); this.hud.flash(); this.audio.arpeggio(true); this.audio.doinkHit();
+  }
+  /** Picked up part of a Bernstain file. A whole one means you know too much. */
+  onFile(worth, stash) {
+    this.audio.ding(true); this.hud.callout('+' + FILE_FRACS[Math.round(worth * 4)] + ' BERNSTAIN FILE', 'sm gold'); if (stash < 1) return;
+    this.files.stash = 0; this.hunted = true; this.hud.banner('ONE BERNSTAIN FILE COLLECTED', 'You know too much', 4800); this.hud.flash(); this.audio.arpeggio(false); this.audio.crash(.6);
+    this.hud.callout('POLICE AND ARMY ON YOU. HIT A DOINK.', 'bad');
+  }
+  /** Calls off the Bernstain hunt (a DOINK or a Digital DOINK, or dying). */
+  endHunt() { if (!this.hunted) return; this.hunted = false; if (this.files) this.files.stash = 0; this.hud.callout('THEY LOST YOU', 'sm gold'); }
   /** The hit: pull (van stops), rise (camera lifts, world starts to bend), hold (full effect), taper (control back, effect fades). Order timers and money drain are frozen until the taper. */
   /** Alignment: the level id of the run in progress, and a clear or an attempt (10 s or more, no clear) reported to the box. */
-  levelId() { return this.mode === 'depression' ? Decades.list.length : this.runDecadeIdx; }
+  levelId() { return this.runDecadeIdx; }
   clearLevel() { this.levelT = 0; Align.post(this.levelId(), 'clear', !!this.demo); }
   endAttempt() { if (this.levelT >= ATTEMPT_MIN_S && this.mode) Align.post(this.levelId(), 'attempt', !!this.demo); this.levelT = 0; }
   startTrip(d) {
-    const K = GameConfig.doink; this.trip = { ph: 'pull', t: 0, d, x0: this.car.x, y0: this.car.y, z0: this.car.z }; this.chase.orbit = true; this.audio.doinkHit(); this.hud.flash(); this.chase.shake = 0.5;
-    this.hud.callout(Math.random() < 0.25 ? "HONKIN' DOINK!" : 'DOINK!', 'gold'); this.hud.banner('DOINK', 'Hold on.', (K.pull + K.rise) * 1000); this.cruiseY = this.W.buildings.reduce((m, b) => Math.max(m, b.h), 0) + K.cruiseAbove;
+    const K = GameConfig.doink; this.endHunt(); if (++this.doinks.hits % GameConfig.digital.every === 0 && this.doinks.spawnDigital(this.car)) this.hud.callout('A DIGITAL DOINK APPEARED', 'sm gold'); this.trip = { ph: 'pull', t: 0, d, x0: this.car.x, y0: this.car.y, z0: this.car.z }; this.chase.orbit = true; this.audio.doinkHit(); this.hud.flash(); this.chase.shake = 0.5;
+    this.hud.callout(Math.random() < 0.25 ? "HONKIN' DOINK!" : 'DOINK!', 'gold'); this.hud.banner('DOINK', 'Hold on.', (K.pull + K.rise) * 1000); const hs = this.W.buildings.filter(b => b.block).map(b => b.H); this.cruiseY = Math.max(K.cruiseMin, (hs.reduce((s, h) => s + h, 0) / Math.max(1, hs.length)) * K.cruiseFrac); // the flight clips the taller roofs on purpose
   }
   /** The DOINK launches the van out of the top of the bong in a cloud of smoke, then flies it over the rooftops to the next stop: the
       pickup if it has no order, the drop-off if it is carrying one. If flight time is left it carries on to the next stop, and so on. */
@@ -2280,7 +2436,7 @@ class Game {
       if (T.t >= K.rise) { T.ph = 'fly'; T.t = 0; T.leg = null; this.chase.orbit = false; }
     } else if (T.ph === 'fly') {
       this.tripV = 1; T.fly = (T.fly || 0) + dt; if (Math.random() < dt * 14) puff(1, 3);
-      this.flyLeg(T, dt, K, place, puff);
+      this.flyLeg(T, dt, K, place, puff); this.flyCrash(dt);
     } else { const u = clamp(T.t / K.taper, 0, 1); this.tripV = Math.pow(1 - u, 1.6); if (T.t >= K.taper) { this.endTrip(); return; } }
     if (T.ph === 'pull' || T.ph === 'rise') this.chase.yaw += dt * (0.3 + 0.5 * this.tripV);
     this.audio.trip(this.tripV);
@@ -2320,7 +2476,7 @@ class Game {
   exitDemo() { this.endAttempt(); this.demo = null; Save.noWrite = false; this.toTitle(); }
   onPickup(o) { this.hud.callout('GOT ' + o.item + '!', 'gold'); this.hud.banner('PICKED UP: ' + o.item, 'For ' + o.who + ' · ' + Math.round(o.total) + 's', 2600); this.audio.arpeggio(true); }
   onDeliver(r) {
-    this.eco.earn(r.total); this.delivered++; this.car.health = Math.min(100, this.car.health + this.diff.heal); this.audio.ding(true);
+    this.eco.earn(r.total); this.delivered++; if (this.mode === 'normal' && this.delivered < GameConfig.order.quota) this.setAge(this.ageForProgress()); this.car.health = Math.min(100, this.car.health + this.diff.heal); this.audio.ding(true);
     this.hud.callout('DELIVERED ' + money(r.total, true), 'gold'); this.hud.banner('DELIVERED', `Fare ${money(r.pay)} · Tips ${money(r.tips)}`, 2000);
     if (!this.demo && !this.save.doinkTutorial) { this.save.doinkTutorial = true; Save.write(this.save); setTimeout(() => { if (this.state === 'play') this.hud.banner('MEET THE DOINK', 'Drive through green baggies (1/8, 1/4, 1/2) until the stash reads 8/8. Then hit a giant DOINK: a few seconds out of it, then a banked dash and cash.', 9000); }, 2300); }
     if (this.mode === 'normal' && this.delivered >= GameConfig.order.quota) this.nextDecade();
@@ -2355,12 +2511,12 @@ class Game {
     const hooks = {
       honk: (v) => this.audio.honk(v), nearMiss: () => this.stunt('NEAR MISS!', GameConfig.stunt.nearMiss, ''),
       hit: (rel, x, z, nx, nz, c) => {
-        const K = c ? c.kind : 'car'; this.lastCause = K === 'cop' ? 'Shot by a cop you rammed' : K === 'bus' ? 'Flattened by a bus' : K === 'truck' ? 'Flattened by a truck' : K === 'moto' ? 'Took out a biker and lost anyway' : K === 'rival' ? 'Lost a turf war to a rival van' : 'Totalled by traffic';
+        const K = c ? c.kind : 'car'; this.lastCause = K === 'cop' ? 'Shot by a cop you rammed' : K === 'bus' ? 'Flattened by a bus' : K === 'truck' ? 'Flattened by a truck' : K === 'moto' ? 'Took out a biker and lost anyway' : K === 'rival' ? 'Lost a turf war to a rival van' : K === 'army' ? 'Knew too much' : 'Totalled by traffic';
         this.audio.crash(clamp(rel / 30, 0, 1)); this.sparkBurst(x, 1, z, rel, nx, nz); this.damage(Math.max(0, (rel - 7) * 1.0)); this.bill('traffic', rel);
-        if (rel > 8 && K !== 'rival' && K !== 'parked') this.addHeat(GameConfig.npc.heatPerHit);
+        if (rel > 8 && K !== 'rival' && K !== 'parked' && K !== 'army') this.addHeat(GameConfig.npc.heatPerHit);
         if (K === 'rival') this.stunt('RIVAL WRECKED!', GameConfig.stunt.smash * 6, 'gold');
       },
-      heat: () => this.heat, pickups: () => (this.state === 'play' ? this.orders.avail : []),
+      heat: () => this.heat, hunted: () => this.hunted, pickups: () => (this.state === 'play' ? this.orders.avail : []),
       steal: (r, c) => { const o = this.orders.rivalTake(r, this, c); if (!o) return false; c.order = o; this.hud.callout('RIVAL TOOK AN ORDER', 'sm bad'); return true; },
       rivalOrder: (c) => { const R = this.W.restaurants; return this.orders.makeOrder(R[Math.floor(Math.random() * R.length)], this, c); },
       playerHasOrder: () => !!this.orders.order, invincible: () => this.invincible(),
@@ -2368,14 +2524,14 @@ class Game {
       loseOrder: (c) => { c.order = this.orders.release(); this.audio.crash(.3); this.hud.callout('RIVAL STOLE YOUR ORDER', 'sm bad'); },
       robCash: (c) => { const amt = c.cash * this.eco.wage; c.cash = 0; if (amt > 0) { this.eco.earn(amt); this.hud.callout('+' + money(amt) + ' FROM RIVAL', 'gold'); } },
       boom: (c) => { this.sparkBurst(c.x, 1.5, c.z, 30, 0, 1); this.audio.crash(1); this.chase.shake = Math.max(this.chase.shake || 0, .5); },
-      bust: (cop) => { if (this.busted > 0 || this.car.dead || this.invincible()) return; this.busted = 4; const fine = this.eco.wage * GameConfig.npc.fine; this.eco.earn(-fine); this.heat = 0; this.hud.banner('BUSTED', 'The officer fines you ' + money(fine) + ' and lets you go.', 2400); this.audio.arpeggio(false); },
+      bust: (cop) => { if (this.busted > 0 || this.car.dead || this.invincible()) return; this.busted = 4; const fine = this.eco.wage * GameConfig.npc.fine; this.eco.earn(-fine); this.eco.record.fines += fine; this.heat = 0; this.hud.banner('BUSTED', 'The officer fines you ' + money(fine) + ' and lets you go.', 2400); this.audio.arpeggio(false); },
       ped: (p, speed) => this.pedHit(p, speed),
     };
-    this.traffic.update(dt, car, hooks); this.peds.update(dt, car, this.wq, hooks);
+    CityBuilder.tick(this.W, dt, this.rng); this.traffic.update(dt, car, hooks); this.peds.update(dt, car, this.wq, hooks);
     this.targets.update(dt, car, { ticket: (p) => this.ticketHit(p), smash: (p) => { this.stats.smashed++; this.bill(p.type, car.speed, true); this.audio.crash(0.15); this.stunt('SMASH!', GameConfig.stunt.smash, 'sm'); for (let i = 0; i < 10; i++) this.sparks.emit(p.x, 1, p.z, (Math.random() - .5) * 10, 2 + Math.random() * 5, (Math.random() - .5) * 10, 0.5, 0xffffff, 10); } }, this.time);
     if (!lock) this.orders.update(dt, car, this); const o = this.orders.order; if (o) { o.comboT = Math.max(0, o.comboT - dt); if (o.comboT <= 0) o.combo = 0; }
     // economy
-    const hit = this.doinks.update(dt, car, this, !this.trip && !car.dead); if (hit) this.startTrip(hit);
+    const hit = this.doinks.update(dt, car, this, !this.trip && !car.dead); if (hit) this.startTrip(hit); this.files.update(dt, car, this, !this.trip && !car.dead);
     for (const ev of (lock ? [] : this.eco.tick(dt))) {
       if (ev.type === 'tax') { if (ev.delayed) { this.hud.banner('TAX RETURN FILED', 'Refund of ' + money(ev.amount) + ' is processing…', 3200); } else { this.hud.banner('TAX RETURN DEPOSITED!', money(ev.amount, true), 3400); this.audio.ding(true); } this.afterTaxYear(ev.year); }
       else if (ev.type === 'taxPaid') { this.hud.banner('TAX RETURN DEPOSITED!', money(ev.amount, true) + ' (finally)', 3400); this.audio.ding(true); }
@@ -2388,10 +2544,14 @@ class Game {
     this.audio.engine(car.speed, inp.throttle, car.drifting && car.grounded, car.boostT > 0);
     this.tickTrip(dt);
   }
-  afterTaxYear(doneYear) { if (this.mode === 'depression' && doneYear >= GameConfig.depressionYears) this.victory(true); }
+  afterTaxYear(doneYear) { /* tax years only pay out now; the Depression bonus that ended on one is gone */ }
   /** Bill a crash through the economy and tell the player what it cost and what insurance took. */
   bill(kind, speed, flat) {
-    if (this.invincible()) return; const r = this.eco.charge(kind, speed, flat); if (!r) return; this.hud.callout('REPAIRS ' + money(-r.paid), 'sm bad'); if (r.covered > 0.5) this.hud.callout('INSURANCE COVERED ' + money(r.covered), 'sm');
+    if (this.invincible()) return; const r = this.eco.charge(kind, speed, flat); if (!r) return;
+    const NP = GameConfig.nepo; if (this.diff.id === 'nepo' && ++this.crashN % NP.every === 0) { // every fifth billed crash on Nepo: the lawyer wins it, and then some
+      const win = r.paid + r.bill * NP.payback; this.eco.earn(win); this.eco.record.repairs -= r.paid; this.hud.callout("DAD'S LAWYER GOT THAT ONE RULED IN YOUR FAVOR " + money(win, true), 'gold'); this.audio.arpeggio(true); return;
+    }
+    this.hud.callout('REPAIRS ' + money(-r.paid), 'sm bad'); if (r.covered > 0.5) this.hud.callout('INSURANCE COVERED ' + money(r.covered), 'sm');
   }
   addHeat(v) { const was = this.heat || 0; this.heat = Math.min(1, was + v); if (was <= GameConfig.npc.copHeat && this.heat > GameConfig.npc.copHeat) this.hud.callout('COPS ON YOU!', 'bad'); }
   pedHit(p, speed) {

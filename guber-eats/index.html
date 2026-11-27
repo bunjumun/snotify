@@ -305,12 +305,16 @@ const GameConfig = {
      sparse to ever meet). `r` is the contact radius, `mass` scales crash damage and wreck throw; mass above 1.4 means a shove
      rather than a wreck below `heavyWreck` m/s. The fleet is kept within `recycleDist` of the player, `drawDist` is the cull. */
   npc: {
-    car: 1.2, bus: .18, truck: .18, moto: .3, parked: .9, cops: 3, rivals: 2,
+    car: 1.8, bus: .18, truck: .18, moto: .3, parked: .9, cops: 3, rivals: 2,
     speed: { car: [10, 16], bus: [7, 10], truck: [8, 12], moto: [17, 23], cop: [12, 15], rival: [21, 25] },
     r: { car: 3.1, bus: 4.4, truck: 3.9, moto: 2.1, cop: 3.1, rival: 3.4, parked: 3.1 },
     mass: { car: 1, bus: 2.4, truck: 1.9, moto: .45, cop: 1.15, rival: 1.2, parked: 1 },
     heavyWreck: 20, spawnMin: 45, spawnMax: 230, recycleDist: 280, drawDist: 240,
     copHeat: .25, chaseRange: 250, copTop: 38, heatPerHit: .45, heatPerPed: .6, heatDecay: .035, fine: 40, stealCd: 30, stealRadius: 18,
+    /* Order stealing (2026-11-26). Half the rivals start the run carrying an order, so there is something to take. After any swap
+       both vehicles ignore the swap for stealGrace seconds, or the order would ping-pong on the next frame of the same crash.
+       Rivals hold cash too (cashMin..cashMax x wage), paid out only when you blow one up while a DOINK effect protects you. */
+    carryOnSpawn: .5, stealGrace: 6, rivalDropRadius: 12, cashMin: 3, cashMax: 9, launchSpeed: 26, launchLift: 14,
   },
   /* 20 min of play = 1 year (to be tuned by play). Month = seconds/12 (rent due), quarter = seconds/4 (insurance premium billed), year = tax return. */
   year: { seconds: 1200, months: 12 },
@@ -1188,15 +1192,15 @@ function buildVan(dec, rng, tierId) {
 class VehiclePhysics {
   constructor() { this.reset(0, 0, 0); }
   reset(x, z, heading) {
-    Object.assign(this, { x, z, y: 0, vx: 0, vz: 0, vy: 0, h: heading, grounded: true, airTime: 0, health: this.health ?? 100, dashBank: this.dashBank ?? 0, boostT: 0, boostCd: 0, driftT: 0, driftPaid: 0, drifting: false,
+    Object.assign(this, { x, z, y: 0, vx: 0, vz: 0, vy: 0, h: heading, grounded: true, airTime: 0, health: this.health ?? 100, dashBank: this.dashBank ?? 0, boostBanked: false, boostT: 0, boostCd: 0, driftT: 0, driftPaid: 0, drifting: false,
       yawRate: 0, vyPrev: 0, pitch: 0, roll: 0, dead: false, vf: 0, vl: 0, speed: 0, wheelSpin: 0 });
   }
   get forward() { return [Math.sin(this.h), Math.cos(this.h)]; }
-  tryBoost() { if (this.dead) return false; if (this.boostCd > 0) { if (this.dashBank < 1) return false; this.dashBank -= 1; } /* a banked dash (from a doink) fires through the recharge */ this.boostT = GameConfig.car.boostTime; this.boostCd = GameConfig.car.boostCd + GameConfig.car.boostTime; const [fx, fz] = this.forward; this.vx += fx * GameConfig.car.boostImpulse; this.vz += fz * GameConfig.car.boostImpulse; return true; }
+  tryBoost() { if (this.dead) return false; let banked = false; if (this.boostCd > 0) { if (this.dashBank < 1) return false; this.dashBank -= 1; banked = true; } /* a banked dash (from a doink) fires through the recharge */ this.boostT = GameConfig.car.boostTime; this.boostBanked = banked; /* doink dash: Game.invincible() reads this */ this.boostCd = GameConfig.car.boostCd + GameConfig.car.boostTime; const [fx, fz] = this.forward; this.vx += fx * GameConfig.car.boostImpulse; this.vz += fz * GameConfig.car.boostImpulse; return true; }
   /** Returns events for the game: impacts, landing, drift ticks. */
   step(dt, inp, wq) {
     const c = GameConfig.car, ev = [], s = this, d = s.drive || Difficulties.middle.drive, D = GameConfig.drive;
-    s.boostT = Math.max(0, s.boostT - dt); if (s.boostT <= 0) s.boostCd = Math.max(0, s.boostCd - dt);
+    s.boostT = Math.max(0, s.boostT - dt); if (s.boostT <= 0) s.boostBanked = false; if (s.boostT <= 0) s.boostCd = Math.max(0, s.boostCd - dt);
     let fx = Math.sin(s.h), fz = Math.cos(s.h);
     if (s.grounded) {
       // 1. throttle/brake act along the OLD heading, straight on the world velocity
@@ -1311,13 +1315,16 @@ class Particles {
    the wreck at the player); it is the car-to-player direction now.
    Kinds: car, bus and truck (heavy: shove you instead of wrecking at low speed), moto (fast, weaves inside its lane),
    parked (curb-side obstacles), cop (patrols; chases along the street grid while `heat` is up; contact = fined),
-   rival (a Guber van that races you to the pickups and takes one when it gets close).
+   rival (a Guber van that races you to the pickups and takes one when it gets close), carries it to a drop and can trade it with you in a crash; see rivalGoal and the rival block in update). Civilians are flat colour; camo is Guber or government.
    ====================================================================== */
 class Traffic {
   constructor(scene, W, dec, rng, home, lite) {
     this.scene = scene; this.W = W; this.rng = rng; this.cars = []; this.group = new THREE.Group(); scene.add(this.group); this.ext = W.E - 6; this.skins = []; this.t = 0; this.home = home;
     const pal = [[dec.light, dec.dark], [dec.dark, dec.light], [dec.accent, dec.dark], [dec.light, dec.accent]];
     for (const [l, d] of pal) this.skins.push(makeTexture(dazzleCanvas(128, 128, { light: l, dark: d, panelMin: .18, panelMax: .4, bandMin: 6, bandMax: 14, rng })));
+    /* Civilian paint is flat colour. Dazzle camo is the Guber livery and the government's (buses, cops), so a plain car can never be
+       mistaken for a rival van. */
+    this.civSkins = ['#e8b923', '#e9e9e4', '#9aa1a8', '#b3262c', '#1f7a7a', '#1d3557', '#3e7d3a', '#5a3a7a', '#c9702a', '#14141a'].map(col => { const cv = document.createElement('canvas'); cv.width = cv.height = 16; const g = cv.getContext('2d'); g.fillStyle = col; g.fillRect(0, 0, 16, 16); return makeTexture(cv); });
     this.copSkin = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); g.fillStyle = '#0d0d11'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#f0f0f0'; g.fillRect(0, 22, 64, 24); return makeTexture(c); })();
     this.styles = dec.id === '2020s' || dec.id === '2010s' ? ['crossover', 'suv', 'ev', 'hatch'] : [dec.style, dec.style, dec.style === 'coupe' ? 'wagon' : dec.style];
     const lanes = [], N = GameConfig.npc; this.laneKey = new Map();
@@ -1329,21 +1336,25 @@ class Traffic {
     add('parked', Math.round(base * N.parked * (lite ? .5 : 1))); add('cop', lite ? 1 : N.cops); add('rival', lite ? 1 : N.rivals);
     plan.forEach((kind, n) => {
       const mesh = this.build(kind, n, dec); this.group.add(mesh); mesh.traverse(o => { if (o.isMesh && o.material.blending !== THREE.AdditiveBlending) o.castShadow = true; });
-      const c = { kind, mesh, r: N.r[kind], mass: N.mass[kind], lane: lanes[0], s: 0, lat: 0, tlat: 0, speed: 0, cruise: 0, state: 'drive', honkCd: 0, nearCd: 0, hitCd: 0, turnCd: 0, stealCd: 6 + rng() * 10, hold: 0, phase: rng() * 6.28, vx: 0, vz: 0, spin: 0, wreckT: 0, x: 0, z: 0, yaw: 0, vyaw: 0, chasing: false, idle: null };
+      const c = { kind, mesh, r: N.r[kind], mass: N.mass[kind], lane: lanes[0], s: 0, lat: 0, tlat: 0, speed: 0, cruise: 0, state: 'drive', honkCd: 0, nearCd: 0, hitCd: 0, turnCd: 0, stealCd: 6 + rng() * 10, hold: 0, phase: rng() * 6.28, vx: 0, vz: 0, spin: 0, wreckT: 0, x: 0, z: 0, yaw: 0, vyaw: 0, chasing: false, idle: null, order: null, graceT: 0, cash: 0, seeded: false, y: 0, vy: 0, pitch: 0, boom: false };
       this.cars.push(c); this.respawn(c, null, true);
     });
   }
   build(kind, n, dec) {
-    const sk = this.skins[n % this.skins.length];
-    if (kind === 'moto') return buildMoto(sk, dec.accent);
-    if (kind === 'bus' || kind === 'truck') return buildCar(kind, sk, dec.accent, false);
-    if (kind === 'rival') return buildCar('van', this.skins[2], dec.accent, true);
+    const sk = this.skins[n % this.skins.length], civ = this.civSkins[n % this.civSkins.length];
+    if (kind === 'moto') return buildMoto(civ, dec.accent);
+    if (kind === 'bus') return buildCar(kind, sk, dec.accent, false); // city transport: government livery, so camo
+    if (kind === 'truck') return buildCar(kind, civ, dec.accent, false);
+    if (kind === 'rival') {
+      const m = buildCar('van', this.skins[2], dec.accent, true), S = m.userData.S, bg = new THREE.BoxGeometry(1.1, .6, 1.1), bm = new THREE.MeshBasicMaterial({ color: 0x35ff6a });
+      m.userData.own.push(bg, bm); const bag = new THREE.Mesh(bg, bm); bag.position.set(0, S.wr + S.hgt + S.ch + 1, S.co); bag.visible = false; m.add(bag); m.userData.bag = bag; return m; // the bag shows while the van carries an order
+    }
     if (kind === 'cop') {
       const m = buildCar(this.styles[0], this.copSkin, dec.accent, false), S = m.userData.S, own = m.userData.own, y = S.wr + S.hgt + S.ch + .1;
       const red = new THREE.MeshBasicMaterial({ color: 0x300808 }), blue = new THREE.MeshBasicMaterial({ color: 0x080830 }), bg = new THREE.BoxGeometry(.55, .16, .3); own.push(red, blue, bg);
       const a = new THREE.Mesh(bg, red), b = new THREE.Mesh(bg, blue); a.position.set(-.3, y, S.co); b.position.set(.3, y, S.co); m.add(a, b); m.userData.bar = [red, blue]; return m;
     }
-    return buildCar(this.styles[n % this.styles.length], sk, dec.accent, false);
+    return buildCar(this.styles[n % this.styles.length], civ, dec.accent, false);
   }
   place(c) {
     const l = c.lane; if (l.axis === 'z') { c.x = l.fixed + c.lat; c.z = c.s; c.yaw = l.dir > 0 ? 0 : Math.PI; } else { c.z = l.fixed + c.lat; c.x = c.s; c.yaw = l.dir > 0 ? Math.PI / 2 : -Math.PI / 2; }
@@ -1351,7 +1362,7 @@ class Traffic {
   /** Put a vehicle back on a random lane 45..230 m from `around` (the player; the start point when there is none). */
   respawn(c, around, first) {
     const N = GameConfig.npc, ctr = around && around.x < 9e4 ? around : this.home, k = c.kind;
-    c.state = k === 'parked' ? 'parked' : 'drive'; c.spin = 0; c.lat = c.tlat = 0; c.hold = 0; c.chasing = false; c.idle = null; c.hitCd = 0; c.turnCd = 0;
+    c.state = k === 'parked' ? 'parked' : 'drive'; c.spin = 0; c.lat = c.tlat = 0; c.hold = 0; c.chasing = false; c.idle = null; c.hitCd = 0; c.turnCd = 0; c.y = 0; c.vy = 0; c.pitch = 0; c.boom = false; if (k === 'rival') c.cash = N.cashMin + this.rng() * (N.cashMax - N.cashMin);
     const sp = N.speed[k] || [0, 0]; c.cruise = sp[0] + this.rng() * (sp[1] - sp[0]); c.speed = c.cruise;
     for (let tries = 0; tries < 16; tries++) {
       c.lane = this.lanes[Math.floor(this.rng() * this.lanes.length)]; c.lat = c.tlat = 0;
@@ -1376,6 +1387,11 @@ class Traffic {
   /** What a rival van is after: the pickup the player would take, once its steal cooldown is up. Null goal = idle wander. */
   rivalGoal(c, player, hooks, dt) {
     const N = GameConfig.npc, list = hooks.pickups ? hooks.pickups() : null; c.stealCd = Math.max(0, c.stealCd - dt);
+    if (!c.seeded) { c.seeded = true; if (this.rng() < N.carryOnSpawn && hooks.rivalOrder) c.order = hooks.rivalOrder(c); }
+    if (c.order) { // deliver what it carries before looking for more
+      const t = c.order.to, dd = Math.hypot(t.x - c.x, t.z - c.z);
+      if (dd < N.rivalDropRadius) { c.order = null; c.stealCd = N.stealCd * .5; } else return { x: t.x, z: t.z, cruise: dd < 40 ? Math.max(5, dd * .6) : N.speed.rival[1] };
+    }
     if (!list || !list.length || c.stealCd > 0 || player.x > 9e4) {
       if (!c.idle || Math.hypot(c.idle.x - c.x, c.idle.z - c.z) < 30) c.idle = this.W.spots[Math.floor(this.rng() * this.W.spots.length)];
       c.hold = 0; return { x: c.idle.x, z: c.idle.z, cruise: c.cruise };
@@ -1388,10 +1404,11 @@ class Traffic {
   update(dt, player, hooks) {
     this.t += dt; const N = GameConfig.npc, far = player.x > 9e4, heat = hooks.heat ? hooks.heat() : 0;
     for (const c of this.cars) {
-      c.honkCd = Math.max(0, c.honkCd - dt); c.nearCd = Math.max(0, c.nearCd - dt); c.hitCd = Math.max(0, c.hitCd - dt); c.turnCd = Math.max(0, c.turnCd - dt);
+      c.honkCd = Math.max(0, c.honkCd - dt); c.nearCd = Math.max(0, c.nearCd - dt); c.hitCd = Math.max(0, c.hitCd - dt); c.turnCd = Math.max(0, c.turnCd - dt); c.graceT = Math.max(0, c.graceT - dt); if (c.mesh.userData.bag) c.mesh.userData.bag.visible = !!c.order;
       if (c.state === 'wreck') {
         c.x += c.vx * dt; c.z += c.vz * dt; c.vx *= Math.exp(-1.6 * dt); c.vz *= Math.exp(-1.6 * dt); c.yaw += c.spin * dt; c.spin *= Math.exp(-1.2 * dt); c.wreckT -= dt;
-        if (c.wreckT <= 0) this.respawn(c, far ? null : player); c.mesh.rotation.set(0, c.yaw, 0.0); c.mesh.position.set(c.x, 0, c.z); continue;
+        if (c.y > 0 || c.vy > 0) { c.vy -= 24 * dt; c.y += c.vy * dt; c.pitch += 7 * dt; if (c.y <= 0) { c.y = 0; c.vy = 0; c.pitch = 0; if (c.boom) { c.boom = false; c.mesh.visible = false; if (hooks.boom) hooks.boom(c); } } }
+        if (c.wreckT <= 0) this.respawn(c, far ? null : player); c.mesh.rotation.set(c.pitch, c.yaw, 0.0); c.mesh.position.set(c.x, c.y, c.z); continue;
       }
       let d = far ? 1e5 : Math.hypot(player.x - c.x, player.z - c.z);
       if (!far && d > N.recycleDist && !c.chasing) { this.respawn(c, player); d = Math.hypot(player.x - c.x, player.z - c.z); }
@@ -1420,13 +1437,27 @@ class Traffic {
         const nx = d > 1e-6 ? rx / d : 1, nz = d > 1e-6 ? rz / d : 0, rel = Math.hypot(player.vx - fwdX * c.speed, player.vz - fwdZ * c.speed); // n: from the other vehicle to the player
         const push = c.r - d; player.x += nx * push * 0.8; player.z += nz * push * 0.8; c.x -= nx * push * 0.2; c.z -= nz * push * 0.2;
         const pn = player.vx * nx + player.vz * nz; if (pn < 0) { player.vx -= 1.5 * pn * nx; player.vz -= 1.5 * pn * nz; }
+        if (c.kind === 'rival') {
+          if (hooks.invincible && hooks.invincible()) { // a DOINK protects you: take the order and the cash, then send the van to orbit
+            if (c.order && hooks.playerHasOrder && !hooks.playerHasOrder()) hooks.takeOrder(c);
+            if (c.cash > 0 && hooks.robCash) hooks.robCash(c);
+            c.state = 'wreck'; c.vx = nx * -N.launchSpeed + fwdX * c.speed * .5; c.vz = nz * -N.launchSpeed + fwdZ * c.speed * .5; c.vy = N.launchLift; c.y = .01; c.spin = (Math.random() - .5) * 14; c.wreckT = 3; c.boom = true; c.order = null;
+            hooks.hit(rel * c.mass, c.x, c.z, -nx, -nz, c); continue;
+          }
+          if (c.graceT > 0) { c.speed *= .5; continue; } // just swapped: the vans are still overlapping, so shove only, never wreck
+          { // an order changes hands in the crash, and nobody is wrecked
+            const has = hooks.playerHasOrder && hooks.playerHasOrder(); let swapped = false;
+            if (c.order && !has) { hooks.takeOrder(c); swapped = true; } else if (!c.order && has) { hooks.loseOrder(c); swapped = true; }
+            if (swapped) { c.graceT = N.stealGrace; c.hitCd = .7; c.speed *= .5; continue; }
+          }
+        }
         if (c.chasing && hooks.bust) { hooks.bust(c); c.speed *= .3; if (c.hitCd <= 0) { c.hitCd = .7; hooks.hit(rel * .3, c.x, c.z, -nx, -nz, c); } continue; } // a bust is a fine, not a wreck
         if (c.mass > 1.4 && rel < N.heavyWreck) { c.speed *= 0.5; if (c.hitCd <= 0) { c.hitCd = .7; hooks.hit(rel * (1 + (c.mass - 1) * .5), c.x, c.z, -nx, -nz, c); } }
         else { c.state = 'wreck'; c.vx = nx * -rel * 0.8 / c.mass + fwdX * c.speed * 0.5; c.vz = nz * -rel * 0.8 / c.mass + fwdZ * c.speed * 0.5; c.spin = (Math.random() - .5) * 6; c.wreckT = 3; hooks.hit(rel * c.mass, c.x, c.z, -nx, -nz, c); }
       }
     }
   }
-  dispose() { this.scene.remove(this.group); this.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); this.cars.forEach(c => c.mesh.userData.own.forEach(d => d.dispose && d.dispose())); this.skins.forEach(t => t.dispose()); this.copSkin.dispose(); }
+  dispose() { this.scene.remove(this.group); this.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); this.cars.forEach(c => c.mesh.userData.own.forEach(d => d.dispose && d.dispose())); this.skins.forEach(t => t.dispose()); this.civSkins.forEach(t => t.dispose()); this.copSkin.dispose(); }
 }
 
 /* ======================================================================
@@ -1572,7 +1603,7 @@ class OrderManager {
   }
   refill() {
     const free = this.W.restaurants.filter(r => !this.avail.includes(r) && !(this.order && this.order.from === r)); const need = 4 - this.avail.length;
-    for (let i = 0; i < need && free.length; i++) { const r = free.splice(Math.floor(this.rng() * free.length), 1)[0]; this.avail.push(r); const k = this.beacons.size % 2; const b = new Beacon(this.scene, k ? 0xff8a1a : 0x2aa8ff, k ? 0xffd08a : 0x9ad8ff); b.at(r.x, r.z); this.beacons.set(r, b); }
+    for (let i = 0; i < need && free.length; i++) { const r = free.splice(Math.floor(this.rng() * free.length), 1)[0]; this.avail.push(r); const k = this.beacons.size % 2; const b = new Beacon(this.scene, k ? 0xff8a1a : 0x2aa8ff, k ? 0xffd08a : 0x9ad8ff); b.at(r.x, r.z); if (this.order) b.g.visible = false; this.beacons.set(r, b); }
   }
   /** Target for the nav arrow: the nearest pickup, or the drop-off. */
   target(car) {
@@ -1590,22 +1621,33 @@ class OrderManager {
       if (this.order && o.time <= 0) this.fail(G);
     }
   }
-  start(r, G) {
+  /** An order from restaurant r, costed from wherever `from` is. Used for the player's pickups and for rivals' (2026-11-26). */
+  makeOrder(r, G, from) {
     const E = G.eco, dec = G.decade, diff = G.diff, W = this.W, spots = W.spots.filter(s => { const d = Math.hypot(s.x - r.x, s.z - r.z); return d > 110 && d < 440; });
-    const to = spots.length ? spots[Math.floor(this.rng() * spots.length)] : W.spots[Math.floor(this.rng() * W.spots.length)], dist = Math.hypot(to.x - r.x, to.z - r.z) + Math.hypot(r.x - G.car.x, r.z - G.car.z) * 0.3;
-    const base = (14 + dist * 0.11) * E.wage * dec.payMul * diff.pay, total = Math.max(24 / (1 / diff.timer), dist / GameConfig.order.avgSpeed + 14) * diff.timer * (dec.sepia ? .85 : 1);
-    this.order = { from: r, to, base, total, time: total, item: pick(this.rng, ITEMS), who: pick(this.rng, NAMES), pot: 0, combo: 0, comboT: 0, mult: diff.tipBase * dec.tipMul, dist };
-    this.avail = this.avail.filter(a => a !== r); const b = this.beacons.get(r); if (b) { b.dispose(); this.beacons.delete(r); } this.avail.forEach(a => { const bb = this.beacons.get(a); if (bb) bb.g.visible = false; });
-    this.drop.at(to.x, to.z); this.drop.g.visible = true; G.onPickup(this.order);
+    const to = spots.length ? spots[Math.floor(this.rng() * spots.length)] : W.spots[Math.floor(this.rng() * W.spots.length)], dist = Math.hypot(to.x - r.x, to.z - r.z) + Math.hypot(r.x - from.x, r.z - from.z) * 0.3;
+    const base = (14 + dist * 0.11) * E.wage * dec.payMul * diff.pay, total = this.budget(dist, G);
+    return { from: r, to, base, total, time: total, item: pick(this.rng, ITEMS), who: pick(this.rng, NAMES), pot: 0, combo: 0, comboT: 0, mult: diff.tipBase * dec.tipMul, dist };
   }
+  /** Seconds allowed for a delivery of `dist` metres. */
+  budget(dist, G) { return Math.max(24 / (1 / G.diff.timer), dist / GameConfig.order.avgSpeed + 14) * G.diff.timer * (G.decade.sepia ? .85 : 1); }
+  /** Take pickup r off the board: its beacon goes and a new one is drawn. */
+  claim(r) { this.avail = this.avail.filter(a => a !== r); const b = this.beacons.get(r); if (b) { b.dispose(); this.beacons.delete(r); } }
+  showDrop(to, on) { this.avail.forEach(a => { const bb = this.beacons.get(a); if (bb) bb.g.visible = !on; }); this.drop.g.visible = on; if (on) this.drop.at(to.x, to.z); }
+  start(r, G) {
+    this.order = this.makeOrder(r, G, G.car); this.claim(r); this.showDrop(this.order.to, true); G.onPickup(this.order);
+  }
+  /** A rival van takes pickup r and carries the order. Allowed whether or not the player holds one. */
+  rivalTake(r, G, c) { if (!this.avail.includes(r)) return null; const o = this.makeOrder(r, G, c); this.claim(r); this.refill(); return o; }
+  /** The player takes over an order stolen from a rival: same drop, a fresh clock from here, no tips or combo carried over. */
+  adopt(o, G) { o.total = o.time = this.budget(Math.hypot(o.to.x - G.car.x, o.to.z - G.car.z), G); o.pot = 0; o.combo = 0; o.comboT = 0; this.order = o; this.hold = 0; this.showDrop(o.to, true); }
+  /** An empty-handed player: the order is returned (for a rival to carry), and the pickups come back. No failure fee. */
+  release() { const o = this.order; this.order = null; this.hold = 0; this.showDrop(null, false); return o; }
   deliver(G) {
     const o = this.order, bonus = o.base * 0.6 * clamp(o.time / o.total, 0, 1), tips = o.pot * (1 + o.combo * 0.1); // stunt() already scaled each tip by difficulty and era
     const pay = o.base + bonus, total = pay + tips; this.order = null; this.drop.g.visible = false; this.avail.forEach(a => { const bb = this.beacons.get(a); if (bb) bb.g.visible = true; }); this.refill();
     G.onDeliver({ pay, bonus, tips, total, order: o });
   }
   fail(G) { const o = this.order; this.order = null; this.drop.g.visible = false; this.avail.forEach(a => { const bb = this.beacons.get(a); if (bb) bb.g.visible = true; }); this.refill(); G.onOrderFail(o); }
-  /** A rival van takes a pickup. Only while the player is free to take it; the beacon goes and a new one is drawn. */
-  steal(r) { if (this.order || !this.avail.includes(r)) return false; this.avail = this.avail.filter(a => a !== r); const b = this.beacons.get(r); if (b) { b.dispose(); this.beacons.delete(r); } this.refill(); return true; }
   cancel() { this.order = null; this.drop.g.visible = false; }
   dispose() { for (const b of this.beacons.values()) b.dispose(); this.drop.dispose(); }
 }
@@ -2235,8 +2277,10 @@ class Game {
     if (this.mode === 'normal' && this.delivered >= GameConfig.order.quota) this.nextDecade();
   }
   onOrderFail(o) { const pen = o.base * 0.3; this.eco.earn(-pen); this.hud.callout('TOO LATE! ' + money(-pen), 'bad'); this.audio.arpeggio(false); }
+  /** No damage, repairs or fines during any DOINK effect (pull to taper) or while a doink-banked dash is burning. */
+  invincible() { return !!this.trip || !!this.car.boostBanked; }
   damage(amount) {
-    if (this.car.dead || amount <= 0 || (this.trip && this.trip.ph !== 'taper')) return; if (this.demo) amount *= 0.4; /* the autopilot drives fast through a busy street; crashes still happen and show, but a demo should not wreck itself every minute */ this.car.health -= amount * this.diff.dmg; this.hud.flash(); this.chase.shake = Math.min(0.8, 0.2 + amount * 0.02);
+    if (this.car.dead || amount <= 0 || this.invincible()) return; if (this.demo) amount *= 0.4; /* the autopilot drives fast through a busy street; crashes still happen and show, but a demo should not wreck itself every minute */ this.car.health -= amount * this.diff.dmg; this.hud.flash(); this.chase.shake = Math.min(0.8, 0.2 + amount * 0.02);
     if (this.car.health <= 0) this.die(this.lastCause || 'Wrecked');
   }
   ticketHit(pos) {
@@ -2268,9 +2312,15 @@ class Game {
         if (rel > 8 && K !== 'rival' && K !== 'parked') this.addHeat(GameConfig.npc.heatPerHit);
         if (K === 'rival') this.stunt('RIVAL WRECKED!', GameConfig.stunt.smash * 6, 'gold');
       },
-      heat: () => this.heat, pickups: () => (this.state === 'play' && !this.orders.order ? this.orders.avail : []),
-      steal: (r) => { if (!this.orders.steal(r)) return false; this.hud.callout('RIVAL TOOK AN ORDER', 'sm bad'); return true; },
-      bust: (cop) => { if (this.busted > 0 || this.car.dead) return; this.busted = 4; const fine = this.eco.wage * GameConfig.npc.fine; this.eco.earn(-fine); this.heat = 0; this.hud.banner('BUSTED', 'The officer fines you ' + money(fine) + ' and lets you go.', 2400); this.audio.arpeggio(false); },
+      heat: () => this.heat, pickups: () => (this.state === 'play' ? this.orders.avail : []),
+      steal: (r, c) => { const o = this.orders.rivalTake(r, this, c); if (!o) return false; c.order = o; this.hud.callout('RIVAL TOOK AN ORDER', 'sm bad'); return true; },
+      rivalOrder: (c) => { const R = this.W.restaurants; return this.orders.makeOrder(R[Math.floor(Math.random() * R.length)], this, c); },
+      playerHasOrder: () => !!this.orders.order, invincible: () => this.invincible(),
+      takeOrder: (c) => { const o = c.order; c.order = null; this.orders.adopt(o, this); this.audio.ding(true); this.hud.callout('ORDER STOLEN! DELIVER IT', 'gold'); this.hud.banner('ORDER STOLEN', 'Deliver ' + o.item + ' to ' + o.who, 2200); },
+      loseOrder: (c) => { c.order = this.orders.release(); this.audio.crash(.3); this.hud.callout('RIVAL STOLE YOUR ORDER', 'sm bad'); },
+      robCash: (c) => { const amt = c.cash * this.eco.wage; c.cash = 0; if (amt > 0) { this.eco.earn(amt); this.hud.callout('+' + money(amt) + ' FROM RIVAL', 'gold'); } },
+      boom: (c) => { this.sparkBurst(c.x, 1.5, c.z, 30, 0, 1); this.audio.crash(1); this.chase.shake = Math.max(this.chase.shake || 0, .5); },
+      bust: (cop) => { if (this.busted > 0 || this.car.dead || this.invincible()) return; this.busted = 4; const fine = this.eco.wage * GameConfig.npc.fine; this.eco.earn(-fine); this.heat = 0; this.hud.banner('BUSTED', 'The officer fines you ' + money(fine) + ' and lets you go.', 2400); this.audio.arpeggio(false); },
       ped: (p, speed) => this.pedHit(p, speed),
     };
     this.traffic.update(dt, car, hooks); this.peds.update(dt, car, this.wq, hooks);
@@ -2293,7 +2343,7 @@ class Game {
   afterTaxYear(doneYear) { if (this.mode === 'depression' && doneYear >= GameConfig.depressionYears) this.victory(true); }
   /** Bill a crash through the economy and tell the player what it cost and what insurance took. */
   bill(kind, speed, flat) {
-    if (this.trip && this.trip.ph !== 'taper') return; const r = this.eco.charge(kind, speed, flat); if (!r) return; this.hud.callout('REPAIRS ' + money(-r.paid), 'sm bad'); if (r.covered > 0.5) this.hud.callout('INSURANCE COVERED ' + money(r.covered), 'sm');
+    if (this.invincible()) return; const r = this.eco.charge(kind, speed, flat); if (!r) return; this.hud.callout('REPAIRS ' + money(-r.paid), 'sm bad'); if (r.covered > 0.5) this.hud.callout('INSURANCE COVERED ' + money(r.covered), 'sm');
   }
   addHeat(v) { const was = this.heat || 0; this.heat = Math.min(1, was + v); if (was <= GameConfig.npc.copHeat && this.heat > GameConfig.npc.copHeat) this.hud.callout('COPS ON YOU!', 'bad'); }
   pedHit(p, speed) {

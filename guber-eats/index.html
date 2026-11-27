@@ -329,6 +329,7 @@ const GameConfig = {
      plays when served from this checkout. For the live site, encode a copy to tracks/lakehorse/Currency/theme.m4a and the
      first entry picks it up with no code change. If both fail the synth plays instead. */
   theme: {
+    startAt: 8, // seconds: Currency skips its first 8 s whenever it starts
     sources: ['../tracks/lakehorse/Currency/theme.m4a', '../lakehorse-radio/music/Currency Mix 8-24-26.wav'],
     era: { '1930s': { hp: 450, lp: 2400, rate: 0.96 }, '1940s': { hp: 300, lp: 3600, rate: 1 }, '1950s': { hp: 120, lp: 6000, rate: 1 }, '1960s': { hp: 80, lp: 8500, rate: 1 },
            '1970s': { hp: 40, lp: 12000, rate: 1 }, full: { hp: 20, lp: 20000, rate: 1 } },
@@ -615,7 +616,7 @@ class SynthAudio {
          given element has been started that way it can swap src and carry on by itself. A fresh Audio() per track (the old way) was blocked
          from track two onward, and play() after the async /api/sd fetch above is already outside the tap, so a rejection keeps the element
          and the gesture hook at the bottom of the file calls play() again on the next touch. */
-      const el = new Audio(); el.crossOrigin = 'anonymous'; el.loop = !playlist; el.preload = 'auto'; el.preservesPitch = false;
+      const el = new Audio(); el.crossOrigin = 'anonymous'; el.loop = false; el.preload = 'auto'; el.preservesPitch = false;
       try { this.ctx.createMediaElementSource(el).connect(this.themeHp); } catch (e) { /* plays straight to the speaker, without era filters */ }
       this.themeEl = el; let cur = null;
       const attempt = (requeue) => {
@@ -623,13 +624,16 @@ class SynthAudio {
         cur = srcs.shift(); if (!cur) { this.themeOn = false; return; }
         el.src = encodeURI(cur); el.play().catch(() => {});
       };
+      /* Currency always begins 8 s in (skips the lead-in), on every start and every loop. Other tracks start at 0. */
+      const startAt = () => /currency/i.test(cur || '') ? GameConfig.theme.startAt : 0;
+      el.addEventListener('loadedmetadata', () => { const t = startAt(); if (t && el.duration > t) el.currentTime = t; });
       el.addEventListener('error', () => attempt(false));
       el.addEventListener('playing', () => { this.themeOn = true; });
       /* Dropout log, read in the console as GuberEats.game.audio.stalls: `waiting` and `stalled` mean the stream ran dry (the box's Wi-Fi), and
          sinceCrashMs says whether a collision sound was just made. No stall entry while you hear a dropout points at the page's main thread instead. */
       this.stalls = this.stalls || [];
       ['waiting', 'stalled'].forEach(n => el.addEventListener(n, () => this.stalls.push({ ev: n, pos: +el.currentTime.toFixed(1), sinceCrashMs: Math.round(performance.now() - (this.lastCrashAt || -1e9)) })));
-      if (playlist) el.addEventListener('ended', () => attempt(true));
+      el.addEventListener('ended', () => { if (playlist) attempt(true); else { el.currentTime = startAt(); el.play().catch(() => {}); } });
       attempt(false);
     });
   }
@@ -2443,6 +2447,8 @@ addEventListener('pageshow', wake);
 /* Demo: the first gesture on an auto-started demo only unlocks sound; after that any key or touch hands the game back. */
 ['keydown', 'pointerdown'].forEach(t => addEventListener(t, (e) => { const d = game.demo; if (!d || e.repeat) return; if (!d.armed) { d.armed = true; game.audio.init(); wake(); game.hud.banner('DEMO', 'Any key or touch to exit', 2500); return; } game.exitDemo(); }, true));
 if (/[?&]demo\b/.test(location.search)) game.startDemo(false);
+/* Start the soundtrack on the title screen as soon as the page loads. Browsers hold audio until the first tap or key, so the context may start suspended; the gesture hooks above resume it. */
+try { game.audio.init(); } catch (e) { console.warn('audio autostart', e); }
 window.GuberEats = { game, Game, Economy, Decades, Difficulties, GameConfig, money }; // handle for console checks
 </script>
 </body>

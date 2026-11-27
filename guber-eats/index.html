@@ -348,7 +348,7 @@ const GameConfig = {
      wheel for the pull, rise and hold while the camera circles the van, the world goes strange for the taper, and you get
      a banked dash and some cash. Order timers stop while you are not driving. */
   doink: { count: 4, baggies: 32, needed: 8, bagDeck: [1, 1, 1, 2, 2, 4], bagScale: 3.4, bagRadius: 7, radius: 6, height: 15, minApart: 150,
-           pull: 0.6, rise: 1.5, hold: 8, taper: 30, dashBank: 1, dashBankMax: 3, cash: 70, bagRespawn: 18, nagCd: 3 },
+           pull: 0.6, rise: 1.5, flyTime: 14, flySpeed: 110, climbSpeed: 90, cruiseAbove: 30, dwell: 0.6, minLeg: 4, taper: 30, dashBank: 1, dashBankMax: 3, cash: 70, bagRespawn: 18, nagCd: 3 },
 };
 
 /* ======================================================================
@@ -2263,23 +2263,55 @@ class Game {
   clearLevel() { this.levelT = 0; Align.post(this.levelId(), 'clear', !!this.demo); }
   endAttempt() { if (this.levelT >= ATTEMPT_MIN_S && this.mode) Align.post(this.levelId(), 'attempt', !!this.demo); this.levelT = 0; }
   startTrip(d) {
-    const K = GameConfig.doink; this.trip = { ph: 'pull', t: 0, d }; this.chase.orbit = true; this.audio.doinkHit(); this.hud.flash(); this.chase.shake = 0.5;
-    this.hud.callout(Math.random() < 0.25 ? "HONKIN' DOINK!" : 'DOINK!', 'gold'); this.hud.banner('DOINK', 'Hold on.', (K.pull + K.rise) * 1000);
+    const K = GameConfig.doink; this.trip = { ph: 'pull', t: 0, d, x0: this.car.x, y0: this.car.y, z0: this.car.z }; this.chase.orbit = true; this.audio.doinkHit(); this.hud.flash(); this.chase.shake = 0.5;
+    this.hud.callout(Math.random() < 0.25 ? "HONKIN' DOINK!" : 'DOINK!', 'gold'); this.hud.banner('DOINK', 'Hold on.', (K.pull + K.rise) * 1000); this.cruiseY = this.W.buildings.reduce((m, b) => Math.max(m, b.h), 0) + K.cruiseAbove;
   }
+  /** The DOINK launches the van out of the top of the bong in a cloud of smoke, then flies it over the rooftops to the next stop: the
+      pickup if it has no order, the drop-off if it is carrying one. If flight time is left it carries on to the next stop, and so on. */
   tickTrip(dt) {
-    const T = this.trip, K = GameConfig.doink; if (!T) return; T.t += dt;
-    if (T.ph === 'pull') { if (T.t >= K.pull) { T.ph = 'rise'; T.t = 0; this.chase.liftTo = 1; } }
-    else if (T.ph === 'rise') { const u = clamp(T.t / K.rise, 0, 1); this.tripV = u * u * (3 - 2 * u); if (T.t >= K.rise) { T.ph = 'hold'; T.t = 0; } }
-    else if (T.ph === 'hold') {
-      this.tripV = 1; if (Math.random() < dt * 14) this.smoke.emit(this.car.x + (Math.random() - .5) * 3, 2 + Math.random() * 2, this.car.z + (Math.random() - .5) * 3, 0, 1.5, 0, 2.4, 0xd8ffd8, -0.3);
-      if (T.t >= K.hold) {
-        const car = this.car, gain = Math.min(K.dashBankMax, car.dashBank + K.dashBank) - car.dashBank, cash = K.cash * this.eco.wage * this.decade.payMul; car.dashBank += gain; this.eco.earn(cash); this.doinks.stash = 0;
-        this.hud.callout(`+${gain} DASH · ${money(cash, true)}`, 'gold'); this.hud.banner('COMING DOWN', gain > 0 ? 'Banked dash ready (dash key). Cash in.' : 'Dash bank full. Cash in.', 2600); this.audio.arpeggio(true);
-        T.ph = 'taper'; T.t = 0; this.chase.orbit = false; this.chase.liftTo = 0;
-      }
+    const T = this.trip, K = GameConfig.doink, car = this.car; if (!T) return; T.t += dt;
+    const puff = (n, spread) => { for (let i = 0; i < n; i++) this.smoke.emit(car.x + (Math.random() - .5) * spread, car.y + Math.random() * 2, car.z + (Math.random() - .5) * spread, (Math.random() - .5) * 6, 1 + Math.random() * 4, (Math.random() - .5) * 6, 2.6, 0xe8e4d8, -0.3); };
+    const place = (x, y, z) => { car.x = x; car.y = y; car.z = z; car.vx = car.vz = car.vy = 0; car.grounded = false; car.pitch = car.roll = 0; };
+    if (T.ph === 'pull') { // drawn up into the mouth of the bong
+      const u = clamp(T.t / K.pull, 0, 1), tip = T.d.tip; place(lerp(T.x0, tip.x, u), lerp(T.y0, tip.y, u), lerp(T.z0, tip.z, u));
+      if (T.t >= K.pull) { T.ph = 'rise'; T.t = 0; this.chase.liftTo = 1; puff(40, 4); this.audio.whoosh(); this.chase.shake = 0.8; }
+    } else if (T.ph === 'rise') { // out of the top in a cloud of smoke
+      const u = clamp(T.t / K.rise, 0, 1), e = u * u * (3 - 2 * u); this.tripV = e; place(T.d.tip.x, lerp(T.d.tip.y, this.cruiseY, e), T.d.tip.z); if (Math.random() < dt * 40) puff(3, 3);
+      if (T.t >= K.rise) { T.ph = 'fly'; T.t = 0; T.leg = null; this.chase.orbit = false; }
+    } else if (T.ph === 'fly') {
+      this.tripV = 1; T.fly = (T.fly || 0) + dt; if (Math.random() < dt * 14) puff(1, 3);
+      this.flyLeg(T, dt, K, place, puff);
     } else { const u = clamp(T.t / K.taper, 0, 1); this.tripV = Math.pow(1 - u, 1.6); if (T.t >= K.taper) { this.endTrip(); return; } }
-    if (T.ph !== 'taper') this.chase.yaw += dt * (0.3 + 0.5 * this.tripV);
+    if (T.ph === 'pull' || T.ph === 'rise') this.chase.yaw += dt * (0.3 + 0.5 * this.tripV);
     this.audio.trip(this.tripV);
+  }
+  /** One step of the flight: climb, cross to the stop, drop onto it, do the pickup or delivery, then decide whether time allows another leg. */
+  flyLeg(T, dt, K, place, puff) {
+    const car = this.car, O = this.orders;
+    if (!T.leg) {
+      const tg = O.target(car); if (!tg) return this.finishFlight(T, K);
+      T.leg = { x: tg.x, z: tg.z, kind: tg.kind, up: true, dwell: 0, r: tg.kind === 'pickup' ? O.avail.find(a => a.x === tg.x && a.z === tg.z) : null };
+    }
+    const L = T.leg;
+    if (L.dwell > 0) { L.dwell -= dt; if (L.dwell <= 0) { if (T.fly > K.flyTime - K.minLeg) return this.finishFlight(T, K); T.leg = null; } return; }
+    const dx = L.x - car.x, dz = L.z - car.z, dist = Math.hypot(dx, dz), gy = this.wq.groundAt(car.x, car.z);
+    if (dist > 1) car.h = dampAngle(car.h, Math.atan2(dx, dz), 8, dt);
+    if (L.up) { car.y = Math.min(this.cruiseY, car.y + K.climbSpeed * dt); if (car.y >= this.cruiseY - 0.5) L.up = false; place(car.x, car.y, car.z); car.speed = 0; return; }
+    const sp = Math.min(K.flySpeed, 20 + dist * 1.6), step = Math.min(dist, sp * dt), want = gy + Math.min(this.cruiseY, dist * 0.85);
+    car.y += clamp(want - car.y, -K.climbSpeed * 1.3 * dt, K.climbSpeed * dt);
+    place(car.x + (dx / Math.max(dist, 1e-3)) * step, car.y, car.z + (dz / Math.max(dist, 1e-3)) * step); car.speed = sp; car.vf = sp; car.vx = Math.sin(car.h) * sp; car.vz = Math.cos(car.h) * sp;
+    if (dist < 2.5 && car.y - gy < 1.2) { // touchdown
+      place(L.x, gy, L.z); car.grounded = true; car.speed = 0; car.vf = 0; car.vx = car.vz = 0; puff(14, 5); this.audio.ding(true); this.chase.shake = 0.4;
+      if (L.kind === 'drop' && O.order) O.deliver(this); else if (L.kind === 'pickup' && L.r && O.avail.includes(L.r) && !O.order) O.start(L.r, this);
+      L.dwell = K.dwell;
+    }
+  }
+  /** End of the flight: set the van down on the road, pay the DOINK bonus, and hand the wheel back for the taper. */
+  finishFlight(T, K) {
+    const car = this.car, gy = this.wq.groundAt(car.x, car.z); car.y = gy; car.grounded = true; car.vy = 0; car.speed = 0; car.vx = car.vz = 0;
+    const gain = Math.min(K.dashBankMax, car.dashBank + K.dashBank) - car.dashBank, cash = K.cash * this.eco.wage * this.decade.payMul; car.dashBank += gain; this.eco.earn(cash); this.doinks.stash = 0;
+    this.hud.callout(`+${gain} DASH · ${money(cash, true)}`, 'gold'); this.hud.banner('COMING DOWN', gain > 0 ? 'Banked dash ready (dash key). Cash in.' : 'Dash bank full. Cash in.', 2600); this.audio.arpeggio(true);
+    T.ph = 'taper'; T.t = 0; this.chase.orbit = false; this.chase.liftTo = 0;
   }
   endTrip() { this.trip = null; this.tripV = 0; if (this.chase) { this.chase.orbit = false; this.chase.liftTo = 0; } if (this.audio) this.audio.trip(0); }
   startDemo(armed) {
@@ -2313,10 +2345,9 @@ class Game {
     if (this.demo) { this.demo.think(this, dt); if (this.demo.dash) this.doBoost(); }
     this.levelT = (this.levelT || 0) + dt;
     const lock = !!this.trip && this.trip.ph !== 'taper', inp = lock ? IDLE_INPUT : this.input.state, car = this.car, G = this; this.billCd = Math.max(0, (this.billCd || 0) - dt); this.busted = Math.max(0, (this.busted || 0) - dt); this.heat = Math.max(0, (this.heat || 0) - GameConfig.npc.heatDecay * dt);
-    const sub = Math.ceil(dt / 0.0167), sdt = dt / sub;
+    const flying = !!this.trip && this.trip.ph !== 'taper', sub = Math.ceil(dt / 0.0167), sdt = dt / sub;
     for (let i = 0; i < sub; i++) {
-      const evs = car.step(sdt, inp, this.wq);
-      for (const ev of evs) this.carEvent(ev);
+      if (!flying) { const evs = car.step(sdt, inp, this.wq); for (const ev of evs) this.carEvent(ev); }
       // drift tips
       if (lock) { const k = Math.exp(-5 * sdt); car.vx *= k; car.vz *= k; }
       if (car.drifting && car.driftT > 1.2 + car.driftPaid * 1.5) { car.driftPaid++; this.stunt('CRAZY DRIFT!', GameConfig.stunt.drift + car.driftPaid * 2, ''); }

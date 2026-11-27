@@ -1893,8 +1893,11 @@ class Autopilot {
   goal(G) {
     const car = G.car, D = G.doinks, o = G.orders.order, need = GameConfig.doink.needed;
     const skip = this.clock < this.skip; // after a stuck reset, give up on optional goals for a while
-    if (!skip && D && D.ready && (!o || o.time > 25)) { const d = D.nearest(car); if (d) return { x: d.x, z: d.z, kind: 'doink' }; }
-    if (!skip && D && D.stash < need && (!o || o.time > 30)) { let best = null, bd = 60; for (const b of D.bags) { if (b.gone > 0) continue; const k = Math.hypot(b.sp.x - car.x, b.sp.z - car.z); if (k < bd) { bd = k; best = b; } } if (best) return { x: best.sp.x, z: best.sp.z, kind: 'bag' }; }
+    const hunted = G.hunted, F = G.files, dg = D && D.digital; // a hunt overrides the order clocks: losing the army matters more than one tip
+    if (!skip && dg && (hunted || !o || o.time > 20)) return { x: dg.x, z: dg.z, kind: 'digital' }; // cash, a clean record, a repaired van
+    if (!skip && D && D.ready && (hunted || !o || o.time > 25)) { const d = D.nearest(car); if (d) return { x: d.x, z: d.z, kind: 'doink' }; }
+    if (!skip && D && D.stash < need && (hunted || !o || o.time > 30)) { let best = null, bd = hunted ? 400 : 60; for (const b of D.bags) { if (b.gone > 0) continue; const k = Math.hypot(b.sp.x - car.x, b.sp.z - car.z); if (k < bd) { bd = k; best = b; } } if (best) return { x: best.sp.x, z: best.sp.z, kind: 'bag' }; }
+    if (!skip && F && !hunted && (!o || o.time > 30)) { let best = null, bd = 70; for (const f of F.items) { if (f.gone > 0) continue; const k = Math.hypot(f.sp.x - car.x, f.sp.z - car.z); if (k < bd) { bd = k; best = f; } } if (best) return { x: best.sp.x, z: best.sp.z, kind: 'file' }; } // folders nearby, when not already hunted
     const t = G.orders.target(car); return t ? { x: t.x, z: t.z, kind: t.kind } : null;
   }
   /** The point to steer at right now: along the grid roads toward the road the goal sits on, then straight in. */
@@ -1924,7 +1927,7 @@ class Autopilot {
     if (!T || car.dead) { inp.throttle = 0; inp.brake = 0; inp.steer = 0; return inp; }
     this.goalKind = T.kind; const [ax, az] = this.aim(G, T), want = Math.atan2(ax - car.x, az - car.z), err = angDiff(car.h, want), ae = Math.abs(err), dT = Math.hypot(T.x - car.x, T.z - car.z);
     inp.steer = clamp(err * 2.6, -1, 1);
-    let vt = lerp(48, 14, clamp(ae / 0.55, 0, 1)); if (T.kind === 'bag') vt = Math.min(vt, 40);
+    let vt = lerp(48, 14, clamp(ae / 0.55, 0, 1)); if (T.kind === 'bag' || T.kind === 'file' || T.kind === 'digital') vt = Math.min(vt, 40);
     if (ax !== T.x || az !== T.z) vt = Math.min(vt, 14 + Math.sqrt(2 * 20 * Math.max(0, Math.hypot(ax - car.x, az - car.z) - 4))); // a street corner ahead: brake for it along a stopping curve, so the straights can stay fast
     if (T.kind === 'pickup' || T.kind === 'drop') vt = Math.min(vt, 8 + Math.sqrt(2 * 22 * Math.max(0, dT - 9))); // brake late along a real stopping curve (it was dT * 0.2: a crawl for the last 40 m)
     /* Other vehicles: steer round them and slow only as far as the gap needs (it used to crawl to 4 m/s behind anything within 16 m,
@@ -1932,7 +1935,7 @@ class Autopilot {
     const fx = Math.sin(car.h), fz = Math.cos(car.h); let avoid = 0; for (const t of G.traffic.cars) { if (!t.mesh.visible) continue; const dx = t.x - car.x, dz = t.z - car.z, ah = dx * fx + dz * fz, lat = dx * fz - dz * fx, half = t.r * 0.55 + 1.5; if (ah > 1 && ah < 30 && Math.abs(lat) < half + 1.3) { vt = Math.min(vt, 7 + Math.max(0, ah - 4) * 1.4); avoid -= Math.sign(lat || 1) * clamp((30 - ah) / 30, 0.3, 1) * 1.2; } }
     inp.steer = clamp(inp.steer + clamp(avoid, -1, 1), -1, 1);
     inp.throttle = clamp((vt - car.speed) * 0.25, 0, 1); inp.brake = car.speed > vt + 4 && car.vf > 2 ? clamp((car.speed - vt) * 0.1, 0, 1) : 0; inp.hand = false;
-    if (ae < 0.12 && dT > 55 && T.kind !== 'bag' && car.boostCd <= 0 && car.speed > 20 && Math.random() < dt * 1.8) this.dash = true;
+    if (ae < 0.12 && dT > 55 && T.kind !== 'bag' && T.kind !== 'file' && car.boostCd <= 0 && car.speed > 20 && Math.random() < dt * 1.8) this.dash = true;
     /* The wheel is locked for the whole DOINK (pull, rise, hold), so the van sits still with the throttle down: that is not being stuck.
        It used to trip this timer every 2.2 s and spam RESET through the trip. Nothing is judged until the trip has ended. */
     if (G.trip && G.trip.ph !== 'taper') { this.stuck = 0; this.anchor = null; return inp; }

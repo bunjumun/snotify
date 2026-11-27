@@ -647,7 +647,7 @@ class SynthAudio {
   /** v is the trip value 0..1. Phaser wet and the lowpass both follow it; called every frame only while it is moving. */
   trip(v) {
     if (!this.ctx || !this.phWet) return; this.tripV = v; const t = this.ctx.currentTime;
-    this.phWet.gain.setTargetAtTime(v * 0.9, t, 0.08); this.themeLp.frequency.setTargetAtTime(Math.max(500, (this.eraLp || 20000) * (1 - v * 0.85)), t, 0.12);
+    this.phWet.gain.setTargetAtTime(v * 0.45, t, 0.08) /* half the wetness it used to have (was 0.9) */; this.themeLp.frequency.setTargetAtTime(Math.max(500, (this.eraLp || 20000) * (1 - v * 0.85)), t, 0.12);
   }
   /** The hit itself: a low thump with a long noise exhale, the doink's version of the bong sound. */
   doinkHit() { if (!this.ctx) return; const t = this.ctx.currentTime; this.tone(t, 55, 0.6, 'sine', 0.35); this.tone(t, 82, 0.4, 'triangle', 0.18); this.burst(t, 1.8, 0.28, 900, 'lowpass'); this.arpeggio(true); }
@@ -1769,8 +1769,9 @@ class Doinks {
    the physics, traffic and economy cannot tell it from a person. Routing is by the street grid: pick the road the goal sits on,
    drive the roads to it, cut in on the last stretch. Goals: a ready DOINK first, a nearby baggie if there is time, else the order.
    ====================================================================== */
+const STALL_S = 12, STALL_DIST = 6, RESET_WINDOW_S = 40, RESET_LIMIT = 3; // demo watchdog: <6 m in 12 s resets; 3 resets in 40 s restarts the run
 class Autopilot {
-  constructor(armed) { this.armed = armed; this.inp = { throttle: 0, brake: 0, steer: 0, hand: false }; this.dash = false; this.stuck = 0; this.over = 0; this.goalKind = ''; this.clock = 0; this.skip = 0; }
+  constructor(armed) { this.armed = armed; this.inp = { throttle: 0, brake: 0, steer: 0, hand: false }; this.dash = false; this.stuck = 0; this.over = 0; this.goalKind = ''; this.clock = 0; this.skip = 0; this.anchor = null; this.anchorT = 0; this.resets = []; }
   goal(G) {
     const car = G.car, D = G.doinks, o = G.orders.order, need = GameConfig.doink.needed;
     const skip = this.clock < this.skip; // after a stuck reset, give up on optional goals for a while
@@ -1794,6 +1795,12 @@ class Autopilot {
     if (onV) return [c(ci), c(tj)];
     const ca = clamp(fx >= 0 ? Math.ceil(car.x / P + N / 2) : Math.floor(car.x / P + N / 2), 0, N); return [c(ca), c(cj)];
   }
+  /** Put the van back on the road and drop optional goals for a while. Three resets inside RESET_WINDOW_S means a reset does not fix it: restart the demo run. */
+  reset(G) {
+    this.stuck = 0; this.anchor = null; this.skip = this.clock + 20; this.resets = this.resets.filter(t => this.clock - t < RESET_WINDOW_S); this.resets.push(this.clock);
+    if (this.resets.length >= RESET_LIMIT) { const armed = this.armed; setTimeout(() => { if (G.demo === this) G.startDemo(armed); }, 0); return; }
+    G.resetCar();
+  }
   think(G, dt) {
     this.clock += dt; const car = G.car, T = this.goal(G), inp = this.inp; this.dash = false;
     if (!T || car.dead) { inp.throttle = 0; inp.brake = 0; inp.steer = 0; return inp; }
@@ -1808,7 +1815,13 @@ class Autopilot {
     inp.steer = clamp(inp.steer + clamp(avoid, -1, 1), -1, 1);
     inp.throttle = clamp((vt - car.speed) * 0.25, 0, 1); inp.brake = car.speed > vt + 4 && car.vf > 2 ? clamp((car.speed - vt) * 0.1, 0, 1) : 0; inp.hand = false;
     if (ae < 0.12 && dT > 55 && T.kind !== 'bag' && car.boostCd <= 0 && car.speed > 20 && Math.random() < dt * 1.8) this.dash = true;
-    this.stuck = car.speed < 1.5 && inp.throttle > 0.3 ? this.stuck + dt : 0; if (this.stuck > 2.2) { this.stuck = 0; this.skip = this.clock + 20; G.resetCar(); }
+    /* The wheel is locked for the whole DOINK (pull, rise, hold), so the van sits still with the throttle down: that is not being stuck.
+       It used to trip this timer every 2.2 s and spam RESET through the trip. Nothing is judged until the trip has ended. */
+    if (G.trip && G.trip.ph !== 'taper') { this.stuck = 0; this.anchor = null; return inp; }
+    this.stuck = car.speed < 1.5 && inp.throttle > 0.3 ? this.stuck + dt : 0; if (this.stuck > 2.2) { this.stuck = 0; this.reset(G); return inp; }
+    /* Watchdog: if the van has barely moved for STALL_S seconds (a loop the stuck check cannot see), reset it. */
+    if (!this.anchor || Math.hypot(car.x - this.anchor.x, car.z - this.anchor.z) > STALL_DIST) { this.anchor = { x: car.x, z: car.z }; this.anchorT = this.clock; }
+    else if (this.clock - this.anchorT > STALL_S) this.reset(G);
     return inp;
   }
 }

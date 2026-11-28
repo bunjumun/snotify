@@ -348,7 +348,7 @@ const GameConfig = {
   /* Digital DOINK: every `every`th DOINK hit drops one somewhere on the map. Touch it for `cash` (2020s dollars, scaled by wage like all pay), a clean police record and a repaired van. */
   /* Bernstain files: manila folders on the map, worth a quarter or a half; a whole file (1.0) turns the army and every cop on you until you
      hit a DOINK or Digital DOINK. `army` vehicles are built once and woken by the hunt; contact is a heavy hit, never a fine. */
-  files: { count: 14, deck: [.25, .25, .5], radius: 7, respawn: 30, scale: 2.6 },
+  files: { count: 14, deck: [.25, .25, .5], radius: 7, respawn: 30, scale: 2.6, dropMin: 2, dropMax: 3, whistleRadius: 9 }, /* dropMin..dropMax: folders thrown onto the streets round a razed block, they stay until collected; a whole file spawns a whistle at the city centre: drive into it to blow it and move to the next era */
   hunt: { army: 4, armyLite: 2, speed: [26, 30], top: 46, r: 4.4, mass: 2.8, hitMin: 20, chaseRange: 600 },
   digital: { every: 3, cash: 10000, minFrom: 110, radius: 6 },
   drainBase: 2.2,
@@ -713,6 +713,7 @@ class SynthAudio {
   }
   honk(vol = 1) { if (!this.ctx) return; const t = this.ctx.currentTime, v = 0.07 * vol; this.tone(t, 392, 0.35, 'square', v); this.tone(t, 494, 0.35, 'square', v); }
   crash(power) { if (!this.ctx) return; this.lastCrashAt = performance.now(); const t = this.ctx.currentTime; this.burst(t, 0.25 + power * 0.3, 0.3 + power * 0.4, 400, 'lowpass'); this.burst(t, 0.08, 0.3, 3000, 'highpass'); this.tone(t, 110, 0.2, 'square', 0.2, null, 50); }
+  whistle() { if (!this.ctx) return; const t = this.ctx.currentTime; this.tone(t, 2350, 0.45, 'sine', 0.2, undefined, 2500); this.tone(t, 2380, 0.45, 'triangle', 0.1); this.tone(t + 0.5, 2600, 0.9, 'sine', 0.2, undefined, 2400); this.tone(t + 0.5, 2630, 0.9, 'triangle', 0.1); }
   ding(big) { if (!this.ctx) return; const t = this.ctx.currentTime; this.tone(t, 988, 0.12, 'sine', 0.22); this.tone(t + 0.08, 1319, big ? 0.5 : 0.25, 'sine', 0.22); if (big) this.tone(t + 0.16, 1760, 0.5, 'sine', 0.18); }
   whoosh() { if (!this.ctx) return; const t = this.ctx.currentTime; this.burst(t, 0.5, 0.35, 900, 'bandpass'); this.tone(t, 150, 0.4, 'sawtooth', 0.12, null, 600); }
   arpeggio(up) { if (!this.ctx) return; const t = this.ctx.currentTime, n = up ? [0, 4, 7, 12] : [12, 7, 3, 0]; n.forEach((s, i) => this.tone(t + i * 0.07, this.freq(72 + s), 0.18, 'square', 0.12)); }
@@ -1857,12 +1858,12 @@ class Doinks {
 const FILE_FRACS = ['0', '1/4', '1/2', '3/4'];
 class Files {
   constructor(scene, W, rng, spots) {
-    const K = GameConfig.files; this.scene = scene; this.rng = rng; this.g = new THREE.Group(); scene.add(this.g); this.own = []; this.deck = []; this.stash = 0; this.t = 0;
+    const K = GameConfig.files; this.scene = scene; this.rng = rng; this.g = new THREE.Group(); scene.add(this.g); this.own = []; this.deck = []; this.stash = 0; this.t = 0; this.W = W; this.whistle = null;
     const cv = document.createElement('canvas'); cv.width = 128; cv.height = 160; const c = cv.getContext('2d'); c.fillStyle = '#e8c46a'; c.fillRect(0, 0, 128, 160); c.fillStyle = '#d3ac4f'; c.fillRect(0, 0, 128, 22); c.fillStyle = '#b3262c'; c.fillRect(8, 60, 112, 26);
     c.fillStyle = '#fff'; c.font = '800 15px Helvetica,Arial,sans-serif'; c.textAlign = 'center'; c.fillText('TOP SECRET', 64, 79); c.fillStyle = '#5a4a22'; c.font = '700 13px Helvetica,Arial,sans-serif'; c.fillText('BERNSTAIN', 64, 112); c.fillRect(20, 124, 88, 3); c.fillRect(20, 134, 70, 3);
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; const face = new THREE.MeshBasicMaterial({ map: tex }), edge = new THREE.MeshBasicMaterial({ color: 0xd3ac4f });
     const glow = new THREE.MeshBasicMaterial({ color: 0xffd45a, transparent: true, opacity: .35, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-    const gF = new THREE.BoxGeometry(1.6, 2.0, .16), gRing = new THREE.RingGeometry(3.6, 5.0, 28); gRing.rotateX(-Math.PI / 2); this.own.push(tex, face, edge, glow, gF, gRing);
+    const gF = new THREE.BoxGeometry(1.6, 2.0, .16), gRing = new THREE.RingGeometry(3.6, 5.0, 28); gRing.rotateX(-Math.PI / 2); this.own.push(tex, face, edge, glow, gF, gRing); this.gF = gF; this.gRing = gRing; this.glow = glow; this.mats = [edge, edge, edge, edge, face, face];
     this.items = []; for (const sp of spots.slice(0, K.count)) {
       const g = new THREE.Group(), body = new THREE.Mesh(gF, [edge, edge, edge, edge, face, face]), ring = new THREE.Mesh(gRing, glow); ring.position.y = .06; g.position.set(sp.x, 0, sp.z); g.add(body, ring); this.g.add(g);
       const it = { g, body, sp, worth: this.deal(), gone: 0, ph: this.rng() * 6 }; this.size(it); this.items.push(it);
@@ -1871,12 +1872,41 @@ class Files {
   deal() { if (!this.deck.length) { this.deck = GameConfig.files.deck.slice(); for (let i = this.deck.length - 1; i > 0; i--) { const j = Math.floor(this.rng() * (i + 1)); [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]]; } } return this.deck.pop(); }
   size(it) { it.sc = GameConfig.files.scale * (0.8 + it.worth * 0.5); it.body.scale.setScalar(it.sc); }
   label() { return FILE_FRACS[Math.round(this.stash * 4)] || '0'; }
+  /** Folders thrown onto the streets round a razed block (cx, cz = block centre). One-shot: they never respawn and stay until picked up. */
+  drop(cx, cz) {
+    const K = GameConfig.files, P = this.W.P, n = K.dropMin + Math.floor(this.rng() * (K.dropMax - K.dropMin + 1));
+    for (let i = 0; i < n; i++) {
+      const side = this.rng() < .5 ? 1 : -1, along = (this.rng() - .5) * P * .8, horiz = this.rng() < .5, sp = horiz ? { x: cx + along, z: cz + side * P / 2 } : { x: cx + side * P / 2, z: cz + along };
+      const g = new THREE.Group(), body = new THREE.Mesh(this.gF, this.mats), ring = new THREE.Mesh(this.gRing, this.glow); ring.position.y = .06; g.position.set(sp.x, 0, sp.z); g.add(body, ring); this.g.add(g);
+      const it = { g, body, sp, worth: this.deal(), gone: 0, ph: this.rng() * 6, temp: true, lift: 25 + this.rng() * 25 }; this.size(it); this.items.push(it);
+    }
+  }
+  /** A whole file was collected: a silver whistle stands at the city centre. Driving into it blows it and moves the run to the next era. */
+  spawnWhistle() {
+    if (this.whistle) return; const x = this.W.cRoad(Math.round(this.W.N / 2)), z = x, g = new THREE.Group(), own = [];
+    const steel = new THREE.MeshLambertMaterial({ color: 0xd8dde6, emissive: 0x39414d }), gold = new THREE.MeshBasicMaterial({ color: 0xffd45a, transparent: true, opacity: .28, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const gBody = new THREE.CylinderGeometry(2.2, 2.2, 5.5, 20), gMouth = new THREE.BoxGeometry(4.6, 1.5, 2.6), gHole = new THREE.CylinderGeometry(1.0, 1.0, 2.7, 14), gRing = new THREE.TorusGeometry(1.6, .3, 8, 16), gBeam = new THREE.CylinderGeometry(5, 5, 260, 18, 1, true), gFloor = new THREE.RingGeometry(5, 8, 32);
+    gFloor.rotateX(-Math.PI / 2); own.push(steel, gold, gBody, gMouth, gHole, gRing, gBeam, gFloor);
+    const w = new THREE.Group(), body = new THREE.Mesh(gBody, steel), mouth = new THREE.Mesh(gMouth, steel), hole = new THREE.Mesh(gHole, new THREE.MeshBasicMaterial({ color: 0x111418 })), loop = new THREE.Mesh(gRing, steel);
+    own.push(hole.material); body.rotation.z = Math.PI / 2; body.position.x = -1.5; mouth.position.set(3.6, -.35, 0); hole.rotation.x = Math.PI / 2; hole.position.set(-1.5, .6, 0); loop.position.set(-4.6, 1.2, 0); w.add(body, mouth, hole, loop); w.scale.setScalar(1.7); w.position.y = 7; g.add(w);
+    const beam = new THREE.Mesh(gBeam, gold); beam.position.y = 130; const floor = new THREE.Mesh(gFloor, gold); floor.position.y = .08; g.add(beam, floor); g.position.set(x, 0, z); this.g.add(g); this.own.push(...own); this.whistle = { x, z, g, w, ph: 0 };
+  }
+  removeWhistle() { if (!this.whistle) return; this.g.remove(this.whistle.g); this.whistle = null; }
   update(dt, car, G, live) {
     const K = GameConfig.files; this.t += dt;
-    for (const b of this.items) {
+    for (let n = this.items.length - 1; n >= 0; n--) {
+      const b = this.items[n];
+      if (b.temp) b.lift = Math.max(0, b.lift - dt * 30);
       if (b.gone > 0) { b.gone -= dt; if (b.gone <= 0) { b.g.visible = true; b.worth = this.deal(); this.size(b); } continue; }
-      b.ph += dt; b.body.position.y = b.sc * 0.8 + 0.6 + Math.sin(b.ph * 2) * 0.35; b.body.rotation.y += dt * 1.2;
-      if (live && Math.hypot(b.sp.x - car.x, b.sp.z - car.z) < K.radius && car.y < 3) { b.g.visible = false; b.gone = K.respawn; this.stash = Math.round((this.stash + b.worth) * 4) / 4; G.onFile(b.worth, this.stash); }
+      b.ph += dt; b.body.position.y = b.sc * 0.8 + 0.6 + Math.sin(b.ph * 2) * 0.35 + (b.lift || 0); b.body.rotation.y += dt * 1.2;
+      if (live && Math.hypot(b.sp.x - car.x, b.sp.z - car.z) < K.radius && car.y < 3) {
+        if (b.temp) { this.g.remove(b.g); this.items.splice(n, 1); } else { b.g.visible = false; b.gone = K.respawn; }
+        this.stash = Math.round((this.stash + b.worth) * 4) / 4; G.onFile(b.worth, this.stash);
+      }
+    }
+    const wh = this.whistle; if (wh) {
+      wh.ph += dt; wh.w.position.y = 7 + Math.sin(wh.ph * 1.6) * .8; wh.w.rotation.y += dt * 1.1;
+      if (live && Math.hypot(wh.x - car.x, wh.z - car.z) < K.whistleRadius && car.y < 3) G.blowWhistle();
     }
   }
   dispose() { this.scene.remove(this.g); this.own.forEach(o => o.dispose && o.dispose()); }
@@ -1894,6 +1924,7 @@ class Autopilot {
     const car = G.car, D = G.doinks, o = G.orders.order, need = GameConfig.doink.needed;
     const skip = this.clock < this.skip; // after a stuck reset, give up on optional goals for a while
     const hunted = G.hunted, dg = D && D.digital; // a hunt overrides the order clocks: losing the army matters more than one tip
+    const wh = G.files && G.files.whistle; if (!skip && wh) return { x: wh.x, z: wh.z, kind: 'whistle' }; // era change: always worth the detour
     if (!skip && dg && (hunted || !o || o.time > 20)) return { x: dg.x, z: dg.z, kind: 'digital' }; // cash, a clean record, a repaired van
     if (!skip && D && D.ready && (hunted || !o || o.time > 25)) { const d = D.nearest(car); if (d) return { x: d.x, z: d.z, kind: 'doink' }; }
     if (!skip && D && D.stash < need && (hunted || !o || o.time > 30)) { let best = null, bd = hunted ? 400 : 60; for (const b of D.bags) { if (b.gone > 0) continue; const k = Math.hypot(b.sp.x - car.x, b.sp.z - car.z); if (k < bd) { bd = k; best = b; } } if (best) return { x: best.sp.x, z: best.sp.z, kind: 'bag' }; }
@@ -1978,7 +2009,7 @@ class HUD {
     const cm = o ? 1 + o.combo * 0.1 : 1; this.set('hCombo', 'x' + cm.toFixed(1)); $('hComboBar').style.width = (o ? clamp(o.comboT / GameConfig.stunt.comboWindow, 0, 1) * 100 : 0) + '%'; this.set('hPot', money(o ? o.pot : 0));
     { const D = G.doinks; if (D) { this.set('hStash', D.frac() + (car.dashBank >= 1 ? ' · +' + Math.floor(car.dashBank) + ' dash' : '')); $('hStashBar').style.width = (D.stash / GameConfig.doink.needed * 100) + '%';
       const d = D.nearest(car), km = d ? Math.round(Math.hypot(d.x - car.x, d.z - car.z)) : 0; this.set('hDoink', G.trip ? (G.trip.ph === 'taper' ? 'Coming down…' : 'DOINK') : D.ready ? 'DOINK READY: ' + km + ' m to the nearest' : 'Fill the stash with baggies (green)'); } }
-    { const F = G.files; if (F) { this.set('hFiles', F.label() + (G.hunted ? ' · HUNTED' : '')); $('hFilesBar').style.width = (F.stash * 100) + '%'; this.set('hHunt', G.hunted ? 'HUNTED: hit a DOINK to lose them' : (G.doinks && G.doinks.digital ? 'DIGITAL DOINK is on the map: ' + Math.round(Math.hypot(G.doinks.digital.x - car.x, G.doinks.digital.z - car.z)) + ' m' : '')); $('hunt').classList.toggle('on', !!G.hunted); this.mini(G); } }
+    { const F = G.files; if (F) { this.set('hFiles', F.label() + (G.hunted ? ' · HUNTED' : '')); $('hFilesBar').style.width = (F.stash * 100) + '%'; this.set('hHunt', F.whistle ? 'BLOW THE WHISTLE: ' + Math.round(Math.hypot(F.whistle.x - car.x, F.whistle.z - car.z)) + ' m, city centre' + (G.hunted ? ' (HUNTED)' : '') : G.hunted ? 'HUNTED: hit a DOINK to lose them' : (G.doinks && G.doinks.digital ? 'DIGITAL DOINK is on the map: ' + Math.round(Math.hypot(G.doinks.digital.x - car.x, G.doinks.digital.z - car.z)) + ' m' : '')); $('hunt').classList.toggle('on', !!G.hunted); this.mini(G); } }
     this.set('hSpeed', Math.round(car.speed * 3.6) + ' km/h'); $('hBoost').style.width = (car.boostCd <= 0 ? 100 : clamp(100 - (car.boostCd / (GameConfig.car.boostCd + GameConfig.car.boostTime)) * 100, 0, 100)) + '%';
   }
   /** Corner map: the van (arrow, north up), folders, DOINKs, the Digital DOINK, and the army while hunted. About 10 redraws a second. */
@@ -1988,6 +2019,7 @@ class HUD {
     const P = (x, z) => [(x - car.x) * k, -(z - car.z) * k], dot = (x, z, col, r) => { const [a, b] = P(x, z); if (Math.hypot(a, b) > S / 2 - 4) { const m = Math.atan2(b, a); g.fillStyle = col; g.fillRect(Math.cos(m) * (S / 2 - 8) - r / 2, Math.sin(m) * (S / 2 - 8) - r / 2, r, r); return; } g.fillStyle = col; g.beginPath(); g.arc(a, b, r, 0, 6.283); g.fill(); };
     g.fillStyle = 'rgba(255,255,255,.07)'; for (const b of G.W.buildings) { if (!b.block) continue; const [x0, y0] = P(b.x0, b.z1), [x1, y1] = P(b.x1, b.z0); g.fillRect(x0, y0, x1 - x0, y1 - y0); }
     for (const f of G.files.items) if (f.gone <= 0) dot(f.sp.x, f.sp.z, '#ffd45a', 7);
+    const wh = G.files.whistle; if (wh) dot(wh.x, wh.z, Math.floor(now / 200) % 2 ? '#ffffff' : '#ffd45a', 9);
     for (const d of G.doinks.list) dot(d.x, d.z, G.doinks.ready ? '#5dff7a' : '#2f7a3c', 6);
     if (G.doinks.digital) dot(G.doinks.digital.x, G.doinks.digital.z, Math.floor(now / 150) % 2 ? '#19ffe6' : '#ff2fd0', 8);
     if (G.hunted) for (const c of G.traffic.cars) if (c.chasing) dot(c.x, c.z, c.kind === 'army' ? '#9aa86a' : '#ff4040', 5);
@@ -2397,7 +2429,7 @@ class Game {
     const [bi, bj] = key.split(',').map(Number), cx = W.cBlock(bi), cz = W.cBlock(bj), Z = GameConfig.BLOCK * .45, top = foot.reduce((m, f) => Math.max(m, f.H), 0);
     for (let i = 0; i < 140; i++) { const a = Math.random() * 6.283, s = 4 + Math.random() * 16; this.sparks.emit(cx + (Math.random() - .5) * Z, Math.random() * top, cz + (Math.random() - .5) * Z, Math.cos(a) * s, 4 + Math.random() * 14, Math.sin(a) * s, 1.2 + Math.random(), Math.random() < .5 ? 0xff8a1a : 0xffd45a, 14); }
     for (let i = 0; i < 90; i++) this.smoke.emit(cx + (Math.random() - .5) * Z, Math.random() * top * .8, cz + (Math.random() - .5) * Z, (Math.random() - .5) * 8, 3 + Math.random() * 9, (Math.random() - .5) * 8, 3 + Math.random() * 3, 0x3a3834, -0.2);
-    this.audio.crash(1); this.chase.shake = Math.max(this.chase.shake || 0, 1); this.hud.flash(); this.hud.callout(Math.random() < .3 ? 'DEMOLITION DOINK!' : 'BUILDING DOWN!', 'gold');
+    this.audio.crash(1); this.chase.shake = Math.max(this.chase.shake || 0, 1); this.hud.flash(); this.hud.callout(Math.random() < .3 ? 'DEMOLITION DOINK!' : 'BUILDING DOWN!', 'gold'); if (this.files) this.files.drop(cx, cz);
   }
   flyCrash(dt) {
     this.razeCd = Math.max(0, (this.razeCd || 0) - dt); if (this.razeCd > 0) return;
@@ -2405,7 +2437,7 @@ class Game {
   }
   /** Touched a Digital DOINK: cash, a wiped record (heat, fines and repair bills refunded), a repaired van, and the hunt is called off. */
   onDigital() {
-    const cash = GameConfig.digital.cash * this.eco.wage; this.eco.earn(cash); const back = this.eco.forgive(); this.heat = 0; this.car.health = 100; this.endHunt();
+    const cash = GameConfig.digital.cash * this.eco.wage; this.eco.earn(cash); const back = this.eco.forgive(); this.heat = 0; this.car.health = 100; this.endHunt(); this.files.stash = 0;
     this.hud.callout('DIGITAL DOINK ' + money(cash, true), 'gold'); if (back > 0.5) this.hud.callout('RECORD WIPED, ' + money(back) + ' FORGIVEN', 'sm gold'); this.hud.banner('DIGITAL DOINK', 'Police record gone. Damages forgiven. Van repaired.', 3200); this.hud.flash(); this.audio.arpeggio(true); this.audio.doinkHit();
   }
   /** Picked up part of a Bernstain file. A whole one means you know too much. */
@@ -2413,9 +2445,15 @@ class Game {
     this.audio.ding(true); this.hud.callout('+' + FILE_FRACS[Math.round(worth * 4)] + ' BERNSTAIN FILE', 'sm gold'); if (stash < 1) return;
     this.files.stash = 0; this.hunted = true; this.hud.banner('ONE BERNSTAIN FILE COLLECTED', 'You know too much', 4800); this.hud.flash(); this.audio.arpeggio(false); this.audio.crash(.6);
     this.hud.callout('POLICE AND ARMY ON YOU. HIT A DOINK.', 'bad');
+    this.files.spawnWhistle(); this.hud.callout('A WHISTLE APPEARED IN THE CITY CENTRE', 'sm gold');
+  }
+  /** Drove into the whistle: blow it, call off the hunt and go straight on to the next era. */
+  blowWhistle() {
+    if (this.state !== 'play' || this.trip || this.car.dead) return;
+    this.files.removeWhistle(); this.audio.whistle(); this.hunted = false; this.hud.flash(); this.hud.callout('YOU BLEW THE WHISTLE!', 'gold'); this.nextDecade();
   }
   /** Calls off the Bernstain hunt (a DOINK or a Digital DOINK, or dying). */
-  endHunt() { if (!this.hunted) return; this.hunted = false; if (this.files) this.files.stash = 0; this.hud.callout('THEY LOST YOU', 'sm gold'); }
+  endHunt() { if (!this.hunted) return; this.hunted = false; this.hud.callout('THEY LOST YOU', 'sm gold'); }
   /** The hit: pull (van stops), rise (camera lifts, world starts to bend), hold (full effect), taper (control back, effect fades). Order timers and money drain are frozen until the taper. */
   /** Alignment: the level id of the run in progress, and a clear or an attempt (10 s or more, no clear) reported to the box. */
   levelId() { return this.runDecadeIdx; }

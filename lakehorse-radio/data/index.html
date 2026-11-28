@@ -68,7 +68,7 @@
             <button class="btn primary" id="sdPick" data-help="sd-pick">Upload songs</button>
             <input type="file" id="sdFile" data-help="sd-pick" accept=".wav,.flac,.mp3,.m4a,.aac,.ogg,.opus,audio/*" multiple hidden />
           </div>
-          <p class="muted">24-bit and 32-bit WAVs are converted to 16-bit in your browser before they are sent, at their own sample rate. Other files are sent as they are. For files ready for Bluetooth playback, prepare them with song prep on a computer.</p>
+          <p class="muted">24-bit and 32-bit WAVs are converted to 16-bit in your browser before they are sent, at their own sample rate. FLAC files are decoded and saved as 44.1 kHz 16-bit WAV. Other files are sent as they are. For files ready for Bluetooth playback, prepare them with song prep on a computer.</p>
           <progress id="sdBar" max="1" value="0" hidden></progress>
         </div>
 

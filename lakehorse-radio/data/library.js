@@ -357,8 +357,8 @@
             say(label + ': uploading ' + megabytes(r.blob.size) +
                 (r.note ? ' (' + r.note + ')' : '') + '...', '');
             var progress = function (p) { bar.value = 0.5 + p * 0.5; };
-            return sendSliced(r.blob, file.name, progress).then(function (d) {
-              return d === LEGACY ? send(r.blob, file.name, progress) : d;
+            return sendSliced(r.blob, r.name, progress).then(function (d) {
+              return d === LEGACY ? send(r.blob, r.name, progress) : d;
             });
           })
           .then(function () { say(label + ': stored.', 'ok'); return load(); });

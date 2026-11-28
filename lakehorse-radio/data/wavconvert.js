@@ -74,6 +74,8 @@
     });
   }
 
+  function isFlac(name) { return /\.flac$/i.test(String(name)); }
+
   function needsConversion(h) {
     if (!h || h.channels < 1) return false;
     return (h.format === 1 && (h.bits === 24 || h.bits === 32)) ||
@@ -368,6 +370,9 @@
         });
       });
     }
+    // The box plays only 16-bit PCM WAV, so a FLAC is decoded by the browser
+    // and saved as 44.1 kHz 16-bit stereo WAV, whatever its own depth or rate.
+    if (isFlac(file.name)) return encodeBtWav(file, sink, onProgress);
     return inspect(file).then(function (info) {
       if (!info.convert) {
         return Promise.resolve(sink(file)).then(function () {
@@ -405,6 +410,9 @@
     return convert(file, function (p) { parts.push(p); }, onProgress, options).then(function (r) {
       var type = r.codec === 'aac' ? 'audio/aac' : 'audio/wav';
       return { blob: r.converted ? new Blob(parts, { type: type }) : file,
+               name: r.converted
+                 ? file.name.replace(/\.[^.]*$/, '') + outputExtension(file.name, options && options.format)
+                 : file.name,
                note: !r.converted ? '' : r.codec === 'aac' ? 'encoded to AAC'
                                        : r.codec === 'wav44' ? 'converted to 44.1 kHz 16-bit stereo'
                                        : 'converted from ' + r.header.bits + '-bit' };
@@ -416,7 +424,7 @@
    * extension is kept. */
   function outputExtension(name, format) {
     var ext = (String(name).match(/\.[^.]+$/) || [''])[0].toLowerCase();
-    if (format === 'wav44') return '.wav';
+    if (format === 'wav44' || isFlac(name)) return '.wav';
     return format === 'aac' && ext === '.wav' ? '.aac' : ext;
   }
 

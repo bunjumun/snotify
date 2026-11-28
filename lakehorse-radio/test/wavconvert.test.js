@@ -58,6 +58,40 @@ const tests = {
     assert.strictEqual(W.outputExtension('Song.wav', 'aac'), '.aac');
     assert.strictEqual(W.outputExtension('Song.mp3', 'aac'), '.mp3');
     assert.strictEqual(W.outputExtension('Song.mp3', 'wav16'), '.mp3');
+  },
+  'a FLAC is stored as .wav even under the default format'() {
+    assert.strictEqual(W.outputExtension('Song.flac', 'wav16'), '.wav');
+    assert.strictEqual(W.outputExtension('Song.FLAC', 'wav16'), '.wav');
+  }
+};
+
+// Needs the browser's decoder, so it runs against a stand-in OfflineAudioContext
+// that "decodes" any bytes to 0.5 s of a stereo ramp.
+const asyncTests = {
+  async 'a FLAC is decoded to 16-bit stereo WAV with a .wav name'() {
+    const frames = 22050;
+    const left = new Float32Array(frames).fill(0.25);
+    const right = new Float32Array(frames).fill(-0.25);
+    global.window = { OfflineAudioContext: function () {
+      this.decodeAudioData = () => Promise.resolve({
+        length: frames, numberOfChannels: 2,
+        getChannelData: (c) => (c === 0 ? left : right) });
+    } };
+    const r = await W.toBlob(new File([new Uint8Array(100)], 'Song.flac'));
+    delete global.window;
+    assert.strictEqual(r.name, 'Song.wav');
+    assert.strictEqual(r.blob.size, 44 + frames * 4);
+    const v = new DataView(await r.blob.arrayBuffer());
+    assert.strictEqual(v.getUint16(20, true), 1);      // PCM
+    assert.strictEqual(v.getUint16(22, true), 2);      // stereo
+    assert.strictEqual(v.getUint32(24, true), 44100);
+    assert.strictEqual(v.getUint16(34, true), 16);
+    assert.ok(Math.abs(v.getInt16(44, true) - 8192) <= 2);
+    assert.ok(Math.abs(v.getInt16(46, true) + 8192) <= 2);
+  },
+  async 'a WAV keeps its own name'() {
+    const f = new File([new Uint8Array(100)], 'Song.mp3');
+    assert.strictEqual((await W.toBlob(f)).name, 'Song.mp3');
   }
 };
 
@@ -65,5 +99,10 @@ let failed = 0;
 for (const [name, fn] of Object.entries(tests)) {
   try { fn(); console.log('ok   ' + name); } catch (e) { failed++; console.log('FAIL ' + name + '\n     ' + e.message); }
 }
-console.log(failed ? failed + ' failed' : 'all passed');
-process.exit(failed ? 1 : 0);
+(async () => {
+  for (const [name, fn] of Object.entries(asyncTests)) {
+    try { await fn(); console.log('ok   ' + name); } catch (e) { failed++; console.log('FAIL ' + name + '\n     ' + e.message); }
+  }
+  console.log(failed ? failed + ' failed' : 'all passed');
+  process.exit(failed ? 1 : 0);
+})();

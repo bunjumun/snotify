@@ -413,9 +413,22 @@ void registerWifiWrite() {
 struct UploadState {
   int code;
   const char* error;  // always a string literal, never freed
-  bool finished;
+  bool finished;      // the whole song is stored
+  bool chunkStored;   // one slice of a chunked upload is stored, more to come
+  uint32_t received;  // bytes of the song on the card so far (chunked uploads)
   char name[cfg::TRACK_FILE_NAME_MAX_LEN + 1];
 };
+
+// A chunked upload sends one song as several short POSTs, each carrying
+// ?offset=<where this slice starts>&size=<whole song>. Why: one 5-50 MB body
+// over the box's Wi-Fi was closed by the box partway through (measured 2026-11-27:
+// 7 of 8 long bodies died after 2-7 MB, no log line on the box), while 512 KB
+// bodies went through 10 of 10. A slice that fails is simply sent again from
+// the offset the card confirms. No `offset` at all keeps the old one-body upload.
+uint32_t paramNumber(AsyncWebServerRequest* request, const char* key, uint32_t missing) {
+  if (!request->hasParam(key)) return missing;
+  return static_cast<uint32_t>(strtoul(request->getParam(key)->value().c_str(), nullptr, 10));
+}
 
 // _tempObject is free()d by the library when the request ends, so it has to be
 // malloc'd, not new'd.
@@ -438,6 +451,38 @@ void rejectUpload(UploadState* s, int code, const char* why) {
 // The one upload allowed at a time, cleared when its connection ends for any
 // reason, so a dropped phone cannot lock everyone else out.
 const AsyncWebServerRequest* g_uploadOwner = nullptr;
+
+// Opens the .part file for this request: a fresh one for a whole-song upload or
+// slice 0, and for a later slice the existing one, positioned at the offset. A
+// .part shorter than the offset means an earlier slice never landed; the reply
+// says how much the card really has so the page can resume from there.
+void openUploadFile(AsyncWebServerRequest* request, UploadState* s) {
+  const String part = sdstore::partPath(s->name);
+  const bool chunked = request->hasParam("offset");
+  const uint32_t offset = paramNumber(request, "offset", 0);
+  if (!chunked || offset == 0) {
+    if (chunked && SD.exists(part)) SD.remove(part);  // a stale one from an earlier attempt
+    request->_tempFile = SD.open(part, FILE_WRITE);
+    if (!request->_tempFile) rejectUpload(s, 500, "could not create the file on the SD card");
+    return;
+  }
+  request->_tempFile = SD.open(part, "r+");
+  if (!request->_tempFile) {
+    s->received = 0;
+    rejectUpload(s, 409, "no upload in progress for that name, start again from 0");
+    return;
+  }
+  s->received = static_cast<uint32_t>(request->_tempFile.size());
+  if (s->received < offset) {
+    request->_tempFile.close();
+    rejectUpload(s, 409, "the card has less than that offset, resume from received");
+    return;
+  }
+  if (!request->_tempFile.seek(offset)) {
+    request->_tempFile.close();
+    rejectUpload(s, 500, "could not position the file on the SD card");
+  }
+}
 
 void handleUploadChunk(AsyncWebServerRequest* request, uint8_t* data, size_t len,
                        size_t index, size_t total) {
@@ -462,6 +507,10 @@ void handleUploadChunk(AsyncWebServerRequest* request, uint8_t* data, size_t len
           trackname::sanitise(filename.c_str(), s->name, cfg::TRACK_FILE_NAME_MAX_LEN);
       if (verdict != trackname::Result::Ok) {
         rejectUpload(s, 400, trackname::describe(verdict));
+      } else if (request->hasParam("offset") &&
+                 (paramNumber(request, "size", 0) == 0 ||
+                  paramNumber(request, "offset", 0) + total > paramNumber(request, "size", 0))) {
+        rejectUpload(s, 400, "offset and size do not fit this slice");
       } else if (request->contentLength() > sdstore::freeBytes()) {
         rejectUpload(s, 507, "not enough space left on the SD card");
       } else if (g_uploadOwner != nullptr) {
@@ -471,10 +520,7 @@ void handleUploadChunk(AsyncWebServerRequest* request, uint8_t* data, size_t len
         request->onDisconnect([]() {
           g_uploadOwner = nullptr;
         });
-        request->_tempFile = SD.open(sdstore::partPath(s->name), FILE_WRITE);
-        if (!request->_tempFile) {
-          rejectUpload(s, 500, "could not create the file on the SD card");
-        }
+        openUploadFile(request, s);
       }
     }
   }
@@ -517,8 +563,14 @@ void handleUploadChunk(AsyncWebServerRequest* request, uint8_t* data, size_t len
 
   if (final) {
     request->_tempFile.close();
-    if (sdstore::commit(s->name)) {
+    const bool chunked = request->hasParam("offset");
+    const uint32_t reached = paramNumber(request, "offset", 0) + static_cast<uint32_t>(total);
+    if (chunked && reached < paramNumber(request, "size", 0)) {
+      s->chunkStored = true;
+      s->received = reached;
+    } else if (sdstore::commit(s->name)) {
       s->finished = true;
+      s->received = reached;
       Serial.printf("[sd] stored %s\n", s->name);
     } else {
       rejectUpload(s, 500, "could not move the finished file into place");
@@ -529,16 +581,28 @@ void handleUploadChunk(AsyncWebServerRequest* request, uint8_t* data, size_t len
 void handleUploadDone(AsyncWebServerRequest* request) {
   const UploadState* s = static_cast<UploadState*>(request->_tempObject);
   if (s != nullptr && s->error != nullptr) {
+    if (s->code == 409) {  // a slice out of step: tell the page where the card really is
+      JsonDocument doc;
+      doc["ok"] = false;
+      doc["error"] = s->error;
+      doc["received"] = s->received;
+      String out;
+      serializeJson(doc, out);
+      sendJson(request, 409, out);
+      return;
+    }
     sendError(request, s->code, s->error);
     return;
   }
-  if (s == nullptr || !s->finished) {
+  if (s == nullptr || !(s->finished || s->chunkStored)) {
     sendError(request, 400, "no file arrived");
     return;
   }
   JsonDocument doc;
   doc["ok"] = true;
   doc["name"] = s->name;
+  doc["received"] = s->received;
+  doc["done"] = s->finished;
   String out;
   serializeJson(doc, out);
   sendJson(request, 200, out);

@@ -278,6 +278,69 @@
     });
   }
 
+  // One song as a run of short POSTs rather than one long one. Measured on the
+  // box (2026-11-27): a single 5-50 MB body was closed by the box after 2-7 MB
+  // in 7 of 8 tries, while 512 KB bodies succeeded 10 of 10; 256 KB keeps the
+  // loss of one slice cheap when the Wi-Fi is dropping packets. Each slice names
+  // its offset, so one that fails is sent again from where the card says it is.
+  var SLICE_BYTES = 256 * 1024;
+  var SLICE_TRIES = 10;      // per slice, before giving up (the link can be lossy for a minute)
+  var LEGACY = {};           // sentinel: the box firmware predates sliced uploads
+
+  function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  // Resolves with {status, d} for any HTTP answer; rejects only when no answer came.
+  function postSlice(blob, name, offset, size, onProgress) {
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sd/upload?name=' + encodeURIComponent(name) +
+               '&offset=' + offset + '&size=' + size);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.setRequestHeader('X-Lakehorse-Key', key());
+      xhr.timeout = 60000;
+      xhr.upload.onprogress = function (e) { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+      xhr.onerror = function () { reject(new Error('the connection to the box dropped')); };
+      xhr.ontimeout = function () { reject(new Error('the box stopped answering')); };
+      xhr.onload = function () {
+        var d = {};
+        try { d = JSON.parse(xhr.responseText); } catch (e) { /* not JSON */ }
+        resolve({ status: xhr.status, d: d });
+      };
+      xhr.send(blob);
+    });
+  }
+
+  function sendSliced(blob, name, onProgress) {
+    var size = blob.size;
+    if (size === 0) return Promise.reject(new Error('the file is empty'));
+    function giveUp(msg, offset) {
+      return new Error(msg + ' (stopped at ' + megabytes(offset) + ' of ' + megabytes(size) + ')');
+    }
+    function step(offset, failures) {
+      var end = Math.min(offset + SLICE_BYTES, size);
+      function retry(msg, from) {
+        if (failures + 1 >= SLICE_TRIES) throw giveUp(msg, offset);
+        say(msg + ', retrying from ' + megabytes(from) + '...', '');
+        return delay(1000 * (failures + 1)).then(function () { return step(from, failures + 1); });
+      }
+      return postSlice(blob.slice(offset, end), name, offset, size, function (p) {
+        onProgress((offset + p * (end - offset)) / size);
+      }).then(function (r) {
+        if (r.status === 200 && r.d.ok) {
+          if (typeof r.d.done !== 'boolean') return offset === 0 ? LEGACY : Promise.reject(giveUp('unexpected reply from the box', offset));
+          if (r.d.done) return r.d;
+          return step(end, 0);
+        }
+        if (r.status === 409 && typeof r.d.received === 'number' && r.d.received < offset) {
+          return retry(r.d.error, r.d.received);
+        }
+        if (r.status === 503) return retry('the box is busy', offset);
+        throw new Error(r.d.error || ('the box answered ' + r.status));
+      }, function (e) { return retry(e.message, offset); });
+    }
+    return step(0, 0);
+  }
+
   function uploadAll(list) {
     if (keyRequired && !key()) { say('Enter the pairing key first (see the note below).', 'err'); return; }
     var bar = $('sdBar');
@@ -293,7 +356,10 @@
           .then(function (r) {
             say(label + ': uploading ' + megabytes(r.blob.size) +
                 (r.note ? ' (' + r.note + ')' : '') + '...', '');
-            return send(r.blob, file.name, function (p) { bar.value = 0.5 + p * 0.5; });
+            var progress = function (p) { bar.value = 0.5 + p * 0.5; };
+            return sendSliced(r.blob, file.name, progress).then(function (d) {
+              return d === LEGACY ? send(r.blob, file.name, progress) : d;
+            });
           })
           .then(function () { say(label + ': stored.', 'ok'); return load(); });
       });

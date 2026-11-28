@@ -348,7 +348,8 @@ const GameConfig = {
   /* Digital DOINK: every `every`th DOINK hit drops one somewhere on the map. Touch it for `cash` (2020s dollars, scaled by wage like all pay), a clean police record and a repaired van. */
   /* Bernstain files: manila folders on the map, worth a quarter or a half; a whole file (1.0) turns the army and every cop on you until you
      hit a DOINK or Digital DOINK. `army` vehicles are built once and woken by the hunt; contact is a heavy hit, never a fine. */
-  files: { count: 14, deck: [.25, .25, .5], radius: 7, respawn: 30, scale: 2.6, dropMin: 2, dropMax: 3, whistleRadius: 9 }, /* dropMin..dropMax: folders thrown onto the streets round a razed block, they stay until collected; a whole file spawns a whistle at the city centre: drive into it to blow it and move to the next era */
+  files: { count: 28, deck: [.25, .25, .5], radius: 7, respawn: 30, scale: 2.6, dropMin: 2, dropMax: 3, whistleRadius: 9 }, /* dropMin..dropMax: folders thrown onto the streets round a razed block, they stay until collected; a whole file spawns a whistle at the city centre: drive into it to blow it and move to the next era */
+  targets: { ticketRadius: 5.4, propReach: 1.1 }, // trigger reach: the van cannot get within the old 3.4 m of a ticket (or a prop) that sits against a wall
   hunt: { army: 4, armyLite: 2, speed: [26, 30], top: 46, r: 4.4, mass: 2.8, hitMin: 20, chaseRange: 600 },
   digital: { every: 3, cash: 10000, minFrom: 110, radius: 6 },
   drainBase: 2.2,
@@ -1629,14 +1630,14 @@ class TargetManager {
   update(dt, car, hooks, time) {
     for (const t of this.tickets) {
       t.ph += dt; t.body.rotation.y += dt * 3.2; t.m.position.y = t.spot.y + Math.sin(t.ph * 2.4) * 0.35;
-      if (Math.hypot(car.x - t.m.position.x, car.z - t.m.position.z) < 3.4 && Math.abs(car.y + 1 - t.m.position.y) < 3.6) { this.group.remove(t.m); t.dead = true; this.respawn.push({ t: 22 + Math.random() * 10 }); hooks.ticket(t.m.position); }
+      if (Math.hypot(car.x - t.m.position.x, car.z - t.m.position.z) < GameConfig.targets.ticketRadius && Math.abs(car.y + 1 - t.m.position.y) < 3.6) { this.group.remove(t.m); t.dead = true; this.respawn.push({ t: 22 + Math.random() * 10 }); hooks.ticket(t.m.position); }
     }
     this.tickets = this.tickets.filter(t => !t.dead);
     for (const r of this.respawn) r.t -= dt; const due = this.respawn.filter(r => r.t <= 0); this.respawn = this.respawn.filter(r => r.t > 0);
     for (const _ of due) { const s = this.W.ticketSpots[Math.floor(Math.random() * this.W.ticketSpots.length)]; if (!this.tickets.some(t => t.spot === s)) this.spawnTicket(s); }
     for (const p of this.props) {
       if (p.state === 'ok') {
-        if (car.y < 2.2 && Math.hypot(car.x - p.x, car.z - p.z) < p.r + GameConfig.car.radius && car.speed > 3) {
+        if (car.y < 2.2 && Math.hypot(car.x - p.x, car.z - p.z) < p.r + GameConfig.car.radius + GameConfig.targets.propReach && car.speed > 3) {
           p.state = 'fly'; p.t = 1.8; const dx = p.x - car.x, dz = p.z - car.z, l = Math.hypot(dx, dz) || 1; p.vx = dx / l * car.speed * .9 + car.vx * .3; p.vz = dz / l * car.speed * .9 + car.vz * .3; p.vy = 6 + car.speed * .2; p.spin = (Math.random() - .5) * 14;
           car.vx *= 1 - p.slow * 0.01; car.vz *= 1 - p.slow * 0.01; hooks.smash(p);
         }
@@ -1927,9 +1928,35 @@ class Autopilot {
     const wh = G.files && G.files.whistle; if (!skip && wh) return { x: wh.x, z: wh.z, kind: 'whistle' }; // era change: always worth the detour
     if (!skip && dg && (hunted || !o || o.time > 20)) return { x: dg.x, z: dg.z, kind: 'digital' }; // cash, a clean record, a repaired van
     if (!skip && D && D.ready && (hunted || !o || o.time > 25)) { const d = D.nearest(car); if (d) return { x: d.x, z: d.z, kind: 'doink' }; }
+    if (!skip && !hunted && (!o || o.time > 18)) { const tg = this.ticketGoal(G); if (tg) return tg; } // lotto tickets when near, ramps when in view
     if (!skip && D && D.stash < need && (hunted || !o || o.time > 30)) { let best = null, bd = hunted ? 400 : 60; for (const b of D.bags) { if (b.gone > 0) continue; const k = Math.hypot(b.sp.x - car.x, b.sp.z - car.z); if (k < bd) { bd = k; best = b; } } if (best) return { x: best.sp.x, z: best.sp.z, kind: 'bag' }; }
     // folders are never a goal: the demo only gets one if its route happens to cross it (Files.update picks it up like any pickup)
     const t = G.orders.target(car); return t ? { x: t.x, z: t.z, kind: t.kind } : null;
+  }
+  /** The ramp a ramp ticket hangs off, with the van's place in its frame; null if the ramp is not worth trying from here. Feasible = the run-up point sits on a road,
+      the van is behind the ramp's low end (or already in its lane) and can turn onto the run-up line from its heading without a U-turn. */
+  rampPlan(G, sp, committed) {
+    const car = G.car; let r = null, rd = 1e9; for (const q of G.W.ramps) { const k = Math.hypot(q.x - sp.x, q.z - sp.z); if (k < rd) { rd = k; r = q; } } if (!r) return null;
+    const sn = Math.sin(r.theta), cs = Math.cos(r.theta), run = r.len / 2 + 24, ax = r.x - sn * run, az = r.z - cs * run, dx = car.x - r.x, dz = car.z - r.z, lz = dx * sn + dz * cs, lx = dx * cs - dz * sn;
+    const pl = { r, sn, cs, run, ax, az, lx, lz }, road = G.wq.nearestRoad(ax, az); if (Math.hypot(road.x - ax, road.z - az) > GameConfig.ROAD / 2) return null; // run-up is not on a street
+    if (Math.hypot(dx, dz) > 90 || lz > r.len / 2 - 2 && Math.abs(lx) > r.wd) return null; // too far, or already past it
+    const inLane = Math.abs(lx) < 16 && lz > -run - 6 && lz < r.len / 2 + 10;
+    if (committed) return pl; // already on the way: the van swings about while it routes to the run-up, so the heading tests below are for choosing a ramp, not for keeping one
+    if (inLane) { const turn = Math.abs(angDiff(car.h, r.theta)); return turn < 1.2 || lz > -r.len / 2 ? pl : null; } // facing within ~70 deg of the ramp's direction, or already on it
+    const turn = Math.abs(angDiff(car.h, Math.atan2(ax - car.x, az - car.z))); return turn < 1.75 && lz < -r.len / 2 ? pl : null; // the run-up point is within ~100 deg of the nose and the van is on the near side
+  }
+  /** The nearest lotto ticket: a ground one within 45 m, or a feasible ramp ticket (see rampPlan). A ramp ticket is two goals: the run-up point on the road, then up the ramp at speed. */
+  ticketGoal(G) {
+    const car = G.car; let best = null, bd = 1e9, plan = null; const lk = this.tLock;
+    const consider = (t, committed) => { const sp = t.spot, d = Math.hypot(sp.x - car.x, sp.z - car.z); if (sp.kind === 'ramp') { if (d > 90) return; const pl = this.rampPlan(G, sp, committed); if (!pl) return; if (d < bd) { bd = d; best = t; plan = pl; } } else if (d <= 45 && sp.y <= 3 && d < bd) { bd = d; best = t; plan = null; } };
+    if (lk && !lk.dead && G.targets.tickets.includes(lk)) consider(lk, true); // stay on a ticket once chosen, while it stays feasible
+    if (!best) for (const t of G.targets.tickets) consider(t);
+    this.tLock = best; if (!best) return null; const sp = best.spot; if (!plan) return { x: sp.x, z: sp.z, kind: 'ticket' };
+    const { r, sn, cs, run, lx, lz } = plan;
+    if (Math.abs(lx) < 16 && lz > -run - 6 && lz < r.len / 2 + 10) { // in the run-up lane: chase a carrot on the ramp's axis, 9 m ahead, so the van slides onto the line instead of overshooting it
+      const cz = Math.min(lz + 9, r.len / 2 + 14); return { x: r.x + sn * cz, z: r.z + cs * cz, kind: 'rampUp', lx, lz, half: r.len / 2 };
+    }
+    return { x: plan.ax, z: plan.az, kind: 'rampA' };
   }
   /** The point to steer at right now: along the grid roads toward the road the goal sits on, then straight in. */
   aim(G, T) {
@@ -1956,10 +1983,11 @@ class Autopilot {
   think(G, dt) {
     this.clock += dt; const car = G.car, T = this.goal(G), inp = this.inp; this.dash = false;
     if (!T || car.dead) { inp.throttle = 0; inp.brake = 0; inp.steer = 0; return inp; }
-    this.goalKind = T.kind; const [ax, az] = this.aim(G, T), want = Math.atan2(ax - car.x, az - car.z), err = angDiff(car.h, want), ae = Math.abs(err), dT = Math.hypot(T.x - car.x, T.z - car.z);
+    this.goalKind = T.kind; const [ax, az] = T.kind === 'rampUp' ? [T.x, T.z] : this.aim(G, T), want = Math.atan2(ax - car.x, az - car.z), err = angDiff(car.h, want), ae = Math.abs(err), dT = Math.hypot(T.x - car.x, T.z - car.z);
     inp.steer = clamp(err * 2.6, -1, 1);
     let vt = lerp(48, 14, clamp(ae / 0.55, 0, 1)); if (T.kind === 'bag' || T.kind === 'digital') vt = Math.min(vt, 40);
     if (ax !== T.x || az !== T.z) vt = Math.min(vt, 14 + Math.sqrt(2 * 20 * Math.max(0, Math.hypot(ax - car.x, az - car.z) - 4))); // a street corner ahead: brake for it along a stopping curve, so the straights can stay fast
+    if (T.kind === 'rampUp') { if (Math.abs(T.lx) > 2.5 || ae > 0.2) vt = Math.min(vt, T.lz > -T.half ? 12 : 14); else { vt = Math.max(vt, 30); if (T.lz < -T.half && car.boostCd <= 0 && car.speed > 12) this.dash = true; } } // full speed only once lined up: a van that enters the 9 m ramp at an angle hits its side else if (T.kind === 'rampA') vt = Math.min(vt, 24);
     if (T.kind === 'pickup' || T.kind === 'drop') vt = Math.min(vt, 8 + Math.sqrt(2 * 22 * Math.max(0, dT - 9))); // brake late along a real stopping curve (it was dT * 0.2: a crawl for the last 40 m)
     /* Other vehicles: steer round them and slow only as far as the gap needs (it used to crawl to 4 m/s behind anything within 16 m,
        which with a real fleet on the road made the demo stop-start). Parked cars sit off the lane and are ignored unless close. */

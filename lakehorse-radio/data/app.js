@@ -216,6 +216,9 @@
   // and whether the join form is offered. Called at load and by Refresh.
   function applyStatus(s) {
     status = s;
+    // Shared with drive-b.js (loaded late) so it never needs a request of its own.
+    window.__lhStatus = s;
+    try { document.dispatchEvent(new CustomEvent('lh-status', { detail: s })); } catch (e) { /* old browser: Drive B asks when opened */ }
     describeNetwork(s);
     showCurrent(s);
     if (s.mdns) $('netHostName').textContent = s.mdns;

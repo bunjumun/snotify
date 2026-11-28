@@ -257,3 +257,26 @@ const tick = () => new Promise((r) => setImmediate(r));
   // Pinned values after an unreadable status keep the earlier reading.
   console.log('drive-b: all passed');
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// ---- the drive's scrambled name ----
+(function () {
+  assert.strictEqual(D.TITLE, 'STAR SHIP ENIAS HARD DRIVE');
+  assert.strictEqual(D.titleAt(100), D.TITLE);
+  assert.notStrictEqual(D.titleAt(99), D.TITLE);               // whole only at exactly 100
+  assert.strictEqual(D.titleAt(0).replace(/ /g, '').match(/[A-Z]/g), null);   // nothing readable at 0
+  assert.strictEqual(D.titleAt(0).length, D.TITLE.length);
+  assert.deepStrictEqual([...D.titleAt(0)].map((ch) => ch === ' '), [...D.TITLE].map((ch) => ch === ' '));
+  assert.strictEqual(D.titleAt(40), D.titleAt(40));            // same percent, same text
+  let shown = 0;
+  for (let p = 0; p <= 100; p++) {                              // a letter never hides again as alignment rises
+    const t = D.titleAt(p);
+    const n = [...t].filter((ch, i) => ch === D.TITLE[i] && ch !== ' ').length;
+    assert.ok(n >= shown, 'monotone at ' + p);
+    [...t].forEach((ch, i) => { if (p > 0 && D.titleAt(p - 1)[i] === D.TITLE[i]) assert.strictEqual(ch, D.TITLE[i]); });
+    shown = n;
+  }
+  assert.strictEqual(D.titleAt(-5), D.titleAt(0));
+  assert.strictEqual(D.titleAt(500), D.TITLE);
+  assert.strictEqual(D.titleAt(NaN), D.titleAt(0));
+  console.log('drive-b title: all passed');
+})();

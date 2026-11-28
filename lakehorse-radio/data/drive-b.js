@@ -43,6 +43,10 @@
   var LOG_LINES = 4;
   var KINDS = ['text', 'download', 'link'];
   var JUNK = ['#', '%', '▓', '?', '$'];
+  // The drive's own name. It is shown scrambled and clears up as the alignment
+  // rises, so the percent can be read off the desktop without opening anything.
+  var TITLE = 'STAR SHIP ENIAS HARD DRIVE';
+  var OLD_TITLES_SEEN_KEY = 'lh-driveb-pct';
 
   function hash32(a, b) {
     var h = (Math.imul(a | 0, 73856093) ^ Math.imul(b | 0, 19349663)) >>> 0;
@@ -179,6 +183,27 @@
     return chars.join('');
   }
 
+  // Pure: the drive's name at an alignment percent. Each letter has its own
+  // fixed point (1..100) at which it comes clean, from a hash of its position,
+  // so the same percent always reads the same and a higher one never hides a
+  // letter a lower one showed. Spaces are never scrambled, so the shape of the
+  // name is visible. At 100 every letter is clean; at 0 none is.
+  function titleAt(percent) {
+    var p = Math.max(0, Math.min(100, Math.floor(percent) || 0));
+    var at = [], last = -1, i;
+    for (i = 0; i < TITLE.length; i++) {
+      at.push(TITLE.charAt(i) === ' ' ? 0 : 1 + hash32(i, 0x7173) % 99);
+      if (last < 0 || at[i] > at[last]) last = i;
+    }
+    at[last] = 100;               // the name is only whole at exactly 100
+    var out = '';
+    for (i = 0; i < TITLE.length; i++) {
+      var c = TITLE.charAt(i);
+      out += (c === ' ' || p >= at[i]) ? c : JUNK[hash32(i, 0x9d1) % JUNK.length];
+    }
+    return out;
+  }
+
   // Pure: how one file looks at this alignment percent.
   function fileState(file, percent) {
     if (percent >= file.threshold) return { unlocked: true, name: file.name, status: 'recovered', tone: 'ok' };
@@ -229,6 +254,50 @@
     var erroring = null;       // name of the file showing the read error
 
     function visible() { return !(doc && doc.hidden); }
+
+    // Paints the scrambled name everywhere the drive is named: window title bar,
+    // taskbar label, desktop icon, Start entry. Cheap and only when it changes.
+    var shownTitle = null;
+    function paintTitle(percent) {
+      var t = titleAt(percent);
+      if (t === shownTitle) return;
+      var win = el('win-driveb');
+      if (!win) return;
+      var bar = win.querySelector ? win.querySelector('.win-name') : null;
+      if (bar && bar.lastChild) bar.lastChild.textContent = t;
+      var old = shownTitle || (win.dataset && win.dataset.title) || '';
+      if (win.dataset) win.dataset.title = t;
+      var x = win.querySelector ? win.querySelector('.win-x') : null;
+      if (x) x.setAttribute('aria-label', 'Close Drive B');
+      if (doc && doc.querySelectorAll) {
+        Array.prototype.forEach.call(doc.querySelectorAll('[data-open="win-driveb"] span, #tasks .task'), function (n) {
+          if (n.classList && n.classList.contains('task')) { if (n.textContent === old) n.textContent = t; return; }
+          n.textContent = t;
+        });
+        var start = doc.querySelector('.startitems [data-open="win-driveb"]');
+        if (start) start.textContent = t;
+      }
+      shownTitle = t;
+    }
+
+    // The percent the page last knew, kept across visits so the name is right
+    // on first paint. The box is the truth; this only avoids a flash.
+    function remembered() {
+      try { var v = Number(root.localStorage && root.localStorage.getItem(OLD_TITLES_SEEN_KEY)); return v >= 0 && v <= 100 ? Math.floor(v) : 0; } catch (e) { return 0; }
+    }
+    function remember(percent) {
+      try { if (root.localStorage) root.localStorage.setItem(OLD_TITLES_SEEN_KEY, String(percent)); } catch (e) { /* private mode: fine */ }
+    }
+    // Any status reply (app.js shares the one it already asks for) moves the name.
+    function onStatus(status) {
+      var r = readAlignment(status);
+      if (!r) return;
+      remember(r.percent);
+      paintTitle(r.percent);
+    }
+    paintTitle(remembered());
+    if (root.__lhStatus) onStatus(root.__lhStatus);
+    if (doc && doc.addEventListener) doc.addEventListener('lh-status', function (ev) { onStatus(ev.detail); });
 
     function pushLog(lines) {
       lines.forEach(function (l) { log.push(l); });
@@ -329,6 +398,8 @@
       pushLog(lines);
       songSeen = false;
       align = r;
+      remember(r.percent);
+      paintTitle(r.percent);
       justGained = gained;
       if (changed || lines.length) {
         render(snap, flash);
@@ -419,7 +490,7 @@
 
   var exported = {
     nodeCell: nodeCell, readAlignment: readAlignment, latticeModel: latticeModel, latticeSvg: latticeSvg,
-    parseDrive: parseDrive, garble: garble, fileState: fileState, eventLines: eventLines, balloon: balloon,
+    parseDrive: parseDrive, titleAt: titleAt, TITLE: TITLE, garble: garble, fileState: fileState, eventLines: eventLines, balloon: balloon,
     attach: attach, READ_ERROR: READ_ERROR, FILE: FILE
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;

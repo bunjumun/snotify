@@ -16,6 +16,9 @@
 #include <new>
 
 #include "alignment_box.h"
+#ifdef LAKEHORSE_FLAC_SPIKE
+#include "flac_spike.h"
+#endif
 #ifdef LAKEHORSE_ALIGN_TEST
 #include "alignment_test_routes.h"
 #endif
@@ -603,6 +606,49 @@ void handleUploadDone(AsyncWebServerRequest* request) {
   doc["name"] = s->name;
   doc["received"] = s->received;
   doc["done"] = s->finished;
+  String out;
+  serializeJson(doc, out);
+  sendJson(request, 200, out);
+}
+
+// Throws away the half-written .part of a cancelled upload (?name=Song.wav).
+// The name goes through the same rules as an upload, so a URL can only ever
+// reach <music dir>/<safe name>.part. While an upload is running it answers 409:
+// the page aborts its last slice and asks again a moment later, once that
+// connection has closed and released the file. Only a .part is ever removed, so
+// a finished song cannot be lost this way.
+void handleUploadCancel(AsyncWebServerRequest* request) {
+  if (cfg::SD_WRITES_NEED_KEY && !authorised(request)) {
+    sendError(request, 401, "missing or wrong X-Lakehorse-Key");
+    return;
+  }
+  if (!sdstore::mounted()) {
+    sendError(request, 503, "there is no SD card in the box");
+    return;
+  }
+  const String wanted = request->hasParam("name") ? request->getParam("name")->value() : String();
+  char safe[cfg::TRACK_FILE_NAME_MAX_LEN + 1];
+  const trackname::Result verdict =
+      trackname::sanitise(wanted.c_str(), safe, cfg::TRACK_FILE_NAME_MAX_LEN);
+  if (verdict != trackname::Result::Ok) {
+    sendError(request, 400, trackname::describe(verdict));
+    return;
+  }
+  if (g_uploadOwner != nullptr) {
+    sendError(request, 409, "an upload is still closing, try again");
+    return;
+  }
+  const String part = sdstore::partPath(safe);
+  const bool existed = SD.exists(part);
+  if (existed && !SD.remove(part)) {
+    sendError(request, 500, "could not remove the unfinished upload");
+    return;
+  }
+  Serial.printf("[sd] cancelled upload %s (%s)\n", safe, existed ? "removed" : "nothing to remove");
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["name"] = safe;
+  doc["removed"] = existed;
   String out;
   serializeJson(doc, out);
   sendJson(request, 200, out);
@@ -1245,6 +1291,7 @@ void begin() {
 
   g_server.on("/api/sd", HTTP_GET, handleSdList);
   g_server.on("/api/sd/delete", HTTP_POST, handleSdDelete);
+  g_server.on("/api/sd/upload-cancel", HTTP_POST, handleUploadCancel);
   g_server.on("/api/sd/upload", HTTP_POST, handleUploadDone, nullptr, handleUploadChunk);
   g_server.on("/api/sd/game-upload", HTTP_POST, handleGameUploadDone, nullptr, handleGameUploadChunk);
   g_server.on("/api/sd/game-delete", HTTP_POST, handleGameDelete);
@@ -1261,6 +1308,9 @@ void begin() {
   g_server.on("/game", HTTP_GET, [](AsyncWebServerRequest* r) { r->redirect("/game/"); });
 #ifdef LAKEHORSE_ALIGN_TEST
   aligntest::attach(g_server);
+#endif
+#ifdef LAKEHORSE_FLAC_SPIKE
+  flacspike::registerRoutes(g_server);
 #endif
   playerapi::attach(g_server);
   speakerapi::attach(g_server);

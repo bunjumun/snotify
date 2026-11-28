@@ -18,7 +18,8 @@
  * 16-bit stereo WAV, the shape a Bluetooth (A2DP) speaker takes, so the box can
  * one day play it to a speaker with no decoder or resampler of its own. This is
  * song-prep's default. It decodes the whole song in memory, so it is for a
- * computer, not a phone; see the section below.
+ * computer, not a phone; see the section below. A 24/32-bit WAV that is already
+ * 44.1 kHz stereo is the exception: it only needs its depth reduced, which streams.
  *
  * Conversion 'aac': any readable WAV is encoded to AAC at 160 kbps. Small, and
  * fine for playback in a listener's browser, but the box cannot decode it, so
@@ -259,8 +260,8 @@
   // 5.1 folds down), which are better than anything worth writing here.
   //
   // The price is memory: the whole song is decoded at once, about 150 MB for a
-  // seven minute mix. That is fine for song-prep on a computer and is why the
-  // box's own upload page keeps 'wav16', which streams.
+  // seven minute mix. That is fine on a computer; the box's own upload page now
+  // uses this too (2026-11-27, owner's call: uploads are from a computer, never a phone).
   var BT_RATE = 44100;
   var BT_CHANNELS = 2;
   var BT_BLOCK_FRAMES = 1 << 20;   // frames converted per sink write, ~4 MB out
@@ -286,7 +287,8 @@
   /* The decoded song as a 2-channel AudioBuffer at 44.1 kHz. A stereo decode is
    * used as it is; anything else is rendered through the mixer. */
   function decodeToStereo(bytes) {
-    var Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    var scope = typeof window !== 'undefined' ? window : {};
+    var Offline = scope.OfflineAudioContext || scope.webkitOfflineAudioContext;
     if (typeof Offline !== 'function') {
       return Promise.reject(new Error('this browser cannot convert audio; use Chrome or Edge'));
     }
@@ -304,6 +306,8 @@
       throw new Error('this browser cannot read this file as audio');
     });
   }
+
+  var TOO_BIG = 'this file is too big for this browser to convert; try a computer';
 
   function encodeBtWav(file, sink, onProgress) {
     return file.arrayBuffer().then(function (bytes) {
@@ -328,6 +332,11 @@
       }
       return Promise.resolve(sink(header16(BT_CHANNELS, BT_RATE, dataBytes)))
         .then(function () { return next(0); });
+    }).catch(function (e) {
+      // Running out of memory surfaces as a RangeError or a bare DOMException
+      // depending on the browser; say it in words rather than "Upload failed: [object]".
+      if (e && (e.name === 'RangeError' || /memory|allocat/i.test(e.message || ''))) throw new Error(TOO_BIG);
+      throw e;
     });
   }
 
@@ -355,11 +364,18 @@
     var format = (options && options.format) || 'wav16';
     if (format === 'wav44') {
       return inspect(file).then(function (info) {
-        if (!isBtReady(info.header)) return encodeBtWav(file, sink, onProgress);
-        return Promise.resolve(sink(file)).then(function () {
-          onProgress(1);
-          return { converted: false, header: info.header, bytes: file.size };
-        });
+        if (isBtReady(info.header)) {
+          return Promise.resolve(sink(file)).then(function () {
+            onProgress(1);
+            return { converted: false, header: info.header, bytes: file.size };
+          });
+        }
+        // A 24/32-bit WAV already at 44.1 kHz stereo only needs its depth
+        // reduced, which streams; no whole-song decode, so it works on a phone.
+        if (!(info.convert && info.header.rate === BT_RATE && info.header.channels === BT_CHANNELS)) {
+          return encodeBtWav(file, sink, onProgress);
+        }
+        return convertDepth(file, info, sink, onProgress);
       });
     }
     if (format === 'aac' && /\.wav$/i.test(file.name)) {
@@ -380,28 +396,34 @@
           return { converted: false, header: info.header, bytes: file.size };
         });
       }
-      var h = info.header;
-      var sampleBytes = h.bits >> 3;
-      var frameBytes = sampleBytes * h.channels;
-      var frames = Math.floor(h.dataBytes / frameBytes);
-      var step = Math.max(1, Math.floor(CHUNK_BYTES / frameBytes)) * frameBytes;
-      var end = h.dataStart + frames * frameBytes;
-      var outData = frames * h.channels * 2;
-
-      function next(at) {
-        if (at >= end) return { converted: true, header: h, bytes: 44 + outData };
-        var to = Math.min(at + step, end);
-        return file.slice(at, to).arrayBuffer().then(function (buf) {
-          var samples = convertSamples(new DataView(buf), (to - at) / sampleBytes, h);
-          return Promise.resolve(sink(samples)).then(function () {
-            onProgress((to - h.dataStart) / (end - h.dataStart));
-            return next(to);
-          });
-        });
-      }
-      return Promise.resolve(sink(header16(h.channels, h.rate, outData)))
-        .then(function () { return next(h.dataStart); });
+      return convertDepth(file, info, sink, onProgress);
     });
+  }
+
+  /* Rewrites a 24/32-bit PCM or float WAV as 16-bit at its own rate and
+   * channel count, a few MB at a time. */
+  function convertDepth(file, info, sink, onProgress) {
+    var h = info.header;
+    var sampleBytes = h.bits >> 3;
+    var frameBytes = sampleBytes * h.channels;
+    var frames = Math.floor(h.dataBytes / frameBytes);
+    var step = Math.max(1, Math.floor(CHUNK_BYTES / frameBytes)) * frameBytes;
+    var end = h.dataStart + frames * frameBytes;
+    var outData = frames * h.channels * 2;
+
+    function next(at) {
+      if (at >= end) return { converted: true, header: h, bytes: 44 + outData };
+      var to = Math.min(at + step, end);
+      return file.slice(at, to).arrayBuffer().then(function (buf) {
+        var samples = convertSamples(new DataView(buf), (to - at) / sampleBytes, h);
+        return Promise.resolve(sink(samples)).then(function () {
+          onProgress((to - h.dataStart) / (end - h.dataStart));
+          return next(to);
+        });
+      });
+    }
+    return Promise.resolve(sink(header16(h.channels, h.rate, outData)))
+      .then(function () { return next(h.dataStart); });
   }
 
   /* Convenience for uploads and downloads: the whole result as one Blob. */
@@ -453,6 +475,8 @@
     NAME_MAX_LEN: NAME_MAX_LEN,
     // Exposed for test/wavconvert.test.js; the pages do not use these.
     isBtReady: isBtReady,
+    needsConversion: needsConversion,
+    BT_CHANNELS: BT_CHANNELS,
     interleave16: interleave16,
     header16: header16,
     BT_RATE: BT_RATE

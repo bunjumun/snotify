@@ -39,7 +39,9 @@
     "matrix-preview": { "title": "Matrix preview", "text": "A tiny picture of the light panel. It makes no requests of its own. Tap it to open the Matrix window." },
     "sd-track": { "title": "A song on the box", "text": "Tap a song to play it. The one playing is highlighted orange. Songs play in list order and the next one starts by itself." },
     "sd-delete": { "title": "Delete", "text": "Deletes this song from the box's SD card, after asking you to confirm. It cannot be undone." },
-    "sd-pick": { "title": "Upload songs", "text": "Choose audio files on this phone to copy onto the box's SD card. 24-bit and 32-bit WAVs are converted to 16-bit in your browser first, at their own sample rate, so they fit the Bluetooth path. Other files are sent as they are." },
+    "sd-pause": { "title": "Pause upload", "text": "Stops sending after the piece now in flight and waits. Press Resume to carry on from the same place. A box restart while paused throws the half-sent song away." },
+    "sd-cancel": { "title": "Cancel upload", "text": "Stops the upload and removes the half-sent song from the SD card. Songs already stored are not touched." },
+    "sd-pick": { "title": "Upload songs", "text": "Choose audio files on this device to copy onto the box's SD card. Each one is converted to 44.1 kHz 16-bit stereo WAV in your browser first, so it plays on this page and over Bluetooth." },
     "sd-key": { "title": "Pairing key", "text": "Uploading or deleting can be locked to phones that hold the box's pairing key. Joining the box's own hotspot fills it in for you. Or paste it here. It is saved on this phone only." },
     "sd-key-save": { "title": "Save key", "text": "Saves the pairing key you typed on this phone, so uploads and deletes are accepted." },
 
@@ -122,7 +124,7 @@
   "index": [
     { "group": "Windows", "ids": ["win-player", "win-driveb", "win-network", "win-speaker", "win-matrix", "win-games", "win-guestbook", "win-help"] },
     { "group": "Using the page", "ids": ["whatsthis", "start-button", "start-lens", "tube-look", "taskbar-task", "win-close"] },
-    { "group": "Songs and the speaker", "ids": ["play-on", "sd-pick", "sd-key", "spk-optimize", "speaker-buttons"] },
+    { "group": "Songs and the speaker", "ids": ["play-on", "sd-pick", "sd-pause", "sd-cancel", "sd-key", "spk-optimize", "speaker-buttons"] },
     { "group": "Wi-Fi and pairing", "ids": ["boot-button-pairing", "power-on-pairing", "saved-networks", "phone-hotspot", "hotspot-setup-boot", "net-help"] },
     { "group": "ENIAS alignment", "ids": ["alignment-scoring", "band-tracks-json", "driveb-net", "alignment-pattern", "drive-b-json"] }
   ]

@@ -45,7 +45,35 @@ Decision for you: Phase B only pays off with Phase C (or FLAC inputs you already
 ## Order and effort
 A (about half a day, one firmware flash for cancel) -> support check for C (15 min) -> B spike (measure) -> B build -> C if supported.
 
-## Open questions for you
-1. OK to make wav44 (everything converted to 44.1 kHz stereo) the default for every upload? Mono and 48 kHz files lose their original rate; sizes grow for MP3/AAC.
-2. Is a phone ever the uploading device? If yes, whole-song decode may fail there; we could cap file size or warn.
-3. Phase B/C: worth the new dependency and background job, or is Phase A plus a better Wi-Fi enough?
+## Decisions (owner, 2026-11-27)
+1. wav44 for every upload: **yes**.
+2. Phone uploads: **not needed**, so whole-song decode is acceptable (a clear error still shows if memory runs out).
+3. Phase B: **worth it if the hardware can handle it**. Decided to measure first (spike) before committing.
+
+## Status
+- **Phase A built 2026-11-27** (not yet committed when this was written): `data/sliceupload.js` (pause/resume/cancel/retry loop, `test/sliceupload.test.js`), wav44 default in `data/library.js`, 24/32-bit 44.1 kHz stereo WAVs still stream (no whole-song decode), new `POST /api/sd/upload-cancel?name=` in `src/web_server.cpp`, Pause/Cancel buttons, note text fixed.
+- **Phase C support check: FLAC encoding is NOT available.** Chromium 156 (the Claude app's browser): `AudioEncoder.isConfigSupported({codec:'flac'})` returns `supported: false`; AAC is supported. Safari and Firefox not checked (Chrome is the one that matters for uploads from a computer).
+- **Consequence for Phase B:** without a browser FLAC encoder, only files that are already FLAC could shrink in transfer, and the browser would still have to decode them to check/convert the shape. The only route to shrinking WAV/MP3 uploads is a WASM FLAC encoder (libflac.js, ~100 KB gzipped, which may fit the ~400 KB free in LittleFS; to be measured) plus the on-box FLAC decoder job. Phase B is therefore on hold pending that decision.
+
+## Encoder size measured (2026-11-27)
+libflacjs 5.6.0 (`dist/libflac.min.wasm.js` 110 KB, `libflac.min.wasm.wasm` 131 KB): **26 KB + 57 KB = about 84 KB gzipped**. The LittleFS image now holds about 89 KB gzipped of 512 KB, so the encoder would bring it to about 173 KB. It fits with room to spare, which removes the earlier objection to Phase C. Still to check: the box serves `.wasm` with the right MIME type, and that libflac.js encodes a 7-minute song in the browser at a usable speed.
+
+## Phase C built (2026-11-27): browser FLAC encoder
+- `data/flacencode.js` wraps libflac.js (`data/libflac.min.wasm.js` + `.wasm`, MIT, `data/libflac.LICENSE.txt`). Takes 16-bit interleaved PCM at any rate/channels, writes FLAC to a sink with back-pressure. Header carries the exact length.
+- `test/flacencode.test.js` (5 tests, real library): stereo, mono with odd chunks, silence, full-scale extremes, and 7 minutes of stereo all **decode back bit-exact**. 7 minutes encodes in 0.8 s in Node.
+- Real browser (Chromium 156, library loaded by script tag, `.wasm` served as `application/wasm`): 60 s of stereo encoded in 132 ms, no errors.
+- **Not wired into uploads yet, on purpose.** The box cannot play FLAC until Phase B (on-box decode) exists, so sending FLAC now would store unplayable files.
+- **Integration notes for when B lands:**
+  - `tools/gzip_data.py` folds every local `<script>` into `bundle.js`. libflac (110 KB, 26 KB gzipped) must be loaded on demand when an upload starts, not bundled for every visitor.
+  - `.wasm` is not in `COMPRESS_EXTENSIONS`, so it would be stored raw (131 KB). Total with the encoder ~245 KB of the 512 KB image. Fine; gzipping the wasm would need the library's loader to cope with `Content-Encoding`, which browsers handle transparently, but the box's MIME type for `.wasm` still needs checking (instantiateStreaming wants `application/wasm`; the loader falls back if not).
+  - FLAC is lossless: the box gets back exactly the 44.1 kHz 16-bit stereo samples wavconvert.js produced, so the on-box decoder only has to write them out behind a WAV header.
+
+## Phase B spike result (2026-11-27): the box CAN decode FLAC
+Built `env:radio-core2-flacspike` (flag `LAKEHORSE_FLAC_SPIKE`, `src/flac_spike.cpp`, dr_flac 0.13.5 vendored as `src/dr_flac.h`, public domain/MIT-0; +52 KB flash, no change to the shipping env). Decode runs in its own task (core 0, priority 1, 8 KB stack), buffers in PSRAM. Test: 90 s of 44.1 kHz 16-bit stereo, 11.0 MB FLAC to a 15.9 MB WAV, on the real box, Wi-Fi up.
+- **Bit-exact:** output WAV data identical to the source (CRC and full byte compare); the FLAC arrived intact through the sliced upload (one dropped slice retried).
+- **Speed:** 54.6-54.9 s for 90 s of audio (1.65x realtime) over 3 runs. Split: SD read 15.4 s, SD write 17.7 s, the rest decode CPU plus a 1-tick yield per 4096 frames. A 7-minute song decodes in about 4.3 minutes. Dropping or shortening the yield would shave some.
+- **Web server stayed responsive** during decode: /api/status 20-130 ms throughout (same as idle).
+- **Heap:** internal free 80 KB before; the box's overall low-water mark was 51.9 KB and did not go lower during decode. PSRAM use returned to the pre-run figure (no leak). Not yet tested: Bluetooth connected and playing during a decode.
+- **Honest payoff:** transfer measured at 36 KB/s. This FLAC is 69% of its WAV (a dithered 24-bit master is noisy; not the 50% hoped). For a 7-minute song: WAV 77 MB = about 36 min to send; FLAC 53 MB = about 24 min plus about 4 min decode on the box = about 28 min. A saving of roughly 20%, bought with a decoder in firmware, a recovery path and a new failure mode. Worth it only if the Wi-Fi cannot be improved, so improving the link first is the cheaper win.
+- **Not built:** the production decode job (upload as `.flac`, commit, convert, verify, boot recovery, status route), and the page side switch to FLAC.
+- Left on the card by the test: `Clip.flac` and `Clip.decoded.wav` (my test files; delete from the page).

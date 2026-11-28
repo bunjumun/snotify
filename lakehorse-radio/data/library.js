@@ -5,14 +5,13 @@
  * cut-down captive-portal webview with nothing to import.
  *
  * Uploading converts first (wavconvert.js, shared with tools/song-prep.html).
- * The band's masters are 24-bit WAV, which is a third
- * bigger than it needs to be and which several phones will not play. The page
- * rewrites any 24/32-bit PCM or float WAV as ordinary 16-bit PCM before it
- * leaves the browser, so the box only ever stores files it can serve to any
- * player, and an upload crosses the barn Wi-Fi a third lighter. The sample rate
- * and channel count are kept as they are: resampling in a browser would need
- * the whole file decoded into memory, which a phone cannot do for a 7 minute
- * mix, and 48 kHz 16-bit is perfectly good.
+ * Every song leaves the browser as 44.1 kHz 16-bit stereo WAV (format 'wav44'),
+ * the shape a Bluetooth speaker takes, so the box never needs a decoder or a
+ * resampler. A WAV already in that shape is sent as it is; a 24/32-bit WAV that
+ * is already 44.1 kHz stereo is rewritten as 16-bit a few MB at a time; anything
+ * else (mono, 48 kHz, FLAC, MP3, M4A, Ogg) is decoded whole in memory, which
+ * is fine on a computer and may fail on a phone. A song can be paused, resumed
+ * or cancelled while it uploads (sliceupload.js).
  *
  * Writing needs the box's pairing key (header X-Lakehorse-Key), the same one
  * the playlist push uses. It is handed out only on the box's own hotspot, so
@@ -281,16 +280,15 @@
   // One song as a run of short POSTs rather than one long one. Measured on the
   // box (2026-11-27): a single 5-50 MB body was closed by the box after 2-7 MB
   // in 7 of 8 tries, while 512 KB bodies succeeded 10 of 10; 256 KB keeps the
-  // loss of one slice cheap when the Wi-Fi is dropping packets. Each slice names
-  // its offset, so one that fails is sent again from where the card says it is.
-  var SLICE_BYTES = 256 * 1024;
-  var SLICE_TRIES = 10;      // per slice, before giving up (the link can be lossy for a minute)
+  // loss of one slice cheap when the Wi-Fi is dropping packets. The loop, with
+  // its retries, pause and cancel, lives in sliceupload.js so it can be tested.
   var LEGACY = {};           // sentinel: the box firmware predates sliced uploads
+  var CANCEL_TRIES = 5;      // the box may still be closing the aborted slice
 
   function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
   // Resolves with {status, d} for any HTTP answer; rejects only when no answer came.
-  function postSlice(blob, name, offset, size, onProgress) {
+  function postSlice(blob, name, offset, size, onProgress, track) {
     return new Promise(function (resolve, reject) {
       var xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/sd/upload?name=' + encodeURIComponent(name) +
@@ -300,45 +298,58 @@
       xhr.timeout = 60000;
       xhr.upload.onprogress = function (e) { if (e.lengthComputable) onProgress(e.loaded / e.total); };
       xhr.onerror = function () { reject(new Error('the connection to the box dropped')); };
+      xhr.onabort = function () { reject(new Error('cancelled')); };
       xhr.ontimeout = function () { reject(new Error('the box stopped answering')); };
       xhr.onload = function () {
         var d = {};
         try { d = JSON.parse(xhr.responseText); } catch (e) { /* not JSON */ }
         resolve({ status: xhr.status, d: d });
       };
+      if (track) track(function () { xhr.abort(); });
       xhr.send(blob);
     });
   }
 
-  function sendSliced(blob, name, onProgress) {
-    var size = blob.size;
-    if (size === 0) return Promise.reject(new Error('the file is empty'));
-    function giveUp(msg, offset) {
-      return new Error(msg + ' (stopped at ' + megabytes(offset) + ' of ' + megabytes(size) + ')');
+  // Asks the box to throw away the half-written .part of a cancelled upload.
+  // The slice that was aborted may still be open on the box for a moment, in
+  // which case it answers 409 and this tries again.
+  function discardPart(name, tries) {
+    return fetch('/api/sd/upload-cancel?name=' + encodeURIComponent(name),
+                 { method: 'POST', headers: { 'X-Lakehorse-Key': key() } })
+      .then(function (r) { return r.json().then(function (d) { return { status: r.status, d: d }; }); })
+      .then(function (r) {
+        if (r.status === 409 && tries > 1) return delay(600).then(function () { return discardPart(name, tries - 1); });
+        return r.status === 200 && r.d.ok;
+      })
+      .catch(function () { return false; });
+  }
+
+  var session = null;   // the upload now running: {slices, cancelled, name}
+
+  function showControls(on) {
+    $('sdPause').hidden = !on;
+    $('sdCancel').hidden = !on;
+    $('sdPause').textContent = 'Pause';
+    $('sdPause').disabled = true;   // only a sending song can pause; converting cannot
+  }
+
+  function togglePause() {
+    if (!session) return;
+    if (session.slices.isPaused()) {
+      session.slices.resume();
+      $('sdPause').textContent = 'Pause';
+    } else {
+      session.slices.pause();
+      $('sdPause').textContent = 'Resume';
+      say('Pausing after this piece...', '');
     }
-    function step(offset, failures) {
-      var end = Math.min(offset + SLICE_BYTES, size);
-      function retry(msg, from) {
-        if (failures + 1 >= SLICE_TRIES) throw giveUp(msg, offset);
-        say(msg + ', retrying from ' + megabytes(from) + '...', '');
-        return delay(1000 * (failures + 1)).then(function () { return step(from, failures + 1); });
-      }
-      return postSlice(blob.slice(offset, end), name, offset, size, function (p) {
-        onProgress((offset + p * (end - offset)) / size);
-      }).then(function (r) {
-        if (r.status === 200 && r.d.ok) {
-          if (typeof r.d.done !== 'boolean') return offset === 0 ? LEGACY : Promise.reject(giveUp('unexpected reply from the box', offset));
-          if (r.d.done) return r.d;
-          return step(end, 0);
-        }
-        if (r.status === 409 && typeof r.d.received === 'number' && r.d.received < offset) {
-          return retry(r.d.error, r.d.received);
-        }
-        if (r.status === 503) return retry('the box is busy', offset);
-        throw new Error(r.d.error || ('the box answered ' + r.status));
-      }, function (e) { return retry(e.message, offset); });
-    }
-    return step(0, 0);
+  }
+
+  function cancelUpload() {
+    if (!session) return;
+    session.cancelled = true;
+    session.slices.cancel();
+    say('Cancelling...', '');
   }
 
   function uploadAll(list) {
@@ -346,26 +357,51 @@
     var bar = $('sdBar');
     var chosen = Array.prototype.slice.call(list);
     $('sdPick').disabled = true;
+    session = {
+      cancelled: false, name: '',
+      slices: window.LakehorseSlices.create({ post: postSlice, delay: delay, say: say, megabytes: megabytes })
+    };
+    var mine = session;
+    showControls(true);
 
     chosen.reduce(function (chain, file, i) {
       return chain.then(function () {
+        if (mine.cancelled) return;
         var label = '(' + (i + 1) + '/' + chosen.length + ') ' + file.name;
         say(label + ': preparing...', '');
         bar.hidden = false; bar.value = 0;
-        return window.LakehorseWav.toBlob(file, function (p) { bar.value = p * 0.5; say(label + ': converting...', ''); })
+        return window.LakehorseWav.toBlob(file, function (p) { bar.value = p * 0.5; say(label + ': converting...', ''); },
+                                          { format: 'wav44' })
           .then(function (r) {
+            if (mine.cancelled) return;
             say(label + ': uploading ' + megabytes(r.blob.size) +
                 (r.note ? ' (' + r.note + ')' : '') + '...', '');
+            mine.name = r.name;
+            $('sdPause').disabled = false;
             var progress = function (p) { bar.value = 0.5 + p * 0.5; };
-            return sendSliced(r.blob, r.name, progress).then(function (d) {
-              return d === LEGACY ? send(r.blob, r.name, progress) : d;
-            });
-          })
-          .then(function () { say(label + ': stored.', 'ok'); return load(); });
+            var onPaused = function (isPaused, at) {
+              if (isPaused) say(label + ': paused at ' + megabytes(at) + ' of ' + megabytes(r.blob.size) + '.', '');
+              else say(label + ': uploading ' + megabytes(r.blob.size) + '...', '');
+            };
+            return mine.slices.run(r.blob, r.name, progress, onPaused).then(function (d) {
+              return d && d.legacy ? send(r.blob, r.name, progress) : d;
+            }).then(function () { say(label + ': stored.', 'ok'); return load(); });
+          });
       });
     }, Promise.resolve())
-      .catch(function (e) { say('Upload failed: ' + e.message, 'err'); })
+      .catch(function (e) {
+        if (e && e.cancelled) return;
+        say('Upload failed: ' + e.message, 'err');
+      })
       .then(function () {
+        if (!mine.cancelled || !mine.name) return;
+        return discardPart(mine.name, CANCEL_TRIES).then(function (ok) {
+          say(ok ? 'Upload cancelled.' : 'Upload cancelled; the half-sent file will be cleared when the box restarts.', ok ? 'ok' : '');
+        });
+      })
+      .then(function () {
+        session = null;
+        showControls(false);
         bar.hidden = true;
         $('sdPick').disabled = false;
         $('sdFile').value = '';
@@ -395,6 +431,8 @@
   function init() {
     if (!$('sdList')) return;
     $('sdPick').addEventListener('click', function () { $('sdFile').click(); });
+    $('sdPause').addEventListener('click', togglePause);
+    $('sdCancel').addEventListener('click', cancelUpload);
     $('sdFile').addEventListener('change', function () {
       if (this.files.length) uploadAll(this.files);
     });

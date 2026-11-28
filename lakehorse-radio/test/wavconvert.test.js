@@ -9,6 +9,21 @@
 const assert = require('assert');
 const W = require('../data/wavconvert.js');
 
+// A silent PCM WAV with the given shape, as a File.
+function wavFile({ bits, rate, channels, frames = 100, name = 'Song.wav' }) {
+  const bytes = bits >> 3;
+  const dataBytes = frames * channels * bytes;
+  const buf = new ArrayBuffer(44 + dataBytes);
+  const v = new DataView(buf);
+  const str = (at, t) => [...t].forEach((c, i) => v.setUint8(at + i, c.charCodeAt(0)));
+  str(0, 'RIFF'); v.setUint32(4, 36 + dataBytes, true); str(8, 'WAVE'); str(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, channels, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * channels * bytes, true);
+  v.setUint16(32, channels * bytes, true); v.setUint16(34, bits, true);
+  str(36, 'data'); v.setUint32(40, dataBytes, true);
+  return new File([buf], name);
+}
+
 const tests = {
   'only 44.1 kHz 16-bit stereo PCM counts as Bluetooth-ready'() {
     const ok = { format: 1, bits: 16, rate: 44100, channels: 2 };
@@ -88,6 +103,27 @@ const asyncTests = {
     assert.strictEqual(v.getUint16(34, true), 16);
     assert.ok(Math.abs(v.getInt16(44, true) - 8192) <= 2);
     assert.ok(Math.abs(v.getInt16(46, true) + 8192) <= 2);
+  },
+  async 'wav44: a 16-bit 44.1 kHz stereo WAV is passed through untouched'() {
+    const f = wavFile({ bits: 16, rate: 44100, channels: 2 });
+    const r = await W.toBlob(f, null, { format: 'wav44' });
+    assert.strictEqual(r.blob, f);
+    assert.strictEqual(r.note, '');
+  },
+  async 'wav44: a 24-bit 44.1 kHz stereo WAV streams to 16-bit with no whole-song decode'() {
+    const f = wavFile({ bits: 24, rate: 44100, channels: 2, frames: 1000 });
+    const r = await W.toBlob(f, null, { format: 'wav44' });
+    assert.strictEqual(r.blob.size, 44 + 1000 * 4);
+    assert.strictEqual(r.name, 'Song.wav');
+    assert.ok(/24-bit/.test(r.note));
+  },
+  async 'wav44: 48 kHz, mono and MP3 all take the decode path'() {
+    // No OfflineAudioContext in Node, so reaching the decoder shows as this error.
+    for (const f of [wavFile({ bits: 24, rate: 48000, channels: 2 }),
+                     wavFile({ bits: 16, rate: 44100, channels: 1 }),
+                     new File([new Uint8Array(100)], 'Song.mp3')]) {
+      await assert.rejects(W.toBlob(f, null, { format: 'wav44' }), /cannot convert audio/);
+    }
   },
   async 'a WAV keeps its own name'() {
     const f = new File([new Uint8Array(100)], 'Song.mp3');

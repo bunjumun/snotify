@@ -65,16 +65,16 @@ void empty_and_oversize_bodies_are_refused() {
   TEST_ASSERT_EQUAL(Result::Empty, cardfiles::validate("band-tracks.json", "", 0));
   TEST_ASSERT_EQUAL(Result::Empty, cardfiles::validate("band-tracks.json", nullptr, 5));
   std::string big = "{\"tracks\":[\"";
-  big.append(cfg::CARD_FILE_MAX_BYTES, 'a');
+  big.append(cfg::BAND_FILE_MAX_BYTES, 'a');
   big += ".wav\"]}";
   TEST_ASSERT_EQUAL(Result::TooBig, cardfiles::validate("band-tracks.json", big.data(), big.size()));
 }
 
 void a_body_at_exactly_the_cap_is_still_checked_not_refused_for_size() {
   std::string body = "{\"tracks\":[\"";
-  body.append(cfg::CARD_FILE_MAX_BYTES - body.size() - 7, 'a');
+  body.append(cfg::BAND_FILE_MAX_BYTES - body.size() - 7, 'a');
   body += ".wav\"]}";
-  TEST_ASSERT_EQUAL(cfg::CARD_FILE_MAX_BYTES, body.size());
+  TEST_ASSERT_EQUAL(cfg::BAND_FILE_MAX_BYTES, body.size());
   TEST_ASSERT_EQUAL(Result::Ok, cardfiles::validate("band-tracks.json", body.data(), body.size()));
 }
 
@@ -89,6 +89,48 @@ void a_list_that_passes_is_one_the_alignment_reader_reads() {
   TEST_ASSERT_EQUAL(Result::Ok, band(body));
   TEST_ASSERT_TRUE(alignment::bandListContains(body, strlen(body), "Mango Tree World.wav"));
   TEST_ASSERT_FALSE(alignment::bandListContains(body, strlen(body), "Other.wav"));
+}
+
+namespace {
+Result gb(const char* body) { return cardfiles::validate("guestbook.json", body, strlen(body)); }
+const char* kEntry = "{\"id\":3,\"h\":\"Ana\",\"m\":\"hi\",\"t\":1700000000,\"k\":\"ab12\"}";
+}  // namespace
+
+void a_good_guest_book_passes() {
+  std::string ok = std::string("{\"v\":1,\"entries\":[") + kEntry + "],\"trash\":[" + kEntry + "]}";
+  TEST_ASSERT_EQUAL(Result::Ok, gb(ok.c_str()));
+  TEST_ASSERT_EQUAL(Result::Ok, gb("{\"v\":1,\"entries\":[],\"trash\":[]}"));
+  std::string pic = "{\"v\":1,\"entries\":[{\"id\":3,\"h\":\"A\",\"m\":\"x\",\"t\":1,\"k\":\"z\",\"i\":1}],\"trash\":[]}";
+  TEST_ASSERT_EQUAL(Result::Ok, gb(pic.c_str()));
+}
+
+void a_bad_guest_book_is_refused() {
+  TEST_ASSERT_EQUAL(Result::NotJson, gb("{\"entries\":["));
+  TEST_ASSERT_EQUAL(Result::WrongShape, gb("{\"v\":1,\"entries\":[]}"));
+  TEST_ASSERT_EQUAL(Result::WrongShape, gb("{\"v\":2,\"entries\":[],\"trash\":[]}"));
+  TEST_ASSERT_EQUAL(Result::WrongShape, gb("{\"v\":1,\"entries\":[{\"id\":1,\"h\":\"\",\"m\":\"x\",\"t\":1,\"k\":\"z\"}],\"trash\":[]}"));
+  TEST_ASSERT_EQUAL(Result::WrongShape, gb("{\"v\":1,\"entries\":[{\"id\":1,\"h\":\"A\",\"m\":\"x\",\"t\":1}],\"trash\":[]}"));
+  std::string many = "{\"v\":1,\"entries\":[";
+  for (size_t i = 0; i <= cfg::GUESTBOOK_MAX_ENTRIES; ++i) many += std::string(i ? "," : "") + kEntry;
+  many += "],\"trash\":[]}";
+  TEST_ASSERT_EQUAL(Result::WrongShape, gb(many.c_str()));
+  std::string longMsg = "{\"v\":1,\"entries\":[{\"id\":1,\"h\":\"A\",\"m\":\"" + std::string(cfg::GUESTBOOK_MESSAGE_MAX + 1, 'x') + "\",\"t\":1,\"k\":\"z\"}],\"trash\":[]}";
+  TEST_ASSERT_EQUAL(Result::WrongShape, gb(longMsg.c_str()));
+}
+
+void guest_pictures_need_a_pattern_name_and_a_jpeg_body() {
+  TEST_ASSERT_TRUE(cardfiles::nameAllowed("gbimg-12.jpg"));
+  TEST_ASSERT_FALSE(cardfiles::nameAllowed("gbimg-.jpg"));
+  TEST_ASSERT_FALSE(cardfiles::nameAllowed("gbimg-1234567.jpg"));
+  TEST_ASSERT_FALSE(cardfiles::nameAllowed("gbimg-1a.jpg"));
+  TEST_ASSERT_FALSE(cardfiles::nameAllowed("gbimg-1.jpg.part"));
+  TEST_ASSERT_FALSE(cardfiles::nameAllowed("gbimg-../x.jpg"));
+  const char jpg[] = "\xFF\xD8\xFF\xE0rest";
+  TEST_ASSERT_EQUAL(Result::Ok, cardfiles::validate("gbimg-12.jpg", jpg, sizeof(jpg) - 1));
+  TEST_ASSERT_EQUAL(Result::WrongShape, cardfiles::validate("gbimg-12.jpg", "GIF89a....", 10));
+  std::string big(cfg::GUESTBOOK_IMAGE_MAX_BYTES + 1, 'x');
+  big[0] = '\xFF'; big[1] = '\xD8'; big[2] = '\xFF';
+  TEST_ASSERT_EQUAL(Result::TooBig, cardfiles::validate("gbimg-12.jpg", big.data(), big.size()));
 }
 
 void every_result_has_words() {
@@ -113,6 +155,9 @@ int main(int, char**) {
   RUN_TEST(a_body_at_exactly_the_cap_is_still_checked_not_refused_for_size);
   RUN_TEST(a_name_off_the_list_is_refused_before_the_body_is_looked_at);
   RUN_TEST(a_list_that_passes_is_one_the_alignment_reader_reads);
+  RUN_TEST(a_good_guest_book_passes);
+  RUN_TEST(a_bad_guest_book_is_refused);
+  RUN_TEST(guest_pictures_need_a_pattern_name_and_a_jpeg_body);
   RUN_TEST(every_result_has_words);
   return UNITY_END();
 }

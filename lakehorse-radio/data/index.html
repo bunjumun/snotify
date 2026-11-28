@@ -263,6 +263,33 @@
       </div>
     </section>
 
+    <section class="win" id="win-guestbook" data-title="GUEST BOOK" data-help="win-guestbook" hidden>
+      <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>GUEST BOOK</span><button type="button" class="win-x" data-help="win-close" data-close aria-label="Close GUEST BOOK">X</button></div>
+      <div class="win-body">
+        <div class="group gbform">
+          <input type="text" id="gbHandle" maxlength="20" autocomplete="off" placeholder="Your handle" aria-label="Handle" data-help="gb-handle">
+          <textarea id="gbMessage" maxlength="140" rows="3" placeholder="A short message (140 characters)" aria-label="Message" data-help="gb-message"></textarea>
+          <button type="button" class="btn" id="gbPadToggle" data-help="gb-padtoggle">Add photo / doodle</button>
+          <div id="gbPadWrap" hidden>
+            <canvas id="gbPad" width="160" height="120" aria-label="Doodle pad"></canvas>
+            <div id="gbColors" class="gbcolors"></div>
+            <div class="gbbtns">
+              <button type="button" class="btn" id="gbSize" data-help="gb-size">Brush 2</button>
+              <button type="button" class="btn" id="gbUndo" data-help="gb-undo" disabled>Undo</button>
+              <button type="button" class="btn" id="gbClear" data-help="gb-clear" disabled>Clear</button>
+            </div>
+            <label class="btn gbphoto">Photo<input type="file" id="gbPhoto" accept="image/*" data-help="gb-photo"></label>
+          </div>
+          <button type="button" class="btn primary" id="gbPost" data-help="gb-post">Sign the guest book</button>
+          <p class="muted" id="gbStatus"></p>
+        </div>
+        <div id="gbConfirm" class="note gbconfirm" hidden></div>
+        <div id="gbList" class="gblist"><p class="muted">Opening the book...</p></div>
+        <div class="gbtrashbar" id="gbTrashTitle" data-help="gb-trash">TRASH CAN (0)</div>
+        <div id="gbTrash" class="gblist"></div>
+      </div>
+    </section>
+
     <section class="win" id="win-help" data-title="HELP" data-help="win-help" hidden>
       <div class="win-title"><span class="win-name"><i aria-hidden="true"></i>HELP</span><button type="button" class="win-x" data-help="win-close" data-close aria-label="Close HELP">X</button></div>
       <div class="win-body">
@@ -278,6 +305,7 @@
       <button type="button" class="icon" data-help="icon-network" data-open="win-network"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><path d="M6 18 q16-14 32 0" fill="none" stroke="#e9e5d6" stroke-width="4"/><path d="M12 25 q10-9 20 0" fill="none" stroke="#e9e5d6" stroke-width="4"/><rect x="19" y="30" width="6" height="6" fill="#ff6b2c" stroke="#0c0e0d"/></svg><span>NETWORK</span></button>
       <button type="button" class="icon" data-help="icon-games" data-open="win-game"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="8" width="34" height="28" fill="#0d2b2e" stroke="#e9e5d6" stroke-width="2"/><path d="M9 28 q6-8 12 0 t12 0" fill="none" stroke="#e9e5d6" stroke-width="3"/></svg><span>GAMES</span></button>
       <button type="button" class="icon" data-help="icon-driveb" data-open="win-driveb"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="5" y="9" width="34" height="26" fill="#3b3d39" stroke="#e9e5d6" stroke-width="2"/><rect x="9" y="26" width="12" height="3" fill="#0c0e0d"/><circle cx="31" cy="27.5" r="2.5" fill="#ff6b2c"/><path d="M9 15 l5 3 l5 -4 l5 5 l6 -4" fill="none" stroke="#5fd0b0" stroke-width="2"/></svg><span>?##% $▓▓? %#??# #▓%# #%%?%</span></button>
+      <button type="button" class="icon" data-help="icon-guestbook" data-open="win-guestbook"><svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><rect x="8" y="6" width="28" height="32" fill="#e9e5d6" stroke="#0c0e0d" stroke-width="2"/><path d="M13 14 h18 M13 20 h18 M13 26 h11" stroke="#0c0e0d" stroke-width="2" fill="none"/><path d="M28 36 l10-12 l3 3 l-10 12 z" fill="#ff6b2c" stroke="#0c0e0d" stroke-width="1.5"/></svg><span>GUEST BOOK</span></button>
     </nav>
   </main>
 
@@ -288,6 +316,7 @@
     <div class="startitems">
       <button type="button" data-help="start-player" data-open="win-player">Player</button>
       <button type="button" data-help="start-driveb" data-open="win-driveb">?##% $▓▓? %#??# #▓%# #%%?%</button>
+      <button type="button" data-help="start-guestbook" data-open="win-guestbook">Guest book</button>
       <button type="button" data-help="start-network" data-open="win-network" id="startNetwork"><span>Network</span><small id="startNetworkNote"></small></button>
       <button type="button" data-help="start-speaker" data-open="win-speaker">Speaker (Bluetooth)</button>
       <button type="button" data-help="start-matrix" data-open="matrixWindow">Matrix lights</button>
@@ -328,6 +357,7 @@
   <script src="matrix-window.js"></script>
   <script src="game-window.js"></script>
   <script src="drive-b.js" data-late></script>
+  <script src="guestbook.js" data-late></script>
   <script src="wavconvert.js" data-late></script>
   <script src="align-report.js"></script>
   <script src="library.js"></script>

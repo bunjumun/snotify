@@ -932,6 +932,62 @@ void handleSdFile(AsyncWebServerRequest* request) {
   sendOpenedFile(request, opened, trackname::contentType(safe), false, nullptr);
 }
 
+// ---- Guest book (page: data/guestbook.js) ----
+// The text lives in /guestbook.json (written through POST /api/sd/card-file, shape-checked
+// in card_files.cpp); each entry's one small picture is /gbimg-<id>.jpg. These routes only
+// read them back and delete a picture; the page decides who may do what.
+bool guestImagePath(AsyncWebServerRequest* request, String& path) {
+  if (!request->hasParam("id")) return false;
+  const String id = request->getParam("id")->value();
+  if (id.length() < 1 || id.length() > 6) return false;
+  for (size_t i = 0; i < id.length(); ++i) if (id[i] < '0' || id[i] > '9') return false;
+  const String name = String("gbimg-") + id + ".jpg";
+  if (!cardfiles::nameAllowed(name.c_str())) return false;
+  path = String("/") + name;
+  return true;
+}
+
+void handleGuestbookGet(AsyncWebServerRequest* request) {
+  if (!sdstore::mounted()) {
+    sendError(request, 503, "there is no SD card in the box");
+    return;
+  }
+  File opened = SD.open("/guestbook.json", FILE_READ);
+  if (!opened || opened.isDirectory()) {
+    sendJson(request, 200, "{\"v\":1,\"entries\":[],\"trash\":[]}");
+    return;
+  }
+  sendOpenedFile(request, opened, "application/json", false, "no-store");
+}
+
+void handleGuestbookImage(AsyncWebServerRequest* request) {
+  String path;
+  if (!sdstore::mounted() || !guestImagePath(request, path)) {
+    request->send(404, "text/plain", "not found");
+    return;
+  }
+  File opened = SD.open(path, FILE_READ);
+  if (!opened || opened.isDirectory()) {
+    request->send(404, "text/plain", "not found");
+    return;
+  }
+  sendOpenedFile(request, opened, "image/jpeg", false, "public, max-age=3600");
+}
+
+void handleGuestbookImageDelete(AsyncWebServerRequest* request) {
+  String path;
+  if (cfg::SD_WRITES_NEED_KEY && !authorised(request)) {
+    sendError(request, 401, "missing or wrong X-Lakehorse-Key");
+  } else if (!sdstore::mounted()) {
+    sendError(request, 503, "there is no SD card in the box");
+  } else if (!guestImagePath(request, path)) {
+    sendError(request, 400, "not a guest book picture id");
+  } else {
+    SD.remove(path);
+    sendJson(request, 200, "{\"ok\":true}");
+  }
+}
+
 // Streams an open SD file, honouring Range. Shared by the song route (/sd/*)
 // and the game route (/game/*); `gzipped` adds Content-Encoding.
 void sendOpenedFile(AsyncWebServerRequest* request, File opened, const char* mime,
@@ -1129,6 +1185,9 @@ void begin() {
   g_server.on("/api/sd/game-upload", HTTP_POST, handleGameUploadDone, nullptr, handleGameUploadChunk);
   g_server.on("/api/sd/game-delete", HTTP_POST, handleGameDelete);
   g_server.on("/api/sd/card-file", HTTP_POST, handleCardFileDone, nullptr, handleCardFileChunk);
+  g_server.on("/api/guestbook", HTTP_GET, handleGuestbookGet);
+  g_server.on("/api/guestbook/img", HTTP_GET, handleGuestbookImage);
+  g_server.on("/api/guestbook/img-delete", HTTP_POST, handleGuestbookImageDelete);
   g_server.on("/sd/*", HTTP_GET, handleSdFile);
   // Wildcard first: the library treats the plain "/game" as a prefix too, so
   // registered first it redirected every /game/... URL back to /game/ forever.

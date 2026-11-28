@@ -505,3 +505,39 @@ html.lens-clean .lens { display: none; }
   .l-noise, .l-vig, .l-roll, .l-tear, .drivefile.stutter, .drivenet svg .snap, .drivenet svg .flash { animation: none; }
   .l-roll, .l-tear { display: none; }
 }
+
+/* ======================================================================
+   Guest book
+   ====================================================================== */
+.gbform { display: flex; flex-direction: column; gap: 8px; }
+.gbform textarea {
+  width: 100%; box-sizing: border-box; padding: 8px 10px; font: inherit; color: inherit; resize: vertical;
+  background: #0c0e0d; border: 2px solid; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; border-radius: 14px;
+}
+.gbform input[type=text] { width: 100%; box-sizing: border-box; min-height: 44px; }
+.gbform .btn { margin-top: 0; }
+#gbPad {
+  display: block; width: 100%; max-width: 320px; aspect-ratio: 4 / 3; height: auto; background: #fff; touch-action: none;
+  border: 2px solid; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; border-radius: 14px; cursor: crosshair; image-rendering: auto;
+}
+.gbcolors { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.gbcolor { width: 44px; height: 44px; border-radius: 14px; border: 2px solid #6a6c65; cursor: pointer; padding: 0; }
+.gbcolor[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.gbbtns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.gbbtns .btn { margin-top: 0; }
+.gbphoto { position: relative; display: inline-flex; align-items: center; justify-content: center; margin-top: 8px; cursor: pointer; }
+.gbphoto input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.gblist { margin: 10px 0; }
+.gbentry { background: #121412; border: 2px solid; border-color: #0f1110 #6a6c65 #6a6c65 #0f1110; border-radius: 14px; padding: 8px 10px; margin: 0 0 8px; overflow: hidden; }
+.gbentry.trashed { opacity: .75; border-style: dashed; }
+.gbhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.gbhead b { overflow-wrap: anywhere; }
+.gbmsg { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.gbimg { display: block; width: 100%; max-width: 320px; height: auto; aspect-ratio: 4 / 3; margin: 6px 0; border-radius: 10px; background: #0c0e0d; }
+.gbentry input, .gbentry textarea { width: 100%; box-sizing: border-box; margin: 6px 0 0; }
+.gbconfirm { border: 2px solid var(--accent); }
+.gbconfirm p { margin: 0 0 8px; }
+.gbconfirm .btn { margin-right: 6px; }
+.gbtrashbar { margin-top: 14px; padding: 6px 10px; font: 600 12px ui-monospace, Menlo, monospace; letter-spacing: .05em; border-top: 2px dashed #6a6c65; color: #e9e5d6; }
+#gbStatus.err { color: #ff6b2c; }
+#gbStatus.ok { color: #5fd0b0; }

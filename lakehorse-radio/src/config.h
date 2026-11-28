@@ -328,10 +328,19 @@ constexpr const char* NVS_KEY_SEED = "seed";
 // The ONLY names the box will write at the card root over Wi-Fi. Exact,
 // case-sensitive, no folders, no deletes. Add a name here and a content check in
 // card_files.cpp together; a name with no check is refused.
-constexpr const char* CARD_FILE_NAMES[] = {"band-tracks.json"};
+constexpr const char* CARD_FILE_NAMES[] = {"band-tracks.json", "guestbook.json"};
 // Largest body accepted, and it is held in RAM for the length of the request, so it
-// is small on purpose. 4 KB is also what alignment_box.cpp is willing to read back
-// (kBandListMaxBytes): a bigger list would upload fine and then flag nothing.
-constexpr size_t CARD_FILE_MAX_BYTES = 4096;
+// is small on purpose (a body over the 1600-byte PSRAM threshold lives in PSRAM, not
+// the scarce internal heap). The cap is the largest of the per-file limits below.
+constexpr size_t CARD_FILE_MAX_BYTES = 12288;
+// band-tracks.json stays at 4 KB: that is what alignment_box.cpp is willing to read back
+// (kBandListMaxBytes), so a bigger list would upload fine and then flag nothing.
+constexpr size_t BAND_FILE_MAX_BYTES = 4096;
+// guestbook.json (GET /api/guestbook, written by the page through card-file): the page
+// keeps live + trashed entries at or under GUESTBOOK_MAX_ENTRIES, so the file fits the cap.
+constexpr size_t GUESTBOOK_MAX_ENTRIES = 40;
+constexpr size_t GUESTBOOK_HANDLE_MAX = 24;
+constexpr size_t GUESTBOOK_IMAGE_MAX_BYTES = 8192;  // one small JPEG per entry: gbimg-<id>.jpg
+constexpr size_t GUESTBOOK_MESSAGE_MAX = 240;  // bytes; the page allows 140 characters
 
 }  // namespace cfg

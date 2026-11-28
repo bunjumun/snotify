@@ -1185,9 +1185,11 @@ void begin() {
   g_server.on("/api/sd/game-upload", HTTP_POST, handleGameUploadDone, nullptr, handleGameUploadChunk);
   g_server.on("/api/sd/game-delete", HTTP_POST, handleGameDelete);
   g_server.on("/api/sd/card-file", HTTP_POST, handleCardFileDone, nullptr, handleCardFileChunk);
-  g_server.on("/api/guestbook", HTTP_GET, handleGuestbookGet);
-  g_server.on("/api/guestbook/img", HTTP_GET, handleGuestbookImage);
+  // Longer paths first: the library treats "/api/guestbook" as a prefix too, so registered
+  // first it answered /api/guestbook/img with the book (same trap as "/game", below).
   g_server.on("/api/guestbook/img-delete", HTTP_POST, handleGuestbookImageDelete);
+  g_server.on("/api/guestbook/img", HTTP_GET, handleGuestbookImage);
+  g_server.on("/api/guestbook", HTTP_GET, handleGuestbookGet);
   g_server.on("/sd/*", HTTP_GET, handleSdFile);
   // Wildcard first: the library treats the plain "/game" as a prefix too, so
   // registered first it redirected every /game/... URL back to /game/ forever.

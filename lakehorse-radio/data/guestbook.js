@@ -249,8 +249,9 @@
         });
     }
 
-    function send(name, body, type) {
-      return doFetch(WRITE_URL + encodeURIComponent(name), { method: 'POST', headers: { 'Content-Type': type || 'application/octet-stream' }, body: body })
+    // Always octet-stream, like tools/push_card_file.py: the box's body handler is proven on it.
+    function send(name, body) {
+      return doFetch(WRITE_URL + encodeURIComponent(name), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: body })
         .then(function (r) {
           if (r.ok) return true;
           return r.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.error || 'The box refused the write.'); });
@@ -260,7 +261,7 @@
     function writeBook(b) {
       var text = serialise(b);
       if (text === null) return Promise.reject(new Error('The guest book is too big to save.'));
-      return send('guestbook.json', text, 'application/json');
+      return send('guestbook.json', text);
     }
 
     function dropImage(id) {
@@ -506,7 +507,7 @@
           planned = res;
           // The picture goes in first, so a posted entry never points at nothing.
           if (!blob) return res;
-          return send('gbimg-' + res.id + '.jpg', blob, 'image/jpeg').then(function () { return res; });
+          return send('gbimg-' + res.id + '.jpg', blob).then(function () { return res; });
         });
       }).then(function (res) {
         if (res && res.dropped !== null && res.dropped !== undefined) dropImage(res.dropped);

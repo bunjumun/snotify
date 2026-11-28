@@ -68,7 +68,7 @@
             <button class="btn primary" id="sdPick" data-help="sd-pick">Upload songs</button>
             <input type="file" id="sdFile" data-help="sd-pick" accept=".wav,.flac,.mp3,.m4a,.aac,.ogg,.opus,audio/*" multiple hidden />
           </div>
-          <p class="muted">Every song is converted to 44.1 kHz 16-bit stereo WAV in your browser, so it plays on this page and over Bluetooth. Converting a long song needs a computer; a phone may run out of memory.</p>
+          <p class="muted">Every song is converted to 44.1 kHz 16-bit stereo WAV in your browser, so it plays on this page and over Bluetooth. It travels as FLAC (smaller) and the box turns it back into the WAV when it arrives. Converting a long song needs a computer; a phone may run out of memory.</p>
           <progress id="sdBar" max="1" value="0" hidden></progress>
           <div class="row">
             <button class="btn" id="sdPause" data-help="sd-pause" hidden>Pause</button>
@@ -365,6 +365,8 @@
   <script src="wavconvert.js" data-late></script>
   <script src="align-report.js"></script>
   <script src="sliceupload.js"></script>
+  <script src="flacencode.js"></script>
+  <script src="flacsend.js"></script>
   <script src="library.js"></script>
 </body>
 </html>

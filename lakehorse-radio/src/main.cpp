@@ -36,6 +36,7 @@
 #include "net_identity.h"
 #include "net_watchdog.h"
 #include "playlist_store.h"
+#include "flac_convert.h"
 #include "sd_store.h"
 #include "setup_boot.h"
 #include "web_server.h"
@@ -102,6 +103,7 @@ void setup() {
   // Before the web server, so the first /api/sd request already knows whether
   // there is a card. Not fatal if there is none.
   sdstore::begin();
+  flacconv::begin();
   alignment::begin();
 
   wifinet::begin();

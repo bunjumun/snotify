@@ -77,3 +77,10 @@ Built `env:radio-core2-flacspike` (flag `LAKEHORSE_FLAC_SPIKE`, `src/flac_spike.
 - **Honest payoff:** transfer measured at 36 KB/s. This FLAC is 69% of its WAV (a dithered 24-bit master is noisy; not the 50% hoped). For a 7-minute song: WAV 77 MB = about 36 min to send; FLAC 53 MB = about 24 min plus about 4 min decode on the box = about 28 min. A saving of roughly 20%, bought with a decoder in firmware, a recovery path and a new failure mode. Worth it only if the Wi-Fi cannot be improved, so improving the link first is the cheaper win.
 - **Not built:** the production decode job (upload as `.flac`, commit, convert, verify, boot recovery, status route), and the page side switch to FLAC.
 - Left on the card by the test: `Clip.flac` and `Clip.decoded.wav` (my test files; delete from the page).
+
+## Phase B built (2026-11-28): FLAC is now the transfer format
+- Page: `data/flacsend.js` encodes the converted 44.1 kHz 16-bit WAV to FLAC (libflac loaded only when an upload starts) and sends `Song.flac`; falls back to the WAV if the encoder will not load or the FLAC is not smaller. After the last slice it POSTs `/api/sd/convert` and polls `/api/sd/convert-status`.
+- Box: `src/flac_convert.cpp` (dr_flac, own task on core 0, priority 1) writes `Song.wav.part`, checks frame count and byte size, commits, then deletes the `.flac`. On any failure the `.part` is removed and the `.flac` kept. Boot recovery: a `.flac` left on the card is converted 15 s after start-up. The spike env and files were removed.
+- Gotcha: `/api/sd` GET also matches every path under it, so `/api/sd/convert-status` is registered before it.
+- Verified on the box: 30 s noisy stereo song, 5.29 MB WAV sent as 2.44 MB FLAC, converted on the box, output byte-identical (CRC match). Boot recovery verified (first run hit a stale-size check bug, fixed; the kept `.flac` converted by itself after reflash).
+- Not tested: conversion while Bluetooth is playing; a multi-minute song end to end.

@@ -16,9 +16,7 @@
 #include <new>
 
 #include "alignment_box.h"
-#ifdef LAKEHORSE_FLAC_SPIKE
-#include "flac_spike.h"
-#endif
+#include "flac_convert.h"
 #ifdef LAKEHORSE_ALIGN_TEST
 #include "alignment_test_routes.h"
 #endif
@@ -652,6 +650,20 @@ void handleUploadCancel(AsyncWebServerRequest* request) {
   String out;
   serializeJson(doc, out);
   sendJson(request, 200, out);
+}
+
+// Starts (or continues) turning uploaded .flac files into WAVs. The page calls it
+// after the last slice; boot recovery calls flacconv::begin() on its own.
+void handleConvertStart(AsyncWebServerRequest* request) {
+  if (cfg::SD_WRITES_NEED_KEY && !authorised(request)) {
+    sendError(request, 401, "missing or wrong X-Lakehorse-Key");
+    return;
+  }
+  if (!flacconv::start()) {
+    sendError(request, 503, "there is no SD card in the box");
+    return;
+  }
+  sendJson(request, 200, "{\"ok\":true}");
 }
 
 // ---------- Game files onto the SD card ----------
@@ -1289,8 +1301,11 @@ void begin() {
     sendJson(request, 200, "{\"ok\":true}");
   });
 
+  // Before /api/sd: that handler also matches every path beneath it.
+  flacconv::registerRoutes(g_server);
   g_server.on("/api/sd", HTTP_GET, handleSdList);
   g_server.on("/api/sd/delete", HTTP_POST, handleSdDelete);
+  g_server.on("/api/sd/convert", HTTP_POST, handleConvertStart);
   g_server.on("/api/sd/upload-cancel", HTTP_POST, handleUploadCancel);
   g_server.on("/api/sd/upload", HTTP_POST, handleUploadDone, nullptr, handleUploadChunk);
   g_server.on("/api/sd/game-upload", HTTP_POST, handleGameUploadDone, nullptr, handleGameUploadChunk);
@@ -1308,9 +1323,6 @@ void begin() {
   g_server.on("/game", HTTP_GET, [](AsyncWebServerRequest* r) { r->redirect("/game/"); });
 #ifdef LAKEHORSE_ALIGN_TEST
   aligntest::attach(g_server);
-#endif
-#ifdef LAKEHORSE_FLAC_SPIKE
-  flacspike::registerRoutes(g_server);
 #endif
   playerapi::attach(g_server);
   speakerapi::attach(g_server);

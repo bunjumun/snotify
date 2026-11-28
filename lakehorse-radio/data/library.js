@@ -22,6 +22,7 @@
   'use strict';
 
   var $ = function (id) { return document.getElementById(id); };
+  var CONVERT_POLL_MS = 3000;
   var KEY_STORE = 'lakehorse.radio.key';
   var files = [];
   var playingName = '';
@@ -61,7 +62,7 @@
     }
 
     files.sort(function (a, b) { return a.name.localeCompare(b.name); });
-    trackNames = files.map(function (f) { return f.name; });
+    trackNames = files.filter(function (f) { return !/\.flac$/i.test(f.name); }).map(function (f) { return f.name; });
     if (player) player.setTracks(trackNames);
     files.forEach(function (f) {
       var li = document.createElement('li');
@@ -74,7 +75,7 @@
       title.textContent = f.name;                       // never innerHTML: a name is data
       var size = document.createElement('span');
       size.className = 'state';
-      size.textContent = megabytes(f.size);
+      size.textContent = /\.flac$/i.test(f.name) ? 'waiting to convert' : megabytes(f.size);
 
       var del = document.createElement('button');
       del.className = 'btn';
@@ -85,7 +86,7 @@
       li.appendChild(title);
       li.appendChild(size);
       li.appendChild(del);
-      li.addEventListener('click', function () { play(f.name); });
+      li.addEventListener('click', function () { if (!/\.flac$/i.test(f.name)) play(f.name); });
       list.appendChild(li);
     });
   }
@@ -352,6 +353,28 @@
     say('Cancelling...', '');
   }
 
+  // A .flac is on the card; the box turns it into the WAV, which takes about
+  // 0.6x the song's length. Polls until it is done, so the next song waits.
+  function convertOnBox(label, name, bar) {
+    var wav = name.replace(/\.flac$/i, '.wav');
+    return fetch('/api/sd/convert', { method: 'POST', headers: keyRequired ? { 'X-Lakehorse-Key': key() } : {} })
+      .then(function (r) { if (!r.ok) throw new Error('the box would not start converting'); })
+      .then(function poll() {
+        return delay(CONVERT_POLL_MS).then(function () {
+          return fetch('/api/sd/convert-status', { cache: 'no-store' }).then(function (r) { return r.json(); });
+        }).then(function (st) {
+          if (st.running) {
+            if (st.totalFrames) bar.value = st.frames / st.totalFrames;
+            say(label + ': the box is converting to WAV (' + Math.round(100 * st.frames / Math.max(1, st.totalFrames)) + '%)...', '');
+            return poll();
+          }
+          if (st.error) throw new Error('the box could not convert ' + name + ': ' + st.error + ' (the .flac is kept on the card)');
+          say(label + ': stored as ' + wav + '.', 'ok');
+          return load();
+        });
+      });
+  }
+
   function uploadAll(list) {
     if (keyRequired && !key()) { say('Enter the pairing key first (see the note below).', 'err'); return; }
     var bar = $('sdBar');
@@ -376,6 +399,11 @@
             if (mine.cancelled) return;
             say(label + ': uploading ' + megabytes(r.blob.size) +
                 (r.note ? ' (' + r.note + ')' : '') + '...', '');
+            return window.LakehorseFlacSend.fromWav(r.blob, r.name, function (p) { bar.value = 0.5 * p; say(label + ': compressing for the trip...', ''); })
+              .then(function (f) { r.blob = f.blob; r.name = f.name; return r; });
+          }).then(function (r) {
+            if (mine.cancelled) return;
+            say(label + ': uploading ' + megabytes(r.blob.size) + '...', '');
             mine.name = r.name;
             $('sdPause').disabled = false;
             var progress = function (p) { bar.value = 0.5 + p * 0.5; };
@@ -385,7 +413,10 @@
             };
             return mine.slices.run(r.blob, r.name, progress, onPaused).then(function (d) {
               return d && d.legacy ? send(r.blob, r.name, progress) : d;
-            }).then(function () { say(label + ': stored.', 'ok'); return load(); });
+            }).then(function () {
+              if (!/\.flac$/i.test(r.name)) { say(label + ': stored.', 'ok'); return load(); }
+              return convertOnBox(label, r.name, bar);
+            });
           });
       });
     }, Promise.resolve())
